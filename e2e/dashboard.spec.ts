@@ -30,7 +30,10 @@ test("admins can create a listing that appears in public search", async ({ page 
 
   // Clean up so reruns stay tidy.
   await page.goto("/dashboard/listings");
-  await page.getByRole("row", { name: new RegExp(street) }).getByRole("link", { name: "Edit" }).click();
+  await page
+    .getByRole("row", { name: new RegExp(street) })
+    .getByRole("link", { name: "Edit" })
+    .click();
   page.once("dialog", (d) => d.accept());
   await page.getByRole("button", { name: "Delete listing" }).click();
   await expect(page).toHaveURL(/\/dashboard\/listings$/);

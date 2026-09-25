@@ -27,26 +27,26 @@ npm run dev                  # http://localhost:3000
 
 Demo logins (password `adams-demo-2026`, override with `SEED_PASSWORD`):
 
-| Role  | Email                        | Can…                                                   |
-| ----- | ---------------------------- | ------------------------------------------------------ |
-| admin | `admin@adamsrealty.example`  | everything: all listings, lead routing, roles, feeds   |
-| agent | `daniel@adamsrealty.example` | manage own listings and leads                          |
-| buyer | `buyer@example.com`          | save homes and searches, request tours                 |
+| Role  | Email                        | Can…                                                 |
+| ----- | ---------------------------- | ---------------------------------------------------- |
+| admin | `admin@adamsrealty.example`  | everything: all listings, lead routing, roles, feeds |
+| agent | `daniel@adamsrealty.example` | manage own listings and leads                        |
+| buyer | `buyer@example.com`          | save homes and searches, request tours               |
 
 ## Scripts
 
-| Command                | What it does                                         |
-| ---------------------- | ---------------------------------------------------- |
-| `npm run dev`          | Dev server                                           |
-| `npm run build`        | Production build (needs no database at build time)   |
-| `npm run lint`         | ESLint                                               |
-| `npm run typecheck`    | TypeScript                                           |
-| `npm test`             | Unit tests (Vitest)                                  |
-| `npm run test:e2e`     | End-to-end tests (Playwright; seeded DB + dev server)|
-| `npm run db:generate`  | Create a migration from schema changes               |
-| `npm run db:migrate`   | Apply migrations                                     |
-| `npm run db:seed`      | Reset and seed demo data (refuses in production)     |
-| `npm run mls:sync`     | Sync MLS feeds now (`-- --full`, `-- --purge`)       |
+| Command               | What it does                                          |
+| --------------------- | ----------------------------------------------------- |
+| `npm run dev`         | Dev server                                            |
+| `npm run build`       | Production build (needs no database at build time)    |
+| `npm run lint`        | ESLint                                                |
+| `npm run typecheck`   | TypeScript                                            |
+| `npm test`            | Unit tests (Vitest)                                   |
+| `npm run test:e2e`    | End-to-end tests (Playwright; seeded DB + dev server) |
+| `npm run db:generate` | Create a migration from schema changes                |
+| `npm run db:migrate`  | Apply migrations                                      |
+| `npm run db:seed`     | Reset and seed demo data (refuses in production)      |
+| `npm run mls:sync`    | Sync MLS feeds now (`-- --full`, `-- --purge`)        |
 
 ## Before launch: things only Adams Realty can provide
 
@@ -54,7 +54,7 @@ Demo logins (password `adams-demo-2026`, override with `SEED_PASSWORD`):
    office address, and GREC firm license number. Georgia advertising rules require the
    firm name and phone number, and the footer shows both on every page.
 2. **Your team.** Replace the sample agents: invite each agent to sign up, then in
-   *Dashboard → Users & roles* set their role to Agent and link their profile.
+   _Dashboard → Users & roles_ set their role to Agent and link their profile.
 3. **Your MLS feed** (see below). Until then the site shows fictional demo listings.
 4. **Photos.** The demo uses Unsplash images; real listings bring MLS photos.
 

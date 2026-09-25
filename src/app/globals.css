@@ -84,7 +84,7 @@
   }
 
   body {
-    @apply bg-canvas text-ink font-sans;
+    @apply bg-canvas font-sans text-ink;
     font-feature-settings: "cv11", "ss01";
   }
 
@@ -93,7 +93,7 @@
   }
 
   :focus-visible {
-    @apply outline-brand-500 outline-2 outline-offset-2;
+    @apply outline-2 outline-offset-2 outline-brand-500;
   }
 
   h1,
@@ -115,7 +115,9 @@
 @utility font-display-tight {
   font-family: var(--font-display);
   letter-spacing: -0.02em;
-  font-variation-settings: "SOFT" 30, "opsz" 96;
+  font-variation-settings:
+    "SOFT" 30,
+    "opsz" 96;
 }
 
 @utility tabular {

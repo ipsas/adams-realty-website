@@ -5,7 +5,9 @@ test("home page shows live market stats and featured homes", async ({ page }) =>
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Homes worth");
   await expect(page.locator("article").first()).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  );
   expect(overflow).toBe(false);
 });
 
