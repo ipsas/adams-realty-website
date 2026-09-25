@@ -1,15 +1,38 @@
-import { and, desc, eq, gte, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, ne, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import {
   agents,
   dataSources,
   inquiries,
+  leadNotes,
   listings,
   savedListings,
   syncRuns,
   users,
 } from "@/db/schema";
 import { can, type Actor } from "@/lib/auth/permissions";
+
+export const LEAD_STATUSES = ["new", "contacted", "qualified", "closed", "spam"] as const;
+export type LeadStatus = (typeof LEAD_STATUSES)[number];
+
+export const isLeadStatus = (v: unknown): v is LeadStatus =>
+  typeof v === "string" && (LEAD_STATUSES as readonly string[]).includes(v);
+
+/**
+ * A `?status=` value → SQL filter: one status, `all`, or (anything else) the
+ * open statuses the Leads page shows by default.
+ */
+function leadStatusFilter(status: string | undefined): SQL | undefined {
+  if (status === "all") return undefined;
+  if (isLeadStatus(status)) return eq(inquiries.status, status);
+  return inArray(inquiries.status, ["new", "contacted", "qualified"]);
+}
+
+// Correlated subqueries on a lead's notes (explicit table name — see CLAUDE.md).
+const notesCount = sql<number>`(select count(*)::int from lead_notes n where n.inquiry_id = "inquiries"."id")`;
+const latestNote = sql<
+  string | null
+>`(select n.body from lead_notes n where n.inquiry_id = "inquiries"."id" order by n.created_at desc, n.id desc limit 1)`;
 
 /** Listings the actor manages: admins see all company listings, agents their own. */
 function listingScope(actor: Actor): SQL | undefined {
@@ -85,11 +108,8 @@ export async function getDashboardListings(actor: Actor) {
     .limit(500);
 }
 
+/** `status`: a lead status, `all`, or omitted for the open ones (new, contacted, qualified). */
 export async function getLeads(actor: Actor, opts: { status?: string; limit?: number } = {}) {
-  const statusFilter =
-    opts.status && ["new", "contacted", "qualified", "closed", "spam"].includes(opts.status)
-      ? eq(inquiries.status, opts.status as "new")
-      : inArray(inquiries.status, ["new", "contacted", "qualified"]);
   return db
     .select({
       id: inquiries.id,
@@ -106,13 +126,149 @@ export async function getLeads(actor: Actor, opts: { status?: string; limit?: nu
       agentName: agents.name,
       listingSlug: listings.slug,
       listingAddress: listings.addressLine1,
+      notesCount,
     })
     .from(inquiries)
     .leftJoin(agents, eq(inquiries.agentId, agents.id))
     .leftJoin(listings, eq(inquiries.listingId, listings.id))
-    .where(and(statusFilter, leadScope(actor)))
+    .where(and(leadStatusFilter(opts.status), leadScope(actor)))
     .orderBy(desc(inquiries.createdAt))
     .limit(opts.limit ?? 200);
+}
+
+/**
+ * One lead with its assigned agent and the home it's about (null when it isn't
+ * about a listing, e.g. a valuation). Callers authorize with `can.viewInquiry`.
+ */
+export async function getLead(id: string) {
+  const [row] = await db
+    .select({
+      lead: inquiries,
+      agentName: agents.name,
+      listing: {
+        id: listings.id,
+        slug: listings.slug,
+        addressLine1: listings.addressLine1,
+        unitNumber: listings.unitNumber,
+        city: listings.city,
+        state: listings.state,
+        postalCode: listings.postalCode,
+        hideAddress: listings.hideAddress,
+        status: listings.status,
+        transactionType: listings.transactionType,
+        listPrice: listings.listPrice,
+        primaryPhotoUrl: listings.primaryPhotoUrl,
+        bedrooms: listings.bedrooms,
+        bathrooms: listings.bathrooms,
+        livingAreaSqft: listings.livingAreaSqft,
+        listAgentId: listings.listAgentId,
+        removedAt: listings.removedAt,
+      },
+      // Kept outside `listing`: Drizzle only nulls a nested object whose fields share one table.
+      sourceKind: dataSources.kind,
+    })
+    .from(inquiries)
+    .leftJoin(agents, eq(inquiries.agentId, agents.id))
+    .leftJoin(listings, eq(inquiries.listingId, listings.id))
+    .leftJoin(dataSources, eq(listings.sourceId, dataSources.id))
+    .where(eq(inquiries.id, id))
+    .limit(1);
+  if (!row) return null;
+  const { lead, agentName, listing, sourceKind } = row;
+  return {
+    ...lead,
+    agentName,
+    listing: listing && sourceKind ? { ...listing, sourceKind } : null,
+  };
+}
+
+/** A lead's notes, newest first, with each author's name (null if their account is gone). */
+export async function getLeadNotes(inquiryId: string) {
+  return db
+    .select({
+      id: leadNotes.id,
+      body: leadNotes.body,
+      createdAt: leadNotes.createdAt,
+      authorId: leadNotes.authorId,
+      authorName: users.name,
+    })
+    .from(leadNotes)
+    .leftJoin(users, eq(leadNotes.authorId, users.id))
+    .where(eq(leadNotes.inquiryId, inquiryId))
+    .orderBy(desc(leadNotes.createdAt), desc(leadNotes.id));
+}
+
+/** Other leads from the same email address (case-insensitive) that the actor may see. */
+export async function getContactActivity(actor: Actor, email: string, excludeId: string) {
+  return db
+    .select({
+      id: inquiries.id,
+      type: inquiries.type,
+      status: inquiries.status,
+      createdAt: inquiries.createdAt,
+      tourAt: inquiries.tourAt,
+      agentName: agents.name,
+      listingAddress: listings.addressLine1,
+      listingCity: listings.city,
+    })
+    .from(inquiries)
+    .leftJoin(agents, eq(inquiries.agentId, agents.id))
+    .leftJoin(listings, eq(inquiries.listingId, listings.id))
+    .where(
+      and(
+        sql`lower(${inquiries.email}) = lower(${email})`,
+        ne(inquiries.id, excludeId),
+        leadScope(actor),
+      ),
+    )
+    .orderBy(desc(inquiries.createdAt))
+    .limit(20);
+}
+
+/** Position in the export's newest-first order. `createdAt` is Postgres text, keeping microseconds. */
+export type LeadExportCursor = { createdAt: string; id: string };
+
+/**
+ * One page of leads for the CSV export, newest first. Keyset pagination lets
+ * the route stream any number of rows without holding them all in memory.
+ */
+export async function getLeadExportPage(
+  actor: Actor,
+  opts: { status?: string; after?: LeadExportCursor | null; limit: number },
+) {
+  const after = opts.after
+    ? sql`("inquiries"."created_at", "inquiries"."id") < (${opts.after.createdAt}::timestamptz, ${opts.after.id}::uuid)`
+    : undefined;
+  return db
+    .select({
+      id: inquiries.id,
+      cursor: sql<string>`"inquiries"."created_at"::text`,
+      createdAt: inquiries.createdAt,
+      status: inquiries.status,
+      type: inquiries.type,
+      name: inquiries.name,
+      email: inquiries.email,
+      phone: inquiries.phone,
+      message: inquiries.message,
+      tourAt: inquiries.tourAt,
+      tourType: inquiries.tourType,
+      source: inquiries.source,
+      agentName: agents.name,
+      listingSlug: listings.slug,
+      listingAddressLine1: listings.addressLine1,
+      listingUnitNumber: listings.unitNumber,
+      listingCity: listings.city,
+      listingState: listings.state,
+      listingPostalCode: listings.postalCode,
+      notesCount,
+      latestNote,
+    })
+    .from(inquiries)
+    .leftJoin(agents, eq(inquiries.agentId, agents.id))
+    .leftJoin(listings, eq(inquiries.listingId, listings.id))
+    .where(and(leadStatusFilter(opts.status), leadScope(actor), after))
+    .orderBy(desc(inquiries.createdAt), desc(inquiries.id))
+    .limit(opts.limit);
 }
 
 export async function getAgentOptions() {

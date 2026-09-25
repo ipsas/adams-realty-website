@@ -81,9 +81,15 @@ export default async function DashboardHome() {
           </thead>
           <tbody>
             {recentLeads.map((l) => (
-              <tr key={l.id}>
+              // The whole row opens the lead; the home link sits above it (`relative z-10`).
+              <tr key={l.id} className="group relative transition-colors hover:bg-sunken/50">
                 <Td>
-                  <p className="font-medium text-ink">{l.name}</p>
+                  <Link
+                    href={`/dashboard/leads/${l.id}`}
+                    className="font-medium text-ink group-hover:text-brand-700 after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:rounded-sm focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-brand-500"
+                  >
+                    {l.name}
+                  </Link>
                   <p className="text-xs">{l.email}</p>
                 </Td>
                 <Td>
@@ -91,7 +97,10 @@ export default async function DashboardHome() {
                 </Td>
                 <Td>
                   {l.listingSlug ? (
-                    <Link href={`/homes/${l.listingSlug}`} className="hover:text-brand-700">
+                    <Link
+                      href={`/homes/${l.listingSlug}`}
+                      className="relative z-10 hover:text-brand-700"
+                    >
                       {l.listingAddress}
                     </Link>
                   ) : (

@@ -1,0 +1,55 @@
+import Link from "next/link";
+import { Photo } from "@/components/ui/photo";
+import { formatBaths, formatDate, formatNumber, formatPrice, formatStreet } from "@/lib/format";
+import { formatRatio } from "@/lib/areas/stats";
+import type { CardRow } from "@/lib/listings/card";
+
+/** Compact rows of recent closed sales: what sold, for how much, and against the asking price. */
+export function RecentSales({ sales }: { sales: CardRow[] }) {
+  return (
+    <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface">
+      {sales.map((s) => {
+        const ratio = s.closePrice && s.listPrice ? s.closePrice / s.listPrice : null;
+        return (
+          <li key={s.id}>
+            <Link
+              href={`/homes/${s.slug}`}
+              className="flex items-center gap-4 p-3 transition-colors hover:bg-sunken/60 sm:p-4"
+            >
+              <Photo
+                src={s.primaryPhotoUrl}
+                alt=""
+                sizes="80px"
+                className="size-16 shrink-0 rounded-xl sm:size-20"
+                fallbackClassName="[&>svg]:size-6"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium text-ink">{formatStreet(s)}</p>
+                <p className="mt-0.5 truncate text-sm text-muted">
+                  {s.propertyType === "land" ? (
+                    "Land"
+                  ) : (
+                    <>
+                      {s.bedrooms ?? "—"} bd · {formatBaths(s.bathrooms)} ba ·{" "}
+                      {formatNumber(s.livingAreaSqft)} sqft
+                    </>
+                  )}
+                </p>
+                <p className="mt-0.5 text-xs text-faint sm:hidden">
+                  Sold {formatDate(s.closeDate)}
+                </p>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="font-semibold text-ink tabular">{formatPrice(s.closePrice)}</p>
+                <p className="mt-0.5 text-xs text-muted tabular">
+                  <span className="hidden sm:inline">Sold {formatDate(s.closeDate)} · </span>
+                  {ratio ? `${formatRatio(ratio)} of list` : ""}
+                </p>
+              </div>
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}

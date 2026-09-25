@@ -6,8 +6,10 @@ import { z } from "zod";
 import { site } from "@/config/site";
 import { db } from "@/db";
 import { agents, inquiries, listings } from "@/db/schema";
+import { toEmailListing } from "@/lib/alerts/present";
 import { getSession } from "@/lib/auth/session";
 import { sendEmail } from "@/lib/email";
+import { leadNotificationEmail } from "@/lib/email-templates";
 import { env } from "@/lib/env";
 import { formatFullAddress } from "@/lib/format";
 import { rateLimit } from "@/lib/rate-limit";
@@ -130,23 +132,38 @@ export async function createInquiry(_prev: InquiryState, form: FormData): Promis
       : d.type === "valuation"
         ? "New home valuation request"
         : `New ${d.type} from ${d.name}`;
+  const email = leadNotificationEmail({
+    subject,
+    type: d.type,
+    name: d.name,
+    email: d.email,
+    phone: d.phone,
+    // Their own words; the valuation address gets its own row.
+    message: [d.message, d.notes].filter(Boolean).join("\n\n") || null,
+    propertyAddress: d.address,
+    tourLabel: tourAt
+      ? tourAt.toLocaleString("en-US", {
+          timeZone: site.market.timeZone,
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+          timeZoneName: "short",
+        })
+      : null,
+    tourType: d.type === "tour" ? (d.tourType ?? "in_person") : null,
+    listing: listing ? toEmailListing(listing) : null,
+    source: d.source,
+    dashboardUrl: `${env.NEXT_PUBLIC_SITE_URL}/dashboard/leads?focus=${row.id}`,
+    assignedAgentName: agent?.name ?? null,
+  });
   sendEmail({
     to,
     replyTo: d.email,
-    subject,
-    text: [
-      `${d.name} <${d.email}>${d.phone ? ` · ${d.phone}` : ""}`,
-      listing
-        ? `Home: ${formatFullAddress(listing)} (${env.NEXT_PUBLIC_SITE_URL}/homes/${listing.slug})`
-        : null,
-      tourAt
-        ? `Requested tour: ${tourAt.toLocaleString("en-US", { timeZone: site.market.timeZone })}`
-        : null,
-      message ? `\n${message}` : null,
-      `\nOpen in dashboard: ${env.NEXT_PUBLIC_SITE_URL}/dashboard/leads?focus=${row.id}`,
-    ]
-      .filter(Boolean)
-      .join("\n"),
+    subject: email.subject,
+    text: email.text,
+    html: email.html,
   }).catch((e) => console.error("[inquiry] notification failed", e));
 
   const firstName = agent?.name.split(" ")[0];

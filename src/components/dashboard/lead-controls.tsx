@@ -1,6 +1,8 @@
 "use client";
 
-import { useTransition } from "react";
+import { ChevronDown } from "lucide-react";
+import { useState, useTransition, type ChangeEvent, type ReactNode } from "react";
+import { Button } from "@/components/ui/button";
 import {
   assignInquiry,
   changeUserRole,
@@ -8,28 +10,106 @@ import {
   runSourceSync,
   updateInquiryStatus,
 } from "@/server/actions/dashboard";
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
 
 const selectClass =
   "h-8 rounded-lg border border-line-strong bg-surface px-2 text-xs text-ink disabled:opacity-50";
 
-export function LeadStatusSelect({ id, status }: { id: string; status: string }) {
-  const [pending, start] = useTransition();
-  return (
+const LEAD_STATUS_OPTIONS = ["new", "contacted", "qualified", "closed", "spam"];
+
+// 40px tall for touch, and 16px text on phones so iOS doesn't zoom in.
+const leadSelectClass = {
+  sm: "h-10 max-w-44 rounded-lg border border-line-strong bg-surface px-2 text-base text-ink disabled:opacity-50 sm:text-[0.8125rem]",
+  md: "h-11 w-full appearance-none rounded-xl border border-line-strong bg-surface pr-10 pl-3.5 text-base text-ink transition-colors outline-none hover:border-faint focus:border-brand-500 focus:ring-3 focus:ring-brand-100 disabled:opacity-60 sm:text-sm",
+};
+
+/**
+ * Lead controls come in two sizes: `sm` for inline table cells and `md` for
+ * form layouts such as the lead detail page (full width). `selectId` lets a
+ * visible <label> point at the select.
+ */
+type LeadControlProps = { size?: "sm" | "md"; selectId?: string };
+
+/**
+ * A controlled value that follows its prop when the server sends a new one
+ * (e.g. a note just marked the lead contacted), and can be set locally meanwhile.
+ */
+function useServerValue(value: string) {
+  const [current, setCurrent] = useState(value);
+  const [synced, setSynced] = useState(value);
+  if (value !== synced) {
+    setSynced(value);
+    setCurrent(value);
+  }
+  return [current, setCurrent] as const;
+}
+
+function LeadSelect({
+  size = "sm",
+  selectId,
+  label,
+  value,
+  pending,
+  onChange,
+  children,
+}: LeadControlProps & {
+  label: string;
+  value: string;
+  pending: boolean;
+  onChange: (e: ChangeEvent<HTMLSelectElement>) => void;
+  children: ReactNode;
+}) {
+  const select = (
     <select
-      aria-label="Lead status"
-      defaultValue={status}
+      id={selectId}
+      aria-label={label}
+      value={value}
       disabled={pending}
-      className={selectClass}
-      onChange={(e) => start(() => void updateInquiryStatus(id, e.target.value))}
+      onChange={onChange}
+      className={leadSelectClass[size]}
     >
-      {["new", "contacted", "qualified", "closed", "spam"].map((s) => (
+      {children}
+    </select>
+  );
+  if (size === "sm") return select;
+  return (
+    <div className="relative">
+      {select}
+      <ChevronDown
+        aria-hidden
+        className="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-muted"
+      />
+    </div>
+  );
+}
+
+export function LeadStatusSelect({
+  id,
+  status,
+  ...rest
+}: LeadControlProps & { id: string; status: string }) {
+  const [pending, start] = useTransition();
+  const [value, setValue] = useServerValue(status);
+  return (
+    <LeadSelect
+      {...rest}
+      label="Lead status"
+      value={value}
+      pending={pending}
+      onChange={(e) => {
+        const next = e.target.value;
+        setValue(next);
+        start(async () => {
+          const res = await updateInquiryStatus(id, next);
+          if (!res.ok) setValue(status);
+        });
+      }}
+    >
+      {LEAD_STATUS_OPTIONS.map((s) => (
         <option key={s} value={s}>
           {s[0].toUpperCase() + s.slice(1)}
         </option>
       ))}
-    </select>
+    </LeadSelect>
   );
 }
 
@@ -37,19 +117,27 @@ export function LeadAgentSelect({
   id,
   agentId,
   agents,
-}: {
+  ...rest
+}: LeadControlProps & {
   id: string;
   agentId: string | null;
   agents: { id: string; name: string }[];
 }) {
   const [pending, start] = useTransition();
+  const [value, setValue] = useServerValue(agentId ?? "");
   return (
-    <select
-      aria-label="Assigned agent"
-      defaultValue={agentId ?? ""}
-      disabled={pending}
-      className={selectClass}
-      onChange={(e) => start(() => void assignInquiry(id, e.target.value))}
+    <LeadSelect
+      {...rest}
+      label="Assigned agent"
+      value={value}
+      pending={pending}
+      onChange={(e) => {
+        const next = e.target.value;
+        setValue(next);
+        start(async () => {
+          await assignInquiry(id, next);
+        });
+      }}
     >
       <option value="">Unassigned</option>
       {agents.map((a) => (
@@ -57,7 +145,7 @@ export function LeadAgentSelect({
           {a.name}
         </option>
       ))}
-    </select>
+    </LeadSelect>
   );
 }
 

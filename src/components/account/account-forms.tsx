@@ -5,6 +5,8 @@ import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, FormMessage, Input } from "@/components/ui/form";
 import { authClient } from "@/lib/auth/client";
+import { cn } from "@/lib/cn";
+import { setHomeAlerts } from "@/server/actions/alerts";
 
 type Status = { tone: "success" | "error"; text: string } | null;
 
@@ -114,5 +116,82 @@ export function PasswordForm() {
         {pending ? "Updating…" : "Change password"}
       </Button>
     </form>
+  );
+}
+
+/** On/off switch for price and status emails about the user's saved homes (users.home_alerts). */
+export function HomeAlertsToggle({
+  enabled: initial,
+  savedCount,
+}: {
+  enabled: boolean;
+  savedCount: number;
+}) {
+  const [enabled, setEnabled] = useState(initial);
+  const [status, setStatus] = useState<Status>(null);
+  const [pending, startTransition] = useTransition();
+
+  const toggle = () => {
+    const next = !enabled;
+    setEnabled(next);
+    setStatus(null);
+    startTransition(async () => {
+      const result = await setHomeAlerts(next).catch(() => null);
+      if (!result?.ok) {
+        setEnabled(!next);
+        setStatus({ tone: "error", text: result?.error ?? "Couldn't save. Please try again." });
+      } else {
+        setStatus({
+          tone: "success",
+          text: next ? "Saved-home updates are on." : "Saved-home updates are off.",
+        });
+      }
+    });
+  };
+
+  return (
+    <div>
+      <div className="flex items-start justify-between gap-6">
+        <div className="min-w-0">
+          <p id="home-alerts-label" className="font-medium text-ink">
+            Saved homes
+          </p>
+          <p id="home-alerts-hint" className="mt-0.5 text-sm text-muted">
+            Email me when a home I&apos;ve saved drops in price, goes under contract, sells or comes
+            back on the market.
+            {savedCount > 0 && ` You have ${savedCount} saved.`}
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          aria-labelledby="home-alerts-label"
+          aria-describedby="home-alerts-hint"
+          disabled={pending}
+          onClick={toggle}
+          className="group -m-1.5 flex shrink-0 items-center rounded-full p-1.5 disabled:opacity-60"
+        >
+          <span
+            className={cn(
+              "relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200",
+              enabled ? "bg-brand-700" : "bg-line-strong",
+            )}
+          >
+            <span
+              className={cn(
+                "inline-block size-5.5 rounded-full bg-white shadow-sm transition-transform duration-200 ease-out",
+                enabled ? "translate-x-[1.4375rem]" : "translate-x-[0.1875rem]",
+              )}
+            />
+          </span>
+        </button>
+      </div>
+      {status && (
+        <div className="mt-3">
+          <FormMessage tone={status.tone}>{status.text}</FormMessage>
+        </div>
+      )}
+    </div>
   );
 }

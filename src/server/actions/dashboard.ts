@@ -1,17 +1,26 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, ne } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/db";
-import { agents, dataSources, inquiries, listings, users } from "@/db/schema";
+import {
+  agents,
+  dataSources,
+  inquiries,
+  listingMedia,
+  listings,
+  openHouses,
+  users,
+  type ListingFeatures,
+} from "@/db/schema";
 import { authorize, can, ForbiddenError, type Actor } from "@/lib/auth/permissions";
 import { getActor } from "@/lib/auth/session";
 import { geocodeAddress } from "@/lib/geocode";
 import { upsertListing } from "@/lib/listings/persist";
 import { syncSource } from "@/lib/mls/sync";
-import type { NormalizedListing } from "@/lib/mls/types";
+import type { NormalizedListing, NormalizedMedia, NormalizedOpenHouse } from "@/lib/mls/types";
 import { audit } from "../audit";
 
 async function requireStaff(): Promise<Actor> {
@@ -29,7 +38,13 @@ export type ListingFormState = {
   ok: boolean;
   message?: string;
   errors?: Partial<Record<string, string>>;
+  /** Set on a successful save so the form can remount with the stored (normalized) values. */
+  savedAt?: number;
 };
+
+/** Feature groups the editor exposes. Other groups in `features` (heating, flooring…) are kept as-is. */
+const EDITABLE_FEATURES = ["interior", "exterior", "appliances", "parking", "community"] as const;
+const MAX_PHOTOS = 60;
 
 const int = (min = 0, max = 1_000_000_000) =>
   z.preprocess(
@@ -49,6 +64,94 @@ const text = (max: number) =>
     .optional()
     .transform((v) => v || null);
 const checkbox = z.preprocess((v) => v === "on" || v === "true", z.boolean());
+
+/**
+ * A comma-separated feature list → trimmed, de-duplicated items. A field the
+ * form didn't send stays `undefined` so the stored group is left untouched.
+ */
+const featureList = z
+  .string()
+  .max(4_000)
+  .optional()
+  .transform((v) => {
+    if (v === undefined) return undefined;
+    const seen = new Set<string>();
+    const items: string[] = [];
+    for (const part of v.split(/[,;\n]/)) {
+      const item = part.replace(/\s+/g, " ").trim().slice(0, 80);
+      if (!item || seen.has(item.toLowerCase())) continue;
+      seen.add(item.toLowerCase());
+      items.push(item);
+    }
+    return items.slice(0, 40);
+  });
+
+const isHttpsUrl = (v: string) => {
+  try {
+    return new URL(v).protocol === "https:";
+  } catch {
+    return false;
+  }
+};
+
+const photoItems = z
+  .array(
+    z.object({
+      url: z
+        .string()
+        .trim()
+        .max(2_048, "Photo links must be under 2,048 characters.")
+        .refine(isHttpsUrl, "Photos must be https:// links."),
+      caption: z
+        .string()
+        .trim()
+        .max(200, "Keep captions under 200 characters.")
+        .nullish()
+        .transform((v) => v || null),
+    }),
+  )
+  .max(MAX_PHOTOS, `Add up to ${MAX_PHOTOS} photos.`);
+
+type PhotoInput = z.infer<typeof photoItems>[number];
+
+/**
+ * The photo manager posts a JSON array of `{ url, caption }`. A plain list of
+ * URLs (one per line, the original format) is still accepted, ignoring
+ * anything that isn't an https:// link.
+ */
+function parsePhotos(
+  raw: string | undefined,
+): { ok: true; photos: PhotoInput[] } | { ok: false; message: string } {
+  const value = (raw ?? "").trim();
+  let photos: PhotoInput[];
+  if (value.startsWith("[")) {
+    let json: unknown;
+    try {
+      json = JSON.parse(value);
+    } catch {
+      return {
+        ok: false,
+        message: "The photo list couldn't be read. Reload the page and try again.",
+      };
+    }
+    const parsed = photoItems.safeParse(json);
+    if (!parsed.success) return { ok: false, message: parsed.error.issues[0].message };
+    photos = parsed.data;
+  } else {
+    photos = value
+      .split(/\s+/)
+      .filter(isHttpsUrl)
+      .slice(0, MAX_PHOTOS)
+      .map((url) => ({ url, caption: null }));
+  }
+  const seen = new Set<string>();
+  const unique = photos.filter((p) => {
+    if (seen.has(p.url)) return false;
+    seen.add(p.url);
+    return true;
+  });
+  return { ok: true, photos: unique };
+}
 
 const listingSchema = z.object({
   id: z
@@ -110,7 +213,12 @@ const listingSchema = z.object({
     .url()
     .optional()
     .or(z.literal("").transform(() => undefined)),
-  photos: z.string().max(20_000).optional(),
+  photos: z.string().max(80_000).optional(),
+  features_interior: featureList,
+  features_exterior: featureList,
+  features_appliances: featureList,
+  features_parking: featureList,
+  features_community: featureList,
   listAgentId: z
     .string()
     .uuid()
@@ -136,6 +244,13 @@ export async function saveListing(
     return { ok: false, errors, message: "Please fix the highlighted fields." };
   }
   const d = parsed.data;
+  const photoList = parsePhotos(d.photos);
+  if (!photoList.ok)
+    return {
+      ok: false,
+      errors: { photos: photoList.message },
+      message: "Please fix the highlighted fields.",
+    };
 
   const [source] = await db
     .select()
@@ -181,11 +296,14 @@ export async function saveListing(
       geocodeNote = " We couldn't place it on the map — add latitude/longitude to show it there.";
   }
 
-  const photoUrls = (d.photos ?? "")
-    .split(/\s+/)
-    .map((s) => s.trim())
-    .filter((s) => /^https:\/\//.test(s))
-    .slice(0, 60);
+  // Only the editable groups change; anything else on file (heating, flooring…) is kept.
+  const features: ListingFeatures = { ...existing?.features };
+  for (const group of EDITABLE_FEATURES) {
+    const items = d[`features_${group}`];
+    if (items === undefined) continue;
+    if (items.length) features[group] = items;
+    else delete features[group];
+  }
 
   const baths =
     d.bathroomsFull !== undefined || d.bathroomsHalf !== undefined
@@ -229,7 +347,7 @@ export async function saveListing(
     hideAddress: false,
     headline: d.headline,
     description: d.description,
-    features: existing?.features ?? {},
+    features,
     schools: existing?.schools ?? {},
     hasPool: d.hasPool,
     isWaterfront: d.isWaterfront,
@@ -250,23 +368,63 @@ export async function saveListing(
       existing && existing.status !== d.status
         ? new Date()
         : (existing?.statusChangedAt ?? new Date()),
-    media: photoUrls.map((url, i) => ({
-      sourceKey: null,
-      url,
-      kind: "photo",
-      caption: null,
-      width: null,
-      height: null,
-      sortOrder: i,
-    })),
+    // Filled in inside the transaction below.
+    media: [],
     openHouses: [],
   };
 
+  const photoMedia: NormalizedMedia[] = photoList.photos.map((p, i) => ({
+    sourceKey: null,
+    url: p.url,
+    kind: "photo",
+    caption: p.caption,
+    width: null,
+    height: null,
+    sortOrder: i,
+  }));
+
   const saved = await db.transaction(async (tx) => {
+    // upsertListing replaces a listing's media and open houses with what it's
+    // given. The form edits photos only, so carry over everything else. The row
+    // lock serializes with the open house actions so one added meanwhile isn't lost.
+    let keptMedia: NormalizedMedia[] = [];
+    let keptOpenHouses: NormalizedOpenHouse[] = [];
+    if (existing) {
+      await tx
+        .select({ id: listings.id })
+        .from(listings)
+        .where(eq(listings.id, existing.id))
+        .for("update");
+      const otherMedia = await tx
+        .select({
+          sourceKey: listingMedia.sourceKey,
+          url: listingMedia.url,
+          kind: listingMedia.kind,
+          caption: listingMedia.caption,
+          width: listingMedia.width,
+          height: listingMedia.height,
+        })
+        .from(listingMedia)
+        .where(and(eq(listingMedia.listingId, existing.id), ne(listingMedia.kind, "photo")))
+        .orderBy(asc(listingMedia.sortOrder));
+      keptMedia = otherMedia.map((m, i) => ({ ...m, sortOrder: photoMedia.length + i }));
+      keptOpenHouses = await tx
+        .select({
+          sourceKey: openHouses.sourceKey,
+          type: openHouses.type,
+          startsAt: openHouses.startsAt,
+          endsAt: openHouses.endsAt,
+          remarks: openHouses.remarks,
+        })
+        .from(openHouses)
+        .where(eq(openHouses.listingId, existing.id))
+        .orderBy(asc(openHouses.startsAt));
+    }
+
     const result = await upsertListing(
       tx,
       { id: source.id, slug: source.slug, kind: "manual", config: source.config },
-      normalized,
+      { ...normalized, media: [...photoMedia, ...keptMedia], openHouses: keptOpenHouses },
       { listAgentId, isFeatured: can.featureListing(actor) ? d.isFeatured : undefined },
     );
     await audit(tx, {
@@ -282,7 +440,9 @@ export async function saveListing(
   revalidatePath("/dashboard/listings");
   revalidatePath("/homes");
   if (!existing) redirect(`/dashboard/listings/${saved.id}?created=1`);
-  return { ok: true, message: `Listing saved.${geocodeNote}` };
+  revalidatePath(`/homes/${existing.slug}`);
+  revalidatePath(`/dashboard/listings/${existing.id}`);
+  return { ok: true, message: `Listing saved.${geocodeNote}`, savedAt: Date.now() };
 }
 
 export async function deleteListing(id: string) {

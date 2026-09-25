@@ -1,8 +1,14 @@
+import { ArrowRight } from "lucide-react";
 import Link from "next/link";
+import { addressLines, telHref } from "@/components/content/contact";
+import { EqualHousingLogo } from "@/components/content/equal-housing-logo";
 import { site } from "@/config/site";
+import { cn } from "@/lib/cn";
 import { Logo } from "./logo";
 
-const columns = [
+type FooterLink = { label: string; href: string; emphasis?: boolean };
+
+const columns: { title: string; links: FooterLink[] }[] = [
   {
     title: "Find a home",
     links: [
@@ -24,7 +30,21 @@ const columns = [
   },
   {
     title: "Neighborhoods",
-    links: site.featuredAreas.map((a) => ({ label: a, href: `/homes?q=${encodeURIComponent(a)}` })),
+    links: [
+      ...site.featuredAreas.map((a) => ({ label: a, href: `/homes?q=${encodeURIComponent(a)}` })),
+      { label: "Neighborhood guides", href: "/areas", emphasis: true },
+    ],
+  },
+  {
+    title: "Company",
+    links: [
+      { label: "About us", href: "/about" },
+      { label: "Contact", href: "/contact" },
+      { label: "Fair housing", href: "/fair-housing" },
+      { label: "Privacy", href: "/privacy" },
+      { label: "Terms of use", href: "/terms" },
+      { label: "Accessibility", href: "/accessibility" },
+    ],
   },
 ];
 
@@ -32,28 +52,21 @@ export function SiteFooter({ disclaimer }: { disclaimer?: string | null }) {
   return (
     <footer className="mt-24 border-t border-line bg-sunken/60">
       <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 gap-12 lg:grid-cols-[1.4fr_repeat(3,1fr)]">
-          <div className="max-w-sm">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-4 lg:grid-cols-[1.5fr_repeat(4,minmax(0,1fr))] lg:gap-x-10">
+          <div className="col-span-2 max-w-sm sm:col-span-4 lg:col-span-1 lg:pr-4">
             <Logo />
             <p className="mt-4 text-sm leading-relaxed text-muted">
               Independent and local. No ads, no selling your information — just great agents and
               every home on the market.
             </p>
             <div className="mt-6 space-y-1 text-sm text-ink-soft">
+              <p>{addressLines(site.address).join(", ")}</p>
               <p>
-                {[
-                  site.address.line1,
-                  site.address.city,
-                  `${site.address.state} ${site.address.postalCode}`.trim(),
-                ]
-                  .filter(Boolean)
-                  .join(", ")}
-              </p>
-              <p>
-                <a href={`tel:${site.phone.replace(/\D/g, "")}`} className="hover:text-ink">
+                <a href={telHref(site.phone)} className="hover:text-ink">
                   {site.phone}
-                </a>{" "}
-                ·{" "}
+                </a>
+              </p>
+              <p className="[overflow-wrap:anywhere]">
                 <a href={`mailto:${site.email}`} className="hover:text-ink">
                   {site.email}
                 </a>
@@ -61,18 +74,24 @@ export function SiteFooter({ disclaimer }: { disclaimer?: string | null }) {
             </div>
           </div>
           {columns.map((col) => (
-            <div key={col.title}>
+            <div key={col.title} className="min-w-0">
               <h2 className="text-xs font-semibold tracking-widest text-faint uppercase">
                 {col.title}
               </h2>
-              <ul className="mt-4 space-y-2.5">
+              <ul className="mt-3 sm:mt-4 sm:space-y-2.5">
                 {col.links.map((l) => (
                   <li key={l.href}>
                     <Link
                       href={l.href}
-                      className="text-sm text-ink-soft transition-colors hover:text-ink"
+                      className={cn(
+                        "flex min-h-10 items-center gap-1.5 text-sm transition-colors sm:min-h-0",
+                        l.emphasis
+                          ? "font-medium text-brand-700 hover:text-brand-800"
+                          : "text-ink-soft hover:text-ink",
+                      )}
                     >
                       {l.label}
+                      {l.emphasis && <ArrowRight className="size-3.5 shrink-0" />}
                     </Link>
                   </li>
                 ))}
@@ -84,7 +103,7 @@ export function SiteFooter({ disclaimer }: { disclaimer?: string | null }) {
         <div className="mt-14 space-y-4 border-t border-line pt-8 text-xs leading-relaxed text-muted">
           {disclaimer && <p>{disclaimer}</p>}
           <p className="flex items-start gap-2">
-            <EqualHousingIcon />
+            <EqualHousingLogo className="mt-0.5 size-5 shrink-0 text-ink-soft" />
             <span>
               {site.legalName} is licensed by the Georgia Real Estate Commission and is committed to
               the Fair Housing Act and the Equal Opportunity Act. We do not discriminate on the
@@ -112,19 +131,5 @@ export function SiteFooter({ disclaimer }: { disclaimer?: string | null }) {
         </div>
       </div>
     </footer>
-  );
-}
-
-function EqualHousingIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className="mt-0.5 size-5 shrink-0 text-ink-soft"
-      aria-label="Equal Housing Opportunity"
-      role="img"
-    >
-      <path d="M12 3 2 10h2v10h16V10h2L12 3Zm6 15H6v-8.6L12 5.4l6 4V18Z" fill="currentColor" />
-      <path d="M8 11h8v2H8zm0 3h8v2H8z" fill="currentColor" />
-    </svg>
   );
 }

@@ -5,6 +5,7 @@ import { site } from "@/config/site";
 import { db } from "@/db";
 import { accounts, sessions, users, verifications } from "@/db/schema";
 import { sendEmail } from "@/lib/email";
+import { passwordResetEmail } from "@/lib/email-templates";
 import { env } from "@/lib/env";
 
 export const auth = betterAuth({
@@ -21,10 +22,12 @@ export const auth = betterAuth({
     autoSignIn: true,
     revokeSessionsOnPasswordReset: true,
     async sendResetPassword({ user, url }) {
+      const email = passwordResetEmail({ name: user.name, url });
       await sendEmail({
         to: user.email,
-        subject: `Reset your ${site.name} password`,
-        text: `Hi ${user.name},\n\nReset your password here (the link expires in one hour):\n${url}\n\nIf you didn't ask for this, you can ignore this email.`,
+        subject: email.subject,
+        text: email.text,
+        html: email.html,
       });
     },
   },

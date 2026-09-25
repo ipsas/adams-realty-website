@@ -1,0 +1,238 @@
+import { areaRegions, type Area, type AreaRegion } from "@/config/areas";
+import { site } from "@/config/site";
+import { formatPriceShort } from "@/lib/format";
+
+/**
+ * Shapes and pure helpers for neighborhood-guide market stats. The SQL lives
+ * in `queries.ts`; everything here is unit-tested.
+ */
+
+/** "New listings" window. */
+export const NEW_WINDOW_DAYS = 30;
+/** "Recent sales" window. */
+export const SOLD_WINDOW_DAYS = 180;
+/** Below this many data points a median is shown with a small-sample note. */
+export const MIN_SAMPLE = 3;
+
+/**
+ * Property-type buckets for the "what's for sale" bar. The order and colors
+ * are fixed per type (never by rank) so a color means the same thing on every
+ * guide. Colors were checked with the dataviz palette validator on white:
+ * lightness band, chroma, CVD and normal-vision separation all pass; the amber
+ * sits under 3:1 contrast, so the legend always prints labels and values.
+ */
+export const MIX_BUCKETS = [
+  { key: "singleFamily", label: "Houses", color: "#1f7a55" },
+  { key: "townhouse", label: "Townhomes", color: "#e0a126" },
+  { key: "condo", label: "Condos", color: "#c2562a" },
+  { key: "other", label: "Land & other", color: "#5a69c4" },
+] as const;
+
+export type MixKey = (typeof MIX_BUCKETS)[number]["key"];
+
+export type AreaStats = {
+  /** Active + coming soon, for sale. */
+  forSale: number;
+  /** Under contract or pending, for sale. */
+  underContract: number;
+  /** Active rentals. */
+  rentals: number;
+  medianListPrice: number | null;
+  minListPrice: number | null;
+  maxListPrice: number | null;
+  medianPricePerSqft: number | null;
+  /** Listings behind the $/sqft median (those with a living area, excluding land). */
+  pricePerSqftSample: number;
+  medianDaysOnMarket: number | null;
+  daysOnMarketSample: number;
+  /** Sale listings with a list date in the last NEW_WINDOW_DAYS. */
+  newListings: number;
+  /** Closed sales in the last SOLD_WINDOW_DAYS. */
+  recentSales: number;
+  medianSoldPrice: number | null;
+  /** Median close price ÷ final list price, e.g. 0.983. */
+  medianSaleToList: number | null;
+  mix: Record<MixKey, number>;
+  /** Photo of the area's featured (else most expensive) home for sale. */
+  photo: string | null;
+  /** Most recent change to any listing in the area. */
+  lastUpdated: Date | null;
+};
+
+export function emptyStats(): AreaStats {
+  return {
+    forSale: 0,
+    underContract: 0,
+    rentals: 0,
+    medianListPrice: null,
+    minListPrice: null,
+    maxListPrice: null,
+    medianPricePerSqft: null,
+    pricePerSqftSample: 0,
+    medianDaysOnMarket: null,
+    daysOnMarketSample: 0,
+    newListings: 0,
+    recentSales: 0,
+    medianSoldPrice: null,
+    medianSaleToList: null,
+    mix: { singleFamily: 0, townhouse: 0, condo: 0, other: 0 },
+    photo: null,
+    lastUpdated: null,
+  };
+}
+
+/** Today's calendar date (YYYY-MM-DD) in the market's time zone. */
+export function marketToday(now: Date = new Date(), timeZone: string = site.market.timeZone) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}
+
+/** Shifts a YYYY-MM-DD date by whole days (calendar math, no time-zone drift). */
+export function addDays(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+export type MixSegment = {
+  key: MixKey;
+  label: string;
+  color: string;
+  count: number;
+  /** Whole-number share; segments always sum to exactly 100. */
+  pct: number;
+};
+
+/**
+ * Non-empty property-type segments in fixed bucket order, with shares rounded
+ * by largest remainder so the legend never adds up to 99% or 101%.
+ */
+export function mixSegments(mix: Record<MixKey, number>): MixSegment[] {
+  const total = MIX_BUCKETS.reduce((sum, b) => sum + (mix[b.key] || 0), 0);
+  if (!total) return [];
+  const raw = MIX_BUCKETS.map((b) => {
+    const count = mix[b.key] || 0;
+    const exact = (count / total) * 100;
+    return { ...b, count, pct: Math.floor(exact), remainder: exact - Math.floor(exact) };
+  });
+  let leftover = 100 - raw.reduce((sum, s) => sum + s.pct, 0);
+  for (const s of [...raw].sort((a, b) => b.remainder - a.remainder)) {
+    if (leftover <= 0) break;
+    s.pct += 1;
+    leftover -= 1;
+  }
+  return raw
+    .filter((s) => s.count > 0)
+    .map(({ key, label, color, count, pct }) => ({ key, label, color, count, pct }));
+}
+
+/**
+ * Sale-to-list ratio as a percentage: 0.983 → "98%". Near 100% it keeps one
+ * decimal so a median just under (or over) list never reads as exactly "100%".
+ */
+export function formatRatio(ratio: number): string {
+  const pct = ratio * 100;
+  const rounded = Math.round(pct);
+  if (rounded === 100 && Math.abs(pct - 100) >= 0.05) return `${pct.toFixed(1)}%`;
+  return `${rounded}%`;
+}
+
+/** "Sep 25, 3:42 PM EDT" in the market's time zone — when live figures were computed. */
+export function formatAsOf(d: Date, timeZone: string = site.market.timeZone): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone,
+    timeZoneName: "short",
+  }).format(d);
+}
+
+/** Wording for how many data points sit behind a figure. */
+export function sampleLabel(n: number, noun: [singular: string, plural: string]): string {
+  return `${n} ${n === 1 ? noun[0] : noun[1]}`;
+}
+
+export type AreaSummary = { area: Area; stats: AreaStats };
+
+export const AREA_SORTS = ["region", "homes", "price-high", "price-low", "name"] as const;
+export type AreaSort = (typeof AREA_SORTS)[number];
+
+export function parseAreaSort(value: string | string[] | undefined): AreaSort {
+  const v = Array.isArray(value) ? value[0] : value;
+  return (AREA_SORTS as readonly string[]).includes(v ?? "") ? (v as AreaSort) : "region";
+}
+
+/**
+ * Orders area summaries for the index. Areas with nothing for sale sink to
+ * the end of price sorts (a missing median isn't "cheapest"). "region" keeps
+ * config order, which the page groups by region.
+ */
+export function sortAreas(list: AreaSummary[], sort: AreaSort): AreaSummary[] {
+  const byName = (a: AreaSummary, b: AreaSummary) => a.area.name.localeCompare(b.area.name);
+  const price = (s: AreaSummary) => s.stats.medianListPrice;
+  const out = [...list];
+  switch (sort) {
+    case "name":
+      return out.sort(byName);
+    case "homes":
+      return out.sort((a, b) => b.stats.forSale - a.stats.forSale || byName(a, b));
+    case "price-high":
+    case "price-low": {
+      const dir = sort === "price-high" ? -1 : 1;
+      return out.sort((a, b) => {
+        const pa = price(a);
+        const pb = price(b);
+        if (pa === null || pb === null) return pa === pb ? byName(a, b) : pa === null ? 1 : -1;
+        return (pa - pb) * dir || byName(a, b);
+      });
+    }
+    default:
+      return out;
+  }
+}
+
+/** Groups summaries by region, in `areaRegions` order, skipping empty regions. */
+export function groupByRegion(list: AreaSummary[]) {
+  return areaRegions
+    .map((region) => ({ region, items: list.filter((s) => s.area.region === region.id) }))
+    .filter((g) => g.items.length > 0);
+}
+
+export function regionLabel(id: AreaRegion): string {
+  return areaRegions.find((r) => r.id === id)?.label ?? id;
+}
+
+/** "Midtown, Atlanta" / "Decatur, GA": the place name used in titles. */
+export function placeName(area: Pick<Area, "name" | "city">): string {
+  return area.city === area.name
+    ? `${area.name}, ${site.market.state}`
+    : `${area.name}, ${area.city}`;
+}
+
+/**
+ * Meta description that leads with live numbers (fresh, specific snippets
+ * outrank boilerplate), then the area description, cut at a word boundary.
+ */
+export function metaDescription(
+  area: Pick<Area, "name" | "city" | "description">,
+  stats: Pick<AreaStats, "forSale" | "medianListPrice">,
+  max = 160,
+): string {
+  const market = stats.forSale
+    ? `${sampleLabel(stats.forSale, ["home", "homes"])} for sale${
+        stats.medianListPrice
+          ? `, median list price ${formatPriceShort(stats.medianListPrice)}`
+          : ""
+      }. `
+    : "";
+  const text = `${placeName(area)}: ${market}${area.description}`;
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max - 1);
+  return `${cut.slice(0, cut.lastIndexOf(" ")).replace(/[\s,.;:]+$/, "")}…`;
+}
