@@ -45,8 +45,48 @@
   --color-status-pending: #d99a1e;
   --color-status-sold: #b4532a;
 
+  /*
+   * Semantic roles for dark mode (see ARCHITECTURE.md "Themes"). Each equals today's
+   * palette in light, so renaming a class to one of them changes no light pixel.
+   */
+  /* Photo, map and lightbox overlays, and toasts: dark in both themes. Never redefined. */
+  --color-shade: #15201c;
+  /* Labels on a solid bg-ink (which turns light in dark mode). */
+  --color-on-ink: #ffffff;
+  /* Map placeholder before the tiles load. */
+  --color-map: #eef0ec;
+  /* Primary fill and its hover. Not brand-700/800: gradient stops resolve
+     --background-color-* too, so overriding those would repaint the fixed brand panels. */
+  --color-primary: #1a4c39;
+  --color-primary-hover: #163d2f;
+
+  /*
+   * Dual-role greens, split by Tailwind's per-utility namespaces: `text-brand-700` reads
+   * --text-color-brand-700, `border-brand-500` reads --border-color-brand-500, and so on.
+   * Light values are the palette's; the dark block below lightens text and lines only.
+   */
+  --text-color-brand-200: #aed1bf;
+  --text-color-brand-500: #2f7558;
+  --text-color-brand-600: #1f5d45;
+  --text-color-brand-700: #1a4c39;
+  --text-color-brand-800: #163d2f;
+  --text-color-brass-100: #f5ecdc;
+  --text-color-clay-500: #c2562a;
+  --text-color-clay-600: #a8461f;
+  --text-color-status-soon: #7a5af5;
+  --border-color-brand-500: #2f7558;
+  --border-color-brand-600: #1f5d45;
+  --border-color-brand-700: #1a4c39;
+  --outline-color-brand-500: #2f7558;
+  --ring-color-brand-100: #d6e8de;
+  --ring-color-brand-500: #2f7558;
+  --text-decoration-color-brand-200: #aed1bf;
+  --text-decoration-color-brand-600: #1f5d45;
+  --accent-color-brand-700: #1a4c39;
+
   --radius-card: 1.125rem;
 
+  /* Tailwind inlines these into shadow-* utilities, so they are the same in both themes. */
   --shadow-card: 0 1px 2px rgb(21 32 28 / 0.04), 0 4px 16px -4px rgb(21 32 28 / 0.08);
   --shadow-lift: 0 2px 4px rgb(21 32 28 / 0.05), 0 18px 40px -12px rgb(21 32 28 / 0.22);
   --shadow-pop: 0 10px 38px -10px rgb(21 32 28 / 0.35), 0 10px 20px -15px rgb(21 32 28 / 0.2);
@@ -88,6 +128,132 @@
 @theme inline {
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-fraunces), ui-serif, Georgia, serif;
+}
+
+/*
+ * ── Themes ──────────────────────────────────────────────────────────────────
+ * "Match my device" (the default) is no data-theme attribute; Light and Dark set
+ * data-theme="light|dark" on <html> (THEME_SCRIPT in src/lib/theme-script.ts, before
+ * first paint). `dark:` matches a forced Dark, or a dark OS unless Light is forced.
+ * Both branches are screen-only: printing is always light, in every theme.
+ */
+@custom-variant dark {
+  @media screen {
+    &:where([data-theme="dark"], [data-theme="dark"] *) {
+      @slot;
+    }
+  }
+  @media screen and (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+}
+
+:root {
+  color-scheme: light;
+
+  @variant dark {
+    color-scheme: dark;
+
+    /* Warm evergreen-black, not blue-black. --color-canvas must equal THEME_COLORS.dark. */
+    --color-canvas: #0f1412;
+    --color-surface: #171e1b;
+    --color-sunken: #0b0f0d;
+    --color-ink: #ecebe4;
+    --color-ink-soft: #c9cdc5;
+    --color-muted: #a0a8a1;
+    --color-faint: #8d968f;
+    --color-line: #252e2a;
+    --color-line-strong: #36413b;
+
+    /* Pale tints become deep tints. brand-400…900 stay: they are fills (buttons, panels). */
+    --color-brand-50: #13251d;
+    --color-brand-100: #1a3327;
+    --color-brand-200: #24483a;
+    --color-brand-300: #3c6e57;
+
+    --color-brass-100: #2b2317;
+    --color-brass-500: #d2a869;
+    --color-brass-700: #dcb57c;
+
+    /* clay-500/600 stay: lighter fills would drop white labels below 3:1. */
+    --color-clay-50: #2c1913;
+
+    --color-on-ink: #0f1412;
+    --color-map: #0c0c0c;
+    /* White on these is 5.5:1. */
+    --color-primary: #2f7558;
+    --color-primary-hover: #1f5d45;
+
+    /* Green and clay as text or lines: lighter than as fills. brand-200 and brass-100
+       text keep their light values (pale text on photos, brand-900 and toasts). */
+    --text-color-brand-500: #7cc3a2;
+    --text-color-brand-600: #86c8a8;
+    --text-color-brand-700: #93d0b2;
+    --text-color-brand-800: #b5e1cb;
+    --text-color-clay-500: #e07b4f;
+    --text-color-clay-600: #ec8f66;
+    --text-color-status-soon: #a590ff;
+    --border-color-brand-500: #4f9274;
+    --border-color-brand-600: #86c8a8;
+    --border-color-brand-700: #93d0b2;
+    --outline-color-brand-500: #4f9274;
+    --ring-color-brand-100: rgb(79 146 116 / 0.3);
+    --ring-color-brand-500: #4f9274;
+    --text-decoration-color-brand-200: rgb(147 208 178 / 0.4);
+    --text-decoration-color-brand-600: #93d0b2;
+    --accent-color-brand-700: #4f9274;
+
+    /* ::selection text; brand-900 on the deep brand-200 would be unreadable. */
+    --selection-ink: var(--color-ink);
+
+    & dialog::backdrop {
+      background: rgb(15 23 20 / 0.7);
+    }
+
+    & input:-webkit-autofill {
+      -webkit-text-fill-color: var(--color-ink);
+      box-shadow: 0 0 0 1000px var(--color-surface) inset;
+    }
+
+    /* MapLibre (its stylesheet loads after this one, so these need the extra specificity).
+       The filters are on icon elements only, which have no descendants. */
+    & .maplibregl-popup-content {
+      background: var(--color-surface);
+    }
+    & .maplibregl-ctrl-group:not(:empty) {
+      background: var(--color-surface);
+      box-shadow: 0 0 0 1px var(--color-line);
+    }
+    & .maplibregl-ctrl-group button + button {
+      border-top-color: var(--color-line);
+    }
+    & .maplibregl-ctrl-icon {
+      filter: invert(1);
+    }
+    & .maplibregl-ctrl-attrib.maplibregl-compact {
+      background: var(--color-surface);
+      color: var(--color-muted);
+    }
+    & .maplibregl-ctrl-attrib.maplibregl-compact a {
+      color: var(--color-ink-soft);
+    }
+    & .maplibregl-ctrl-attrib-button {
+      filter: invert(1);
+    }
+  }
+}
+
+@media print {
+  :root {
+    color-scheme: light;
+  }
+}
+
+/* Switching themes swaps every colour at once instead of fading each transition. */
+[data-theme-switching] * {
+  transition: none !important;
 }
 
 /*
@@ -324,7 +490,8 @@ html:has(dialog[open]) {
   }
 
   ::selection {
-    @apply bg-brand-200 text-brand-900;
+    background-color: var(--color-brand-200);
+    color: var(--selection-ink, var(--color-brand-900));
   }
 
   :focus-visible {
@@ -379,6 +546,8 @@ html:has(dialog[open]) {
   font-size: 10px;
 }
 .maplibregl-popup-content {
+  background: var(--color-surface);
+  color: var(--color-ink);
   padding: 0 !important;
   border-radius: 14px !important;
   overflow: hidden;

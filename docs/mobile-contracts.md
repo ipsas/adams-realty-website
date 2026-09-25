@@ -95,7 +95,9 @@ e2e selectors depend on these:
 
 ## Device storage
 
-`STORE_KEYS` in `src/lib/local-store.ts` lists every key.
+`STORE_KEYS` lists every key. It lives in the React-free `src/lib/store-keys.ts`
+(so the server layout's theme script can import it) and `src/lib/local-store.ts`
+re-exports it; client code keeps importing it from local-store.
 `src/lib/search/recent.ts` sanitizes everything it reads back (only `/homes`
 hrefs, slug-shaped slugs, http(s) or root-relative photos) and writes:
 
@@ -109,6 +111,12 @@ hrefs, slug-shaped slugs, http(s) or root-relative photos) and writes:
 
 `clearRecents()` removes all three and the cookie. `ar:searchAsMove`,
 `ar:installDismissedAt`, `ar:visitDays` and `ar:uid` are reserved.
+
+`ar:theme` (dark mode) holds the appearance: the JSON string `"light"` or
+`"dark"`; no key means Match my device. Only `src/lib/theme.ts` writes it
+(`writeThemePref`), and the head script in `src/lib/theme-script.ts` reads it
+before first paint. It is a device preference, not user data:
+`clearRecents()` and `clearUserCaches()` leave it alone.
 
 ## The `view` param
 

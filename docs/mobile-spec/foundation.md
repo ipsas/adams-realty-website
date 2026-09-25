@@ -265,7 +265,7 @@ local-store:
 - readJSON, writeJSON and remove, with every storage access in try/catch;
 - subscribe through the storage event plus an in-tab emitter;
 - useLocalValue(key, fallback), built on useSyncExternalStore with the fallback as the server snapshot;
-- the STORE_KEYS registry: ar:recentSearches, ar:lastSearch, ar:recentlyViewed, ar:searchAsMove, ar:installDismissedAt, ar:visitDays, ar:uid.
+- the STORE_KEYS registry: ar:recentSearches, ar:lastSearch, ar:recentlyViewed, ar:searchAsMove, ar:installDismissedAt, ar:visitDays, ar:uid, and (dark mode, DM1) ar:theme. The registry lives in the React-free src/lib/store-keys.ts, so server modules can import it; local-store re-exports it.
 
 use-media-query:
 

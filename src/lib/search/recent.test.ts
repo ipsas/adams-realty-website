@@ -217,6 +217,7 @@ describe("clearRecents", () => {
     recordSearch(search("q=Decatur"), "map", deps);
     recordView(home("a"), deps);
     storage.setItem(STORE_KEYS.searchAsMove, "true");
+    storage.setItem(STORE_KEYS.theme, '"light"');
     clearRecents(deps);
     expect(readRecentSearches(deps)).toEqual([]);
     expect(lastSearchHref(deps)).toBeNull();
@@ -224,5 +225,6 @@ describe("clearRecents", () => {
     expect(cookies.at(-1)).toContain("Max-Age=0");
     // Preferences are not recents.
     expect(storage.getItem(STORE_KEYS.searchAsMove)).toBe("true");
+    expect(storage.getItem(STORE_KEYS.theme)).toBe('"light"');
   });
 });

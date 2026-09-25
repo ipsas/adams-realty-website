@@ -71,6 +71,7 @@ describe("clearUserCaches", () => {
     storage.setItem(STORE_KEYS.recentlyViewed, "[]");
     storage.setItem(STORE_KEYS.lastSearch, JSON.stringify({ href: "/homes?q=A", at: 1 }));
     storage.setItem(STORE_KEYS.uid, "abc");
+    storage.setItem(STORE_KEYS.theme, '"dark"');
     await clearUserCaches();
     expect(deleted.sort()).toEqual(["images", "pages"]);
     expect(posted).toEqual([{ type: "CLEAR_USER_DATA" }]);
@@ -78,6 +79,8 @@ describe("clearUserCaches", () => {
     expect(storage.map.has(STORE_KEYS.lastSearch)).toBe(false);
     // The user marker belongs to the PWA runtime, which rewrites it itself.
     expect(storage.map.get(STORE_KEYS.uid)).toBe("abc");
+    // Appearance is a device preference, not user data: signing out keeps it.
+    expect(storage.map.get(STORE_KEYS.theme)).toBe('"dark"');
     expect(cookies.at(-1)).toMatch(/^ar_last_search=; .*Max-Age=0.*; Secure$/);
   });
 });

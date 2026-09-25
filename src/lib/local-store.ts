@@ -9,17 +9,7 @@ import { useCallback, useState, useSyncExternalStore } from "react";
  * same tab re-render; other tabs are covered by the `storage` event.
  */
 
-/** Every localStorage key the app uses. Add new keys here (lead-owned). */
-export const STORE_KEYS = {
-  recentSearches: "ar:recentSearches",
-  lastSearch: "ar:lastSearch",
-  recentlyViewed: "ar:recentlyViewed",
-  searchAsMove: "ar:searchAsMove",
-  installDismissedAt: "ar:installDismissedAt",
-  visitDays: "ar:visitDays",
-  uid: "ar:uid",
-} as const;
-export type StoreKey = (typeof STORE_KEYS)[keyof typeof STORE_KEYS];
+export { STORE_KEYS, type StoreKey } from "@/lib/store-keys";
 
 /** The slice of the Storage API we use; tests pass a Map-backed fake. */
 export type KeyValueStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;

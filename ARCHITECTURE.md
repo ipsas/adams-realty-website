@@ -179,11 +179,13 @@ storage keys) and marks what is reserved for which work package.
   is `1`, and sheet code reads and writes only its own value through
   `parseViewParam` and `setViewParam`. The sheet position is UI state, kept out
   of `SearchCriteria` and saved searches.
-- **Device storage** (`src/lib/local-store.ts`, keys in `STORE_KEYS`) is a
+- **Device storage** (`src/lib/local-store.ts`, keys in `STORE_KEYS` from the
+  React-free `src/lib/store-keys.ts`) is a
   convenience, never a source of truth: every access is wrapped in try/catch, a
   failure reads as "no data", and `recent.ts` sanitizes what it reads back
   because users can edit it. Recent searches, the last search (also in the
-  `ar_last_search` cookie, for relaunch) and recently viewed homes live there.
+  `ar_last_search` cookie, for relaunch), recently viewed homes and the
+  appearance (`ar:theme`) live there.
 - **PWA.** There is no service worker yet. `src/lib/pwa/protocol.ts` is the
   contract the page and the worker will share: which pages may be cached, and
   which requests are never intercepted (anything but GET, so no server action;
@@ -202,6 +204,38 @@ storage keys) and marks what is reserved for which work package.
   `docs/mobile-contracts.md` is this section's detail split out, so it is
   lead-owned too. The
   packages run one at a time on one checkout, not in the spec's worktrees.
+
+## Themes
+
+Dark mode is being built in steps (docs/plans/dark-mode-and-georgia.md, "DM");
+DM1, the mechanism, is in place.
+
+- **Three appearances.** Match my device (the default) is no `data-theme` on
+  `<html>`; Light and Dark set `data-theme="light|dark"`. The choice is stored in
+  `ar:theme`. The custom `dark` variant in `globals.css` matches a forced Dark, or
+  a dark OS unless Light is forced. Both branches are screen-only, so printing is
+  light in every theme.
+- **Tokens, not classes.** The `:root` block redefines the palette under
+  `@variant dark`. Dual-role greens are split through Tailwind's per-utility
+  namespaces (`--text-color-*`, `--border-color-*`, `--outline-color-*`,
+  `--ring-color-*`, `--text-decoration-color-*`, `--accent-color-*`), so
+  `text-brand-700` lightens in dark while `bg-brand-700` stays a fill. Never
+  define `--background-color-*`: gradient stops read it too. Fills that change
+  in dark use semantic tokens instead (`primary`, `primary-hover`); `shade`
+  (overlays on photos and maps, toasts) never changes; `on-ink` is the label
+  colour on a solid `bg-ink`; `map` is the map placeholder. Every new token
+  equals today's palette in light, so light mode is unchanged. Named shadows are
+  inlined by Tailwind and stay the same in both themes.
+- **No flash.** `THEME_SCRIPT` (`src/lib/theme-script.ts`, React-free because the
+  server layout imports it) runs first in `<head>` through `InlineScript`: it sets
+  `data-theme` and prepends `meta#theme-color-override` for a forced theme. The
+  viewport's `themeColor` pair covers Match my device. `<ThemeSync>` re-applies the
+  stored choice after hydration (React's dev remount clears the attribute), and
+  follows other tabs and pages restored from the back/forward cache.
+- **Client helpers** (`src/lib/theme.ts`, client components only):
+  `readThemePref`/`writeThemePref`, `applyTheme`, `setChromeColor` (for WP2's hero)
+  and `watchTheme`; hooks `useThemePref`/`useResolvedTheme` in
+  `src/components/theme/use-theme.ts`. Emails stay light by design.
 
 ## Testing
 
