@@ -15,7 +15,6 @@ import { areaHref, areaRegions, areas, countyLabel, type Area } from "@/config/a
 import {
   getAreaAgents,
   getAreaFeaturedListing,
-  getAreaGuide,
   getAreaListings,
   getAreaRecentSales,
 } from "@/lib/areas/queries";
@@ -29,11 +28,12 @@ import {
 } from "@/lib/areas/stats";
 import { env } from "@/lib/env";
 import { formatPrice, formatStreet } from "@/lib/format";
+import { getCachedAreaGuide } from "@/lib/listings/cached";
 import type { CardRow } from "@/lib/listings/card";
 import { searchHref } from "@/lib/search/params";
 
 export async function generateMetadata(props: PageProps<"/areas/[slug]">): Promise<Metadata> {
-  const guide = await getAreaGuide((await props.params).slug);
+  const guide = await getCachedAreaGuide((await props.params).slug);
   if (!guide) return { title: "Area not found" };
   const { area, stats } = guide;
   const title = `${placeName(area)} homes for sale & area guide`;
@@ -53,7 +53,7 @@ export async function generateMetadata(props: PageProps<"/areas/[slug]">): Promi
 }
 
 export default async function AreaGuidePage(props: PageProps<"/areas/[slug]">) {
-  const guide = await getAreaGuide((await props.params).slug);
+  const guide = await getCachedAreaGuide((await props.params).slug);
   if (!guide) notFound();
   const { area, stats } = guide;
   const [homes, featured, sales, agents] = await Promise.all([

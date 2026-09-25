@@ -20,6 +20,7 @@
     "perf:seed": "tsx scripts/perf/seed.ts",
     "perf:measure": "tsx scripts/perf/measure.ts",
     "perf:drop": "tsx scripts/perf/seed.ts --drop",
+    "perf:sync-bench": "tsx scripts/perf/sync-bench.ts",
     "postinstall": "node scripts/copy-maplibre-worker.mjs",
     "predev": "node scripts/copy-maplibre-worker.mjs",
     "prebuild": "node scripts/copy-maplibre-worker.mjs",

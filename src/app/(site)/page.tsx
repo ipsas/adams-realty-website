@@ -10,11 +10,11 @@ import { site } from "@/config/site";
 import { getAgents } from "@/lib/agents/queries";
 import { formatNumber, formatPriceShort } from "@/lib/format";
 import {
-  getFeaturedListings,
-  getMarketStats,
-  getNewestListings,
-  getPopularAreas,
-} from "@/lib/listings/queries";
+  getCachedFeaturedListings,
+  getCachedMarketStats,
+  getCachedPopularAreas,
+} from "@/lib/listings/cached";
+import { getNewestListings } from "@/lib/listings/queries";
 import { searchHref } from "@/lib/search/params";
 
 const HERO_IMAGE =
@@ -24,10 +24,10 @@ const SELL_IMAGE =
 
 export default async function HomePage() {
   const [featured, newest, areas, stats, agents] = await Promise.all([
-    getFeaturedListings(8),
+    getCachedFeaturedListings(8),
     getNewestListings(4),
-    getPopularAreas(9),
-    getMarketStats(),
+    getCachedPopularAreas(9),
+    getCachedMarketStats(),
     getAgents(),
   ]);
 

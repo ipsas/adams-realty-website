@@ -672,6 +672,8 @@ async function main() {
     where status = 'active' and transaction_type = 'sale' and removed_at is null
       and property_type not in ('land', 'commercial') and abs(hashtext(id::text)) % 10 = 0`);
 
+  // Autocomplete's `places` view was created empty by the migrations.
+  await c.query("refresh materialized view places");
   await c.query("vacuum analyze");
   const { rows } = await c.query(
     `select status, transaction_type, count(*)::int n, count(*) filter (where removed_at is not null)::int removed

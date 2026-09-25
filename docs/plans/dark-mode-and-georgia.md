@@ -548,7 +548,7 @@ Measured on 65,000 synthetic statewide listings (Postgres 16, local, warm cache)
 - **WP4:**
   - The query contract is now BETWEEN bounds plus `location_vector`; `kw` uses `search_vector`; the county branch needs its own index.
   - Cap pagination at 40 pages, and evaluate `nextOpenHouse` after the limit.
-  - Move suggestions onto a `places` materialized view refreshed after each sync (about 70 ms → under 1 ms per keystroke).
+  - Move suggestions onto a `places` materialized view refreshed after each sync (about 70 ms → under 1 ms per keystroke). _Done in GA-C2:_ `getLocationSuggestions` reads `places` (drizzle/0006), rebuilt by `refreshPlaces` after syncs, seeds and dashboard listing changes; WP4 keeps that contract.
   - `inGeorgia` may prefilter with `site.coverage.bounds`.
 - **WP5:** the tour sheet reuses `isFirmArea` and the out-of-area copy.
 - **WP1:**

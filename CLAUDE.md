@@ -13,7 +13,9 @@ Website for Adams Realty, Inc., 69 Mill Street, Royston, GA: a brokerage serving
 - Authorization lives in `src/lib/auth/permissions.ts` (pure, unit-tested). Every server action and
   staff page must call it; hiding UI is not enforcement.
 - All listings (MLS sync, seed, dashboard) are written through `upsertListing` in
-  `src/lib/listings/persist.ts`. MLS-sourced listings are read-only in the app.
+  `src/lib/listings/persist.ts` (the sync uses its batch form, `upsertListings`, the same code).
+  MLS-sourced listings are read-only in the app. After a listing write outside the sync, call
+  `updateTag(LISTINGS_TAG)` and `refreshPlaces` (see `listingsChanged` in server/actions/dashboard.ts).
 - Search is URL-driven: `src/lib/search/params.ts` parses/serializes criteria; `query.ts` builds SQL.
 - Market/brand settings live in `src/config/site.ts` (Northeast Georgia, America/New_York; Georgia MLS
   office `ADAM01`). Placeholders there (email, GREC license, hours) are unknown — never invent them.

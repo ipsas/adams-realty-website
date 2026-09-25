@@ -36,7 +36,8 @@ import {
   users,
 } from "@/db/schema";
 import { upsertListing, type PersistSource } from "@/lib/listings/persist";
-import { getPlacesIndex, getTopCities } from "@/lib/listings/queries";
+import { refreshPlaces } from "@/lib/listings/places";
+import { getLocationSuggestions, getPlacesIndex, getTopCities } from "@/lib/listings/queries";
 import { slugify } from "@/lib/listings/slug";
 import { DEFAULT_CRITERIA, type SearchCriteria } from "@/lib/search/params";
 import { searchListings } from "@/lib/search/service";
@@ -1026,6 +1027,8 @@ async function main() {
       upsertListing(tx, toSource(demoSource), listing, { agentIdsByMlsId, isFeatured: false }),
     );
   }
+  // Autocomplete reads the `places` view; a sync, a seed or a dashboard edit rebuilds it.
+  await refreshPlaces(db);
   await assertStatewideFixtures();
 
   const [{ count }] = await db
@@ -1122,6 +1125,15 @@ async function assertStatewideFixtures() {
           byCity.reduce((s, c) => s + c.n, 0),
     ],
   );
+  // Autocomplete (the `places` view) counts the same live listings as a direct query.
+  const decatur = await live(
+    sql`city = 'Decatur' and status in ('active', 'coming_soon', 'active_under_contract', 'pending')`,
+  );
+  const suggested = await getLocationSuggestions("Decat");
+  checks.push([
+    `autocomplete "Decat" suggests Decatur with its ${decatur} live listings`,
+    suggested.some((s) => s.kind === "city" && s.label === "Decatur" && s.count === decatur),
+  ]);
   for (const f of LAKE_FIXTURES) {
     checks.push([
       `/homes?q=${f.query} finds ${f.street} (lake only in WaterBodyName "${f.waterBody}")`,

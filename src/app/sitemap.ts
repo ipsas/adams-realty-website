@@ -1,30 +1,16 @@
-import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { MetadataRoute } from "next";
-import { db } from "@/db";
-import { agents, listings } from "@/db/schema";
 import { env } from "@/lib/env";
 
-// Rendered per request so builds never need a database; crawlers fetch it rarely.
+// Static pages and agent profiles. Listings are in /homes/sitemap/<id>.xml and
+// area guides in /areas/sitemap.xml (robots.ts lists every sitemap). Rendered
+// per request so builds never need a database; crawlers fetch it rarely.
 export const dynamic = "force-dynamic";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = env.NEXT_PUBLIC_SITE_URL;
-  const [homes, team] = await Promise.all([
-    db
-      .select({ slug: listings.slug, updatedAt: listings.updatedAt })
-      .from(listings)
-      .where(
-        and(
-          isNull(listings.removedAt),
-          inArray(listings.status, ["active", "coming_soon", "active_under_contract", "pending"]),
-        ),
-      )
-      .limit(45_000),
-    db
-      .select({ slug: agents.slug, updatedAt: agents.updatedAt })
-      .from(agents)
-      .where(eq(agents.isActive, true)),
-  ]);
+  // Imported here so loading this module never needs a database.
+  const { getSitemapAgents } = await import("@/lib/listings/sitemap-query");
+  const team = await getSitemapAgents();
   return [
     { url: base, changeFrequency: "daily", priority: 1 },
     { url: `${base}/homes`, changeFrequency: "hourly", priority: 0.9 },
@@ -41,12 +27,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       url: `${base}/agents/${a.slug}`,
       lastModified: a.updatedAt,
       priority: 0.5,
-    })),
-    ...homes.map((h) => ({
-      url: `${base}/homes/${h.slug}`,
-      lastModified: h.updatedAt,
-      changeFrequency: "daily" as const,
-      priority: 0.8,
     })),
   ];
 }

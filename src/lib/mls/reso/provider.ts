@@ -1,5 +1,5 @@
 import type { DataSourceConfig } from "@/db/schema";
-import type { ListingProvider, MapResult } from "../types";
+import type { ListingProvider, MapResult, PurgeScope } from "../types";
 import { ResoClient } from "./client";
 import { mapResoProperty, type ResoProperty } from "./mapper";
 
@@ -51,14 +51,27 @@ export class ResoWebApiProvider implements ListingProvider {
     }
   }
 
-  async fetchActiveKeys(): Promise<Set<string>> {
-    const keys = new Set<string>();
+  async *fetchActiveKeys(scope: PurgeScope): AsyncIterable<string[]> {
     const query: Record<string, string> = { $select: "ListingKey", $top: "1000" };
-    const filter = this.filter();
+    const filter = this.filter(purgeScopeFilter(scope));
     if (filter) query.$filter = filter;
     for await (const page of this.client.pages<{ ListingKey: string }>(this.resource, query)) {
-      for (const row of page) keys.add(row.ListingKey);
+      yield page.map((row) => row.ListingKey);
     }
-    return keys;
   }
+}
+
+/**
+ * OData form of a PurgeScope, in the StandardStatus spelling the mapper reads
+ * (`mapStatus`). `or` chains rather than `in`, which older OData 4.0 servers
+ * reject. Exported for tests.
+ */
+export function purgeScopeFilter(scope: PurgeScope): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(scope.closedSince)) {
+    throw new Error(`purgeScopeFilter: closedSince must be YYYY-MM-DD, got "${scope.closedSince}"`);
+  }
+  const live = ["Active", "Active Under Contract", "Coming Soon", "Pending"]
+    .map((s) => `StandardStatus eq '${s}'`)
+    .join(" or ");
+  return `${live} or (StandardStatus eq 'Closed' and CloseDate ge ${scope.closedSince})`;
 }

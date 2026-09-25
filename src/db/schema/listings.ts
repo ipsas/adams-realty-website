@@ -7,6 +7,7 @@ import {
   index,
   integer,
   jsonb,
+  pgMaterializedView,
   pgTable,
   real,
   smallint,
@@ -22,6 +23,7 @@ import {
   mediaKind,
   openHouseType,
   propertyType,
+  syncMode,
   syncStatus,
   transactionType,
 } from "./enums";
@@ -338,6 +340,10 @@ export const listings = pgTable(
       )
       .where(SOLD),
     index("listings_sold_newest_idx").on(t.closeDate.desc().nullsLast(), t.id).where(SOLD),
+    // Listing sitemap chunks (src/app/homes/sitemap.ts) page through live
+    // listings by id. The migration adds INCLUDE (slug, updated_at) so a chunk
+    // is an index-only scan.
+    index("listings_live_id_idx").on(t.id).where(LIVE),
   ],
 );
 
@@ -404,13 +410,37 @@ export const syncRuns = pgTable(
     sourceId: uuid("source_id")
       .notNull()
       .references(() => dataSources.id, { onDelete: "cascade" }),
+    mode: syncMode("mode").notNull().default("incremental"),
     status: syncStatus("status").notNull().default("running"),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * Written after every page. A `running` run whose heartbeat is older than
+     * the function time limit was cut off; the next run marks it failed.
+     */
+    heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     fetched: integer("fetched").notNull().default(0),
     upserted: integer("upserted").notNull().default(0),
+    /** Records whose ModificationTimestamp matched what we hold: nothing written. */
+    unchanged: integer("unchanged").notNull().default(0),
     removed: integer("removed").notNull().default(0),
+    /** The source's cursor when the run ended (where a `partial` run stopped). */
+    cursor: timestamp("cursor", { withTimezone: true }),
     error: text("error"),
   },
   (t) => [index("sync_runs_source_idx").on(t.sourceId, t.startedAt)],
 );
+
+/**
+ * Location autocomplete's place names (neighborhoods, cities, ZIPs) with live
+ * listing counts. A materialized view created by hand in
+ * drizzle/0006_sync_budget_and_places.sql (drizzle-kit ignores `.existing()`
+ * views); `refreshPlaces()` (src/lib/listings/places.ts) rebuilds it after
+ * every sync, seed and dashboard listing change.
+ */
+export const places = pgMaterializedView("places", {
+  kind: text("kind").$type<"city" | "neighborhood" | "zip">().notNull(),
+  label: text("label").notNull(),
+  sublabel: text("sublabel").notNull(),
+  n: integer("n").notNull(),
+}).existing();

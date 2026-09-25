@@ -57,9 +57,23 @@ export type MapSkipReason =
   /** Seller opted out of internet display (IDX `InternetEntireListingDisplayYN = false`). */
   | "not_displayable";
 
+/**
+ * What a purge compares: the listings the site keeps showing. Live statuses
+ * (active, coming soon, under contract, pending), plus closed sales since
+ * `closedSince`, which sold mode and the area guides still show.
+ */
+export type PurgeScope = {
+  /** YYYY-MM-DD: closed listings count only when they closed on or after this date. */
+  closedSince: string;
+};
+
 export interface ListingProvider {
   /** Yields pages of records modified at or after `since` (all records when null), oldest first. */
   fetchUpdates(since: Date | null): AsyncIterable<MapResult[]>;
-  /** Every listing key currently in the feed. Keys we hold that are missing get removed. */
-  fetchActiveKeys(): Promise<Set<string>>;
+  /**
+   * Pages of the listing keys the feed still has within `scope`. The purge
+   * soft-removes listings we hold in that scope whose key is missing, and only
+   * after the last page arrives: a partial key list is never used.
+   */
+  fetchActiveKeys(scope: PurgeScope): AsyncIterable<string[]>;
 }

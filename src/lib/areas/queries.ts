@@ -1,6 +1,5 @@
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
-import { cache } from "react";
-import { areas as allAreas, type Area } from "@/config/areas";
+import type { Area } from "@/config/areas";
 import { db } from "@/db";
 import { agents, listings } from "@/db/schema";
 import { selectCards, withPhotos } from "@/lib/listings/card";
@@ -21,7 +20,6 @@ import {
   NEW_WINDOW_DAYS,
   SOLD_WINDOW_DAYS,
   type AreaStats,
-  type AreaSummary,
 } from "./stats";
 
 type StatsRow = {
@@ -174,23 +172,6 @@ export async function getAreaStats(
   }
   return out;
 }
-
-/** Every configured area with its live stats, in config order (for /areas and the sitemap). */
-export async function getAreaSummaries(): Promise<AreaSummary[]> {
-  const stats = await getAreaStats(allAreas);
-  return allAreas.map((area) => ({ area, stats: stats.get(area.slug) ?? emptyStats() }));
-}
-
-/**
- * One guide's header data. `cache` dedupes the call between generateMetadata
- * and the page. Returns null for unknown slugs (the page 404s).
- */
-export const getAreaGuide = cache(async (slug: string) => {
-  const area = allAreas.find((a) => a.slug === slug) ?? null;
-  if (!area) return null;
-  const stats = await getAreaStats([area]);
-  return { area, stats: stats.get(area.slug) ?? emptyStats() };
-});
 
 const LIVE_FOR_SALE = ["active", "coming_soon"] as const;
 

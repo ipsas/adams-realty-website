@@ -43,6 +43,13 @@
       "when": 1790363237547,
       "tag": "0005_statewide_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790364261084,
+      "tag": "0006_sync_budget_and_places",
+      "breakpoints": true
     }
   ]
 }

@@ -9,6 +9,8 @@ const h = vi.hoisted(() => {
     actor: null as Actor | null,
     selects: [] as unknown[][],
     upserts: [] as NormalizedListing[],
+    tags: [] as string[],
+    placesRefreshed: 0,
   };
   function chain(result: unknown) {
     const proxy: object = new Proxy(
@@ -41,7 +43,15 @@ vi.mock("@/lib/listings/persist", () => ({
   },
 }));
 vi.mock("@/server/audit", () => ({ audit: async () => {} }));
-vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+vi.mock("next/cache", () => ({
+  revalidatePath: () => {},
+  updateTag: (tag: string) => h.state.tags.push(tag),
+}));
+vi.mock("@/lib/listings/places", () => ({
+  refreshPlaces: async () => {
+    h.state.placesRefreshed++;
+  },
+}));
 vi.mock("next/navigation", () => ({
   redirect: (url: string) => {
     throw new Error(`NEXT_REDIRECT ${url}`);
@@ -130,10 +140,18 @@ function queueUpdate(opts: { opens?: unknown[]; otherMedia?: unknown[] } = {}) {
 }
 
 beforeEach(() => {
-  Object.assign(h.state, { actor: daniel, selects: [], upserts: [] });
+  Object.assign(h.state, { actor: daniel, selects: [], upserts: [], tags: [], placesRefreshed: 0 });
 });
 
 describe("saveListing", () => {
+  it("expires the cached listing data and rebuilds autocomplete places", async () => {
+    queueUpdate();
+    const res = await saveListing({ ok: false }, form());
+    expect(res.ok).toBe(true);
+    expect(h.state.tags).toEqual(["listings"]);
+    expect(h.state.placesRefreshed).toBe(1);
+  });
+
   it("keeps the listing's open houses (upsertListing replaces them)", async () => {
     queueUpdate({ opens: [openHouse] });
     const res = await saveListing({ ok: false }, form());

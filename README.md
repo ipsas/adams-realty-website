@@ -54,7 +54,7 @@ in `src/config/site.ts` (firm name, office address and phone, Georgia MLS office
 | `npm run db:generate` | Create a migration from schema changes                |
 | `npm run db:migrate`  | Apply migrations                                      |
 | `npm run db:seed`     | Reset and seed demo data (refuses in production)      |
-| `npm run mls:sync`    | Sync MLS feeds now (`-- --full`, `-- --purge`)        |
+| `npm run mls:sync`    | Sync MLS feeds now (see _Connecting your MLS_)        |
 
 ## Before launch: things only Adams Realty can provide
 
@@ -94,8 +94,27 @@ Georgia MLS.
    ```
    `companyOfficeIds` marks listings from office `ADAM01` as Adams listings.
 3. Set the credentials (`MLS_GAMLS_TOKEN`, or `_CLIENT_ID`/`_CLIENT_SECRET` plus `config.tokenUrl`).
-4. Run `npm run mls:sync -- --full` once. After that, Vercel Cron syncs the feed and purges
-   off-market listings on the schedule in `vercel.json` (daily; see _Deploying_).
+4. **Run the first load from the command line, not on Vercel:** `npm run mls:sync -- --full`
+   on your computer (or a CI job) with `DATABASE_URL` pointing at the production database. A
+   statewide feed is about 65,000 listings and takes 20–60 minutes, far longer than a Vercel
+   function may run (300 seconds). It's safe to stop and rerun: every page of 200 listings is
+   saved with the feed position, and a plain `npm run mls:sync` carries on from there.
+
+   After that, Vercel Cron syncs the feed and purges off-market listings on the schedule in
+   `vercel.json` (daily; see _Deploying_). Each cron run stops itself before the time limit
+   and, if the feed had more changes than fit, ends as "partial" in _Dashboard → MLS feeds_;
+   the next run continues from the same place.
+
+   Other commands:
+   - `npm run mls:sync`: an incremental sync (changes since the last one). Records that
+     haven't changed are skipped.
+   - `npm run mls:sync -- --purge`: only the purge: listings that left the feed are taken
+     off the site. It compares the feed's live listings and the last year's sales (what the
+     site shows), and it refuses to remove more than 5% of them at once, which usually
+     means a feed problem rather than a real exodus. If you've checked that the feed really
+     dropped them, add `--allow-large-purge` (the dashboard shows a warning when this happens).
+   - `-- --minutes 4`: stop between pages after about 4 minutes.
+
 5. Set each agent's MLS agent ID (_Dashboard → Agents_) so feed listings link to their
    profiles. Andrea Anderegg's is `ANDEREGGAA`.
 
@@ -107,7 +126,10 @@ Vercel plus Neon (or Supabase) Postgres is the simplest setup:
 2. Deploys run `npm run vercel-build`, which applies migrations before building. For a
    preview with demo data, set `SEED_DEMO_DATA=1` and `SEED_PASSWORD`; it seeds only an
    empty database.
-3. The crons in `vercel.json` run the MLS sync, the off-market purge and email alerts once a
-   day, which is what Vercel's free (Hobby) plan allows. On Vercel Pro you can run them more
-   often: set the sync to `*/15 * * * *` and alerts to `5 * * * *` (hourly), so "as soon as
-   homes are listed" alerts go out within the hour.
+3. The crons in `vercel.json` run the MLS sync, the off-market purge (`?purge=1`, a separate
+   purge-only run) and email alerts once a day, which is what Vercel's free (Hobby) plan
+   allows; a sub-daily schedule fails the deployment there. On Vercel Pro, set the sync to
+   `*/15 * * * *` (keep the purge daily) and alerts to `5 * * * *` (hourly): see HANDOFF.md
+   section 6.
+4. Cached listing data (home page numbers and featured homes, area guide stats) refreshes
+   right after each cron sync, and within 15 minutes after a sync run from the command line.
