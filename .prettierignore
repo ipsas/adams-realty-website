@@ -2,3 +2,6 @@ drizzle/
 .next/
 node_modules/
 package-lock.json
+
+# patches are applied with git apply, not formatted
+handoff/

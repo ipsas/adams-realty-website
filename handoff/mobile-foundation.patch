@@ -1,0 +1,4547 @@
+diff --git a/src/app/dev/primitives/page.tsx b/src/app/dev/primitives/page.tsx
+new file mode 100644
+index 0000000..b71de26
+--- /dev/null
++++ b/src/app/dev/primitives/page.tsx
+@@ -0,0 +1,33 @@
++import { isNull } from "drizzle-orm";
++import type { Metadata } from "next";
++import { notFound } from "next/navigation";
++import { db } from "@/db";
++import { listings } from "@/db/schema";
++import { PrimitivesDemo } from "./primitives-demo";
++
++export const metadata: Metadata = {
++  title: "UI primitives (dev)",
++  robots: { index: false, follow: false },
++};
++
++/**
++ * Dev-only playground for the shared mobile primitives (Dialog sheet/fullscreen + history,
++ * toasts, popover scrim, SaveButton variants, touch-sized controls).
++ * e2e/mobile/foundation.spec.ts drives it through the data-testid hooks in PrimitivesDemo.
++ */
++export default async function PrimitivesPage(props: PageProps<"/dev/primitives">) {
++  if (process.env.NODE_ENV === "production") notFound();
++  const { navigated } = await props.searchParams;
++  const [first] = await db
++    .select({ id: listings.id })
++    .from(listings)
++    .where(isNull(listings.removedAt))
++    .limit(1);
++
++  return (
++    <PrimitivesDemo
++      listingId={first?.id ?? "00000000-0000-0000-0000-000000000000"}
++      navigated={typeof navigated === "string" ? navigated : null}
++    />
++  );
++}
+diff --git a/src/app/dev/primitives/primitives-demo.tsx b/src/app/dev/primitives/primitives-demo.tsx
+new file mode 100644
+index 0000000..8fb08d5
+--- /dev/null
++++ b/src/app/dev/primitives/primitives-demo.tsx
+@@ -0,0 +1,360 @@
++"use client";
++
++import { Bell, Heart } from "lucide-react";
++import Link from "next/link";
++import { useState, type ReactNode } from "react";
++import { SaveButton, SaveIntercept } from "@/components/listings/save-button";
++import { useSavedHomes } from "@/components/listings/saved-homes-provider";
++import { Button } from "@/components/ui/button";
++import { Dialog, useDialogControls } from "@/components/ui/dialog";
++import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/form";
++import { Popover } from "@/components/ui/popover";
++import { Container } from "@/components/ui/section";
++import { toast } from "@/components/ui/toast";
++
++type DialogName = "sheet" | "fullscreen" | "nested" | "toast" | "center" | null;
++
++/*
++ * Test hooks (data-testid) used by e2e/mobile/foundation.spec.ts:
++ *   open-sheet → closeOnBack sheet: sheet-done (requestClose), sheet-input (text input at the bottom)
++ *   open-fullscreen → closeOnBack full-screen dialog:
++ *     dialog-nav-link (navigateFromDialog → /dev/primitives?navigated=1),
++ *     dialog-nav-sell (→ /sell), dialog-nav-replace (replace → ?navigated=replace),
++ *     open-nested (a second closeOnBack sheet on top: nested-done)
++ *   open-toast-dialog → sheet with a footer: dialog-toast-button shows a toast with an
++ *     "Undo" action; undo-count counts action clicks
++ *   open-center → centered dialog without history (legacy behaviour)
++ *   popover (wrapper) + scrim-target (a link under the scrim; must not navigate)
++ *   page-toast, page-toast-error, page-toast-action
++ *   save-overlay, save-outline, save-plain, save-intercept (wrappers around SaveButton)
++ *   navigated-banner (shown when ?navigated= is present)
++ */
++export function PrimitivesDemo({
++  listingId,
++  navigated,
++}: {
++  listingId: string;
++  navigated: string | null;
++}) {
++  const [dialog, setDialog] = useState<DialogName>(null);
++  const [nested, setNested] = useState(false);
++  const [undoCount, setUndoCount] = useState(0);
++  const close = () => setDialog(null);
++
++  return (
++    <Container className="space-y-10 py-8">
++      <header>
++        <p className="text-xs font-semibold tracking-[0.18em] text-brass-500 uppercase">Dev only</p>
++        <h1 className="font-display-tight text-3xl font-medium text-ink">UI primitives</h1>
++        <p className="mt-1 text-sm text-muted">
++          Resize to a phone (or use device emulation) to see sheets, scrims and touch sizing.
++        </p>
++        {navigated && (
++          <p
++            data-testid="navigated-banner"
++            className="mt-4 rounded-xl bg-brand-50 px-4 py-3 text-sm text-brand-800"
++          >
++            Arrived via navigateFromDialog ({navigated}). One Back returns to the page without the
++            parameter.
++          </p>
++        )}
++      </header>
++
++      <Demo title="Popover with scrim">
++        <div className="flex flex-col gap-3">
++          <div data-testid="popover">
++            <Popover label="Open popover">
++              <p className="text-sm text-ink-soft">
++                Below lg this is a bottom card over a scrim. Tapping the scrim closes it without
++                activating what&apos;s underneath.
++              </p>
++            </Popover>
++          </div>
++          <Link
++            href="/sell"
++            data-testid="scrim-target"
++            className="flex h-40 items-center justify-center rounded-2xl border border-dashed border-line-strong bg-sunken text-sm text-muted"
++          >
++            Scrim target: a dismissing tap must not open this link
++          </Link>
++        </div>
++      </Demo>
++
++      <Demo title="Dialogs">
++        <div className="flex flex-wrap gap-2">
++          <Button data-testid="open-sheet" onClick={() => setDialog("sheet")}>
++            Open sheet
++          </Button>
++          <Button
++            data-testid="open-fullscreen"
++            variant="secondary"
++            onClick={() => setDialog("fullscreen")}
++          >
++            Open full screen
++          </Button>
++          <Button
++            data-testid="open-toast-dialog"
++            variant="secondary"
++            onClick={() => setDialog("toast")}
++          >
++            Toast in dialog
++          </Button>
++          <Button data-testid="open-center" variant="ghost" onClick={() => setDialog("center")}>
++            Centered, no history
++          </Button>
++        </div>
++      </Demo>
++
++      <Demo title="Toasts">
++        <div className="flex flex-wrap gap-2">
++          <Button data-testid="page-toast" variant="secondary" onClick={() => toast("Link copied")}>
++            Toast
++          </Button>
++          <Button
++            data-testid="page-toast-error"
++            variant="secondary"
++            onClick={() => toast("Couldn't update the lead. Try again.", { tone: "error" })}
++          >
++            Error toast
++          </Button>
++          <Button
++            data-testid="page-toast-action"
++            variant="secondary"
++            onClick={() =>
++              toast("Marked contacted", {
++                action: { label: "Undo", onClick: () => toast("Undone") },
++              })
++            }
++          >
++            Toast with action
++          </Button>
++        </div>
++      </Demo>
++
++      <Demo title="Save buttons">
++        <div className="flex flex-wrap items-center gap-6">
++          <div
++            data-testid="save-overlay"
++            className="relative flex h-28 w-44 items-start justify-end rounded-2xl bg-linear-to-br from-brand-300 to-brand-700 p-2"
++          >
++            <SaveButton listingId={listingId} />
++          </div>
++          <div data-testid="save-outline">
++            <SaveButton listingId={listingId} variant="outline" />
++          </div>
++          <div data-testid="save-plain">
++            <SaveButton listingId={listingId} variant="plain" />
++          </div>
++          <InterceptDemo listingId={listingId} />
++        </div>
++      </Demo>
++
++      <Demo title="Controls">
++        <div className="space-y-5">
++          <div className="flex flex-wrap items-center gap-2">
++            <Button size="sm">Small</Button>
++            <Button size="md" variant="secondary">
++              Medium
++            </Button>
++            <Button size="lg" variant="subtle">
++              Large
++            </Button>
++            <Button size="icon" variant="ghost" aria-label="Alerts">
++              <Bell />
++            </Button>
++          </div>
++          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
++            <Field label="Text input" htmlFor="demo-input">
++              <Input id="demo-input" placeholder="16px on touch devices" />
++            </Field>
++            <Field label="Select" htmlFor="demo-select">
++              <Select id="demo-select" defaultValue="daily">
++                <option value="instant">Instantly</option>
++                <option value="daily">Daily</option>
++                <option value="weekly">Weekly</option>
++              </Select>
++            </Field>
++            <Field label="Textarea" htmlFor="demo-textarea" className="sm:col-span-2">
++              <Textarea id="demo-textarea" placeholder="Notes" />
++            </Field>
++          </div>
++          <Checkbox label="Checkbox rows are 44px tall on touch" defaultChecked />
++        </div>
++      </Demo>
++
++      <Dialog open={dialog === "sheet"} onClose={close} title="Sheet" closeOnBack>
++        <SheetBody />
++      </Dialog>
++
++      <Dialog
++        open={dialog === "fullscreen"}
++        onClose={close}
++        title="Full screen"
++        mobile="fullscreen"
++        closeOnBack
++      >
++        <FullscreenBody onOpenNested={() => setNested(true)} />
++        <Dialog open={nested} onClose={() => setNested(false)} title="Nested sheet" closeOnBack>
++          <div className="space-y-4 px-6 py-6">
++            <p className="text-sm text-muted">
++              Back closes only this sheet; the full-screen dialog stays open.
++            </p>
++            <DoneButton testId="nested-done" />
++          </div>
++        </Dialog>
++      </Dialog>
++
++      <Dialog
++        open={dialog === "toast"}
++        onClose={close}
++        title="Toast inside a dialog"
++        closeOnBack
++        footer={
++          <div className="flex justify-end">
++            <DoneButton testId="toast-dialog-done" />
++          </div>
++        }
++      >
++        <div className="space-y-4 px-6 py-6">
++          <p className="text-sm text-muted">
++            Outside a modal dialog everything is inert, so the toast renders inside this dialog,
++            just above the footer.
++          </p>
++          <Button
++            data-testid="dialog-toast-button"
++            onClick={() =>
++              toast("Removed from saved", {
++                action: { label: "Undo", onClick: () => setUndoCount((n) => n + 1) },
++                duration: 8000,
++              })
++            }
++          >
++            Show toast
++          </Button>
++          <p data-testid="undo-count" className="text-sm text-ink-soft">
++            Undo clicked: {undoCount}
++          </p>
++        </div>
++      </Dialog>
++
++      <Dialog open={dialog === "center"} onClose={close} title="Centered" mobile="center">
++        <p className="px-6 py-6 text-sm text-muted">
++          mobile=&quot;center&quot; without closeOnBack: the pre-mobile behaviour.
++        </p>
++      </Dialog>
++    </Container>
++  );
++}
++
++function Demo({ title, children }: { title: string; children: ReactNode }) {
++  return (
++    <section className="rounded-card border border-line bg-surface p-5 shadow-card">
++      <h2 className="mb-4 text-sm font-semibold text-ink">{title}</h2>
++      {children}
++    </section>
++  );
++}
++
++function DoneButton({ testId }: { testId: string }) {
++  const { requestClose } = useDialogControls();
++  return (
++    <Button data-testid={testId} onClick={() => void requestClose()}>
++      Done
++    </Button>
++  );
++}
++
++function SheetBody() {
++  return (
++    <div className="space-y-5 px-6 py-6">
++      <p className="text-sm text-muted">
++        Swipe the handle down, tap the scrim, press Escape or go Back to close. The URL doesn&apos;t
++        change.
++      </p>
++      <DoneButton testId="sheet-done" />
++      <ul className="space-y-2 text-sm text-ink-soft">
++        {["Tour times", "Commute", "Schools", "HOA details", "Tax history", "Price history"].map(
++          (item) => (
++            <li key={item} className="rounded-xl bg-sunken px-4 py-3">
++              {item}
++            </li>
++          ),
++        )}
++      </ul>
++      <Field label="Your name" htmlFor="sheet-input" hint="Focus me with the keyboard up.">
++        <Input id="sheet-input" data-testid="sheet-input" autoComplete="name" />
++      </Field>
++    </div>
++  );
++}
++
++function FullscreenBody({ onOpenNested }: { onOpenNested: () => void }) {
++  const { navigateFromDialog } = useDialogControls();
++  const link = "flex h-12 items-center rounded-xl px-4 text-base font-medium hover:bg-sunken";
++  return (
++    <div className="space-y-6 px-6 py-6">
++      <p className="text-sm text-muted">
++        Links use navigateFromDialog: the dialog&apos;s history entry is popped first, so one Back
++        returns here, not to an open dialog.
++      </p>
++      <nav className="flex flex-col" aria-label="Demo links">
++        <a
++          href="/dev/primitives?navigated=1"
++          data-testid="dialog-nav-link"
++          className={link}
++          onClick={(e) => {
++            e.preventDefault();
++            void navigateFromDialog("/dev/primitives?navigated=1");
++          }}
++        >
++          This page with ?navigated=1
++        </a>
++        <a
++          href="/sell"
++          data-testid="dialog-nav-sell"
++          className={link}
++          onClick={(e) => {
++            e.preventDefault();
++            void navigateFromDialog("/sell");
++          }}
++        >
++          Sell page
++        </a>
++        <a
++          href="/dev/primitives?navigated=replace"
++          data-testid="dialog-nav-replace"
++          className={link}
++          onClick={(e) => {
++            e.preventDefault();
++            void navigateFromDialog("/dev/primitives?navigated=replace", { replace: true });
++          }}
++        >
++          Replace with ?navigated=replace
++        </a>
++      </nav>
++      <Button data-testid="open-nested" variant="secondary" onClick={onOpenNested}>
++        Open nested sheet
++      </Button>
++    </div>
++  );
++}
++
++/** A heart wired to SaveIntercept: unsaving is deferred behind an Undo toast (like /saved). */
++function InterceptDemo({ listingId }: { listingId: string }) {
++  const { setLocal } = useSavedHomes();
++  return (
++    <SaveIntercept.Provider
++      value={(id) => {
++        setLocal(id, false);
++        toast("Removed from saved (not committed)", {
++          action: { label: "Undo", onClick: () => setLocal(id, true) },
++        });
++      }}
++    >
++      <div data-testid="save-intercept" className="flex items-center gap-1 text-xs text-muted">
++        <SaveButton listingId={listingId} variant="plain" />
++        <Heart className="size-3" aria-hidden /> intercepted
++      </div>
++    </SaveIntercept.Provider>
++  );
++}
+diff --git a/src/app/globals.css b/src/app/globals.css
+index efae694..a441657 100644
+--- a/src/app/globals.css
++++ b/src/app/globals.css
+@@ -11,7 +11,8 @@
+   --color-ink: #15201c;
+   --color-ink-soft: #3b4843;
+   --color-muted: #66716c;
+-  --color-faint: #98a19c;
++  /* 4.82:1 on canvas, 4.50:1 on sunken (was #98a19c, 2.54:1). */
++  --color-faint: #68716d;
+   --color-line: #e8e4db;
+   --color-line-strong: #d6d1c4;
+ 
+@@ -28,7 +29,8 @@
+ 
+   --color-brass-100: #f5ecdc;
+   --color-brass-400: #c89b5a;
+-  --color-brass-500: #b3843f;
++  /* Eyebrow text: 4.81:1 on canvas (was #b3843f, 3.20:1). brass-400 stays for dark backgrounds. */
++  --color-brass-500: #8a6a2f;
+   --color-brass-700: #7d5a26;
+ 
+   --color-clay-50: #fbefe8;
+@@ -50,6 +52,7 @@
+ 
+   --animate-fade-in: fade-in 0.25s var(--ease-out-quint);
+   --animate-rise: rise 0.35s var(--ease-out-quint);
++  --animate-sheet-up: sheet-up 0.32s var(--ease-out-quint);
+ 
+   @keyframes fade-in {
+     from {
+@@ -69,6 +72,14 @@
+       transform: translateY(0);
+     }
+   }
++  @keyframes sheet-up {
++    from {
++      transform: translateY(100%);
++    }
++    to {
++      transform: translateY(0);
++    }
++  }
+ }
+ 
+ @theme inline {
+@@ -76,11 +87,232 @@
+   --font-display: var(--font-fraunces), ui-serif, Georgia, serif;
+ }
+ 
++/*
++ * ── Mobile & PWA contracts ──────────────────────────────────────────────────
++ * Shared by every mobile package; see ARCHITECTURE.md "Mobile & PWA".
++ *
++ * Variants: `phone:` / `wide:` decide the app shell (tab bar, sheets, carousels);
++ * sm/md/lg stay for sizing; the built-in `pointer-coarse:` handles touch sizing.
++ * The phone query string must match PHONE_QUERY in src/lib/use-media-query.ts.
++ *
++ * z-scale: map overlays 10/20 · results sheet 30 · bottom bars 40 ·
++ * popover scrim/sheet 45 · header 50 · full-screen search 60 · toasts 70 ·
++ * dialogs live in the top layer (above everything; toasts portal into them).
++ */
++@custom-variant phone {
++  @media (max-width: 767.98px), (pointer: coarse) and (max-height: 500px) {
++    @slot;
++  }
++}
++@custom-variant wide {
++  @media (min-width: 768px) and (min-height: 501px), (min-width: 768px) and (pointer: fine) {
++    @slot;
++  }
++}
++@custom-variant standalone (@media (display-mode: standalone));
++@custom-variant not-standalone (@media not (display-mode: standalone));
++
++:root {
++  --header-h: 4rem;
++  --tabbar-h: 3.5rem;
++  /* Height of the chrome actually visible at the top/bottom (0 when a page owns it). */
++  --top-chrome-h: var(--header-h);
++  /* Static: reserved as #main padding so content never hides behind a bottom bar. */
++  --bottom-chrome-h: 0px;
++  /* Dynamic: where bottom-anchored overlays (toasts, install card, FABs) sit. */
++  --bottom-overlay-h: 0px;
++  /* Safe-area insets. Everything reads these, so tests can simulate a notch. */
++  --sai-top: env(safe-area-inset-top, 0px);
++  --sai-right: env(safe-area-inset-right, 0px);
++  --sai-bottom: env(safe-area-inset-bottom, 0px);
++  --sai-left: env(safe-area-inset-left, 0px);
++}
++@media (pointer: coarse) and (max-height: 500px) {
++  :root {
++    --tabbar-h: 3rem;
++  }
++}
++
++/* Safe-area utilities. Top/bottom ones add the inset; left/right ones take max(N, inset)
++   so portrait layouts are unchanged and landscape content clears the notch. */
++@utility pt-safe {
++  padding-top: var(--sai-top);
++}
++@utility pt-safe-* {
++  padding-top: calc(var(--sai-top) + --spacing(--value(number)));
++}
++@utility pb-safe {
++  padding-bottom: var(--sai-bottom);
++}
++@utility pb-safe-* {
++  padding-bottom: calc(var(--sai-bottom) + --spacing(--value(number)));
++}
++@utility bottom-safe-* {
++  bottom: calc(var(--sai-bottom) + --spacing(--value(number)));
++}
++@utility pl-safe {
++  padding-left: var(--sai-left);
++}
++@utility pl-safe-* {
++  padding-left: max(--spacing(--value(number)), var(--sai-left));
++}
++@utility pr-safe {
++  padding-right: var(--sai-right);
++}
++@utility pr-safe-* {
++  padding-right: max(--spacing(--value(number)), var(--sai-right));
++}
++
++/* Chrome markers (phone shell). A component that supplies replacement chrome renders
++   data-own-chrome="top|bottom"; the header/tab bar stay mounted and hide via CSS only. */
++@media (max-width: 767.98px), (pointer: coarse) and (max-height: 500px) {
++  body:has([data-own-chrome~="top"]) {
++    --top-chrome-h: 0px;
++  }
++  body:has([data-own-chrome~="top"]) [data-site-header] {
++    display: none;
++  }
++  body:has([data-own-chrome~="bottom"]) [data-tabbar] {
++    display: none;
++  }
++  body:has([data-tabbar]):not(:has([data-own-chrome~="bottom"])) {
++    --bottom-chrome-h: calc(var(--tabbar-h) + var(--sai-bottom));
++    --bottom-overlay-h: calc(var(--tabbar-h) + var(--sai-bottom));
++  }
++  html:has([data-app-shell]) {
++    overscroll-behavior: none;
++  }
++}
++
++/* Page-owned bottom bars (lg:hidden, so they show up to 1023px in both variants).
++   --bottom-overlay-h ignores bars that are data-state="hidden". */
++@media (max-width: 1023.98px) {
++  body:has(:is([data-bottom-bar="action"], [data-bottom-bar="contact"])) {
++    --bottom-chrome-h: calc(4.5rem + var(--sai-bottom));
++  }
++  body:has(
++    :is([data-bottom-bar="action"], [data-bottom-bar="contact"]):not([data-state="hidden"])
++  ) {
++    --bottom-overlay-h: calc(4.5rem + var(--sai-bottom));
++  }
++  body:has([data-bottom-bar="staff"]) {
++    --bottom-chrome-h: calc(3.5rem + var(--sai-bottom));
++  }
++  body:has([data-bottom-bar="staff"]:not([data-state="hidden"])) {
++    --bottom-overlay-h: calc(3.5rem + var(--sai-bottom));
++  }
++}
++
++/* Every page except the app shell (/homes) reserves the static bottom chrome. */
++body:not(:has([data-app-shell])) #main {
++  padding-bottom: var(--bottom-chrome-h);
++}
++
++/* On-screen keyboard: a focused text field hides the tab bar and keyboard-hidden bars.
++   Checkboxes, radios, ranges, buttons and selects never do. Also on coarse tablets
++   (768–1023px), where page bottom bars are still visible. */
++@media (max-width: 767.98px),
++  (pointer: coarse) and (max-height: 500px),
++  (pointer: coarse) and (max-width: 1023.98px) {
++  body:has(
++    :is(
++      input:not(
++        [type="checkbox"],
++        [type="radio"],
++        [type="range"],
++        [type="button"],
++        [type="submit"],
++        [type="reset"],
++        [type="file"],
++        [type="color"],
++        [type="image"]
++      ),
++      textarea,
++      [contenteditable=""],
++      [contenteditable="true"]
++    ):focus
++  ) {
++    --bottom-overlay-h: 0px;
++  }
++  body:has(
++      :is(
++        input:not(
++          [type="checkbox"],
++          [type="radio"],
++          [type="range"],
++          [type="button"],
++          [type="submit"],
++          [type="reset"],
++          [type="file"],
++          [type="color"],
++          [type="image"]
++        ),
++        textarea,
++        [contenteditable=""],
++        [contenteditable="true"]
++      ):focus
++    )
++    :is([data-tabbar], [data-hide-on-keyboard]) {
++    display: none;
++  }
++}
++
++/* Full-screen search (phone): the focused search <form> gets data-search-fullscreen and
++   becomes a fixed panel. Hide all chrome, lock scroll, and neutralize every ancestor
++   property that would make an ancestor its containing block or trap its z-index. */
++@media (max-width: 767.98px), (pointer: coarse) and (max-height: 500px) {
++  body:has([data-search-fullscreen]) :is([data-site-header], [data-tabbar], [data-bottom-bar]) {
++    display: none !important;
++  }
++  html:has([data-search-fullscreen]) {
++    overflow: hidden;
++  }
++  body :has([data-search-fullscreen]) {
++    transform: none !important;
++    filter: none !important;
++    backdrop-filter: none !important;
++    perspective: none !important;
++    contain: none !important;
++    container-type: normal !important;
++    will-change: auto !important;
++    isolation: auto !important;
++    z-index: auto !important;
++    clip-path: none !important;
++    mask: none !important;
++  }
++}
++
++/* Lock page scroll behind any open <dialog> (sheets, lightbox). */
++html:has(dialog[open]) {
++  overflow: hidden;
++}
++
++@media (prefers-reduced-motion: reduce) {
++  *,
++  *::before,
++  *::after {
++    animation-duration: 0.01ms !important;
++    animation-iteration-count: 1 !important;
++    transition-duration: 0.01ms !important;
++    scroll-behavior: auto !important;
++  }
++}
++
+ @layer base {
+   html {
+     -webkit-font-smoothing: antialiased;
+     -moz-osx-font-smoothing: grayscale;
+     text-rendering: optimizeLegibility;
++    -webkit-tap-highlight-color: transparent;
++  }
++
++  /* No double-tap-zoom delay on controls; pinch zoom stays enabled. */
++  a,
++  button,
++  [role="button"],
++  label,
++  summary {
++    touch-action: manipulation;
+   }
+ 
+   body {
+@@ -131,6 +363,14 @@
+   }
+ }
+ 
++/* Full-bleed maps (app shell): keep controls clear of landscape notches. */
++[data-app-shell] :is(.maplibregl-ctrl-top-left, .maplibregl-ctrl-bottom-left) {
++  margin-left: var(--sai-left);
++}
++[data-app-shell] :is(.maplibregl-ctrl-top-right, .maplibregl-ctrl-bottom-right) {
++  margin-right: var(--sai-right);
++}
++
+ /* MapLibre: keep attribution tidy and on-brand. */
+ .maplibregl-ctrl-attrib {
+   font-size: 10px;
+diff --git a/src/app/homes/[slug]/page.tsx b/src/app/homes/[slug]/page.tsx
+index de2e519..86cf7d2 100644
+--- a/src/app/homes/[slug]/page.tsx
++++ b/src/app/homes/[slug]/page.tsx
+@@ -24,6 +24,7 @@ import { ListingCard } from "@/components/listings/listing-card";
+ import { LocationMapLazy } from "@/components/listings/location-map-lazy";
+ import { PaymentCalculator } from "@/components/listings/payment-calculator";
+ import { PhotoGallery } from "@/components/listings/photo-gallery";
++import { RecordView } from "@/components/listings/record-view";
+ import { SaveButton } from "@/components/listings/save-button";
+ import { ShareButton } from "@/components/listings/share-button";
+ import { Avatar } from "@/components/ui/avatar";
+@@ -121,6 +122,20 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
+     <>
+       <main className="flex-1 pb-24 lg:pb-0">
+         <JsonLd data={data} />
++        <RecordView
++          snapshot={{
++            slug: l.slug,
++            address: street,
++            cityLine: formatCityLine(l),
++            price: sold && l.closePrice ? l.closePrice : l.listPrice,
++            photo: l.primaryPhotoUrl ?? photos[0]?.url ?? null,
++            beds: l.bedrooms,
++            baths: l.bathrooms,
++            listOfficeName: l.listOfficeName,
++            transactionType: l.transactionType,
++            status: l.status,
++          }}
++        />
+         <Container className="pt-5">
+           {l.removedAt && (
+             <p className="mb-4 rounded-2xl bg-clay-50 px-4 py-3 text-sm text-clay-600">
+diff --git a/src/app/layout.tsx b/src/app/layout.tsx
+index 1915ddf..9bdfd00 100644
+--- a/src/app/layout.tsx
++++ b/src/app/layout.tsx
+@@ -2,6 +2,9 @@ import type { Metadata, Viewport } from "next";
+ import { Fraunces, Inter } from "next/font/google";
+ import { SavedHomesProvider } from "@/components/listings/saved-homes-provider";
+ import { SiteHeader, type HeaderUser } from "@/components/layout/site-header";
++import { TabBar } from "@/components/layout/tab-bar";
++import { PwaRuntime } from "@/components/pwa/pwa-runtime";
++import { Toaster } from "@/components/ui/toast";
+ import { site } from "@/config/site";
+ import { getSession } from "@/lib/auth/session";
+ import { env } from "@/lib/env";
+@@ -26,10 +29,18 @@ export const metadata: Metadata = {
+   applicationName: site.name,
+   openGraph: { type: "website", siteName: site.name, locale: "en_US" },
+   twitter: { card: "summary_large_image" },
++  appleWebApp: { capable: true, title: site.name, statusBarStyle: "default" },
++  formatDetection: { telephone: false },
++  // Next emits only mobile-web-app-capable for appleWebApp.capable; older iOS wants this one.
++  other: { "apple-mobile-web-app-capable": "yes" },
+ };
+ 
+ export const viewport: Viewport = {
+   themeColor: "#fbfaf7",
++  // Draw under notches/home indicator (content opts in via the --sai-* safe-area utilities)
++  // and let Android shrink the layout viewport for the keyboard.
++  viewportFit: "cover",
++  interactiveWidget: "resizes-content",
+ };
+ 
+ export default async function RootLayout({ children }: LayoutProps<"/">) {
+@@ -37,6 +48,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
+   const savedIds = session ? await getSavedListingIds(session.user.id) : [];
+   const user: HeaderUser = session
+     ? {
++        id: session.user.id,
+         name: session.user.name,
+         email: session.user.email,
+         image: session.user.image ?? null,
+@@ -58,6 +70,10 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
+           <div id="main" className="flex flex-1 flex-col">
+             {children}
+           </div>
++          {/* Always rendered; visibility is CSS-only (phone:/wide: and chrome markers). */}
++          <TabBar user={user} />
++          <Toaster />
++          <PwaRuntime userId={user?.id ?? null} />
+         </SavedHomesProvider>
+       </body>
+     </html>
+diff --git a/src/components/layout/site-header.tsx b/src/components/layout/site-header.tsx
+index 4800fe8..5236c38 100644
+--- a/src/components/layout/site-header.tsx
++++ b/src/components/layout/site-header.tsx
+@@ -12,6 +12,7 @@ import { Popover } from "../ui/popover";
+ import { Logo } from "./logo";
+ 
+ export type HeaderUser = {
++  id: string;
+   name: string;
+   email: string;
+   image: string | null;
+@@ -49,6 +50,7 @@ export function SiteHeader({ user }: { user: HeaderUser }) {
+ 
+   return (
+     <header
++      data-site-header
+       className={cn(
+         "z-50 w-full transition-[background-color,border-color,box-shadow] duration-300",
+         overHero ? "fixed top-0" : "sticky top-0",
+@@ -57,7 +59,7 @@ export function SiteHeader({ user }: { user: HeaderUser }) {
+           : "border-b border-line bg-canvas/85 backdrop-blur-xl backdrop-saturate-150",
+       )}
+     >
+-      <div className="mx-auto flex h-16 max-w-[1600px] items-center gap-3 px-4 sm:gap-8 sm:px-6 lg:px-8">
++      <div className="mx-auto flex h-16 max-w-[1600px] items-center gap-3 pr-safe-4 pl-safe-4 sm:gap-8 sm:pr-safe-6 sm:pl-safe-6 lg:pr-safe-8 lg:pl-safe-8">
+         <Logo inverse={transparent} className="min-w-0 shrink overflow-hidden" />
+         <nav className="hidden items-center gap-1 md:flex" aria-label="Main">
+           {nav.map((item) => (
+diff --git a/src/components/layout/tab-bar.tsx b/src/components/layout/tab-bar.tsx
+new file mode 100644
+index 0000000..d2be357
+--- /dev/null
++++ b/src/components/layout/tab-bar.tsx
+@@ -0,0 +1,15 @@
++"use client";
++
++import type { HeaderUser } from "./site-header";
++
++/**
++ * Phone app tab bar (Home, Search, Saved, Account). Always mounted by the root layout;
++ * shown only in the phone variant and hidden by `data-own-chrome~="bottom"`.
++ *
++ * Foundation stub: WP2 replaces the body with `nav[data-tabbar][data-bottom-bar=tab]`.
++ * Keep this signature.
++ */
++export function TabBar({ user }: { user: HeaderUser }): React.ReactElement | null {
++  void user;
++  return null;
++}
+diff --git a/src/components/listings/record-view.tsx b/src/components/listings/record-view.tsx
+new file mode 100644
+index 0000000..49a7091
+--- /dev/null
++++ b/src/components/listings/record-view.tsx
+@@ -0,0 +1,15 @@
++"use client";
++
++import { useEffect } from "react";
++import { recordView, type ViewedSnapshot } from "@/lib/search/recent";
++
++/**
++ * Adds the listing on screen to this device's "Recently viewed" (home page
++ * row, install prompt). Renders nothing. Mounted once by the listing page.
++ */
++export function RecordView({ snapshot }: { snapshot: ViewedSnapshot }) {
++  useEffect(() => {
++    recordView(snapshot);
++  }, [snapshot]);
++  return null;
++}
+diff --git a/src/components/listings/save-button.tsx b/src/components/listings/save-button.tsx
+index 7d2bf36..d804941 100644
+--- a/src/components/listings/save-button.tsx
++++ b/src/components/listings/save-button.tsx
+@@ -1,19 +1,35 @@
+ "use client";
+ 
+ import { Heart } from "lucide-react";
++import { createContext, useContext } from "react";
+ import { cn } from "@/lib/cn";
+ import { useSavedHomes } from "./saved-homes-provider";
+ 
++/**
++ * When provided, pressing an already-saved heart calls this instead of unsaving right away.
++ * /saved uses it for pending removal with an Undo toast.
++ */
++export const SaveIntercept = createContext<((listingId: string) => void) | null>(null);
++
++export type SaveButtonVariant = "overlay" | "outline" | "plain";
++
++/**
++ * Heart toggle for a listing.
++ * - overlay: frosted circle on photos (44px on touch).
++ * - outline: labelled pill ("Save"/"Saved").
++ * - plain: 44px transparent circle with a 20px heart, for bars, rows and strip cards.
++ */
+ export function SaveButton({
+   listingId,
+   variant = "overlay",
+   className,
+ }: {
+   listingId: string;
+-  variant?: "overlay" | "outline";
++  variant?: SaveButtonVariant;
+   className?: string;
+ }) {
+   const { isSaved, toggle } = useSavedHomes();
++  const intercept = useContext(SaveIntercept);
+   const saved = isSaved(listingId);
+   return (
+     <button
+@@ -23,20 +39,24 @@ export function SaveButton({
+       onClick={(e) => {
+         e.preventDefault();
+         e.stopPropagation();
+-        toggle(listingId);
++        if (saved && intercept) intercept(listingId);
++        else toggle(listingId);
+       }}
+       className={cn(
+         "group/save inline-flex items-center justify-center gap-2 transition-all active:scale-90",
+         variant === "overlay" &&
+-          "size-10 rounded-full bg-white/90 text-ink shadow-sm backdrop-blur hover:scale-105 hover:bg-white",
++          "size-10 rounded-full bg-white/90 text-ink shadow-sm backdrop-blur hover:scale-105 hover:bg-white pointer-coarse:size-11",
+         variant === "outline" &&
+-          "h-10 rounded-full border border-line-strong bg-surface px-4 text-sm font-medium text-ink hover:bg-sunken",
++          "h-10 rounded-full border border-line-strong bg-surface px-4 text-sm font-medium text-ink hover:bg-sunken pointer-coarse:h-11",
++        variant === "plain" &&
++          "size-11 shrink-0 rounded-full bg-transparent text-ink hover:bg-ink/5",
+         className,
+       )}
+     >
+       <Heart
+         className={cn(
+-          "size-[18px] transition-colors",
++          "transition-colors",
++          variant === "plain" ? "size-5" : "size-[18px]",
+           saved ? "fill-clay-500 text-clay-500" : "text-ink group-hover/save:text-clay-500",
+         )}
+         strokeWidth={2}
+diff --git a/src/components/listings/saved-homes-provider.tsx b/src/components/listings/saved-homes-provider.tsx
+index 6bfc502..86752a6 100644
+--- a/src/components/listings/saved-homes-provider.tsx
++++ b/src/components/listings/saved-homes-provider.tsx
+@@ -17,6 +17,13 @@ type SavedHomes = {
+   isSaved: (id: string) => boolean;
+   toggle: (id: string) => void;
+   pending: boolean;
++  /** Number of saved homes (tab bar badge). */
++  count: number;
++  /**
++   * Client-only override with no server call (pending removal / Undo, post-sign-in save).
++   * The next server reconcile (fresh `initialIds`) wins.
++   */
++  setLocal: (id: string, saved: boolean) => void;
+ };
+ 
+ const Ctx = createContext<SavedHomes | null>(null);
+@@ -76,9 +83,26 @@ export function SavedHomesProvider({
+     [ids, signedIn, router, pathname],
+   );
+ 
++  const setLocal = useCallback((id: string, saved: boolean) => {
++    setIds((prev) => {
++      if (prev.has(id) === saved) return prev;
++      const next = new Set(prev);
++      if (saved) next.add(id);
++      else next.delete(id);
++      return next;
++    });
++  }, []);
++
+   const value = useMemo<SavedHomes>(
+-    () => ({ signedIn, isSaved: (id) => ids.has(id), toggle, pending }),
+-    [ids, signedIn, toggle, pending],
++    () => ({
++      signedIn,
++      isSaved: (id) => ids.has(id),
++      toggle,
++      pending,
++      count: ids.size,
++      setLocal,
++    }),
++    [ids, signedIn, toggle, pending, setLocal],
+   );
+   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+ }
+diff --git a/src/components/pwa/install-entry.tsx b/src/components/pwa/install-entry.tsx
+new file mode 100644
+index 0000000..76b1fcc
+--- /dev/null
++++ b/src/components/pwa/install-entry.tsx
+@@ -0,0 +1,12 @@
++"use client";
++
++/**
++ * "Install the app" row for the menu sheet. Renders nothing when already installed
++ * (standalone) or when installing isn't possible.
++ *
++ * Foundation stub: WP1 fills this in. Keep this signature.
++ */
++export function InstallEntry({ className }: { className?: string }): React.ReactElement | null {
++  void className;
++  return null;
++}
+diff --git a/src/components/pwa/pwa-runtime.tsx b/src/components/pwa/pwa-runtime.tsx
+new file mode 100644
+index 0000000..2aab423
+--- /dev/null
++++ b/src/components/pwa/pwa-runtime.tsx
+@@ -0,0 +1,13 @@
++"use client";
++
++/**
++ * Client-side PWA runtime: service worker registration, install prompt capture, the
++ * offline banner and the per-user cache purge on a uid mismatch. Mounted once by the
++ * root layout with the signed-in user's id (null when signed out).
++ *
++ * Foundation stub: WP1 fills this in. Keep this signature.
++ */
++export function PwaRuntime({ userId }: { userId: string | null }): React.ReactElement | null {
++  void userId;
++  return null;
++}
+diff --git a/src/components/search/filter-bar.tsx b/src/components/search/filter-bar.tsx
+index 0933b91..db3a1fd 100644
+--- a/src/components/search/filter-bar.tsx
++++ b/src/components/search/filter-bar.tsx
+@@ -17,7 +17,6 @@ import {
+ } from "@/lib/search/params";
+ import { LocationSearch } from "./location-search";
+ import { MoreFilters } from "./more-filters";
+-import { SaveSearchButton } from "./save-search-button";
+ 
+ const SALE_PRICES = [
+   100_000, 200_000, 300_000, 400_000, 500_000, 600_000, 700_000, 800_000, 900_000, 1_000_000,
+@@ -38,7 +37,6 @@ const VISIBLE_TYPES: PropertyTypeValue[] = [
+ export function FilterBar({
+   criteria: c,
+   update,
+-  signedIn,
+ }: {
+   criteria: SearchCriteria;
+   update: (patch: Partial<SearchCriteria>) => void;
+@@ -150,10 +148,6 @@ export function FilterBar({
+               </span>
+             )}
+           </button>
+-
+-          <div className="ml-auto flex shrink-0 items-center gap-2 pl-2">
+-            <SaveSearchButton criteria={c} signedIn={signedIn} />
+-          </div>
+         </div>
+       </div>
+       <MoreFilters
+diff --git a/src/components/search/search-view.tsx b/src/components/search/search-view.tsx
+index 9763fdf..11ee32d 100644
+--- a/src/components/search/search-view.tsx
++++ b/src/components/search/search-view.tsx
+@@ -2,7 +2,7 @@
+ 
+ import { List, Map as MapIcon, SearchX } from "lucide-react";
+ import dynamic from "next/dynamic";
+-import { useRef, useState } from "react";
++import { useEffect, useRef, useState } from "react";
+ import { ListingCard } from "@/components/listings/listing-card";
+ import { Button } from "@/components/ui/button";
+ import { Checkbox, Select } from "@/components/ui/form";
+@@ -13,14 +13,18 @@ import { site } from "@/config/site";
+ import {
+   countActiveFilters,
+   describeCriteria,
++  serializeCriteria,
+   SORTS,
++  sortLabel,
+   type SearchCriteria,
+   type SortValue,
+ } from "@/lib/search/params";
++import { recordSearch } from "@/lib/search/recent";
+ import type { MapPin } from "@/lib/search/service";
+ import { FilterBar } from "./filter-bar";
+ import { Pagination } from "./pagination";
+-import { useSearchNav } from "./use-search-nav";
++import { SaveSearchButton } from "./save-search-button";
++import { currentView, useSearchNav } from "./use-search-nav";
+ 
+ // MapLibre touches `window` at import time, so the map only renders on the client.
+ const SearchMap = dynamic(() => import("./search-map"), {
+@@ -28,15 +32,6 @@ const SearchMap = dynamic(() => import("./search-map"), {
+   loading: () => <div className="size-full animate-pulse bg-sunken" />,
+ });
+ 
+-const SORT_LABELS: Record<SortValue, string> = {
+-  recommended: "Recommended",
+-  newest: "Newest",
+-  price_asc: "Price (low to high)",
+-  price_desc: "Price (high to low)",
+-  sqft_desc: "Square feet",
+-  price_per_sqft_asc: "Price per sqft",
+-};
+-
+ export function SearchView({
+   criteria,
+   items,
+@@ -60,6 +55,14 @@ export function SearchView({
+   const [mobileView, setMobileView] = useState<"list" | "map">("list");
+   const listRef = useRef<HTMLDivElement>(null);
+ 
++  // Remember this search on the device (recents, tab bar, relaunch cookie).
++  const serialized = serializeCriteria(criteria).toString();
++  useEffect(() => {
++    recordSearch(criteria, currentView());
++    // `serialized` captures every criteria change; the object itself is new each render.
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [serialized]);
++
+   // Re-fit the map only when the "what" changes, not the "where".
+   const fitKey = JSON.stringify({
+     ...criteria,
+@@ -100,23 +103,24 @@ export function SearchView({
+                   {countActiveFilters(criteria) > 0 && ` · ${describeCriteria(criteria)}`}
+                 </p>
+               </div>
+-              <label className="flex items-center gap-2 text-sm text-muted">
+-                Sort
+-                <Select
+-                  aria-label="Sort results"
+-                  className="h-9 w-auto rounded-full py-0 text-sm"
+-                  value={criteria.sort}
+-                  onChange={(e) => update({ sort: e.target.value as SortValue })}
+-                >
+-                  {SORTS.map((s) => (
+-                    <option key={s} value={s}>
+-                      {s === "newest" && criteria.mode === "sold"
+-                        ? "Recently sold"
+-                        : SORT_LABELS[s]}
+-                    </option>
+-                  ))}
+-                </Select>
+-              </label>
++              <div className="flex items-center gap-2">
++                <label className="flex items-center gap-2 text-sm text-muted">
++                  Sort
++                  <Select
++                    aria-label="Sort results"
++                    className="h-9 w-auto rounded-full py-0 text-sm"
++                    value={criteria.sort}
++                    onChange={(e) => update({ sort: e.target.value as SortValue })}
++                  >
++                    {SORTS.map((s) => (
++                      <option key={s} value={s}>
++                        {sortLabel(s, criteria.mode)}
++                      </option>
++                    ))}
++                  </Select>
++                </label>
++                <SaveSearchButton criteria={criteria} signedIn={signedIn} />
++              </div>
+             </div>
+           </div>
+ 
+diff --git a/src/components/search/use-search-nav.test.ts b/src/components/search/use-search-nav.test.ts
+new file mode 100644
+index 0000000..8981c56
+--- /dev/null
++++ b/src/components/search/use-search-nav.test.ts
+@@ -0,0 +1,32 @@
++import { describe, expect, it } from "vitest";
++import { parseSearchParams } from "@/lib/search/params";
++import { buildSearchHref } from "./use-search-nav";
++
++const criteria = parseSearchParams({ q: "Decatur", beds: "3", sort: "newest", page: "4" });
++
++describe("buildSearchHref", () => {
++  it("applies the patch and resets to page 1", () => {
++    expect(buildSearchHref(criteria, { beds: 4 })).toBe("/homes?q=Decatur&beds=4&sort=newest");
++    expect(buildSearchHref(criteria, { beds: undefined })).toBe("/homes?q=Decatur&sort=newest");
++  });
++
++  it("keeps an explicit page", () => {
++    expect(buildSearchHref(criteria, { page: 2 })).toBe(
++      "/homes?q=Decatur&beds=3&sort=newest&page=2",
++    );
++  });
++
++  it("appends the view param when given", () => {
++    expect(buildSearchHref(criteria, { minPrice: 300_000 }, "list")).toBe(
++      "/homes?q=Decatur&minPrice=300000&beds=3&sort=newest&view=list",
++    );
++    expect(buildSearchHref(parseSearchParams({}), {}, "map")).toBe("/homes?view=map");
++    expect(buildSearchHref(criteria, {}, null)).toBe("/homes?q=Decatur&beds=3&sort=newest");
++  });
++
++  it("does not mutate the criteria", () => {
++    buildSearchHref(criteria, { q: "Midtown" });
++    expect(criteria.q).toBe("Decatur");
++    expect(criteria.page).toBe(4);
++  });
++});
+diff --git a/src/components/search/use-search-nav.ts b/src/components/search/use-search-nav.ts
+index 2832c26..5ae4e74 100644
+--- a/src/components/search/use-search-nav.ts
++++ b/src/components/search/use-search-nav.ts
+@@ -2,11 +2,38 @@
+ 
+ import { useRouter } from "next/navigation";
+ import { useCallback, useTransition } from "react";
+-import { searchHref, type SearchCriteria } from "@/lib/search/params";
++import {
++  parseViewParam,
++  searchHref,
++  type SearchCriteria,
++  type ViewParam,
++} from "@/lib/search/params";
++
++/**
++ * The search URL for `criteria` with `patch` applied. Any change resets to
++ * page 1 unless the patch sets a page. `view` (the phone sheet position) is
++ * appended when given, so filter changes keep the sheet where it was.
++ */
++export function buildSearchHref(
++  criteria: SearchCriteria,
++  patch: Partial<SearchCriteria>,
++  view?: ViewParam | null,
++): string {
++  const href = searchHref({ ...criteria, ...patch, page: patch.page ?? 1 });
++  if (!view) return href;
++  return `${href}${href.includes("?") ? "&" : "?"}view=${view}`;
++}
++
++/** The `view` param of the current URL (client only). */
++export function currentView(): ViewParam | undefined {
++  if (typeof window === "undefined") return undefined;
++  return parseViewParam(new URLSearchParams(window.location.search).get("view"));
++}
+ 
+ /**
+  * Updates the search URL (the source of truth) and lets the server re-render
+- * results. Any filter change resets to page 1 unless a page is given.
++ * results. update() keeps the current `view`; setView() changes only `view`,
++ * in place, without a server request.
+  */
+ export function useSearchNav(criteria: SearchCriteria) {
+   const router = useRouter();
+@@ -14,8 +41,7 @@ export function useSearchNav(criteria: SearchCriteria) {
+ 
+   const update = useCallback(
+     (patch: Partial<SearchCriteria>, opts: { replace?: boolean } = {}) => {
+-      const next: Partial<SearchCriteria> = { ...criteria, ...patch, page: patch.page ?? 1 };
+-      const href = searchHref(next);
++      const href = buildSearchHref(criteria, patch, currentView());
+       startTransition(() => {
+         if (opts.replace) router.replace(href, { scroll: false });
+         else router.push(href, { scroll: false });
+@@ -24,5 +50,26 @@ export function useSearchNav(criteria: SearchCriteria) {
+     [criteria, router],
+   );
+ 
+-  return { update, isPending };
++  const setView = useCallback((view: ViewParam | null) => replaceViewParam(view), []);
++
++  return { update, setView, isPending };
++}
++
++/**
++ * Rewrites `view` in the current history entry. Next.js patches
++ * history.replaceState to sync usePathname/useSearchParams without fetching,
++ * so this makes no document or RSC request. Other app state on the entry
++ * (e.g. a dialog marker) is kept; Next copies its own internal keys back.
++ */
++function replaceViewParam(view: ViewParam | null) {
++  const url = new URL(window.location.href);
++  if (url.searchParams.get("view") === view) return;
++  if (view) url.searchParams.set("view", view);
++  else if (url.searchParams.has("view")) url.searchParams.delete("view");
++  else return;
++  // Handing Next its own keys (__NA) back would make its patch skip the router sync.
++  const appState: Record<string, unknown> = { ...(window.history.state ?? {}) };
++  delete appState.__NA;
++  delete appState.__PRIVATE_NEXTJS_INTERNALS_TREE;
++  window.history.replaceState(appState, "", url.pathname + url.search + url.hash);
+ }
+diff --git a/src/components/ui/button.tsx b/src/components/ui/button.tsx
+index 7ba32b7..4fd8d97 100644
+--- a/src/components/ui/button.tsx
++++ b/src/components/ui/button.tsx
+@@ -14,11 +14,12 @@ const variants = {
+   danger: "bg-clay-600 text-white hover:bg-clay-500",
+ } as const;
+ 
++// Touch devices get 44px targets; fine pointers keep the desktop sizes.
+ const sizes = {
+-  sm: "h-8 rounded-lg px-3 text-sm",
+-  md: "h-10 rounded-xl px-4 text-sm",
++  sm: "h-8 pointer-coarse:h-11 rounded-lg px-3 text-sm",
++  md: "h-10 pointer-coarse:h-11 rounded-xl px-4 text-sm",
+   lg: "h-12 rounded-xl px-6 text-base",
+-  icon: "size-10 rounded-full",
++  icon: "size-10 pointer-coarse:size-11 rounded-full",
+ } as const;
+ 
+ export type ButtonVariant = keyof typeof variants;
+diff --git a/src/components/ui/dialog.test.ts b/src/components/ui/dialog.test.ts
+new file mode 100644
+index 0000000..ac5bc09
+--- /dev/null
++++ b/src/components/ui/dialog.test.ts
+@@ -0,0 +1,61 @@
++import { describe, expect, it } from "vitest";
++import { dialogKeysOf, keyboardInset, nearestScrollTop, shouldDismissSwipe } from "./dialog";
++
++describe("keyboardInset", () => {
++  it("is the part of the layout viewport covered below the visual viewport", () => {
++    expect(keyboardInset(844, 844, 0)).toBe(0);
++    expect(keyboardInset(844, 464, 0)).toBe(380);
++    // iOS pans the visual viewport up while typing.
++    expect(keyboardInset(844, 464, 100)).toBe(280);
++  });
++
++  it("never goes negative and ignores bad input", () => {
++    expect(keyboardInset(800, 820, 0)).toBe(0);
++    expect(keyboardInset(800, Number.NaN, 0)).toBe(0);
++  });
++});
++
++describe("shouldDismissSwipe", () => {
++  it("dismisses past 96px", () => {
++    expect(shouldDismissSwipe(97, 0)).toBe(true);
++    expect(shouldDismissSwipe(96, 0)).toBe(false);
++  });
++
++  it("dismisses a fast flick, but not a tiny twitch", () => {
++    expect(shouldDismissSwipe(40, 0.8)).toBe(true);
++    expect(shouldDismissSwipe(40, 0.4)).toBe(false);
++    expect(shouldDismissSwipe(8, 2)).toBe(false);
++  });
++
++  it("never dismisses an upward drag", () => {
++    expect(shouldDismissSwipe(-200, 3)).toBe(false);
++  });
++});
++
++describe("nearestScrollTop", () => {
++  it("leaves visible targets alone", () => {
++    expect(nearestScrollTop(100, 400, 200, 250)).toBe(100);
++  });
++
++  it("scrolls down just enough to show a target below", () => {
++    expect(nearestScrollTop(0, 400, 500, 544)).toBe(544 + 12 - 400);
++  });
++
++  it("scrolls up to show a target above", () => {
++    expect(nearestScrollTop(300, 400, 100, 144)).toBe(88);
++    expect(nearestScrollTop(300, 400, 4, 40)).toBe(0);
++  });
++
++  it("aligns the top of targets taller than the viewport", () => {
++    expect(nearestScrollTop(0, 200, 300, 700)).toBe(288);
++  });
++});
++
++describe("dialogKeysOf", () => {
++  it("reads the dialog key stack from a history state", () => {
++    expect(dialogKeysOf({ __NA: true, __dialogs: ["a", "b"] })).toEqual(["a", "b"]);
++    expect(dialogKeysOf({ __NA: true })).toEqual([]);
++    expect(dialogKeysOf(null)).toEqual([]);
++    expect(dialogKeysOf({ __dialogs: ["a", 3] })).toEqual(["a"]);
++  });
++});
+diff --git a/src/components/ui/dialog.tsx b/src/components/ui/dialog.tsx
+index ac4705e..ec5d139 100644
+--- a/src/components/ui/dialog.tsx
++++ b/src/components/ui/dialog.tsx
+@@ -1,10 +1,291 @@
+ "use client";
+ 
+ import { X } from "lucide-react";
+-import { useEffect, useRef, type ReactNode } from "react";
++import { useRouter } from "next/navigation";
++import {
++  createContext,
++  useContext,
++  useEffect,
++  useId,
++  useMemo,
++  useRef,
++  type PointerEvent as ReactPointerEvent,
++  type ReactNode,
++  type RefObject,
++} from "react";
+ import { cn } from "@/lib/cn";
++import { PHONE_QUERY } from "@/lib/use-media-query";
++import { registerToastHost } from "./toast";
++
++/*
++ * Native <dialog> wrapper: focus trapping, Escape and the backdrop come from the browser.
++ *
++ * Wide screens: a centered card (unchanged). Phone variant (`mobile` prop):
++ * - "sheet" (default): bottom sheet with a grab handle; swipe the handle/header down to close.
++ * - "fullscreen": covers the viewport (below the status bar via pt-safe).
++ * - "center": the centered card, as on wide screens.
++ * Sheets and full-screen dialogs sit above the on-screen keyboard (--kb-inset from visualViewport).
++ *
++ * History (`closeOnBack`): opening pushes a same-URL history entry, so Back / Android back closes
++ * the dialog instead of leaving the page. Close through the controls, never by hand:
++ * - requestClose(): what X, scrim, Escape and swipe do. Pops our entry when it's on top and
++ *   resolves after popstate.
++ * - close({ viaNavigation: true }): the caller already replaced our entry; close without popping.
++ * - navigateFromDialog(href, { replace }): pop first, then router.push/replace. Use it for every
++ *   link inside a closeOnBack dialog so one Back returns to where the dialog was opened.
++ * Children get these via useDialogControls(); custom dialogs (the lightbox) use useDialogHistory().
++ * Setting `open` to false from the parent also pops the entry when it's on top.
++ */
++
++export type DialogMobile = "sheet" | "fullscreen" | "center";
++
++export type DialogControls = {
++  /** Close as if dismissed by the user. Pops this dialog's history entry when it's on top. */
++  requestClose: () => Promise<void>;
++  /** Close now. `viaNavigation: true` = the caller already replaced the entry; don't pop. */
++  close: (opts?: { viaNavigation?: boolean }) => void;
++  /** Close (popping our entry first), then router.push — or router.replace with `replace`. */
++  navigateFromDialog: (href: string, opts?: { replace?: boolean }) => Promise<void>;
++};
++
++/* ───────────────────────── pure helpers (unit-tested) ───────────────────────── */
++
++/** Height of the on-screen keyboard (or anything else covering the layout viewport's bottom). */
++export function keyboardInset(innerHeight: number, vvHeight: number, vvOffsetTop: number): number {
++  const inset = innerHeight - vvHeight - vvOffsetTop;
++  return Number.isFinite(inset) ? Math.max(0, Math.round(inset)) : 0;
++}
++
++export const SWIPE_CLOSE_DISTANCE = 96; // px
++export const SWIPE_CLOSE_VELOCITY = 0.5; // px/ms
++
++/** Whether a downward drag of `dy` px, ending at `velocity` px/ms, should dismiss a sheet. */
++export function shouldDismissSwipe(dy: number, velocity: number): boolean {
++  return dy > SWIPE_CLOSE_DISTANCE || (dy > 16 && velocity > SWIPE_CLOSE_VELOCITY);
++}
++
++/**
++ * scrollTop that brings [top, bottom] (relative to the scroller's content) into a viewport
++ * of `height` currently scrolled to `scrollTop`, moving as little as possible ("nearest").
++ */
++export function nearestScrollTop(
++  scrollTop: number,
++  height: number,
++  top: number,
++  bottom: number,
++  margin = 12,
++): number {
++  if (top - margin < scrollTop) return Math.max(0, top - margin);
++  if (bottom + margin > scrollTop + height) {
++    // Taller than the viewport: align the top.
++    return bottom - top + 2 * margin > height ? top - margin : bottom + margin - height;
++  }
++  return scrollTop;
++}
++
++/**
++ * Like el.scrollIntoView({ block: "nearest" }), but only scrolls containers inside `root`,
++ * so the locked page behind a dialog never moves.
++ */
++function revealWithin(root: HTMLElement, el: Element | null) {
++  if (!(el instanceof HTMLElement) || el === root || !root.contains(el)) return;
++  for (let box = el.parentElement; box && box !== root; box = box.parentElement) {
++    const { overflowY } = getComputedStyle(box);
++    if (!/(auto|scroll)/.test(overflowY) || box.scrollHeight <= box.clientHeight) continue;
++    const b = box.getBoundingClientRect();
++    const r = el.getBoundingClientRect();
++    const top = r.top - b.top - box.clientTop + box.scrollTop;
++    box.scrollTop = nearestScrollTop(box.scrollTop, box.clientHeight, top, top + r.height);
++  }
++}
++
++/** The dialog keys stored on a history entry by this module (bottom → top). */
++export function dialogKeysOf(state: unknown): string[] {
++  const keys = (state as { __dialogs?: unknown } | null)?.__dialogs;
++  return Array.isArray(keys) ? keys.filter((k): k is string => typeof k === "string") : [];
++}
++
++/* ───────────────────────── history entry manager ───────────────────────── */
++
++type HistoryEntry = { key: string; href: string; onPop: () => void };
++
++// Per-document prefix so entries left over from before a reload never match new dialogs.
++const DOC = Math.random().toString(36).slice(2, 8);
++let seq = 0;
++const entries: HistoryEntry[] = [];
++const popWaiters = new Set<() => void>();
++let listening = false;
++
++function onPopState(e: PopStateEvent) {
++  const keep = dialogKeysOf(e.state);
++  // Close every dialog whose entry the user navigated away from (top first).
++  for (let i = entries.length - 1; i >= 0; i--) {
++    const entry = entries[i];
++    if (!keep.includes(entry.key)) {
++      entries.splice(i, 1);
++      entry.onPop();
++    }
++  }
++  [...popWaiters].forEach((resolve) => resolve());
++}
++
++function isOnTop(entry: HistoryEntry): boolean {
++  if (entries[entries.length - 1] !== entry) return false;
++  const state = window.history.state as { __dialog?: string } | null;
++  // Next replaces the entry's state on router.refresh()/server actions and drops our keys;
++  // the URL is still ours then.
++  return state?.__dialog === entry.key || window.location.href === entry.href;
++}
++
++function pushEntry(onPop: () => void): HistoryEntry {
++  if (!listening) {
++    window.addEventListener("popstate", onPopState);
++    listening = true;
++  }
++  const key = `${DOC}-${++seq}`;
++  const keys = entries.map((e) => e.key);
++  const top = entries[entries.length - 1];
++  const state = (window.history.state ?? {}) as Record<string, unknown>;
++  // Restore the parent dialog's keys if Next dropped them, so Back from us keeps it open.
++  if (top && state.__dialog !== top.key && window.location.href === top.href) {
++    window.history.replaceState({ ...state, __dialog: top.key, __dialogs: keys }, "");
++  }
++  // Spreading the current state keeps Next's __NA/tree keys, so Next treats Back as a
++  // same-URL traversal (no reload, no RSC request) and its patched pushState passes through.
++  window.history.pushState(
++    { ...window.history.state, __dialog: key, __dialogs: [...keys, key] },
++    "",
++  );
++  const entry = { key, href: window.location.href, onPop };
++  entries.push(entry);
++  return entry;
++}
++
++function forgetEntry(entry: HistoryEntry) {
++  const i = entries.indexOf(entry);
++  if (i !== -1) entries.splice(i, 1);
++}
++
++/** history.back() and wait for the resulting popstate (with a safety timeout). */
++function popAndWait(timeoutMs = 1000): Promise<void> {
++  return new Promise((resolve) => {
++    const done = () => {
++      popWaiters.delete(done);
++      clearTimeout(timer);
++      resolve();
++    };
++    const timer = setTimeout(done, timeoutMs);
++    popWaiters.add(done);
++    window.history.back();
++  });
++}
++
++/**
++ * History integration for any modal UI: while `open`, Back closes it (calls `onClose`) and
++ * the page stays put. Returns the controls; `onClose` must make `open` false.
++ */
++export function useDialogHistory(
++  open: boolean,
++  onClose: () => void,
++  { enabled = true }: { enabled?: boolean } = {},
++): DialogControls {
++  const router = useRouter();
++  const onCloseRef = useRef(onClose);
++  const entryRef = useRef<HistoryEntry | null>(null);
++  const releaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
++  const closing = useRef<Promise<void> | null>(null);
++
++  useEffect(() => {
++    onCloseRef.current = onClose;
++  });
++
++  useEffect(() => {
++    if (!open || !enabled) return;
++    // A StrictMode re-mount or re-run while still open cancels the pending release.
++    if (releaseTimer.current) clearTimeout(releaseTimer.current);
++    releaseTimer.current = null;
++    closing.current = null;
++    if (!entryRef.current) {
++      entryRef.current = pushEntry(() => {
++        entryRef.current = null;
++        onCloseRef.current();
++      });
++    }
++    return () => {
++      // Closed by the parent (or unmounted) while our entry is still on top: pop it.
++      // Deferred so the StrictMode double-invoke doesn't pop and re-push.
++      releaseTimer.current = setTimeout(() => {
++        releaseTimer.current = null;
++        const entry = entryRef.current;
++        if (!entry) return;
++        entryRef.current = null;
++        const onTop = isOnTop(entry);
++        forgetEntry(entry);
++        if (onTop) void popAndWait();
++      }, 0);
++    };
++  }, [open, enabled]);
++
++  return useMemo<DialogControls>(() => {
++    const finish = () => {
++      const entry = entryRef.current;
++      if (entry) forgetEntry(entry);
++      entryRef.current = null;
++      onCloseRef.current();
++    };
++
++    const requestClose = (): Promise<void> => {
++      if (closing.current) return closing.current;
++      const entry = entryRef.current;
++      if (!entry || !isOnTop(entry)) {
++        finish();
++        return Promise.resolve();
++      }
++      const p = popAndWait().then(() => {
++        // Normally popstate already closed us; after the timeout, close anyway.
++        if (entryRef.current === entry) finish();
++      });
++      closing.current = p;
++      void p.finally(() => {
++        if (closing.current === p) closing.current = null;
++      });
++      return p;
++    };
++
++    return {
++      requestClose,
++      close: ({ viaNavigation = false } = {}) => {
++        if (viaNavigation) finish();
++        else void requestClose();
++      },
++      navigateFromDialog: async (href, { replace = false } = {}) => {
++        await requestClose();
++        if (replace) router.replace(href);
++        else router.push(href);
++      },
++    };
++  }, [router]);
++}
++
++const ControlsContext = createContext<DialogControls | null>(null);
++
++/** Controls of the enclosing <Dialog> (requestClose, close, navigateFromDialog). */
++export function useDialogControls(): DialogControls {
++  const controls = useContext(ControlsContext);
++  if (!controls) throw new Error("useDialogControls must be used inside <Dialog>");
++  return controls;
++}
++
++/* ───────────────────────── component ───────────────────────── */
++
++const mobileClasses: Record<DialogMobile, string> = {
++  sheet:
++    "phone:inset-x-0 phone:top-auto phone:bottom-[var(--kb-inset,0px)] phone:m-0 phone:w-full phone:max-w-none phone:max-h-[calc(100dvh-var(--kb-inset,0px)-var(--sai-top)-8px)] phone:rounded-t-3xl phone:rounded-b-none phone:pr-safe phone:pb-safe phone:pl-safe phone:data-keyboard:pb-0 phone:open:animate-sheet-up",
++  fullscreen:
++    "phone:inset-x-0 phone:top-0 phone:bottom-[var(--kb-inset,0px)] phone:m-0 phone:h-auto phone:max-h-none phone:w-full phone:max-w-none phone:rounded-none phone:pt-safe phone:pr-safe phone:pb-safe phone:pl-safe phone:shadow-none phone:data-keyboard:pb-0 phone:open:animate-sheet-up",
++  center: "",
++};
+ 
+-/** Native <dialog> wrapper: focus trapping, Escape and backdrop come from the browser. */
+ export function Dialog({
+   open,
+   onClose,
+@@ -12,50 +293,218 @@ export function Dialog({
+   children,
+   className,
+   footer,
++  mobile = "sheet",
++  closeOnBack = false,
++  initialFocusRef,
++  "aria-label": ariaLabel,
+ }: {
+   open: boolean;
++  /** Called whenever the dialog closes (X, scrim, Escape, swipe, Back). Must set `open` false. */
+   onClose: () => void;
+   title?: ReactNode;
+   children: ReactNode;
+   className?: string;
+   footer?: ReactNode;
++  /** Presentation in the phone variant. Wide screens always get the centered card. */
++  mobile?: DialogMobile;
++  /** Push a history entry while open so Back closes the dialog. */
++  closeOnBack?: boolean;
++  /** Focused after opening instead of the first focusable element. */
++  initialFocusRef?: RefObject<HTMLElement | null>;
++  /** Accessible name when there is no `title`. */
++  "aria-label"?: string;
+ }) {
+   const ref = useRef<HTMLDialogElement>(null);
++  const slotRef = useRef<HTMLDivElement>(null);
++  const titleId = useId();
++  const openRef = useRef(open);
++  const controls = useDialogHistory(open, onClose, { enabled: closeOnBack });
++  const { requestClose } = controls;
+ 
+   useEffect(() => {
++    openRef.current = open;
+     const d = ref.current;
+     if (!d) return;
+-    if (open && !d.open) d.showModal();
++    if (open && !d.open) {
++      d.style.removeProperty("transform");
++      d.style.removeProperty("transition");
++      d.showModal();
++      initialFocusRef?.current?.focus();
++    }
+     if (!open && d.open) d.close();
++  }, [open, initialFocusRef]);
++
++  // While open: register as the toast host, and track the on-screen keyboard.
++  useEffect(() => {
++    const d = ref.current;
++    const slot = slotRef.current;
++    if (!open || !d || !slot) return;
++    const unregister = registerToastHost(slot);
++
++    let frame = 0;
++    let lastInset = -1;
++    const timers: ReturnType<typeof setTimeout>[] = [];
++    const reveal = (el: Element | null) => {
++      cancelAnimationFrame(frame);
++      frame = requestAnimationFrame(() => revealWithin(d, el));
++    };
++    const update = () => {
++      const vv = window.visualViewport;
++      const inset = vv ? keyboardInset(window.innerHeight, vv.height, vv.offsetTop) : 0;
++      if (inset === lastInset) return;
++      lastInset = inset;
++      d.style.setProperty("--kb-inset", `${inset}px`);
++      d.toggleAttribute("data-keyboard", inset > 0);
++      if (inset > 0) reveal(document.activeElement);
++    };
++    const onFocusIn = (e: FocusEvent) => {
++      reveal(e.target as Element | null);
++      // Keyboards animate in; measure again once they have (also covers stubbed viewports).
++      timers.push(setTimeout(update, 150), setTimeout(update, 400));
++    };
++    const vv = window.visualViewport;
++    update();
++    vv?.addEventListener("resize", update);
++    vv?.addEventListener("scroll", update);
++    window.addEventListener("resize", update);
++    d.addEventListener("focusin", onFocusIn);
++    return () => {
++      unregister();
++      cancelAnimationFrame(frame);
++      timers.forEach(clearTimeout);
++      vv?.removeEventListener("resize", update);
++      vv?.removeEventListener("scroll", update);
++      window.removeEventListener("resize", update);
++      d.removeEventListener("focusin", onFocusIn);
++      d.style.removeProperty("--kb-inset");
++      d.removeAttribute("data-keyboard");
++    };
+   }, [open]);
+ 
++  // Swipe down on the handle/header (phone sheet only).
++  const drag = useRef<{ id: number; y0: number; y: number; t: number; v: number } | null>(null);
++  const swipeEnabled = mobile === "sheet";
++  const onDragStart = (e: ReactPointerEvent<HTMLDivElement>) => {
++    const d = ref.current;
++    if (!swipeEnabled || !d || !e.isPrimary || e.button !== 0) return;
++    if (!window.matchMedia(PHONE_QUERY).matches) return;
++    if ((e.target as Element).closest("button, a, input, select, textarea")) return;
++    e.currentTarget.setPointerCapture(e.pointerId);
++    drag.current = { id: e.pointerId, y0: e.clientY, y: e.clientY, t: e.timeStamp, v: 0 };
++    d.style.transition = "none";
++  };
++  const onDragMove = (e: ReactPointerEvent<HTMLDivElement>) => {
++    const s = drag.current;
++    const d = ref.current;
++    if (!s || !d || s.id !== e.pointerId) return;
++    const dt = Math.max(1, e.timeStamp - s.t);
++    s.v = 0.8 * ((e.clientY - s.y) / dt) + 0.2 * s.v;
++    s.y = e.clientY;
++    s.t = e.timeStamp;
++    const dy = e.clientY - s.y0;
++    // Follow the finger down; resist upward drags.
++    d.style.transform = `translateY(${dy > 0 ? dy : dy / 6}px)`;
++  };
++  const onDragEnd = (e: ReactPointerEvent<HTMLDivElement>) => {
++    const s = drag.current;
++    const d = ref.current;
++    if (!s || !d || s.id !== e.pointerId) return;
++    drag.current = null;
++    const dy = e.clientY - s.y0;
++    if (e.type === "pointerup" && shouldDismissSwipe(dy, s.v)) {
++      d.style.transition = "transform 180ms ease-in";
++      d.style.transform = "translateY(100%)";
++      setTimeout(() => void requestClose(), 170);
++    } else {
++      d.style.transition = "transform 220ms cubic-bezier(0.22, 1, 0.36, 1)";
++      d.style.transform = "";
++    }
++  };
++  const dragHandlers = swipeEnabled
++    ? {
++        onPointerDown: onDragStart,
++        onPointerMove: onDragMove,
++        onPointerUp: onDragEnd,
++        onPointerCancel: onDragEnd,
++      }
++    : {};
++
++  // Backdrop taps: only when the press both started and ended outside the dialog box.
++  const pressedOutside = useRef(false);
++  const isOutside = (e: { clientX: number; clientY: number; target: EventTarget | null }) => {
++    const d = ref.current;
++    if (!d || e.target !== d) return false;
++    const r = d.getBoundingClientRect();
++    return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
++  };
++
+   return (
+     <dialog
+       ref={ref}
+-      onClose={onClose}
++      data-mobile={mobile}
++      aria-labelledby={title !== undefined ? titleId : undefined}
++      aria-label={title === undefined ? ariaLabel : undefined}
++      // React bubbles cancel/close from nested dialogs through the tree: only handle our own.
++      onCancel={(e) => {
++        if (e.target !== e.currentTarget) return;
++        // Escape / Android back: route through requestClose so our history entry is popped.
++        e.preventDefault();
++        void requestClose();
++      }}
++      onClose={(e) => {
++        if (e.target !== e.currentTarget) return;
++        // The browser closed it on its own (e.g. a non-cancelable Escape): sync up.
++        if (openRef.current) void requestClose();
++      }}
++      onPointerDown={(e) => {
++        pressedOutside.current = isOutside(e);
++      }}
+       onClick={(e) => {
+-        if (e.target === ref.current) onClose();
++        if (pressedOutside.current && isOutside(e)) void requestClose();
++        pressedOutside.current = false;
+       }}
+       className={cn(
+         "m-auto max-h-[90dvh] w-[min(40rem,calc(100vw-2rem))] overflow-hidden rounded-3xl bg-surface p-0 text-ink shadow-pop backdrop:animate-fade-in open:flex open:animate-rise open:flex-col",
++        mobileClasses[mobile],
+         className,
+       )}
+     >
+-      {title !== undefined && (
+-        <header className="flex items-center justify-between border-b border-line px-6 py-4">
+-          <h2 className="text-base font-semibold">{title}</h2>
+-          <button
+-            type="button"
+-            onClick={onClose}
+-            className="-mr-2 rounded-full p-2 text-muted hover:bg-sunken hover:text-ink"
+-            aria-label="Close"
+-          >
+-            <X className="size-5" />
+-          </button>
+-        </header>
+-      )}
+-      <div className="flex-1 overflow-y-auto">{children}</div>
+-      {footer && <footer className="border-t border-line px-6 py-4">{footer}</footer>}
++      <ControlsContext.Provider value={controls}>
++        <div className={cn("shrink-0", swipeEnabled && "phone:touch-none")} {...dragHandlers}>
++          {swipeEnabled && (
++            <div
++              data-dialog-handle
++              aria-hidden
++              className="hidden h-6 cursor-grab items-center justify-center phone:flex"
++            >
++              <span className="h-1.5 w-10 rounded-full bg-line-strong" />
++            </div>
++          )}
++          {title !== undefined && (
++            <header
++              className={cn(
++                "flex items-center justify-between border-b border-line px-6 py-4 phone:py-2",
++                swipeEnabled && "phone:pt-0",
++              )}
++            >
++              <h2 id={titleId} className="text-base font-semibold">
++                {title}
++              </h2>
++              <button
++                type="button"
++                onClick={() => void requestClose()}
++                className="-mr-2 flex items-center justify-center rounded-full p-2 text-muted hover:bg-sunken hover:text-ink pointer-coarse:size-11 phone:size-11"
++                aria-label="Close"
++              >
++                <X className="size-5" />
++              </button>
++            </header>
++          )}
++        </div>
++        <div className="flex-1 overflow-y-auto overscroll-contain">{children}</div>
++        <div ref={slotRef} data-toast-slot className="relative h-0 shrink-0" />
++        {footer && <footer className="shrink-0 border-t border-line px-6 py-4">{footer}</footer>}
++      </ControlsContext.Provider>
+     </dialog>
+   );
+ }
+diff --git a/src/components/ui/form.tsx b/src/components/ui/form.tsx
+index 2f976fe..9a1c202 100644
+--- a/src/components/ui/form.tsx
++++ b/src/components/ui/form.tsx
+@@ -1,8 +1,9 @@
+ import type { ComponentProps, ReactNode } from "react";
+ import { cn } from "@/lib/cn";
+ 
++// pointer-coarse:text-base = 16px on every touch device, so iOS never zooms on focus.
+ const control =
+-  "w-full rounded-xl border border-line-strong bg-surface px-3.5 text-sm text-ink placeholder:text-faint transition-colors outline-none hover:border-faint focus:border-brand-500 focus:ring-3 focus:ring-brand-100 disabled:bg-sunken disabled:text-muted aria-invalid:border-clay-500";
++  "w-full rounded-xl border border-line-strong bg-surface px-3.5 text-sm pointer-coarse:text-base text-ink placeholder:text-faint transition-colors outline-none hover:border-faint focus:border-brand-500 focus:ring-3 focus:ring-brand-100 disabled:bg-sunken disabled:text-muted aria-invalid:border-clay-500";
+ 
+ export function Input({ className, ...props }: ComponentProps<"input">) {
+   return <input className={cn(control, "h-11", className)} {...props} />;
+@@ -71,13 +72,13 @@ export function Checkbox({
+   return (
+     <label
+       className={cn(
+-        "flex cursor-pointer items-center gap-2.5 text-sm text-ink-soft select-none",
++        "flex cursor-pointer items-center gap-2.5 text-sm text-ink-soft select-none pointer-coarse:min-h-11 pointer-coarse:py-2",
+         className,
+       )}
+     >
+       <input
+         type="checkbox"
+-        className="size-4.5 cursor-pointer rounded-md border-line-strong accent-brand-700"
++        className="size-4.5 cursor-pointer rounded-md border-line-strong accent-brand-700 pointer-coarse:size-5"
+         {...props}
+       />
+       {label}
+diff --git a/src/components/ui/popover.tsx b/src/components/ui/popover.tsx
+index 75bbf7a..1ae7439 100644
+--- a/src/components/ui/popover.tsx
++++ b/src/components/ui/popover.tsx
+@@ -8,6 +8,10 @@ import { cn } from "@/lib/cn";
+ /**
+  * Minimal accessible popover: button + floating panel. Closes on outside
+  * click, Escape (returning focus to the trigger) and navigation.
++ *
++ * With `fixedOnMobile` (default), below lg the panel floats as a bottom card over a scrim.
++ * The scrim closes the popover on pointerdown and swallows the rest of that tap, so the
++ * dismissing tap never reaches a link or card underneath.
+  */
+ export function Popover({
+   label,
+@@ -16,6 +20,8 @@ export function Popover({
+   align = "start",
+   className,
+   panelClassName,
++  triggerClassName,
++  unstyled = false,
+   showChevron = true,
+   fixedOnMobile = true,
+ }: {
+@@ -25,10 +31,16 @@ export function Popover({
+   align?: "start" | "end";
+   className?: string;
+   panelClassName?: string;
++  /** Extra classes for the trigger button (merged after the defaults). */
++  triggerClassName?: string;
++  /** Drop the default pill styling of the trigger; style it with `triggerClassName`. */
++  unstyled?: boolean;
+   showChevron?: boolean;
+   fixedOnMobile?: boolean;
+ }) {
+   const [open, setOpen] = useState(false);
++  // Keeps an invisible scrim up after a dismissing pointerdown until its click lands on it.
++  const [swallowing, setSwallowing] = useState(false);
+   const root = useRef<HTMLDivElement>(null);
+   const button = useRef<HTMLButtonElement>(null);
+   const id = useId();
+@@ -57,6 +69,13 @@ export function Popover({
+     };
+   }, [open]);
+ 
++  // Safety net: if the swallowed tap never produces a click (drag, long press), drop the scrim.
++  useEffect(() => {
++    if (!swallowing) return;
++    const t = setTimeout(() => setSwallowing(false), 700);
++    return () => clearTimeout(t);
++  }, [swallowing]);
++
+   return (
+     <div ref={root} className={cn("relative", className)}>
+       <button
+@@ -66,11 +85,14 @@ export function Popover({
+         aria-controls={id}
+         onClick={() => setOpen((o) => !o)}
+         className={cn(
+-          "flex h-10 items-center gap-1.5 rounded-full border px-4 text-sm font-medium whitespace-nowrap transition-colors",
+-          active
+-            ? "border-brand-700 bg-brand-50 text-brand-800"
+-            : "border-line-strong bg-surface text-ink-soft hover:border-faint hover:text-ink",
+-          open && "ring-3 ring-brand-100",
++          !unstyled && [
++            "flex h-10 items-center gap-1.5 rounded-full border px-4 text-sm font-medium whitespace-nowrap transition-colors",
++            active
++              ? "border-brand-700 bg-brand-50 text-brand-800"
++              : "border-line-strong bg-surface text-ink-soft hover:border-faint hover:text-ink",
++            open && "ring-3 ring-brand-100",
++          ],
++          triggerClassName,
+         )}
+       >
+         {label}
+@@ -80,6 +102,23 @@ export function Popover({
+           />
+         )}
+       </button>
++      {fixedOnMobile && (open || swallowing) && (
++        <div
++          aria-hidden
++          data-popover-scrim
++          className={cn(
++            "fixed inset-0 z-[45] touch-none lg:hidden",
++            open ? "animate-fade-in bg-ink/30" : "bg-transparent",
++          )}
++          onPointerDown={(e) => {
++            e.preventDefault();
++            setOpen(false);
++            setSwallowing(true);
++          }}
++          onClick={() => setSwallowing(false)}
++          onPointerCancel={() => setSwallowing(false)}
++        />
++      )}
+       {open && (
+         <div
+           id={id}
+@@ -87,9 +126,10 @@ export function Popover({
+           className={cn(
+             "absolute top-full z-40 mt-2 min-w-72 animate-rise rounded-2xl border border-line bg-surface p-5 shadow-pop",
+             align === "end" ? "right-0" : "left-0",
+-            // On narrow screens, float as a bottom sheet so scrolling toolbars can't clip it.
++            // On narrow screens, float as a bottom card (above the tab bar and home indicator)
++            // so scrolling toolbars can't clip it.
+             fixedOnMobile &&
+-              "max-lg:fixed max-lg:inset-x-3 max-lg:top-auto max-lg:bottom-3 max-lg:min-w-0",
++              "max-lg:fixed max-lg:top-auto max-lg:right-[max(0.75rem,var(--sai-right))] max-lg:bottom-safe-3 max-lg:left-[max(0.75rem,var(--sai-left))] max-lg:z-[45] max-lg:max-h-[calc(100dvh-var(--sai-top)-var(--sai-bottom)-1.5rem)] max-lg:min-w-0 max-lg:overflow-y-auto max-lg:overscroll-contain",
+             panelClassName,
+           )}
+         >
+diff --git a/src/components/ui/section.tsx b/src/components/ui/section.tsx
+index 11b5ee2..ad8bf2e 100644
+--- a/src/components/ui/section.tsx
++++ b/src/components/ui/section.tsx
+@@ -1,9 +1,17 @@
+ import type { ReactNode } from "react";
+ import { cn } from "@/lib/cn";
+ 
++/** Page-width container. Side padding clears landscape notches (max(N, safe-area inset)). */
+ export function Container({ children, className }: { children: ReactNode; className?: string }) {
+   return (
+-    <div className={cn("mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8", className)}>{children}</div>
++    <div
++      className={cn(
++        "mx-auto w-full max-w-7xl pr-safe-4 pl-safe-4 sm:pr-safe-6 sm:pl-safe-6 lg:pr-safe-8 lg:pl-safe-8",
++        className,
++      )}
++    >
++      {children}
++    </div>
+   );
+ }
+ 
+diff --git a/src/components/ui/toast.test.ts b/src/components/ui/toast.test.ts
+new file mode 100644
+index 0000000..387459b
+--- /dev/null
++++ b/src/components/ui/toast.test.ts
+@@ -0,0 +1,94 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import { createToastStore, DEFAULT_TOAST_DURATION } from "./toast";
++
++describe("toast store", () => {
++  beforeEach(() => vi.useFakeTimers());
++  afterEach(() => vi.useRealTimers());
++
++  it("shows one toast at a time; a new one replaces the current", () => {
++    const store = createToastStore();
++    const a = store.show("First");
++    const b = store.show("Second", { tone: "error" });
++    expect(b).not.toBe(a);
++    expect(store.getSnapshot().toast).toMatchObject({ id: b, message: "Second", tone: "error" });
++  });
++
++  it("auto-dismisses after the default duration", () => {
++    const store = createToastStore();
++    store.show("Saved");
++    vi.advanceTimersByTime(DEFAULT_TOAST_DURATION - 1);
++    expect(store.getSnapshot().toast).not.toBeNull();
++    vi.advanceTimersByTime(1);
++    expect(store.getSnapshot().toast).toBeNull();
++  });
++
++  it("a replaced toast's timer never dismisses its successor", () => {
++    const store = createToastStore();
++    store.show("First", { duration: 1000 });
++    vi.advanceTimersByTime(900);
++    store.show("Second", { duration: 1000 });
++    vi.advanceTimersByTime(500);
++    expect(store.getSnapshot().toast?.message).toBe("Second");
++    vi.advanceTimersByTime(500);
++    expect(store.getSnapshot().toast).toBeNull();
++  });
++
++  it("keeps Infinity-duration toasts until dismissed", () => {
++    const store = createToastStore();
++    store.show("Offline", { duration: Infinity });
++    vi.advanceTimersByTime(60_000);
++    expect(store.getSnapshot().toast?.message).toBe("Offline");
++    store.dismiss();
++    expect(store.getSnapshot().toast).toBeNull();
++  });
++
++  it("dismiss(id) only dismisses that toast if it is still showing", () => {
++    const store = createToastStore();
++    const old = store.show("Old");
++    store.show("New");
++    store.dismiss(old);
++    expect(store.getSnapshot().toast?.message).toBe("New");
++  });
++
++  it("pauses and resumes the remaining time", () => {
++    const store = createToastStore();
++    store.show("Undo?", { duration: 5000 });
++    vi.advanceTimersByTime(3000);
++    store.pause();
++    vi.advanceTimersByTime(10_000);
++    expect(store.getSnapshot().toast).not.toBeNull();
++    store.resume();
++    vi.advanceTimersByTime(1999);
++    expect(store.getSnapshot().toast).not.toBeNull();
++    vi.advanceTimersByTime(1);
++    expect(store.getSnapshot().toast).toBeNull();
++  });
++
++  it("keeps the action and notifies subscribers", () => {
++    const store = createToastStore();
++    const listener = vi.fn();
++    const unsubscribe = store.subscribe(listener);
++    const onClick = vi.fn();
++    store.show("Removed", { action: { label: "Undo", onClick } });
++    expect(listener).toHaveBeenCalledTimes(1);
++    store.getSnapshot().toast?.action?.onClick();
++    expect(onClick).toHaveBeenCalled();
++    unsubscribe();
++    store.dismiss();
++    expect(listener).toHaveBeenCalledTimes(1);
++  });
++
++  it("stacks dialog hosts; the most recently opened one is on top", () => {
++    const store = createToastStore();
++    const a = {} as HTMLElement;
++    const b = {} as HTMLElement;
++    const offA = store.registerHost(a);
++    const offB = store.registerHost(b);
++    expect(store.getSnapshot().hosts.at(-1)).toBe(b);
++    offB();
++    expect(store.getSnapshot().hosts.at(-1)).toBe(a);
++    offB(); // idempotent
++    offA();
++    expect(store.getSnapshot().hosts).toEqual([]);
++  });
++});
+diff --git a/src/components/ui/toast.tsx b/src/components/ui/toast.tsx
+new file mode 100644
+index 0000000..f197695
+--- /dev/null
++++ b/src/components/ui/toast.tsx
+@@ -0,0 +1,207 @@
++"use client";
++
++import { useSyncExternalStore } from "react";
++import { createPortal } from "react-dom";
++import { cn } from "@/lib/cn";
++
++/*
++ * App-wide toasts: a tiny module store plus one <Toaster /> in the root layout.
++ *
++ *   toast("Removed from saved", { action: { label: "Undo", onClick: undo }, duration: 5000 });
++ *
++ * One toast is visible at a time; a new one replaces the current one. The timer pauses while
++ * the toast is hovered or focused. While a modal <Dialog> is open the toast renders inside
++ * that dialog's [data-toast-slot] (outside it would be inert, so "Undo" couldn't be tapped);
++ * otherwise it floats above the bottom chrome (--bottom-overlay-h).
++ *
++ * The region uses role="status" and deliberately no explicit aria-live attribute: e2e expects
++ * exactly one [aria-live=polite] on /homes (the results count).
++ */
++
++export type ToastTone = "default" | "error";
++export type ToastAction = { label: string; onClick: () => void };
++export type ToastOptions = {
++  action?: ToastAction;
++  tone?: ToastTone;
++  /** Milliseconds before auto-dismiss (default 4000). Infinity keeps it until dismissed. */
++  duration?: number;
++};
++export type ToastItem = {
++  id: number;
++  message: string;
++  action?: ToastAction;
++  tone: ToastTone;
++  duration: number;
++};
++export type ToastState = {
++  toast: ToastItem | null;
++  /** Open dialogs' toast slots, bottom → top. The last one hosts the toast. */
++  hosts: readonly HTMLElement[];
++};
++
++export const DEFAULT_TOAST_DURATION = 4000;
++
++/** Creates an isolated store. The app uses the `toastStore` singleton; tests make their own. */
++export function createToastStore() {
++  let state: ToastState = { toast: null, hosts: [] };
++  let nextId = 1;
++  let timer: ReturnType<typeof setTimeout> | null = null;
++  let deadline = 0;
++  let remaining = 0;
++  let paused = false;
++  const listeners = new Set<() => void>();
++
++  const set = (patch: Partial<ToastState>) => {
++    state = { ...state, ...patch };
++    listeners.forEach((l) => l());
++  };
++  const clearTimer = () => {
++    if (timer !== null) clearTimeout(timer);
++    timer = null;
++  };
++  const schedule = (id: number, ms: number) => {
++    clearTimer();
++    if (!Number.isFinite(ms)) return;
++    deadline = Date.now() + ms;
++    timer = setTimeout(() => dismiss(id), ms);
++  };
++
++  function show(message: string, opts: ToastOptions = {}): number {
++    const id = nextId++;
++    const duration = opts.duration ?? DEFAULT_TOAST_DURATION;
++    set({ toast: { id, message, action: opts.action, tone: opts.tone ?? "default", duration } });
++    paused = false;
++    schedule(id, duration);
++    return id;
++  }
++
++  /** Dismisses the current toast, or only toast `id` when given and still showing. */
++  function dismiss(id?: number) {
++    if (!state.toast || (id !== undefined && state.toast.id !== id)) return;
++    clearTimer();
++    paused = false;
++    set({ toast: null });
++  }
++
++  function pause() {
++    if (!state.toast || paused) return;
++    paused = true;
++    remaining = Math.max(0, deadline - Date.now());
++    clearTimer();
++  }
++
++  function resume() {
++    if (!state.toast || !paused) return;
++    paused = false;
++    schedule(state.toast.id, Number.isFinite(state.toast.duration) ? remaining : Infinity);
++  }
++
++  /** Registers an open dialog's toast slot; returns the unregister function. */
++  function registerHost(el: HTMLElement): () => void {
++    set({ hosts: [...state.hosts.filter((h) => h !== el), el] });
++    return () => {
++      if (state.hosts.includes(el)) set({ hosts: state.hosts.filter((h) => h !== el) });
++    };
++  }
++
++  return {
++    show,
++    dismiss,
++    pause,
++    resume,
++    registerHost,
++    getSnapshot: () => state,
++    subscribe(listener: () => void) {
++      listeners.add(listener);
++      return () => listeners.delete(listener);
++    },
++  };
++}
++
++export const toastStore = createToastStore();
++
++/** Shows a toast (replacing any current one). Returns its id for `dismissToast(id)`. */
++export function toast(message: string, opts?: ToastOptions): number {
++  return toastStore.show(message, opts);
++}
++
++/** Dismisses the current toast, or only toast `id` if it is still the one showing. */
++export function dismissToast(id?: number): void {
++  toastStore.dismiss(id);
++}
++
++/**
++ * Makes `slot` (inside an open modal dialog) the place toasts render until the returned
++ * function is called. <Dialog> does this automatically; custom dialogs (the lightbox) can
++ * render their own `<div data-toast-slot className="relative h-0" />` and register it.
++ */
++export function registerToastHost(slot: HTMLElement): () => void {
++  return toastStore.registerHost(slot);
++}
++
++const serverSnapshot: ToastState = { toast: null, hosts: [] };
++
++export function Toaster() {
++  const { toast: current, hosts } = useSyncExternalStore(
++    toastStore.subscribe,
++    toastStore.getSnapshot,
++    () => serverSnapshot,
++  );
++  const host = hosts.at(-1) ?? null;
++  const card = current ? <ToastCard key={current.id} item={current} /> : null;
++  return (
++    <>
++      <div
++        role="status"
++        className="pointer-events-none fixed inset-x-0 bottom-[calc(var(--bottom-overlay-h)+12px)] z-70 flex justify-center pr-safe-4 pl-safe-4"
++      >
++        {!host && card}
++      </div>
++      {host &&
++        createPortal(
++          <div
++            role="status"
++            className="pointer-events-none absolute inset-x-3 bottom-3 z-10 flex justify-center"
++          >
++            {card}
++          </div>,
++          host,
++        )}
++    </>
++  );
++}
++
++function ToastCard({ item }: { item: ToastItem }) {
++  return (
++    <div
++      data-toast
++      data-tone={item.tone}
++      onPointerEnter={toastStore.pause}
++      onPointerLeave={toastStore.resume}
++      onFocus={toastStore.pause}
++      onBlur={toastStore.resume}
++      className={cn(
++        "pointer-events-auto flex min-h-12 w-full max-w-md animate-rise items-center gap-2 rounded-2xl py-1 pr-1 pl-4 text-sm font-medium text-white shadow-pop",
++        item.tone === "error" ? "bg-clay-600" : "bg-ink",
++      )}
++    >
++      <p className="min-w-0 flex-1 py-2">{item.message}</p>
++      {item.action && (
++        <button
++          type="button"
++          onClick={() => {
++            item.action?.onClick();
++            toastStore.dismiss(item.id);
++          }}
++          className={cn(
++            "h-11 min-w-11 shrink-0 rounded-xl px-3 font-semibold transition-colors hover:bg-white/10",
++            item.tone === "error" ? "text-white underline" : "text-brand-200",
++          )}
++        >
++          {item.action.label}
++        </button>
++      )}
++      {!item.action && <span className="w-3" aria-hidden />}
++    </div>
++  );
++}
+diff --git a/src/lib/deeplinks.test.ts b/src/lib/deeplinks.test.ts
+new file mode 100644
+index 0000000..978da73
+--- /dev/null
++++ b/src/lib/deeplinks.test.ts
+@@ -0,0 +1,105 @@
++import { describe, expect, it } from "vitest";
++import {
++  directionsHrefs,
++  isApplePlatform,
++  mailtoHref,
++  smsHref,
++  telHref,
++  toE164,
++} from "./deeplinks";
++
++describe("toE164", () => {
++  it("normalizes US numbers written many ways", () => {
++    expect(toE164("(404) 555-0142")).toBe("+14045550142");
++    expect(toE164("404.555.0142")).toBe("+14045550142");
++    expect(toE164("1-404-555-0142")).toBe("+14045550142");
++    expect(toE164("+1 404 555 0142")).toBe("+14045550142");
++    expect(toE164("404-555-0142 ext. 12")).toBe("+14045550142");
++    expect(toE164("404-555-0142 x12")).toBe("+14045550142");
++  });
++
++  it("passes international numbers through", () => {
++    expect(toE164("+44 20 7946 0958")).toBe("+442079460958");
++  });
++
++  it("rejects numbers that can't be dialed", () => {
++    expect(toE164("555-0142")).toBeNull();
++    expect(toE164("(104) 555-0142")).toBeNull();
++    expect(toE164("")).toBeNull();
++    expect(toE164(null)).toBeNull();
++    expect(toE164("call me")).toBeNull();
++  });
++});
++
++describe("tel, sms and mailto", () => {
++  it("builds dialer and messages links", () => {
++    expect(telHref("(404) 555-0142")).toBe("tel:+14045550142");
++    expect(telHref("nope")).toBeNull();
++    expect(smsHref("(404) 555-0142")).toBe("sms:+14045550142");
++    expect(smsHref("(404) 555-0142", "Hi Jo, this is Dan from Adams Realty & co")).toBe(
++      "sms:+14045550142?&body=Hi%20Jo%2C%20this%20is%20Dan%20from%20Adams%20Realty%20%26%20co",
++    );
++  });
++
++  it("builds mailto links with %20 spaces", () => {
++    expect(mailtoHref("hello@adamsrealty.example")).toBe("mailto:hello@adamsrealty.example");
++    expect(
++      mailtoHref(" hello@adamsrealty.example ", { subject: "Tour: 12 Oak St", body: "Hi there" }),
++    ).toBe("mailto:hello@adamsrealty.example?subject=Tour%3A%2012%20Oak%20St&body=Hi%20there");
++  });
++});
++
++describe("directionsHrefs", () => {
++  const listing = {
++    lat: 33.7748,
++    lng: -84.2963,
++    address: "123 Oak St, Decatur, GA 30030",
++  };
++
++  it("links Apple Maps, Google Maps and Street View", () => {
++    const d = directionsHrefs(listing)!;
++    expect(d.apple).toBe(
++      "https://maps.apple.com/?daddr=123%20Oak%20St%2C%20Decatur%2C%20GA%2030030&dirflg=d",
++    );
++    expect(d.google).toBe(
++      "https://www.google.com/maps/dir/?api=1&destination=123%20Oak%20St%2C%20Decatur%2C%20GA%2030030&travelmode=driving",
++    );
++    expect(d.streetView).toBe(
++      "https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=33.7748%2C-84.2963",
++    );
++  });
++
++  it("returns null when the address is suppressed", () => {
++    expect(directionsHrefs({ ...listing, hideAddress: true })).toBeNull();
++  });
++
++  it("falls back to coordinates, and needs something to go to", () => {
++    expect(directionsHrefs({ ...listing, address: "" })!.google).toContain(
++      "destination=33.7748%2C-84.2963",
++    );
++    expect(directionsHrefs({ ...listing, lat: null, lng: null })!.streetView).toBeNull();
++    expect(directionsHrefs({ lat: null, lng: null, address: null })).toBeNull();
++  });
++});
++
++describe("isApplePlatform", () => {
++  it("detects iOS, iPadOS and macOS", () => {
++    expect(
++      isApplePlatform(
++        "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
++      ),
++    ).toBe(true);
++    expect(
++      isApplePlatform(
++        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
++      ),
++    ).toBe(true);
++    expect(
++      isApplePlatform(
++        "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36",
++      ),
++    ).toBe(false);
++    expect(isApplePlatform("")).toBe(false);
++    expect(isApplePlatform(undefined)).toBe(false);
++  });
++});
+diff --git a/src/lib/deeplinks.ts b/src/lib/deeplinks.ts
+new file mode 100644
+index 0000000..0e1d3ee
+--- /dev/null
++++ b/src/lib/deeplinks.ts
+@@ -0,0 +1,90 @@
++/**
++ * Hrefs that hand off to the phone's own apps: dialer, messages, mail and
++ * maps. Pure, so the same links render on the server and the client.
++ */
++
++/**
++ * "+14045550142" for a US/NANP number written any common way ("(404) 555-0142",
++ * "404.555.0142 ext 12", "+1 404 555 0142"); international "+" numbers pass
++ * through. Null when there's no dialable number.
++ */
++export function toE164(phone: string | null | undefined): string | null {
++  if (!phone) return null;
++  const main = phone.split(/\s*(?:x|ext\.?|extension|#)\s*\d*\s*$/i)[0];
++  const digits = main.replace(/\D/g, "");
++  if (main.trim().startsWith("+") && !digits.startsWith("1")) {
++    return digits.length >= 8 && digits.length <= 15 ? `+${digits}` : null;
++  }
++  const national = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
++  // NANP: area code and exchange can't start with 0 or 1.
++  return /^[2-9]\d{2}[2-9]\d{6}$/.test(national) ? `+1${national}` : null;
++}
++
++/** "tel:+14045550142", or null when the number isn't dialable (hide the button). */
++export function telHref(phone: string | null | undefined): string | null {
++  const e164 = toE164(phone);
++  return e164 ? `tel:${e164}` : null;
++}
++
++/**
++ * "sms:+14045550142?&body=…". The "?&body=" form is the one both iOS and
++ * Android Messages read.
++ */
++export function smsHref(phone: string | null | undefined, body?: string): string | null {
++  const e164 = toE164(phone);
++  if (!e164) return null;
++  return body ? `sms:${e164}?&body=${encodeURIComponent(body)}` : `sms:${e164}`;
++}
++
++/** mailto with %20-encoded subject and body (mail apps show "+" literally). */
++export function mailtoHref(email: string, opts: { subject?: string; body?: string } = {}): string {
++  const params = [
++    opts.subject && `subject=${encodeURIComponent(opts.subject)}`,
++    opts.body && `body=${encodeURIComponent(opts.body)}`,
++  ].filter(Boolean);
++  return `mailto:${encodeURI(email.trim())}${params.length ? `?${params.join("&")}` : ""}`;
++}
++
++export type DirectionsHrefs = {
++  /** Apple Maps (iOS, iPadOS, macOS). */
++  apple: string;
++  /** Google Maps (everything else); opens the app when installed. */
++  google: string;
++  /** Google Street View at the coordinates; null without them. */
++  streetView: string | null;
++};
++
++/**
++ * Driving directions from the device's current location, and Street View.
++ * Null when the seller suppressed the address (IDX) or there is no location.
++ * Prefers the address as the destination (what Maps shows); falls back to coordinates.
++ */
++export function directionsHrefs(l: {
++  lat: number | null | undefined;
++  lng: number | null | undefined;
++  address: string | null | undefined;
++  hideAddress?: boolean | null;
++}): DirectionsHrefs | null {
++  if (l.hideAddress) return null;
++  const hasCoords =
++    typeof l.lat === "number" &&
++    typeof l.lng === "number" &&
++    Number.isFinite(l.lat) &&
++    Number.isFinite(l.lng);
++  const coords = hasCoords ? `${l.lat},${l.lng}` : null;
++  const destination = l.address?.trim() || coords;
++  if (!destination) return null;
++  const d = encodeURIComponent(destination);
++  return {
++    apple: `https://maps.apple.com/?daddr=${d}&dirflg=d`,
++    google: `https://www.google.com/maps/dir/?api=1&destination=${d}&travelmode=driving`,
++    streetView: coords
++      ? `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${encodeURIComponent(coords)}`
++      : null,
++  };
++}
++
++/** iPhone, iPad (including iPadOS's desktop-class "Macintosh" UA) and Mac. */
++export function isApplePlatform(ua: string | null | undefined): boolean {
++  return !!ua && /\b(iPhone|iPad|iPod|Macintosh)\b/.test(ua);
++}
+diff --git a/src/lib/format.test.ts b/src/lib/format.test.ts
+index 7a55a50..0982ef5 100644
+--- a/src/lib/format.test.ts
++++ b/src/lib/format.test.ts
+@@ -1,5 +1,17 @@
+ import { describe, expect, it } from "vitest";
+-import { daysSince, formatBaths, formatLot, formatPriceShort, formatStreet } from "./format";
++import {
++  daysSince,
++  formatBaths,
++  formatChangeChip,
++  formatLot,
++  formatMonthly,
++  formatMonthlyShort,
++  formatPriceShort,
++  formatRelativeShort,
++  formatStreet,
++  freshness,
++  STALE_FEED_MS,
++} from "./format";
+ import { estimateMonthlyCost, monthlyHoaAmount, monthlyPrincipalAndInterest } from "./mortgage";
+ 
+ describe("format", () => {
+@@ -31,6 +43,105 @@ describe("format", () => {
+   });
+ });
+ 
++describe("monthly and relative formats", () => {
++  const now = new Date("2026-09-25T16:00:00Z");
++  const ago = (ms: number) => new Date(now.getTime() - ms);
++  const MIN = 60_000;
++  const HOUR = 60 * MIN;
++  const DAY = 24 * HOUR;
++
++  it("formats monthly amounts", () => {
++    expect(formatMonthly(3411.6)).toBe("$3,412/mo");
++    expect(formatMonthly(950)).toBe("$950/mo");
++    expect(formatMonthlyShort(3412)).toBe("$3.4K/mo");
++    expect(formatMonthlyShort(3000)).toBe("$3K/mo");
++    expect(formatMonthlyShort(949.6)).toBe("$950/mo");
++    expect(formatMonthlyShort(12_480)).toBe("$12.5K/mo");
++    expect(formatMonthlyShort(125_400)).toBe("$125K/mo");
++  });
++
++  it("formats terse relative times", () => {
++    expect(formatRelativeShort(ago(20_000), now)).toBe("now");
++    expect(formatRelativeShort(ago(6 * MIN), now)).toBe("6m");
++    expect(formatRelativeShort(ago(3 * HOUR + 5 * MIN), now)).toBe("3h");
++    expect(formatRelativeShort(ago(3 * DAY), now)).toBe("3d");
++    expect(formatRelativeShort("2026-09-02T16:00:00Z", now)).toBe("Sep 2");
++    expect(formatRelativeShort("2025-10-02T16:00:00Z", now)).toBe("Oct 2, 2025");
++    // Clock skew: a future time reads as "now", not a negative age.
++    expect(formatRelativeShort(ago(-5 * MIN), now)).toBe("now");
++  });
++
++  it("labels saved-home changes", () => {
++    const at = ago(3 * DAY);
++    expect(
++      formatChangeChip(
++        { type: "price_change", price: 475_000, previousPrice: 500_000, occurredAt: at },
++        now,
++      ),
++    ).toBe("Price cut $25K · 3d");
++    expect(
++      formatChangeChip(
++        { type: "price_change", price: 510_000, previousPrice: 500_000, occurredAt: ago(DAY) },
++        now,
++      ),
++    ).toBe("Price up $10K · 1d");
++    expect(
++      formatChangeChip(
++        { type: "price_change", price: 2_350, previousPrice: 2_500, occurredAt: at },
++        now,
++      ),
++    ).toBe("Price cut $150 · 3d");
++    expect(
++      formatChangeChip(
++        { type: "price_change", price: 487_500, previousPrice: 500_000, occurredAt: at },
++        now,
++      ),
++    ).toBe("Price cut $12.5K · 3d");
++    expect(formatChangeChip({ type: "status_change", toStatus: "pending", occurredAt: at })).toBe(
++      "Now pending",
++    );
++    expect(
++      formatChangeChip({
++        type: "status_change",
++        toStatus: "active_under_contract",
++        occurredAt: at,
++      }),
++    ).toBe("Now pending");
++    expect(formatChangeChip({ type: "sold", occurredAt: at })).toBe("Sold");
++    expect(formatChangeChip({ type: "relisted", occurredAt: at })).toBe("Back on market");
++    expect(formatChangeChip({ type: "status_change", toStatus: "active", occurredAt: at })).toBe(
++      "Back on market",
++    );
++    expect(
++      formatChangeChip({ type: "price_change", price: 1, previousPrice: 1, occurredAt: at }),
++    ).toBeNull();
++  });
++
++  it("reports feed freshness and never claims a stale feed is current", () => {
++    expect(freshness(ago(12 * MIN), now)).toEqual({
++      stale: false,
++      label: "Updated 12 min ago",
++      notice: null,
++    });
++    expect(freshness(ago(10_000), now).label).toBe("Updated just now");
++    expect(freshness(ago(75 * MIN), now).label).toBe("Updated 1 hr ago");
++    expect(freshness(ago(STALE_FEED_MS), now).stale).toBe(false);
++
++    const stale = freshness(ago(STALE_FEED_MS + MIN), now);
++    expect(stale.stale).toBe(true);
++    expect(stale.label).toBeNull();
++    expect(stale.notice).toBe("Listing data last updated Sep 25, 9:59 AM — it may be out of date");
++    expect(stale.notice).not.toMatch(/Updated .* ago/);
++
++    expect(freshness(null, now)).toEqual({
++      stale: true,
++      label: null,
++      notice: "Listing data may be out of date",
++    });
++    expect(freshness(new Date("2025-01-05T15:00:00Z"), now).notice).toContain("Jan 5, 2025");
++  });
++});
++
+ describe("mortgage", () => {
+   it("matches the standard amortization formula", () => {
+     // $400k at 6% for 30 years ≈ $2,398.20/mo
+diff --git a/src/lib/format.ts b/src/lib/format.ts
+index 712a75c..2bc6275 100644
+--- a/src/lib/format.ts
++++ b/src/lib/format.ts
+@@ -163,3 +163,151 @@ export function initials(name: string): string {
+     .map((p) => p[0]!.toUpperCase())
+     .join("");
+ }
++
++/** Calendar year of `d` in the market time zone. */
++function yearIn(d: Date): string {
++  return d.toLocaleDateString("en-US", { year: "numeric", timeZone: tz });
++}
++
++/** Whole-dollar monthly amount: $3,412/mo. */
++export function formatMonthly(n: number): string {
++  return `${usd.format(Math.round(n))}/mo`;
++}
++
++/** Compact thousands: $950, $3.4K, $12.5K, $125K, $1.25M (no "/mo"). */
++function compactDollars(n: number): string {
++  const v = Math.round(Math.abs(n));
++  if (v >= 1_000_000) return formatPriceShort(v);
++  if (v >= 100_000) return `$${Math.round(v / 1_000)}K`;
++  if (v >= 1_000) return `$${(v / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
++  return `$${v}`;
++}
++
++/** Compact monthly amount for pins and chips: $3.4K/mo, $950/mo. */
++export function formatMonthlyShort(n: number): string {
++  return `${compactDollars(n)}/mo`;
++}
++
++/**
++ * Terse age for rows and chips: "now", "6m", "3h", "3d", then a date
++ * ("Oct 2", or "Oct 2, 2025" outside the current year) in the market time zone.
++ */
++export function formatRelativeShort(d: Date | string, now: Date = new Date()): string {
++  const date = new Date(d);
++  const secs = (now.getTime() - date.getTime()) / 1000;
++  if (secs < 60) return "now";
++  if (secs < 3600) return `${Math.floor(secs / 60)}m`;
++  if (secs < 86_400) return `${Math.floor(secs / 3600)}h`;
++  if (secs < 86_400 * 7) return `${Math.floor(secs / 86_400)}d`;
++  return date.toLocaleDateString("en-US", {
++    month: "short",
++    day: "numeric",
++    year: yearIn(date) === yearIn(now) ? undefined : "numeric",
++    timeZone: tz,
++  });
++}
++
++/** The latest listing event, as selected for saved-home rows. */
++export type ChangeEvent = {
++  type: "listed" | "price_change" | "status_change" | "sold" | "relisted" | "removed";
++  price?: number | null;
++  previousPrice?: number | null;
++  toStatus?: string | null;
++  occurredAt: Date | string;
++};
++
++/**
++ * Short label for "what changed since you saved it": "Price cut $25K · 3d",
++ * "Price up $10K · 1d", "Now pending", "Sold", "Back on market". Null when
++ * there is nothing worth showing.
++ */
++export function formatChangeChip(e: ChangeEvent, now: Date = new Date()): string | null {
++  switch (e.type) {
++    case "price_change": {
++      if (!e.price || !e.previousPrice || e.price === e.previousPrice) return null;
++      const diff = e.price - e.previousPrice;
++      // Small amounts (rent changes) stay exact: "$150", "$1,500".
++      const amount = Math.abs(diff) < 10_000 ? usd.format(Math.abs(diff)) : compactDollars(diff);
++      return `${diff < 0 ? "Price cut" : "Price up"} ${amount} · ${formatRelativeShort(e.occurredAt, now)}`;
++    }
++    case "sold":
++      return "Sold";
++    case "relisted":
++      return "Back on market";
++    case "removed":
++      return "Off market";
++    case "listed":
++      return "Newly listed";
++    case "status_change":
++      switch (e.toStatus) {
++        case "pending":
++        case "active_under_contract":
++          return "Now pending";
++        case "active":
++          return "Back on market";
++        case "coming_soon":
++          return "Coming soon";
++        case "closed":
++          return "Sold";
++        case "withdrawn":
++        case "expired":
++        case "canceled":
++          return "Off market";
++        default:
++          return null;
++      }
++  }
++}
++
++/** A feed older than this is stale: pages must not claim "Updated N min ago". */
++export const STALE_FEED_MS = 2 * 60 * 60 * 1000;
++
++export type Freshness = {
++  stale: boolean;
++  /** "Updated 12 min ago" — only when fresh; append " from <source>" as needed. */
++  label: string | null;
++  /** "Listing data last updated Sep 25, 9:14 AM — it may be out of date" — only when stale. */
++  notice: string | null;
++};
++
++/**
++ * How current the listing feed is. A missing sync time counts as stale, so the
++ * app never makes a freshness claim it can't back up.
++ */
++export function freshness(
++  lastSyncedAt: Date | string | null | undefined,
++  now: Date = new Date(),
++): Freshness {
++  if (!lastSyncedAt) {
++    return { stale: true, label: null, notice: "Listing data may be out of date" };
++  }
++  const at = new Date(lastSyncedAt);
++  const age = now.getTime() - at.getTime();
++  if (!Number.isFinite(age) || age > STALE_FEED_MS) {
++    const when = Number.isFinite(age)
++      ? at.toLocaleString("en-US", {
++          month: "short",
++          day: "numeric",
++          year: yearIn(at) === yearIn(now) ? undefined : "numeric",
++          hour: "numeric",
++          minute: "2-digit",
++          timeZone: tz,
++        })
++      : null;
++    return {
++      stale: true,
++      label: null,
++      notice: when
++        ? `Listing data last updated ${when} — it may be out of date`
++        : "Listing data may be out of date",
++    };
++  }
++  const mins = Math.floor(Math.max(0, age) / 60_000);
++  const label =
++    mins < 1
++      ? "Updated just now"
++      : mins < 60
++        ? `Updated ${mins} min ago`
++        : `Updated ${Math.floor(mins / 60)} hr ago`;
++  return { stale: false, label, notice: null };
++}
+diff --git a/src/lib/idle.test.ts b/src/lib/idle.test.ts
+new file mode 100644
+index 0000000..da4fbc6
+--- /dev/null
++++ b/src/lib/idle.test.ts
+@@ -0,0 +1,71 @@
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { whenIdle } from "./idle";
++
++afterEach(() => {
++  vi.unstubAllGlobals();
++  vi.useRealTimers();
++});
++
++describe("whenIdle", () => {
++  it("is a no-op on the server", () => {
++    const cb = vi.fn();
++    expect(() => whenIdle(cb)()).not.toThrow();
++    expect(cb).not.toHaveBeenCalled();
++  });
++
++  it("uses requestIdleCallback with the timeout when available", () => {
++    const ric = vi.fn((fn: () => void) => (fn(), 7));
++    const cancel = vi.fn();
++    vi.stubGlobal("window", { requestIdleCallback: ric, cancelIdleCallback: cancel });
++    const cb = vi.fn();
++    whenIdle(cb, { timeout: 400 })();
++    expect(ric).toHaveBeenCalledWith(expect.any(Function), { timeout: 400 });
++    expect(cb).toHaveBeenCalledOnce();
++    expect(cancel).toHaveBeenCalledWith(7);
++  });
++
++  describe("without requestIdleCallback (iOS Safari)", () => {
++    function stubFrames() {
++      vi.useFakeTimers();
++      const frames: (() => void)[] = [];
++      vi.stubGlobal("window", {
++        requestAnimationFrame: (fn: () => void) => frames.push(fn),
++        cancelAnimationFrame: (id: number) => (frames[id - 1] = () => {}),
++      });
++      return () => frames.splice(0).forEach((f) => f());
++    }
++
++    it("waits for a frame, then a macrotask", () => {
++      const flushFrames = stubFrames();
++      const cb = vi.fn();
++      whenIdle(cb);
++      vi.advanceTimersByTime(50);
++      expect(cb).not.toHaveBeenCalled();
++      flushFrames();
++      expect(cb).not.toHaveBeenCalled();
++      vi.advanceTimersByTime(0);
++      expect(cb).toHaveBeenCalledOnce();
++    });
++
++    it("honors the timeout when frames are paused, and runs only once", () => {
++      const flushFrames = stubFrames();
++      const cb = vi.fn();
++      whenIdle(cb, { timeout: 400 });
++      vi.advanceTimersByTime(400);
++      expect(cb).toHaveBeenCalledOnce();
++      flushFrames();
++      vi.advanceTimersByTime(10);
++      expect(cb).toHaveBeenCalledOnce();
++    });
++
++    it("can be cancelled", () => {
++      const flushFrames = stubFrames();
++      const cb = vi.fn();
++      const cancel = whenIdle(cb, { timeout: 400 });
++      cancel();
++      flushFrames();
++      vi.advanceTimersByTime(1_000);
++      expect(cb).not.toHaveBeenCalled();
++    });
++  });
++});
+diff --git a/src/lib/idle.ts b/src/lib/idle.ts
+new file mode 100644
+index 0000000..c2e5efb
+--- /dev/null
++++ b/src/lib/idle.ts
+@@ -0,0 +1,34 @@
++/**
++ * Runs `cb` once the browser is idle (after first paint), for non-urgent work
++ * such as creating the map or registering the service worker. Uses
++ * requestIdleCallback where it exists; iOS Safari lacks it, so there it waits
++ * for the next frame and then a macrotask. `timeout` caps the wait either way.
++ * Returns a cancel function. A no-op on the server.
++ */
++export function whenIdle(cb: () => void, opts: { timeout?: number } = {}): () => void {
++  if (typeof window === "undefined") return () => {};
++  const { timeout } = opts;
++  if (typeof window.requestIdleCallback === "function") {
++    const id = window.requestIdleCallback(() => cb(), timeout ? { timeout } : undefined);
++    return () => window.cancelIdleCallback(id);
++  }
++  let done = false;
++  let tick: ReturnType<typeof setTimeout> | undefined;
++  // Frames don't run in background tabs, so the timeout also races the frame.
++  const cap = timeout ? setTimeout(() => run(), timeout) : undefined;
++  const frame = window.requestAnimationFrame(() => {
++    tick = setTimeout(() => run(), 0);
++  });
++  function cancel() {
++    done = true;
++    window.cancelAnimationFrame(frame);
++    clearTimeout(tick);
++    clearTimeout(cap);
++  }
++  function run() {
++    if (done) return;
++    cancel();
++    cb();
++  }
++  return cancel;
++}
+diff --git a/src/lib/listings/card.ts b/src/lib/listings/card.ts
+index fbceaa9..905aee6 100644
+--- a/src/lib/listings/card.ts
++++ b/src/lib/listings/card.ts
+@@ -36,6 +36,10 @@ export const cardColumns = {
+   isCompanyListing: listings.isCompanyListing,
+   isFeatured: listings.isFeatured,
+   listOfficeName: listings.listOfficeName,
++  // For the all-in monthly estimate (quickMonthlyCost) on cards and rows.
++  taxAnnualAmount: listings.taxAnnualAmount,
++  hoaFee: listings.hoaFee,
++  hoaFrequency: listings.hoaFrequency,
+   hasVirtualTour: sql<boolean>`"listings"."virtual_tour_url" is not null`,
+   removedAt: listings.removedAt,
+   // Written with explicit aliases: Drizzle renders column references inside
+diff --git a/src/lib/local-store.test.ts b/src/lib/local-store.test.ts
+new file mode 100644
+index 0000000..715c0da
+--- /dev/null
++++ b/src/lib/local-store.test.ts
+@@ -0,0 +1,72 @@
++import { describe, expect, it, vi } from "vitest";
++import {
++  type KeyValueStorage,
++  readJSON,
++  remove,
++  STORE_KEYS,
++  subscribe,
++  writeJSON,
++} from "./local-store";
++
++function mapStorage(): KeyValueStorage {
++  const map = new Map<string, string>();
++  return {
++    getItem: (k) => map.get(k) ?? null,
++    setItem: (k, v) => void map.set(k, String(v)),
++    removeItem: (k) => void map.delete(k),
++  };
++}
++
++const throwing: KeyValueStorage = {
++  getItem: () => {
++    throw new Error("SecurityError");
++  },
++  setItem: () => {
++    throw new Error("QuotaExceededError");
++  },
++  removeItem: () => {
++    throw new Error("SecurityError");
++  },
++};
++
++describe("local-store", () => {
++  it("round-trips JSON and falls back when missing or malformed", () => {
++    const s = mapStorage();
++    expect(readJSON(STORE_KEYS.searchAsMove, false, s)).toBe(false);
++    expect(writeJSON(STORE_KEYS.searchAsMove, true, s)).toBe(true);
++    expect(readJSON(STORE_KEYS.searchAsMove, false, s)).toBe(true);
++    s.setItem(STORE_KEYS.visitDays, "{oops");
++    expect(readJSON(STORE_KEYS.visitDays, [], s)).toEqual([]);
++    remove(STORE_KEYS.searchAsMove, s);
++    expect(readJSON(STORE_KEYS.searchAsMove, false, s)).toBe(false);
++  });
++
++  it("never throws when storage is unavailable", () => {
++    expect(readJSON("k", 1, throwing)).toBe(1);
++    expect(writeJSON("k", 2, throwing)).toBe(false);
++    expect(() => remove("k", throwing)).not.toThrow();
++    expect(readJSON("k", 1, null)).toBe(1);
++    expect(writeJSON("k", 2, null)).toBe(false);
++  });
++
++  it("notifies same-tab subscribers of that key only, until unsubscribed", () => {
++    const s = mapStorage();
++    const cb = vi.fn();
++    const other = vi.fn();
++    const off = subscribe(STORE_KEYS.lastSearch, cb);
++    subscribe(STORE_KEYS.recentlyViewed, other);
++    writeJSON(STORE_KEYS.lastSearch, { href: "/homes", at: 1 }, s);
++    remove(STORE_KEYS.lastSearch, s);
++    // Even a failed write re-reads, so subscribers never show stale data.
++    writeJSON(STORE_KEYS.lastSearch, 1, throwing);
++    expect(cb).toHaveBeenCalledTimes(3);
++    expect(other).not.toHaveBeenCalled();
++    off();
++    writeJSON(STORE_KEYS.lastSearch, 2, s);
++    expect(cb).toHaveBeenCalledTimes(3);
++  });
++
++  it("uses ar: keys", () => {
++    for (const key of Object.values(STORE_KEYS)) expect(key).toMatch(/^ar:[a-zA-Z]+$/);
++  });
++});
+diff --git a/src/lib/local-store.ts b/src/lib/local-store.ts
+new file mode 100644
+index 0000000..5001e6e
+--- /dev/null
++++ b/src/lib/local-store.ts
+@@ -0,0 +1,142 @@
++import { useCallback, useState, useSyncExternalStore } from "react";
++
++/**
++ * Per-device conveniences in localStorage (recent searches, recently viewed,
++ * install-card state…). Nothing here is authoritative: every access is wrapped
++ * so private mode, a full quota or disabled storage just means "no data".
++ *
++ * Writes go through writeJSON/remove so components using useLocalValue in the
++ * same tab re-render; other tabs are covered by the `storage` event.
++ */
++
++/** Every localStorage key the app uses. Add new keys here (lead-owned). */
++export const STORE_KEYS = {
++  recentSearches: "ar:recentSearches",
++  lastSearch: "ar:lastSearch",
++  recentlyViewed: "ar:recentlyViewed",
++  searchAsMove: "ar:searchAsMove",
++  installDismissedAt: "ar:installDismissedAt",
++  visitDays: "ar:visitDays",
++  uid: "ar:uid",
++} as const;
++export type StoreKey = (typeof STORE_KEYS)[keyof typeof STORE_KEYS];
++
++/** The slice of the Storage API we use; tests pass a Map-backed fake. */
++export type KeyValueStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
++
++/** window.localStorage, or null on the server or when access throws. */
++export function browserStorage(): KeyValueStorage | null {
++  try {
++    return typeof window === "undefined" ? null : window.localStorage;
++  } catch {
++    return null;
++  }
++}
++
++function readRaw(key: string, storage: KeyValueStorage | null): string | null {
++  try {
++    return storage?.getItem(key) ?? null;
++  } catch {
++    return null;
++  }
++}
++
++/** Parsed JSON at `key`, or `fallback` when missing, unreadable or malformed. Not validated. */
++export function readJSON<T>(
++  key: string,
++  fallback: T,
++  storage: KeyValueStorage | null = browserStorage(),
++): T {
++  const raw = readRaw(key, storage);
++  if (raw === null) return fallback;
++  try {
++    return JSON.parse(raw) as T;
++  } catch {
++    return fallback;
++  }
++}
++
++/** Stores `value` as JSON. Returns false when storage is unavailable or full. */
++export function writeJSON(
++  key: string,
++  value: unknown,
++  storage: KeyValueStorage | null = browserStorage(),
++): boolean {
++  try {
++    if (!storage) return false;
++    storage.setItem(key, JSON.stringify(value));
++    return true;
++  } catch {
++    return false;
++  } finally {
++    emit(key);
++  }
++}
++
++export function remove(key: string, storage: KeyValueStorage | null = browserStorage()): void {
++  try {
++    storage?.removeItem(key);
++  } catch {
++    // Nothing to clean up if storage is unavailable.
++  } finally {
++    emit(key);
++  }
++}
++
++const listeners = new Map<string, Set<() => void>>();
++
++function emit(key: string) {
++  listeners.get(key)?.forEach((cb) => cb());
++}
++
++/** Calls `cb` when `key` changes in this tab (via this module) or in another tab. */
++export function subscribe(key: string, cb: () => void): () => void {
++  let set = listeners.get(key);
++  if (!set) listeners.set(key, (set = new Set()));
++  set.add(cb);
++  const onStorage = (e: StorageEvent) => {
++    // key === null means another tab called localStorage.clear().
++    if (e.key === key || e.key === null) cb();
++  };
++  if (typeof window !== "undefined") window.addEventListener("storage", onStorage);
++  return () => {
++    set.delete(cb);
++    if (typeof window !== "undefined") window.removeEventListener("storage", onStorage);
++  };
++}
++
++// Parsed values keyed by their raw string, so snapshots keep a stable identity.
++const parsed = new Map<string, { raw: string; value: unknown }>();
++const MALFORMED = Symbol("malformed");
++
++/**
++ * The JSON value at `key`, kept in sync across components and tabs. Renders
++ * `fallback` on the server and during hydration, then the stored value. The
++ * result is not validated: sanitize it (see src/lib/search/recent.ts) before use.
++ * Update it with writeJSON/remove.
++ */
++export function useLocalValue<T>(key: string, fallback: T): T {
++  // The first fallback is kept so an inline `[]` doesn't change the snapshot every render.
++  const [initial] = useState(fallback);
++  const onChange = useCallback((cb: () => void) => subscribe(key, cb), [key]);
++  return useSyncExternalStore(
++    onChange,
++    () => {
++      const raw = readRaw(key, browserStorage());
++      if (raw === null) return initial;
++      let entry = parsed.get(key);
++      if (entry?.raw !== raw) {
++        let value: unknown;
++        try {
++          value = JSON.parse(raw);
++        } catch {
++          value = MALFORMED;
++        }
++        entry = { raw, value };
++        parsed.set(key, entry);
++      }
++      return entry.value === MALFORMED ? initial : (entry.value as T);
++    },
++    () => initial,
++  );
++}
+diff --git a/src/lib/mortgage.test.ts b/src/lib/mortgage.test.ts
+new file mode 100644
+index 0000000..8c5860f
+--- /dev/null
++++ b/src/lib/mortgage.test.ts
+@@ -0,0 +1,75 @@
++import { describe, expect, it } from "vitest";
++import { site } from "@/config/site";
++import {
++  estimateMonthlyCost,
++  type FinanceDefaults,
++  monthlyCostModel,
++  monthlyHoaAmount,
++  quickMonthlyCost,
++} from "./mortgage";
++
++/** The listing page's full estimate, with the site's finance defaults. */
++function fullEstimate(
++  l: {
++    price: number;
++    annualTax: number | null;
++    hoaFee: number | null;
++    hoaFrequency: string | null;
++  },
++  f: FinanceDefaults = site.finance,
++) {
++  return estimateMonthlyCost({
++    price: l.price,
++    downPaymentPct: f.downPaymentPct,
++    interestRatePct: f.interestRate,
++    loanTermYears: f.loanTermYears,
++    annualTax: l.annualTax || (l.price * f.propertyTaxRatePct) / 100,
++    annualInsurance: (l.price * f.insuranceRatePct) / 100,
++    monthlyHoa: monthlyHoaAmount(l.hoaFee, l.hoaFrequency),
++  }).total;
++}
++
++const FIXTURES = [
++  { price: 425_000, annualTax: 4_870, hoaFee: null, hoaFrequency: null },
++  { price: 289_900, annualTax: null, hoaFee: 900, hoaFrequency: "quarterly" },
++  { price: 1_250_000, annualTax: 14_200, hoaFee: 2_400, hoaFrequency: "annually" },
++];
++
++describe("quickMonthlyCost", () => {
++  it.each(FIXTURES)("matches estimateMonthlyCost within $1 for $price", (l) => {
++    expect(Math.abs(quickMonthlyCost(l)! - fullEstimate(l))).toBeLessThan(1);
++  });
++
++  it("includes PMI below 20% down with a custom model", () => {
++    const finance = { ...site.finance, downPaymentPct: 5 };
++    const model = monthlyCostModel(finance);
++    expect(model.pmiRateMonthly).toBeGreaterThan(0);
++    for (const l of FIXTURES) {
++      expect(Math.abs(quickMonthlyCost(l, model)! - fullEstimate(l, finance))).toBeLessThan(1);
++    }
++  });
++
++  it("treats a zero tax figure as missing, like the payment calculator", () => {
++    const base = { price: 400_000, hoaFee: null, hoaFrequency: null };
++    expect(quickMonthlyCost({ ...base, annualTax: 0 })).toBe(
++      quickMonthlyCost({ ...base, annualTax: null }),
++    );
++  });
++
++  it("returns null without a price", () => {
++    expect(quickMonthlyCost({ price: 0 })).toBeNull();
++    expect(quickMonthlyCost({ price: null })).toBeNull();
++  });
++});
++
++describe("monthlyCostModel", () => {
++  it("has no PMI at 20% down and scales linearly with price", () => {
++    const m = monthlyCostModel();
++    expect(m.pmiRateMonthly).toBe(0);
++    expect(m.insuranceRateMonthly).toBeCloseTo(site.finance.insuranceRatePct / 1200, 10);
++    expect(m.taxFallbackRateMonthly).toBeCloseTo(site.finance.propertyTaxRatePct / 1200, 10);
++    const a = quickMonthlyCost({ price: 300_000 })!;
++    const b = quickMonthlyCost({ price: 600_000 })!;
++    expect(b).toBeCloseTo(a * 2, 6);
++  });
++});
+diff --git a/src/lib/mortgage.ts b/src/lib/mortgage.ts
+index 72bcdf7..b18459a 100644
+--- a/src/lib/mortgage.ts
++++ b/src/lib/mortgage.ts
+@@ -1,3 +1,5 @@
++import { site } from "@/config/site";
++
+ /** Monthly principal & interest for a fixed-rate loan. */
+ export function monthlyPrincipalAndInterest(
+   principal: number,
+@@ -70,3 +72,74 @@ export function monthlyHoaAmount(
+   if (frequency === "annually") return fee / 12;
+   return fee;
+ }
++
++/** The subset of `site.finance` the cost model needs. */
++export type FinanceDefaults = {
++  interestRate: number;
++  downPaymentPct: number;
++  loanTermYears: number;
++  insuranceRatePct: number;
++  propertyTaxRatePct: number;
++};
++
++/**
++ * Linear coefficients of the all-in monthly cost, per dollar of price, under
++ * fixed finance defaults. Monthly cost = price × (piPerDollar +
++ * insuranceRateMonthly + pmiRateMonthly) + tax + HOA, where tax falls back to
++ * price × taxFallbackRateMonthly. Cards, pins and (later) the SQL maxMonthly
++ * filter all use these numbers so they agree to the dollar.
++ */
++export type MonthlyCostModel = {
++  /** Principal & interest per dollar of price (the down payment is already applied). */
++  piPerDollar: number;
++  insuranceRateMonthly: number;
++  /** Used when a listing has no tax figure. */
++  taxFallbackRateMonthly: number;
++  /** PMI per dollar of price; 0 at 20% down or more. */
++  pmiRateMonthly: number;
++};
++
++export function monthlyCostModel(finance: FinanceDefaults = site.finance): MonthlyCostModel {
++  const loanPerDollar = Math.max(0, 1 - finance.downPaymentPct / 100);
++  return {
++    piPerDollar: monthlyPrincipalAndInterest(
++      loanPerDollar,
++      finance.interestRate,
++      finance.loanTermYears,
++    ),
++    insuranceRateMonthly: finance.insuranceRatePct / 100 / 12,
++    taxFallbackRateMonthly: finance.propertyTaxRatePct / 100 / 12,
++    // Same rule as estimateMonthlyCost: 0.5%/yr of the loan below 20% down.
++    pmiRateMonthly: finance.downPaymentPct < 20 ? (loanPerDollar * 0.005) / 12 : 0,
++  };
++}
++
++const defaultModel = monthlyCostModel();
++
++/**
++ * All-in monthly cost of buying a for-sale listing with site finance defaults
++ * (unrounded; format with formatMonthly). Callers skip rentals and sold homes.
++ * Matches estimateMonthlyCost; like the payment calculator, a missing or zero
++ * tax figure uses the fallback rate. Null without a price.
++ */
++export function quickMonthlyCost(
++  listing: {
++    price: number | null | undefined;
++    annualTax?: number | null;
++    hoaFee?: number | null;
++    hoaFrequency?: string | null;
++  },
++  model: MonthlyCostModel = defaultModel,
++): number | null {
++  const { price } = listing;
++  if (!price || price <= 0) return null;
++  const tax =
++    listing.annualTax && listing.annualTax > 0
++      ? listing.annualTax / 12
++      : price * model.taxFallbackRateMonthly;
++  return (
++    price * (model.piPerDollar + model.insuranceRateMonthly + model.pmiRateMonthly) +
++    tax +
++    monthlyHoaAmount(listing.hoaFee, listing.hoaFrequency)
++  );
++}
+diff --git a/src/lib/pwa/client.test.ts b/src/lib/pwa/client.test.ts
+new file mode 100644
+index 0000000..fe7a6db
+--- /dev/null
++++ b/src/lib/pwa/client.test.ts
+@@ -0,0 +1,131 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import { STORE_KEYS } from "@/lib/local-store";
++import { clearUserCaches, prepareSignOut, unsubscribePush, warmPages } from "./client";
++
++function fakeLocalStorage() {
++  const map = new Map<string, string>();
++  return {
++    map,
++    getItem: (k: string) => map.get(k) ?? null,
++    setItem: (k: string, v: string) => void map.set(k, v),
++    removeItem: (k: string) => void map.delete(k),
++  };
++}
++
++let posted: unknown[];
++let deleted: string[];
++let unsubscribe: ReturnType<typeof vi.fn>;
++let storage: ReturnType<typeof fakeLocalStorage>;
++let cookies: string[];
++
++function install({ controller = true, hangPush = false } = {}) {
++  unsubscribe = vi.fn(() => (hangPush ? new Promise(() => {}) : Promise.resolve(true)));
++  vi.stubGlobal("navigator", {
++    serviceWorker: {
++      controller: controller ? { postMessage: (m: unknown) => posted.push(m) } : null,
++      getRegistration: async () => ({
++        pushManager: { getSubscription: async () => ({ unsubscribe }) },
++      }),
++    },
++  });
++  vi.stubGlobal("caches", { delete: async (name: string) => (deleted.push(name), true) });
++  vi.stubGlobal("location", { origin: "https://adamsrealty.example", protocol: "https:" });
++  vi.stubGlobal("window", {
++    localStorage: storage,
++    location: { protocol: "https:" },
++    addEventListener() {},
++    removeEventListener() {},
++  });
++  vi.stubGlobal("document", {
++    set cookie(c: string) {
++      cookies.push(c);
++    },
++  });
++}
++
++beforeEach(() => {
++  posted = [];
++  deleted = [];
++  cookies = [];
++  storage = fakeLocalStorage();
++});
++
++afterEach(() => {
++  vi.unstubAllGlobals();
++  vi.useRealTimers();
++});
++
++describe("without browser APIs", () => {
++  it("never throws", async () => {
++    vi.stubGlobal("navigator", {});
++    await expect(unsubscribePush()).resolves.toBeUndefined();
++    await expect(clearUserCaches()).resolves.toBeUndefined();
++    await expect(prepareSignOut()).resolves.toBeUndefined();
++    expect(warmPages(["/homes/a"])).toBe(false);
++  });
++});
++
++describe("clearUserCaches", () => {
++  it("deletes user caches, tells the SW and clears recents with the cookie", async () => {
++    install();
++    storage.setItem(STORE_KEYS.recentlyViewed, "[]");
++    storage.setItem(STORE_KEYS.lastSearch, JSON.stringify({ href: "/homes?q=A", at: 1 }));
++    storage.setItem(STORE_KEYS.uid, "abc");
++    await clearUserCaches();
++    expect(deleted.sort()).toEqual(["images", "pages"]);
++    expect(posted).toEqual([{ type: "CLEAR_USER_DATA" }]);
++    expect(storage.map.has(STORE_KEYS.recentlyViewed)).toBe(false);
++    expect(storage.map.has(STORE_KEYS.lastSearch)).toBe(false);
++    // The user marker belongs to the PWA runtime, which rewrites it itself.
++    expect(storage.map.get(STORE_KEYS.uid)).toBe("abc");
++    expect(cookies.at(-1)).toMatch(/^ar_last_search=; .*Max-Age=0.*; Secure$/);
++  });
++});
++
++describe("prepareSignOut", () => {
++  it("unsubscribes push, then clears caches", async () => {
++    install();
++    await prepareSignOut();
++    expect(unsubscribe).toHaveBeenCalledOnce();
++    expect(deleted).toHaveLength(2);
++  });
++
++  it("still clears local data within 1500ms when push hangs", async () => {
++    vi.useFakeTimers();
++    install({ hangPush: true });
++    let done = false;
++    void prepareSignOut().then(() => (done = true));
++    await vi.advanceTimersByTimeAsync(1_000);
++    expect(posted).toEqual([{ type: "CLEAR_USER_DATA" }]);
++    await vi.advanceTimersByTimeAsync(500);
++    expect(done).toBe(true);
++    expect(deleted).toHaveLength(2);
++  });
++});
++
++describe("warmPages", () => {
++  it("posts same-origin allowlisted paths, deduplicated, at most 50", () => {
++    install();
++    const urls = [
++      "/homes/a",
++      "https://adamsrealty.example/homes/a",
++      "/dashboard",
++      "https://evil.example/homes/b",
++      "/account",
++      ...Array.from({ length: 60 }, (_, i) => `/homes/h-${i}`),
++    ];
++    expect(warmPages(urls)).toBe(true);
++    const msg = posted[0] as { type: string; urls: string[] };
++    expect(msg.type).toBe("CACHE_PAGES");
++    expect(msg.urls).toHaveLength(50);
++    expect(msg.urls[0]).toBe("/homes/a");
++    expect(msg.urls).not.toContain("/dashboard");
++    expect(msg.urls.every((u) => u.startsWith("/homes/"))).toBe(true);
++  });
++
++  it("is a no-op without a controller", () => {
++    install({ controller: false });
++    expect(warmPages(["/homes/a"])).toBe(false);
++    expect(posted).toEqual([]);
++  });
++});
+diff --git a/src/lib/pwa/client.ts b/src/lib/pwa/client.ts
+new file mode 100644
+index 0000000..9d750d1
+--- /dev/null
++++ b/src/lib/pwa/client.ts
+@@ -0,0 +1,101 @@
++import { clearRecents } from "@/lib/search/recent";
++import { isCacheablePage, LIMITS, SW_MESSAGES, type SwMessage, USER_CACHES } from "./protocol";
++
++/**
++ * Page-side PWA helpers. Every function is safe without a service worker,
++ * Cache Storage or Push (insecure origins, old browsers, private mode) and
++ * never throws.
++ */
++
++function sw(): ServiceWorkerContainer | undefined {
++  return typeof navigator === "undefined" ? undefined : navigator.serviceWorker;
++}
++
++function post(message: SwMessage): boolean {
++  const controller = sw()?.controller;
++  if (!controller) return false;
++  try {
++    controller.postMessage(message);
++    return true;
++  } catch {
++    return false;
++  }
++}
++
++function capped(work: Promise<unknown>, ms: number): Promise<void> {
++  return new Promise((resolve) => {
++    const timer = setTimeout(resolve, ms);
++    work.then(
++      () => (clearTimeout(timer), resolve()),
++      () => (clearTimeout(timer), resolve()),
++    );
++  });
++}
++
++/**
++ * Drops this device's push subscription. Needs no session: the server row
++ * gets a 410 on its next send and is deleted then.
++ */
++export async function unsubscribePush(): Promise<void> {
++  try {
++    const reg = await sw()?.getRegistration();
++    const sub = await reg?.pushManager?.getSubscription();
++    await sub?.unsubscribe();
++  } catch {
++    // No SW, no push support, or already gone.
++  }
++}
++
++/**
++ * Forgets this user's local data: recents (and the last-search cookie), the
++ * pages and images caches, and tells the SW to do the same.
++ */
++export async function clearUserCaches(): Promise<void> {
++  try {
++    clearRecents();
++  } catch {
++    // Storage unavailable: nothing stored.
++  }
++  post({ type: SW_MESSAGES.CLEAR_USER_DATA });
++  try {
++    if (typeof caches !== "undefined") {
++      await Promise.all(USER_CACHES.map((name) => caches.delete(name)));
++    }
++  } catch {
++    // Cache Storage unavailable.
++  }
++}
++
++/**
++ * Run before authClient.signOut() (and on a user change): unsubscribePush(),
++ * then clearUserCaches(), within `maxMs` total so sign-out never hangs. A
++ * stuck push service gets at most two thirds of the budget, so local data is
++ * still cleared; recents and the SW message go out synchronously in any case.
++ */
++export async function prepareSignOut(maxMs = 1500): Promise<void> {
++  const started = Date.now();
++  await capped(unsubscribePush(), (maxMs * 2) / 3);
++  await capped(clearUserCaches(), Math.max(0, maxMs - (Date.now() - started)));
++}
++
++/**
++ * Asks the SW to cache these pages for offline use (e.g. saved homes). Only
++ * same-origin PAGE_ALLOW URLs are sent, deduplicated, at most 50. Returns
++ * false (a no-op) without an active SW controller.
++ */
++export function warmPages(urls: readonly string[]): boolean {
++  if (!sw()?.controller || typeof location === "undefined") return false;
++  const origin = location.origin;
++  const paths = new Set<string>();
++  for (const u of urls) {
++    if (paths.size >= LIMITS.warmPages) break;
++    try {
++      const url = new URL(u, origin);
++      if (isCacheablePage(url, origin)) paths.add(url.pathname + url.search);
++    } catch {
++      // Skip malformed URLs.
++    }
++  }
++  if (!paths.size) return false;
++  return post({ type: SW_MESSAGES.CACHE_PAGES, urls: [...paths] });
++}
+diff --git a/src/lib/pwa/protocol.test.ts b/src/lib/pwa/protocol.test.ts
+new file mode 100644
+index 0000000..a4d2372
+--- /dev/null
++++ b/src/lib/pwa/protocol.test.ts
+@@ -0,0 +1,128 @@
++import { describe, expect, it } from "vitest";
++import {
++  isCacheablePage,
++  isNeverIntercepted,
++  isStaticAsset,
++  isSwMessage,
++  NEVER,
++  PAGE_ALLOW,
++  type RequestLike,
++} from "./protocol";
++
++const ORIGIN = "https://adamsrealty.example";
++
++function req(path: string, init: { method?: string; headers?: Record<string, string> } = {}) {
++  const headers = new Map(Object.entries(init.headers ?? {}).map(([k, v]) => [k.toLowerCase(), v]));
++  return {
++    method: init.method ?? "GET",
++    url: new URL(path, ORIGIN).href,
++    headers: { get: (n: string) => headers.get(n.toLowerCase()) ?? null },
++  } satisfies RequestLike;
++}
++
++describe("PAGE_ALLOW", () => {
++  it.each([
++    "/",
++    "/homes",
++    "/homes?q=Decatur&beds=3",
++    "/homes/123-oak-st-decatur-ga-30030-a1b2c3d",
++    "/saved",
++    "/saved?tab=searches",
++    "/agents",
++    "/agents/daniel-adams",
++  ])("caches %s", (path) => expect(isCacheablePage(path, ORIGIN)).toBe(true));
++
++  it.each([
++    "/dashboard",
++    "/dashboard/leads/abc",
++    "/account",
++    "/account/settings",
++    "/sign-in",
++    "/sign-in?next=%2Fsaved",
++    "/sign-up",
++    "/forgot-password",
++    "/reset-password?token=x",
++    "/api/auth/get-session",
++    "/api/locations/suggest?q=dec",
++    "/alerts/unsubscribe?token=x",
++    "/dev/primitives",
++    "/sell",
++    "/offline",
++    "/homes/a/b",
++    "/homes?_rsc=abc",
++    "/homes/123-oak-st?_rsc=1",
++    "https://evil.example/",
++  ])("never caches %s", (path) => expect(isCacheablePage(path, ORIGIN)).toBe(false));
++
++  it("never overlaps NEVER", () => {
++    for (const path of ["/", "/homes", "/homes/x", "/saved", "/agents", "/agents/x"]) {
++      expect(PAGE_ALLOW.some((re) => re.test(path))).toBe(true);
++      expect(NEVER.some((re) => re.test(path))).toBe(false);
++    }
++  });
++});
++
++describe("isNeverIntercepted", () => {
++  it("passes ordinary page, asset and photo GETs to the SW", () => {
++    expect(isNeverIntercepted(req("/homes/abc"), ORIGIN)).toBe(false);
++    expect(isNeverIntercepted(req("/_next/static/chunks/app.js"), ORIGIN)).toBe(false);
++    expect(isNeverIntercepted(req("https://images.example/photo.jpg"), ORIGIN)).toBe(false);
++  });
++
++  it("skips non-GET requests, including server actions", () => {
++    expect(isNeverIntercepted(req("/homes/abc", { method: "POST" }), ORIGIN)).toBe(true);
++    expect(
++      isNeverIntercepted(
++        req("/saved", { method: "POST", headers: { "Next-Action": "abc" } }),
++        ORIGIN,
++      ),
++    ).toBe(true);
++  });
++
++  it("skips RSC payloads, prefetches and Range requests", () => {
++    expect(isNeverIntercepted(req("/saved", { headers: { RSC: "1" } }), ORIGIN)).toBe(true);
++    expect(
++      isNeverIntercepted(req("/homes", { headers: { "Next-Router-Prefetch": "1" } }), ORIGIN),
++    ).toBe(true);
++    expect(isNeverIntercepted(req("/homes?_rsc=1x2y"), ORIGIN)).toBe(true);
++    expect(isNeverIntercepted(req("/video.mp4", { headers: { Range: "bytes=0-" } }), ORIGIN)).toBe(
++      true,
++    );
++  });
++
++  it.each([
++    "/api/auth/sign-out",
++    "/api/cron/sync",
++    "/dashboard",
++    "/account",
++    "/sign-in",
++    "/sign-up",
++    "/reset-password",
++    "/forgot-password",
++    "/alerts/unsubscribe",
++    "/dev/primitives",
++  ])("skips private and auth path %s", (path) => {
++    expect(isNeverIntercepted(req(path), ORIGIN)).toBe(true);
++  });
++
++  it("applies NEVER paths only to our own origin", () => {
++    expect(isNeverIntercepted(req("https://tiles.example/api/tiles/1.png"), ORIGIN)).toBe(false);
++  });
++});
++
++describe("isStaticAsset and isSwMessage", () => {
++  it("recognizes hashed assets and the MapLibre worker", () => {
++    expect(isStaticAsset("/_next/static/css/app.css", ORIGIN)).toBe(true);
++    expect(isStaticAsset("/vendor/maplibre/6.11.2/worker.js", ORIGIN)).toBe(true);
++    expect(isStaticAsset("/_next/image?url=x", ORIGIN)).toBe(false);
++    expect(isStaticAsset("https://cdn.example/_next/static/x.js", ORIGIN)).toBe(false);
++  });
++
++  it("validates messages", () => {
++    expect(isSwMessage({ type: "CLEAR_USER_DATA" })).toBe(true);
++    expect(isSwMessage({ type: "CACHE_PAGES", urls: ["/homes/a"] })).toBe(true);
++    expect(isSwMessage({ type: "CACHE_PAGES", urls: [1] })).toBe(false);
++    expect(isSwMessage({ type: "NOPE" })).toBe(false);
++    expect(isSwMessage(null)).toBe(false);
++  });
++});
+diff --git a/src/lib/pwa/protocol.ts b/src/lib/pwa/protocol.ts
+new file mode 100644
+index 0000000..a0349ad
+--- /dev/null
++++ b/src/lib/pwa/protocol.ts
+@@ -0,0 +1,142 @@
++/**
++ * Contract between the page and the service worker (src/sw/sw.ts). No DOM
++ * access: the SW imports this file too. Pages are cached per device, so
++ * anything user-specific either is never cached or is purged on sign-out and
++ * on a user change (CLEAR_USER_DATA).
++ */
++
++/** Cache names. Bump `static` only for a format change: hashed assets never go stale. */
++export const CACHE_NAMES = {
++  /** /_next/static and /vendor, cache-first, LRU. */
++  static: "static-v1",
++  /** HTML navigations and warmed pages (user data: purged on sign-out). */
++  pages: "pages",
++  /** Listing photos, cross-origin (purged on sign-out). */
++  images: "images",
++} as const;
++
++/** Caches that can hold one user's data; deleted by clearUserCaches and CLEAR_USER_DATA. */
++export const USER_CACHES = [CACHE_NAMES.pages, CACHE_NAMES.images] as const;
++
++export const LIMITS = {
++  staticEntries: 400,
++  imageEntries: 100,
++  /** Distinct /homes?… query strings kept for offline relaunch. */
++  searchPages: 3,
++  /** URLs per CACHE_PAGES message. */
++  warmPages: 50,
++} as const;
++
++export const SW_MESSAGES = {
++  /** Page → SW: fetch and store these same-origin, PAGE_ALLOW URLs. */
++  CACHE_PAGES: "CACHE_PAGES",
++  /** Page → SW: delete the user caches (sign-out, user change). */
++  CLEAR_USER_DATA: "CLEAR_USER_DATA",
++} as const;
++
++export type SwMessage = { type: "CACHE_PAGES"; urls: string[] } | { type: "CLEAR_USER_DATA" };
++
++export function isSwMessage(data: unknown): data is SwMessage {
++  const m = data as SwMessage | null;
++  if (m?.type === SW_MESSAGES.CLEAR_USER_DATA) return true;
++  return (
++    m?.type === SW_MESSAGES.CACHE_PAGES &&
++    Array.isArray(m.urls) &&
++    m.urls.every((u) => typeof u === "string")
++  );
++}
++
++/** Same-origin pathnames whose HTML may be cached (network-first). */
++export const PAGE_ALLOW: readonly RegExp[] = [
++  /^\/$/,
++  /^\/homes$/, // search; the SW keeps only LIMITS.searchPages query strings
++  /^\/homes\/[\w-]+$/,
++  /^\/saved$/,
++  /^\/agents$/,
++  /^\/agents\/[\w-]+$/,
++];
++
++/** Same-origin static assets (cache-first). */
++export const STATIC_ALLOW: readonly RegExp[] = [/^\/_next\/static\//, /^\/vendor\//];
++
++/**
++ * Same-origin pathnames the SW never intercepts or caches: private or
++ * per-session pages, auth flows, APIs (including /api/auth), one-click
++ * unsubscribe links and dev tools. Wins over every allow list.
++ */
++export const NEVER: readonly RegExp[] = [
++  /^\/api(\/|$)/,
++  /^\/dashboard(\/|$)/,
++  /^\/account(\/|$)/,
++  /^\/sign-/, // sign-in, sign-up, sign-out
++  /^\/(forgot|reset)-password(\/|$)/,
++  /^\/alerts(\/|$)/,
++  /^\/dev(\/|$)/,
++  /^\/_next\/(image|data|webpack-hmr)/,
++  /^\/__nextjs/,
++];
++
++/** Headers Next.js puts on RSC fetches, prefetches and server actions. */
++const NEXT_REQUEST_HEADERS = [
++  "rsc",
++  "next-router-prefetch",
++  "next-router-state-tree",
++  "next-action",
++];
++
++/** The parts of a Request this module reads (a real Request fits). */
++export type RequestLike = {
++  method: string;
++  url: string;
++  headers: { get(name: string): string | null };
++};
++
++/**
++ * True when the SW must let the request go straight to the network: non-GET
++ * (server actions are POSTs), Range requests, RSC payloads (which can carry
++ * signed-in data under the page URL), and NEVER paths on our origin.
++ */
++export function isNeverIntercepted(req: RequestLike, origin: string): boolean {
++  if (req.method !== "GET") return true;
++  if (req.headers.get("range")) return true;
++  if (NEXT_REQUEST_HEADERS.some((h) => req.headers.get(h) !== null)) return true;
++  let url: URL;
++  try {
++    url = new URL(req.url);
++  } catch {
++    return true;
++  }
++  if (url.searchParams.has("_rsc")) return true;
++  return url.origin === origin && NEVER.some((re) => re.test(url.pathname));
++}
++
++/** Whether an HTML page at `url` may be stored in the pages cache. */
++export function isCacheablePage(url: string | URL, origin: string): boolean {
++  let u: URL;
++  try {
++    u = new URL(url, origin);
++  } catch {
++    return false;
++  }
++  return (
++    u.origin === origin &&
++    !u.searchParams.has("_rsc") &&
++    !NEVER.some((re) => re.test(u.pathname)) &&
++    PAGE_ALLOW.some((re) => re.test(u.pathname))
++  );
++}
++
++/** Whether a same-origin asset belongs in the static cache. */
++export function isStaticAsset(url: string | URL, origin: string): boolean {
++  let u: URL;
++  try {
++    u = new URL(url, origin);
++  } catch {
++    return false;
++  }
++  return (
++    u.origin === origin &&
++    !NEVER.some((re) => re.test(u.pathname)) &&
++    STATIC_ALLOW.some((re) => re.test(u.pathname))
++  );
++}
+diff --git a/src/lib/search/params.test.ts b/src/lib/search/params.test.ts
+index ec3ec21..e4eba49 100644
+--- a/src/lib/search/params.test.ts
++++ b/src/lib/search/params.test.ts
+@@ -4,8 +4,13 @@ import {
+   describeCriteria,
+   parseBounds,
+   parseSearchParams,
++  parseViewParam,
+   searchHref,
+   serializeCriteria,
++  SORT_HELP,
++  SORT_LABELS,
++  SORTS,
++  sortLabel,
+ } from "./params";
+ 
+ describe("parseSearchParams", () => {
+@@ -112,3 +117,33 @@ describe("describeCriteria and countActiveFilters", () => {
+     expect(countActiveFilters(c)).toBe(3);
+   });
+ });
++
++describe("sort labels", () => {
++  it("labels every sort and renames newest in sold mode", () => {
++    for (const s of SORTS) expect(SORT_LABELS[s]).toBeTruthy();
++    expect(sortLabel("newest", "buy")).toBe("Newest");
++    expect(sortLabel("newest", "rent")).toBe("Newest");
++    expect(sortLabel("newest", "sold")).toBe("Recently sold");
++    expect(sortLabel("price_asc", "sold")).toBe("Price (low to high)");
++  });
++
++  it("explains that there is no paid placement", () => {
++    expect(SORT_HELP).toMatch(/^No paid placement\./);
++  });
++});
++
++describe("parseViewParam", () => {
++  it("accepts only map and list", () => {
++    expect(parseViewParam("map")).toBe("map");
++    expect(parseViewParam("list")).toBe("list");
++    expect(parseViewParam("half")).toBeUndefined();
++    expect(parseViewParam(null)).toBeUndefined();
++    expect(parseViewParam(undefined)).toBeUndefined();
++  });
++
++  it("is not part of the criteria", () => {
++    expect(serializeCriteria(parseSearchParams({ q: "Decatur", view: "map" })).toString()).toBe(
++      "q=Decatur",
++    );
++  });
++});
+diff --git a/src/lib/search/params.ts b/src/lib/search/params.ts
+index 8184d84..034ac73 100644
+--- a/src/lib/search/params.ts
++++ b/src/lib/search/params.ts
+@@ -34,6 +34,38 @@ export const SORTS = [
+ ] as const;
+ export type SortValue = (typeof SORTS)[number];
+ 
++export const SORT_LABELS: Record<SortValue, string> = {
++  recommended: "Recommended",
++  newest: "Newest",
++  price_asc: "Price (low to high)",
++  price_desc: "Price (high to low)",
++  sqft_desc: "Square feet",
++  price_per_sqft_asc: "Price per sqft",
++};
++
++/** Sort label for the current mode: "newest" reads "Recently sold" in sold mode. */
++export function sortLabel(sort: SortValue, mode: SearchMode): string {
++  return sort === "newest" && mode === "sold" ? "Recently sold" : SORT_LABELS[sort];
++}
++
++/** Shown next to the sort control: how "Recommended" is ordered. */
++export const SORT_HELP =
++  "No paid placement. Recommended shows Adams-featured homes first, then newest.";
++
++/**
++ * The phone results sheet's position, kept in the URL as `view` so Back and
++ * relaunch restore it: "map" (sheet at peek) or "list" (sheet full); absent
++ * means half. UI state only — not part of SearchCriteria or saved searches.
++ */
++export const VIEW_PARAMS = ["map", "list"] as const;
++export type ViewParam = (typeof VIEW_PARAMS)[number];
++
++export function parseViewParam(value: string | null | undefined): ViewParam | undefined {
++  return (VIEW_PARAMS as readonly string[]).includes(value ?? "")
++    ? (value as ViewParam)
++    : undefined;
++}
++
+ export const FEATURE_FLAGS = [
+   "garage",
+   "pool",
+diff --git a/src/lib/search/recent.test.ts b/src/lib/search/recent.test.ts
+new file mode 100644
+index 0000000..5cfdc50
+--- /dev/null
++++ b/src/lib/search/recent.test.ts
+@@ -0,0 +1,207 @@
++import { beforeEach, describe, expect, it } from "vitest";
++import { type KeyValueStorage, STORE_KEYS } from "@/lib/local-store";
++import { parseSearchParams } from "./params";
++import {
++  clearRecents,
++  LAST_SEARCH_COOKIE,
++  lastSearchCookie,
++  lastSearchHref,
++  MAX_RECENT_SEARCHES,
++  MAX_RECENTLY_VIEWED,
++  readRecentSearches,
++  readRecentlyViewed,
++  recordSearch,
++  recordView,
++  type RecentDeps,
++  setLastSearchView,
++  type ViewedSnapshot,
++} from "./recent";
++
++function mapStorage(): KeyValueStorage & { map: Map<string, string> } {
++  const map = new Map<string, string>();
++  return {
++    map,
++    getItem: (k) => map.get(k) ?? null,
++    setItem: (k, v) => void map.set(k, String(v)),
++    removeItem: (k) => void map.delete(k),
++  };
++}
++
++let storage: ReturnType<typeof mapStorage>;
++let cookies: string[];
++let clock: number;
++let deps: RecentDeps;
++
++beforeEach(() => {
++  storage = mapStorage();
++  cookies = [];
++  clock = 1_000;
++  deps = { storage, setCookie: (c) => cookies.push(c), now: () => clock++ };
++});
++
++const search = (qs: string) => parseSearchParams(new URLSearchParams(qs));
++
++describe("recordSearch", () => {
++  it("stores the search, the last search and the relaunch cookie", () => {
++    recordSearch(search("q=Decatur&beds=3"), undefined, deps);
++    expect(readRecentSearches(deps)).toEqual([
++      { href: "/homes?q=Decatur&beds=3", label: "3+ bd homes in Decatur", at: 1_000 },
++    ]);
++    expect(lastSearchHref(deps)).toBe("/homes?q=Decatur&beds=3");
++    expect(cookies.at(-1)).toBe(
++      `${LAST_SEARCH_COOKIE}=${encodeURIComponent("q=Decatur&beds=3")}; Path=/; Max-Age=7776000; SameSite=Lax`,
++    );
++  });
++
++  it("includes the view in the last search but not in recents", () => {
++    recordSearch(search("q=Decatur&page=2"), "list", deps);
++    expect(readRecentSearches(deps)[0].href).toBe("/homes?q=Decatur");
++    expect(lastSearchHref(deps)).toBe("/homes?q=Decatur&page=2&view=list");
++    expect(decodeURIComponent(cookies.at(-1)!.split(";")[0].split("=").slice(1).join("="))).toBe(
++      "q=Decatur&page=2&view=list",
++    );
++  });
++
++  it("dedupes by href, newest first, capped at 8", () => {
++    for (let i = 0; i < 10; i++) recordSearch(search(`q=Area${i}`), null, deps);
++    recordSearch(search("q=Area5"), null, deps);
++    const list = readRecentSearches(deps);
++    expect(list).toHaveLength(MAX_RECENT_SEARCHES);
++    expect(list[0].href).toBe("/homes?q=Area5");
++    expect(list.filter((e) => e.href === "/homes?q=Area5")).toHaveLength(1);
++  });
++
++  it("keeps one entry per place and filters as the map moves or the sort changes", () => {
++    recordSearch(search("q=Decatur"), null, deps);
++    recordSearch(search("q=Midtown"), null, deps);
++    recordSearch(search("q=Decatur&bounds=-84.4,33.7,-84.2,33.8"), null, deps);
++    recordSearch(search("q=Decatur&bounds=-84.4,33.7,-84.2,33.8&sort=newest"), null, deps);
++    expect(readRecentSearches(deps).map((e) => e.href)).toEqual([
++      "/homes?q=Decatur&bounds=-84.4%2C33.7%2C-84.2%2C33.8&sort=newest",
++      "/homes?q=Midtown",
++    ]);
++  });
++
++  it("skips the default search in recents and deletes the cookie", () => {
++    recordSearch(search(""), null, deps);
++    expect(readRecentSearches(deps)).toEqual([]);
++    expect(lastSearchHref(deps)).toBe("/homes");
++    expect(cookies.at(-1)).toBe(`${LAST_SEARCH_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`);
++  });
++});
++
++describe("setLastSearchView", () => {
++  it("updates the stored href and the cookie", () => {
++    recordSearch(search("q=Decatur"), null, deps);
++    setLastSearchView("map", deps);
++    expect(lastSearchHref(deps)).toBe("/homes?q=Decatur&view=map");
++    expect(cookies.at(-1)).toContain(encodeURIComponent("q=Decatur&view=map"));
++    setLastSearchView(null, deps);
++    expect(lastSearchHref(deps)).toBe("/homes?q=Decatur");
++  });
++
++  it("does nothing before any search", () => {
++    setLastSearchView("map", deps);
++    expect(lastSearchHref(deps)).toBeNull();
++    expect(cookies).toEqual([]);
++  });
++});
++
++describe("lastSearchCookie", () => {
++  it("deletes instead of writing an oversized value", () => {
++    expect(lastSearchCookie(`q=${"x".repeat(1_600)}`)).toContain("Max-Age=0");
++    expect(lastSearchCookie(`q=${"x".repeat(1_000)}`)).toContain("Max-Age=7776000");
++  });
++});
++
++describe("sanitizing", () => {
++  it("ignores tampered or malformed storage", () => {
++    storage.setItem(STORE_KEYS.lastSearch, JSON.stringify({ href: "//evil.com/homes", at: 1 }));
++    expect(lastSearchHref(deps)).toBeNull();
++    storage.setItem(STORE_KEYS.lastSearch, JSON.stringify({ href: "javascript:alert(1)", at: 1 }));
++    expect(lastSearchHref(deps)).toBeNull();
++    storage.setItem(STORE_KEYS.lastSearch, "{not json");
++    expect(lastSearchHref(deps)).toBeNull();
++    storage.setItem(
++      STORE_KEYS.recentSearches,
++      JSON.stringify([
++        { href: "https://evil.com", label: "x", at: 1 },
++        { href: "/homes?q=Ok", label: "Homes in Ok", at: 2 },
++        null,
++        "nope",
++      ]),
++    );
++    expect(readRecentSearches(deps)).toEqual([
++      { href: "/homes?q=Ok", label: "Homes in Ok", at: 2 },
++    ]);
++  });
++
++  it("tolerates storage that throws", () => {
++    const broken: KeyValueStorage = {
++      getItem: () => {
++        throw new Error("SecurityError");
++      },
++      setItem: () => {
++        throw new Error("QuotaExceededError");
++      },
++      removeItem: () => {
++        throw new Error("SecurityError");
++      },
++    };
++    const d = { ...deps, storage: broken };
++    expect(() => recordSearch(search("q=Decatur"), null, d)).not.toThrow();
++    expect(readRecentSearches(d)).toEqual([]);
++    expect(() => clearRecents(d)).not.toThrow();
++  });
++});
++
++const home = (slug: string, extra: Partial<ViewedSnapshot> = {}): ViewedSnapshot => ({
++  slug,
++  address: "123 Oak St",
++  cityLine: "Decatur, GA 30030",
++  price: 450_000,
++  photo: "https://img.example/1.jpg",
++  beds: 3,
++  baths: 2.5,
++  listOfficeName: "Adams Realty",
++  transactionType: "sale",
++  status: "active",
++  ...extra,
++});
++
++describe("recordView", () => {
++  it("adds viewedAt, dedupes by slug and caps at 20", () => {
++    for (let i = 0; i < 25; i++) recordView(home(`home-${i}`), deps);
++    recordView(home("home-10", { price: 440_000 }), deps);
++    const list = readRecentlyViewed(deps);
++    expect(list).toHaveLength(MAX_RECENTLY_VIEWED);
++    expect(list[0]).toMatchObject({
++      slug: "home-10",
++      price: 440_000,
++      listOfficeName: "Adams Realty",
++    });
++    expect(list[0].viewedAt).toBeGreaterThan(list[1].viewedAt);
++    expect(list.filter((e) => e.slug === "home-10")).toHaveLength(1);
++  });
++
++  it("drops unusable photos and rejects bad slugs", () => {
++    recordView(home("ok-1", { photo: "javascript:alert(1)" }), deps);
++    recordView(home("../../etc"), deps);
++    expect(readRecentlyViewed(deps).map((e) => [e.slug, e.photo])).toEqual([["ok-1", null]]);
++  });
++});
++
++describe("clearRecents", () => {
++  it("removes searches, the last search, viewed homes and the cookie", () => {
++    recordSearch(search("q=Decatur"), "map", deps);
++    recordView(home("a"), deps);
++    storage.setItem(STORE_KEYS.searchAsMove, "true");
++    clearRecents(deps);
++    expect(readRecentSearches(deps)).toEqual([]);
++    expect(lastSearchHref(deps)).toBeNull();
++    expect(readRecentlyViewed(deps)).toEqual([]);
++    expect(cookies.at(-1)).toContain("Max-Age=0");
++    // Preferences are not recents.
++    expect(storage.getItem(STORE_KEYS.searchAsMove)).toBe("true");
++  });
++});
+diff --git a/src/lib/search/recent.ts b/src/lib/search/recent.ts
+new file mode 100644
+index 0000000..94ff7c4
+--- /dev/null
++++ b/src/lib/search/recent.ts
+@@ -0,0 +1,244 @@
++import { useMemo } from "react";
++import {
++  browserStorage,
++  type KeyValueStorage,
++  readJSON,
++  remove,
++  STORE_KEYS,
++  useLocalValue,
++  writeJSON,
++} from "@/lib/local-store";
++import { describeCriteria, searchHref, type SearchCriteria, type ViewParam } from "./params";
++
++/**
++ * Recent searches, the last search (with its sheet view) and recently viewed
++ * homes, kept on this device only. Feeds the tab bar's Search link, the home
++ * page's "Continue your search" / "Recently viewed" rows, the search panel's
++ * "Recent searches" and the installed app's relaunch (via a cookie the server
++ * can read). Everything read back is sanitized: storage is user-editable.
++ *
++ * Functions take optional deps so tests can inject storage, cookies and time.
++ */
++
++export const MAX_RECENT_SEARCHES = 8;
++export const MAX_RECENTLY_VIEWED = 20;
++
++/**
++ * Cookie holding the last search's query string (no "?", including `view`),
++ * URI-encoded; Next's cookies() decodes it. /homes?source=pwa redirects to it.
++ */
++export const LAST_SEARCH_COOKIE = "ar_last_search";
++const COOKIE_MAX_AGE = 60 * 60 * 24 * 90;
++const COOKIE_MAX_CHARS = 1500;
++
++export type RecentSearch = { href: string; label: string; at: number };
++type LastSearch = { href: string; at: number };
++
++/** What a listing page records; enough to draw a tile without a server round trip. */
++export type ViewedSnapshot = {
++  slug: string;
++  /** Street line, already "Address withheld by seller" when suppressed. */
++  address: string;
++  /** "Decatur, GA 30030". */
++  cityLine?: string;
++  /** Sold price for closed listings, monthly rent for rentals. */
++  price: number | null;
++  photo: string | null;
++  beds: number | null;
++  baths: number | null;
++  /** IDX: tiles show "Listing by <office>". */
++  listOfficeName: string | null;
++  transactionType: string;
++  status: string;
++};
++export type ViewedHome = ViewedSnapshot & { viewedAt: number };
++
++export type RecentDeps = {
++  storage?: KeyValueStorage | null;
++  /** Receives a full Set-Cookie-style string for document.cookie. */
++  setCookie?: (cookie: string) => void;
++  now?: () => number;
++};
++
++function resolve(deps: RecentDeps) {
++  return {
++    storage: deps.storage === undefined ? browserStorage() : deps.storage,
++    setCookie: deps.setCookie ?? writeDocumentCookie,
++    now: deps.now ?? Date.now,
++  };
++}
++
++function writeDocumentCookie(cookie: string) {
++  if (typeof document === "undefined") return;
++  try {
++    const secure = window.location.protocol === "https:" ? "; Secure" : "";
++    document.cookie = cookie + secure;
++  } catch {
++    // Cookies disabled: relaunch just opens the default search.
++  }
++}
++
++/** The cookie string for `query` ("q=Decatur&view=list"); deletes it when empty or too long. */
++export function lastSearchCookie(query: string): string {
++  const value = encodeURIComponent(query);
++  if (!value || value.length > COOKIE_MAX_CHARS) {
++    return `${LAST_SEARCH_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
++  }
++  return `${LAST_SEARCH_COOKIE}=${value}; Path=/; Max-Age=${COOKIE_MAX_AGE}; SameSite=Lax`;
++}
++
++/** Only same-origin /homes URLs are ever stored or returned. */
++function isSearchHref(href: unknown): href is string {
++  return typeof href === "string" && /^\/homes(\?|$)/.test(href) && !/[\s\\#]/.test(href);
++}
++
++function withView(href: string, view: ViewParam | null | undefined): string {
++  const url = new URL(href, "http://x");
++  if (view) url.searchParams.set("view", view);
++  else url.searchParams.delete("view");
++  return url.pathname + url.search;
++}
++
++/** Same search, ignoring where the map is and how it's sorted. */
++function sameSearchKey(href: string): string {
++  const url = new URL(href, "http://x");
++  for (const k of ["bounds", "sort", "page", "view"]) url.searchParams.delete(k);
++  url.searchParams.sort();
++  return url.search;
++}
++
++function toRecentSearches(value: unknown): RecentSearch[] {
++  if (!Array.isArray(value)) return [];
++  return value
++    .filter(
++      (e): e is RecentSearch =>
++        !!e && isSearchHref(e.href) && typeof e.label === "string" && typeof e.at === "number",
++    )
++    .slice(0, MAX_RECENT_SEARCHES);
++}
++
++function toLastSearchHref(value: unknown): string | null {
++  const href = (value as LastSearch | null)?.href;
++  return isSearchHref(href) ? href : null;
++}
++
++const str = (v: unknown): v is string => typeof v === "string";
++const numOrNull = (v: unknown) => v === null || (typeof v === "number" && Number.isFinite(v));
++const safePhoto = (v: unknown) => (str(v) && /^(https?:\/\/|\/(?!\/))/.test(v) ? v : null);
++
++/** Valid entries only; an unusable photo becomes null rather than dropping the home. */
++function toRecentlyViewed(value: unknown): ViewedHome[] {
++  if (!Array.isArray(value)) return [];
++  return value
++    .filter(
++      (e): e is ViewedHome =>
++        !!e &&
++        str(e.slug) &&
++        /^[\w-]+$/.test(e.slug) &&
++        str(e.address) &&
++        (e.cityLine === undefined || str(e.cityLine)) &&
++        numOrNull(e.price) &&
++        numOrNull(e.beds) &&
++        numOrNull(e.baths) &&
++        (e.listOfficeName === null || str(e.listOfficeName)) &&
++        str(e.transactionType) &&
++        str(e.status) &&
++        typeof e.viewedAt === "number",
++    )
++    .slice(0, MAX_RECENTLY_VIEWED)
++    .map((e) => ({ ...e, photo: safePhoto(e.photo) }));
++}
++
++/**
++ * Records the search on screen: adds it to recent searches (one entry per
++ * place + filters; the newest map area and sort win) and makes it the last
++ * search, including the sheet `view`, in storage and in the relaunch cookie.
++ */
++export function recordSearch(
++  criteria: SearchCriteria,
++  view?: ViewParam | null,
++  deps: RecentDeps = {},
++): void {
++  const { storage, setCookie, now } = resolve(deps);
++  const at = now();
++
++  const href = searchHref({ ...criteria, page: 1 });
++  // The unfiltered default search isn't worth listing.
++  if (href !== "/homes") {
++    const key = sameSearchKey(href);
++    const rest = readRecentSearches({ storage }).filter(
++      (e) => e.href !== href && sameSearchKey(e.href) !== key,
++    );
++    const entry: RecentSearch = { href, label: describeCriteria(criteria), at };
++    writeJSON(STORE_KEYS.recentSearches, [entry, ...rest].slice(0, MAX_RECENT_SEARCHES), storage);
++  }
++
++  saveLast(withView(searchHref(criteria), view), at, storage, setCookie);
++}
++
++/** Updates the last search's sheet view (after the sheet settles). */
++export function setLastSearchView(view: ViewParam | null, deps: RecentDeps = {}): void {
++  const { storage, setCookie, now } = resolve(deps);
++  const href = lastSearchHref({ storage });
++  if (href) saveLast(withView(href, view), now(), storage, setCookie);
++}
++
++function saveLast(
++  href: string,
++  at: number,
++  storage: KeyValueStorage | null,
++  setCookie: (c: string) => void,
++) {
++  writeJSON(STORE_KEYS.lastSearch, { href, at } satisfies LastSearch, storage);
++  setCookie(lastSearchCookie(new URL(href, "http://x").search.slice(1)));
++}
++
++/** Newest first, at most 8. */
++export function readRecentSearches(deps: RecentDeps = {}): RecentSearch[] {
++  return toRecentSearches(readJSON(STORE_KEYS.recentSearches, null, resolve(deps).storage));
++}
++
++/** "/homes?q=Decatur&view=list", or null when nothing was searched on this device. */
++export function lastSearchHref(deps: RecentDeps = {}): string | null {
++  return toLastSearchHref(readJSON(STORE_KEYS.lastSearch, null, resolve(deps).storage));
++}
++
++/** Records a listing view (newest first, one entry per listing, at most 20). */
++export function recordView(snapshot: ViewedSnapshot, deps: RecentDeps = {}): void {
++  const { storage, now } = resolve(deps);
++  const [entry] = toRecentlyViewed([{ ...snapshot, viewedAt: now() }]);
++  if (!entry) return;
++  const rest = readRecentlyViewed({ storage }).filter((e) => e.slug !== snapshot.slug);
++  writeJSON(STORE_KEYS.recentlyViewed, [entry, ...rest].slice(0, MAX_RECENTLY_VIEWED), storage);
++}
++
++export function readRecentlyViewed(deps: RecentDeps = {}): ViewedHome[] {
++  return toRecentlyViewed(readJSON(STORE_KEYS.recentlyViewed, null, resolve(deps).storage));
++}
++
++/** Forgets searches, the last search (and its cookie) and viewed homes. Used on sign-out. */
++export function clearRecents(deps: RecentDeps = {}): void {
++  const { storage, setCookie } = resolve(deps);
++  remove(STORE_KEYS.recentSearches, storage);
++  remove(STORE_KEYS.lastSearch, storage);
++  remove(STORE_KEYS.recentlyViewed, storage);
++  setCookie(lastSearchCookie(""));
++}
++
++// Hooks for client components: live (same tab and other tabs), sanitized, and
++// empty on the server and during hydration.
++
++export function useRecentSearches(): RecentSearch[] {
++  const raw = useLocalValue<unknown>(STORE_KEYS.recentSearches, null);
++  return useMemo(() => toRecentSearches(raw), [raw]);
++}
++
++export function useLastSearchHref(): string | null {
++  const raw = useLocalValue<unknown>(STORE_KEYS.lastSearch, null);
++  return useMemo(() => toLastSearchHref(raw), [raw]);
++}
++
++export function useRecentlyViewed(): ViewedHome[] {
++  const raw = useLocalValue<unknown>(STORE_KEYS.recentlyViewed, null);
++  return useMemo(() => toRecentlyViewed(raw), [raw]);
++}
+diff --git a/src/lib/use-media-query.test.ts b/src/lib/use-media-query.test.ts
+new file mode 100644
+index 0000000..8643d5c
+--- /dev/null
++++ b/src/lib/use-media-query.test.ts
+@@ -0,0 +1,23 @@
++import { readFileSync } from "node:fs";
++import { fileURLToPath } from "node:url";
++import { describe, expect, it } from "vitest";
++import { PHONE_QUERY } from "./use-media-query";
++
++/** Formatting-insensitive form of a media query list (Prettier may respace it). */
++const normalize = (q: string) =>
++  q
++    .replace(/\s+/g, " ")
++    .replace(/\s*([(),:])\s*/g, "$1")
++    .trim();
++
++describe("PHONE_QUERY", () => {
++  it("is the exact query behind the `phone` variant in globals.css", () => {
++    const css = readFileSync(fileURLToPath(new URL("../app/globals.css", import.meta.url)), "utf8");
++    // Block form `@custom-variant phone { @media … { @slot } }` or shorthand `(@media …);`.
++    const match =
++      css.match(/@custom-variant\s+phone\s*\{\s*@media\s+([^{]+?)\s*\{/) ??
++      css.match(/@custom-variant\s+phone\s*\(\s*@media\s+(.+?)\s*\)\s*;/);
++    expect(match, "globals.css should define @custom-variant phone").not.toBeNull();
++    expect(normalize(match![1])).toBe(normalize(PHONE_QUERY));
++  });
++});
+diff --git a/src/lib/use-media-query.ts b/src/lib/use-media-query.ts
+new file mode 100644
+index 0000000..d68db8d
+--- /dev/null
++++ b/src/lib/use-media-query.ts
+@@ -0,0 +1,43 @@
++import { useCallback, useSyncExternalStore } from "react";
++
++/**
++ * The app-shell breakpoint: portrait phones and short landscape touch screens.
++ * It must stay identical to `@custom-variant phone` in src/app/globals.css
++ * (use-media-query.test.ts checks this), so JS and CSS never disagree about
++ * which shell is showing.
++ */
++export const PHONE_QUERY = "(max-width: 767.98px), (pointer: coarse) and (max-height: 500px)";
++
++/**
++ * Live `matchMedia(query).matches`. Renders `serverDefault` on the server and
++ * during hydration, then the real value, so markup never mismatches.
++ */
++export function useMediaQuery(query: string, serverDefault = false): boolean {
++  const subscribe = useCallback(
++    (cb: () => void) => {
++      if (typeof window === "undefined" || !window.matchMedia) return () => {};
++      const mql = window.matchMedia(query);
++      if (mql.addEventListener) {
++        mql.addEventListener("change", cb);
++        return () => mql.removeEventListener("change", cb);
++      }
++      // Safari < 14.
++      mql.addListener(cb);
++      return () => mql.removeListener(cb);
++    },
++    [query],
++  );
++  return useSyncExternalStore(
++    subscribe,
++    () =>
++      typeof window !== "undefined" && window.matchMedia
++        ? window.matchMedia(query).matches
++        : serverDefault,
++    () => serverDefault,
++  );
++}
++
++/** True in the phone shell. False on the server: the SSR default is the desktop layout. */
++export function useIsPhone(): boolean {
++  return useMediaQuery(PHONE_QUERY, false);
++}
