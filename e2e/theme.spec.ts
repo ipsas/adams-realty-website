@@ -1,4 +1,5 @@
-import { type Browser, type Page, expect, test } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
+import { type Browser, type Locator, type Page, expect, test } from "@playwright/test";
 import {
   DARK_AXE_PAGES,
   DARK_CANVAS,
@@ -9,7 +10,9 @@ import {
   canvas,
   darkAxeSuite,
   dataTheme,
+  expectListingPrintsLight,
   firstThemeColor,
+  forceDark,
   storePref,
   stored,
 } from "./theme-suite";
@@ -158,6 +161,56 @@ test("printing is light even with Dark forced on a dark OS", async ({ browser, b
   await context.close();
 });
 
+test("a listing printed in Dark prints light, its location map included", async ({ page }) => {
+  test.setTimeout(90_000);
+  await expectListingPrintsLight(page);
+});
+
+test("the primary button's hover follows the theme", async ({ browser, baseURL }) => {
+  for (const [pref, rest, hover] of [
+    ["light", "rgb(26, 76, 57)", "rgb(22, 61, 47)"],
+    ["dark", "rgb(47, 117, 88)", "rgb(31, 93, 69)"],
+  ] as const) {
+    const context = await newContext(browser, baseURL, { colorScheme: "light" });
+    await storePref(context, pref);
+    const page = await context.newPage();
+    await page.goto("/sign-in");
+    const submit = page.locator("form:has(#email) button[type=submit]");
+    await expect(submit).toBeVisible();
+    const fill = () => submit.evaluate((el) => getComputedStyle(el).backgroundColor);
+    await page.mouse.move(0, 0);
+    await expect.poll(fill, `${pref} at rest`).toBe(rest);
+    await submit.hover();
+    await expect.poll(fill, `${pref} hovered`).toBe(hover);
+    await context.close();
+  }
+});
+
+test("an area guide's chart tooltip is readable in Dark", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  await forceDark(page.context());
+  await page.goto("/areas");
+  const href = await page.locator("main a[href^='/areas/']").first().getAttribute("href");
+  expect(href).toMatch(/^\/areas\/[a-z0-9-]+$/);
+  await page.goto(href!);
+  const segment = page.locator(TOOLTIP_SEGMENT);
+  await segment.scrollIntoViewIfNeeded();
+  await segment.hover();
+  // axe skips invisible text, so wait for the tooltip to finish fading in.
+  await expect
+    .poll(() => segment.locator(":scope > span").evaluate((el) => getComputedStyle(el).opacity))
+    .toBe("1");
+  const results = await new AxeBuilder({ page })
+    .include(`${TOOLTIP_SEGMENT} > span`)
+    .withRules(["color-contrast"])
+    .analyze();
+  expect(
+    results.violations.flatMap((v) => v.nodes.map((n) => `${n.target}: ${n.failureSummary}`)),
+  ).toEqual([]);
+  // Both lines of the tooltip were checked, not skipped as hidden.
+  expect(results.passes.flatMap((v) => v.nodes).length).toBeGreaterThanOrEqual(2);
+});
+
 test("after hydration the stored Dark is kept, with no console errors", async ({
   browser,
   baseURL,
@@ -216,6 +269,11 @@ test("another tab's change is followed live", async ({ browser, baseURL }) => {
 
 /* ───────────────────────── DM3: the switch ───────────────────────── */
 
+/** The first segment of an area guide's "What's for sale" bar; its tooltip shows on hover. */
+const TOOLTIP_SEGMENT = "section[aria-labelledby=type-mix-heading] [role=img] > div:first-child";
+
+const fillOf = (el: Locator) => el.evaluate((e) => getComputedStyle(e).backgroundColor);
+
 async function openAppearanceMenu(page: Page) {
   const trigger = page.getByRole("button", { name: "Appearance", exact: true });
   await expect(trigger).toBeVisible();
@@ -231,12 +289,31 @@ test.describe("the header's appearance menu", () => {
     await page.emulateMedia({ colorScheme: "light" });
     await page.goto("/about");
     await page.waitForLoadState("networkidle");
+    const trigger = page.getByRole("button", { name: "Appearance", exact: true });
+    // The trigger shows the sun in light and the moon in dark, never both.
+    await expect(trigger.locator("svg.lucide-sun")).toBeVisible();
+    await expect(trigger.locator("svg.lucide-moon")).toBeHidden();
+    expect(await fillOf(trigger), "no disc at rest").toBe("rgba(0, 0, 0, 0)");
     await openAppearanceMenu(page);
+    // Open, it sits on a sunken disc, as in the approved preview.
+    await page.mouse.move(0, 0);
+    await expect.poll(() => fillOf(trigger)).toBe("rgb(244, 242, 236)");
     const group = page.getByRole("group", { name: "Appearance" });
     await expect(group.getByRole("radio", { name: "Match my device" })).toBeChecked();
+    // The chosen row is filled; the others are not.
+    const row = (name: string) =>
+      group.locator("label").filter({ has: page.getByRole("radio", { name, exact: true }) });
+    expect(await fillOf(row("Match my device"))).toBe("rgb(244, 242, 236)");
+    expect(await fillOf(row("Dark"))).toBe("rgba(0, 0, 0, 0)");
 
     await group.getByRole("radio", { name: "Dark" }).check();
     expect(await dataTheme(page)).toBe("dark");
+    await expect(trigger.locator("svg.lucide-moon")).toBeVisible();
+    await expect(trigger.locator("svg.lucide-sun")).toBeHidden();
+    await page.mouse.move(0, 0);
+    await expect.poll(() => fillOf(row("Dark"))).toBe("rgb(11, 15, 13)");
+    expect(await fillOf(row("Match my device"))).toBe("rgba(0, 0, 0, 0)");
+    await expect.poll(() => fillOf(trigger)).toBe("rgb(11, 15, 13)");
     expect(await canvas(page)).toBe(DARK_CANVAS);
     expect(await firstThemeColor(page)).toEqual({ content: "#0f1412", media: null });
     expect(await stored(page)).toBe('"dark"');
@@ -298,6 +375,31 @@ test.describe("the header's appearance menu", () => {
     await expect(trigger).toBeFocused();
     await expect(trigger).toHaveAttribute("aria-expanded", "false");
     expect(await dataTheme(page)).toBe("dark");
+  });
+
+  test("over the home hero, the open trigger is a surface disc in both themes", async ({
+    browser,
+    baseURL,
+  }) => {
+    for (const [pref, surface, ink] of [
+      ["light", "rgb(255, 255, 255)", "rgb(21, 32, 28)"],
+      ["dark", "rgb(23, 30, 27)", "rgb(236, 235, 228)"],
+    ] as const) {
+      const context = await newContext(browser, baseURL, { colorScheme: "light" });
+      await storePref(context, pref);
+      const page = await context.newPage();
+      await page.goto("/");
+      await page.waitForLoadState("networkidle");
+      const trigger = page.getByRole("button", { name: "Appearance", exact: true });
+      const look = () =>
+        trigger.evaluate((e) => [getComputedStyle(e).backgroundColor, getComputedStyle(e).color]);
+      // At rest: no disc, a white icon on the photo, as in the approved preview.
+      expect(await look(), `${pref} at rest`).toEqual(["rgba(0, 0, 0, 0)", "rgb(255, 255, 255)"]);
+      await trigger.click();
+      await page.mouse.move(0, 0);
+      await expect.poll(look, `${pref} open`).toEqual([surface, ink]);
+      await context.close();
+    }
   });
 
   test("desktop has the header button and no phone menu; it adds no live region to /homes", async ({

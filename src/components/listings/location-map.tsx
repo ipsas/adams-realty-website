@@ -3,13 +3,19 @@
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef } from "react";
-import { ensureMapLibre, handleMissingImages, mapStyleUrl } from "@/components/search/map-setup";
-import { useClientTheme } from "@/components/theme/use-theme";
+import {
+  ensureMapLibre,
+  handleMissingImages,
+  mapStyleUrl,
+  markDrawnStyle,
+} from "@/components/search/map-setup";
+import { useMapTheme } from "@/components/theme/use-theme";
 
 /**
  * Small, lightly interactive map with a single home marker. It follows the theme by
- * recreating the map (cheap: one marker, no overlays). `useClientTheme` reads the theme
- * synchronously before hydration, so the first map already has the right style.
+ * recreating the map (cheap: one marker, no overlays). `useMapTheme` reads the theme
+ * synchronously before hydration, so the first map already has the right style, and is light
+ * while printing; until the light style is drawn, print CSS hides the canvas.
  */
 export default function LocationMap({
   lat,
@@ -21,7 +27,7 @@ export default function LocationMap({
   label: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const style = mapStyleUrl(useClientTheme());
+  const style = mapStyleUrl(useMapTheme());
   useEffect(() => {
     if (!ref.current) return;
     ensureMapLibre();
@@ -35,6 +41,7 @@ export default function LocationMap({
       dragRotate: false,
     });
     handleMissingImages(map);
+    markDrawnStyle(map, ref.current, style);
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     const el = document.createElement("div");
     el.className =

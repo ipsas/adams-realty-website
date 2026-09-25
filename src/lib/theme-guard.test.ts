@@ -12,7 +12,8 @@ import { describe, expect, it } from "vitest";
  * - Chips and buttons on photos use `bg-surface`, not `bg-white`, except the few that must
  *   stay white in both themes (ALLOW_WHITE).
  * - The primary fill is `bg-primary`: `bg-brand-700` is not redefined, so it would stay
- *   the light theme's green on the dark canvas.
+ *   the light theme's green on the dark canvas. Its hover is `bg-primary-hover`, never a
+ *   `bg-brand-*` shade (which is the light theme's hover in both themes).
  * - No hex colours in arbitrary classes (`bg-[#eef0ec]`); add a token instead.
  */
 
@@ -69,6 +70,12 @@ function themeViolations(source: string, file: string): Violation[] {
       if (/^(from|via|to)-ink(\/|$)/.test(u)) add(`${u}: gradients over photos use *-shade`);
       if (u === "bg-brand-700") add(`${u}: the primary fill is bg-primary`);
       if (/-\[#[0-9a-fA-F]{3,8}\]/.test(u)) add(`${u}: use a theme token, not a hex colour`);
+    }
+    if (utils.includes("bg-primary")) {
+      // Its hover and other states must follow the theme too: bg-brand-* is the light green.
+      for (const [i, u] of utils.entries())
+        if (/^bg-brand-\d+(\/\d+)?$/.test(u))
+          add(`${classes[i]} on bg-primary: use bg-primary-hover (theme-aware)`);
     }
     if (utils.includes("bg-ink") && utils.includes("text-white")) {
       add("text-white on bg-ink: use text-on-ink");
@@ -160,6 +167,12 @@ describe("theme guard", () => {
     it("the old primary fill and hex arbitrary colours", () => {
       expect(check(`"bg-brand-700 text-white hover:bg-brand-800"`)).toHaveLength(1);
       expect(check(`"from-brand-600 via-brand-700 to-brand-900"`)).toEqual([]);
+      // A primary fill's hover follows the theme.
+      expect(check(`"bg-primary text-white shadow-sm hover:bg-brand-800"`)).toHaveLength(1);
+      expect(check(`"bg-primary text-white active:bg-brand-900/90"`)).toHaveLength(1);
+      expect(check(`"bg-primary text-white shadow-sm hover:bg-primary-hover"`)).toEqual([]);
+      // Brand panels (fixed in both themes) keep their brand hovers.
+      expect(check(`"p-7 text-white transition-colors hover:bg-brand-800"`)).toEqual([]);
       expect(check(`"size-full bg-[#eef0ec]"`)).toHaveLength(1);
       expect(check(`"size-full bg-map"`)).toEqual([]);
     });

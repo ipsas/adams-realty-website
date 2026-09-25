@@ -249,6 +249,11 @@
   :root {
     color-scheme: light;
   }
+  /* A map canvas can't restyle in the time a print takes: until it has drawn the light
+     style (markDrawnStyle in map-setup.ts), it prints as the light map panel. */
+  .maplibregl-map:not([data-map-style="light"]) .maplibregl-canvas {
+    visibility: hidden;
+  }
 }
 
 /* Switching themes swaps every colour at once instead of fading each transition. */

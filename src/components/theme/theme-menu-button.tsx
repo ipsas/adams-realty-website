@@ -28,9 +28,11 @@ export function ThemeMenuButton({
       panelClassName="min-w-60 p-2"
       triggerClassName={cn(
         "flex size-10 items-center justify-center rounded-full transition-colors pointer-coarse:size-11",
+        // Open, it is filled like the approved preview: a surface disc over the hero photo
+        // (white in light, dark in dark, like the Sign in pill), a sunken one elsewhere.
         transparent
-          ? "text-white hover:bg-white/10"
-          : "text-ink-soft hover:bg-sunken hover:text-ink",
+          ? "text-white hover:bg-white/10 aria-expanded:bg-surface aria-expanded:text-ink"
+          : "text-ink-soft hover:bg-sunken hover:text-ink aria-expanded:bg-sunken aria-expanded:text-ink",
       )}
       label={
         <>

@@ -250,8 +250,9 @@ must keep.
     `bg-white`. White in both themes only where the guard allows it: the switch
     knob, carousel dots and the inverse button (`bg-white text-shade`, for brand
     panels).
-  - The primary fill is `bg-primary hover:bg-primary-hover`; brand-700/800 stay
-    for the fixed brand panels, photo frames and gradients.
+  - The primary fill is `bg-primary hover:bg-primary-hover` (no `bg-brand-*`
+    state on a `bg-primary` element); brand-700/800 stay for the fixed brand
+    panels, photo frames and gradients.
   - No hex colours in class names: add a token. Map pins, clusters and price
     pills are the same in both themes and live in `MAP_OVERLAY_COLORS`
     (`search-map.tsx`).
@@ -276,17 +277,23 @@ must keep.
   missing-image resolver) supplies the pill images, and a blank pixel for icons a
   base style names but lacks. Event handlers are registered once. The location map
   is recreated on a theme change. `window.__searchMap` exists in dev only, for e2e.
+  Both maps take their theme from `useMapTheme()`, which is light while printing,
+  and `markDrawnStyle` sets `data-map-style` on the container once a style is drawn.
+  Print CSS hides any map canvas not marked `light`, because a print can't wait for
+  a map to restyle: a dark page prints the light map panel, then the light map.
 - **Client helpers** (`src/lib/theme.ts`, client components only):
   `readThemePref`/`writeThemePref`, `readResolvedTheme`, `applyTheme`,
   `setChromeColor` (for WP2's hero) and `watchTheme`; hooks `useThemePref`,
-  `useResolvedTheme` and `useClientTheme` (client-only widgets: never null) in
+  `useResolvedTheme`, `useClientTheme` (client-only widgets: never null) and
+  `useMapTheme` (light while printing) in
   `src/components/theme/use-theme.ts`. Emails stay light by design.
 - **Tests.** Unit: `src/lib/theme.test.ts` (preference parsing, storage,
   `applyTheme`, the head script run against fakes, and drift between the CSS,
   the script and the module boundaries) and `theme-guard.test.ts` (the class
   rules above). e2e: `e2e/theme-suite.ts` holds the shared helpers and the dark
   axe matrix; `e2e/theme.spec.ts` runs on desktop (no flash, zero JS, the
-  switch, persistence, Match my device, cross-tab, print, maps, keyboard) and
+  switch, persistence, Match my device, cross-tab, print (a listing, map
+  included), maps, keyboard) and
   `e2e/mobile/theme.spec.ts` on the phone projects, including
   iphone13-landscape and ipad-mini. The dark axe matrix requires 0 contrast
   violations on every page with its own design, on desktop, pixel7 and

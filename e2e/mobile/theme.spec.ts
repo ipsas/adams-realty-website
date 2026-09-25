@@ -8,6 +8,7 @@ import {
   canvas,
   darkAxeSuite,
   dataTheme,
+  expectListingPrintsLight,
   firstThemeColor,
   stored,
 } from "../theme-suite";
@@ -111,6 +112,11 @@ test(
     expect(await page.evaluate(() => getComputedStyle(document.body).color)).toBe(LIGHT_INK);
   },
 );
+
+test("a listing printed in Dark prints light, its location map included", async ({ page }) => {
+  test.setTimeout(90_000);
+  await expectListingPrintsLight(page);
+});
 
 /* ───────────────────────── the dark axe matrix ───────────────────────── */
 

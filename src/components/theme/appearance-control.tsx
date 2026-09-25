@@ -26,7 +26,7 @@ function choose(pref: ThemePref) {
  * free. Each radio is stretched over its whole option, which makes the option the tap target
  * (44px on coarse pointers) and puts the global focus ring around it.
  *
- * - `list`: rows with a check mark, for the header's appearance menu.
+ * - `list`: rows with a check mark, the chosen one filled, for the header's appearance menu.
  * - `segmented`: Auto / Light / Dark in one row, for the phone menu.
  *
  * Announces nothing (no aria-live, no role=status): /homes keeps one polite live region.
@@ -64,7 +64,7 @@ export function AppearanceControl({
               "group relative flex cursor-pointer items-center text-sm transition-colors",
               segmented
                 ? "h-10 justify-center gap-1.5 rounded-lg font-medium text-muted hover:text-ink has-checked:bg-surface has-checked:text-ink has-checked:shadow-card pointer-coarse:h-11"
-                : "gap-2.5 rounded-lg px-3 py-2.5 text-ink-soft hover:bg-sunken hover:text-ink has-checked:font-medium has-checked:text-ink pointer-coarse:min-h-11",
+                : "gap-2.5 rounded-lg px-3 py-2.5 text-ink-soft hover:bg-sunken hover:text-ink has-checked:bg-sunken has-checked:font-medium has-checked:text-ink pointer-coarse:min-h-11",
             )}
           >
             <input

@@ -13,8 +13,8 @@ import type {
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useRef } from "react";
 import { site } from "@/config/site";
-import { ensureMapLibre, handleMissingImages, mapStyleUrl } from "./map-setup";
-import { useClientTheme } from "@/components/theme/use-theme";
+import { ensureMapLibre, handleMissingImages, mapStyleUrl, markDrawnStyle } from "./map-setup";
+import { useMapTheme } from "@/components/theme/use-theme";
 import { readResolvedTheme } from "@/lib/theme";
 import { formatBaths, formatNumber, formatPrice, formatPriceShort } from "@/lib/format";
 import type { Bounds } from "@/lib/search/params";
@@ -308,7 +308,8 @@ export default function SearchMap({
   const styleUrl = useRef<string | null>(null);
   const data = useMemo(() => toGeoJSON(pins), [pins]);
   const pinsById = useMemo(() => new Map(pins.map((p) => [p.id, p])), [pins]);
-  const theme = useClientTheme();
+  // The page's theme, or light while printing.
+  const theme = useMapTheme();
 
   // Keep the latest callbacks/data without re-creating the map.
   const latest = useRef({ onHover, onUserMove, pinsById, data, highlightedId });
@@ -343,6 +344,8 @@ export default function SearchMap({
         : {}),
     });
     mapRef.current = map;
+    const initialUrl = styleUrl.current;
+    markDrawnStyle(map, container.current, initialUrl, () => styleUrl.current === initialUrl);
     if (process.env.NODE_ENV !== "production") {
       // For e2e and debugging only: lets tests query layers and rendered pins.
       (window as unknown as { __searchMap?: MapLibreMap }).__searchMap = map;
@@ -441,6 +444,8 @@ export default function SearchMap({
     if (!map || styleUrl.current === url) return;
     styleUrl.current = url;
     map.setStyle(url, { transformStyle: carryOverlays });
+    if (container.current)
+      markDrawnStyle(map, container.current, url, () => styleUrl.current === url);
   }, [theme]);
 
   // New results → update the source; new non-map criteria → fit to results.

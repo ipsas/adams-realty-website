@@ -327,7 +327,7 @@ ACCEPTANCE:
 
 DARK MODE (hand-off from DM):
 
-- search-map.tsx: keep `installOverlays` on every `style.load`, the theme swap `setStyle(url, { transformStyle: carryOverlays })`, the missing-image resolver, the handlers registered once, `MAP_OVERLAY_COLORS` (pins look the same in both themes) and the dev-only `window.__searchMap` that e2e/theme.spec.ts reads. The map is created on `mapStyleUrl(readResolvedTheme())`, so it never starts on the wrong style.
+- search-map.tsx: keep `installOverlays` on every `style.load`, the theme swap `setStyle(url, { transformStyle: carryOverlays })`, the missing-image resolver, the handlers registered once, `MAP_OVERLAY_COLORS` (pins look the same in both themes) and the dev-only `window.__searchMap` that e2e/theme.spec.ts reads. The map is created on `mapStyleUrl(readResolvedTheme())`, so it never starts on the wrong style; its theme then comes from `useMapTheme()` (light while printing), and `markDrawnStyle` marks each drawn style for the print CSS.
 - New map layers (clusters, the pin strip's highlight) go in `OVERLAY_LAYERS` so a theme swap carries them. The map's placeholder uses `bg-map`.
 - The results sheet, pin strip and cards follow the tokens; the sheet's handle and scrim use `shade`.
 - /homes stays in the dark axe matrix; the theme map tests (pins drawn after each swap, no light style requested on a dark page, no console warnings) pass.
@@ -557,7 +557,7 @@ ACCEPTANCE:
 
 DARK MODE (hand-off from DM):
 
-- location-map.tsx and location-map-lazy.tsx (WP5, not WP3): keep the resolved theme (`useClientTheme()`) in the map effect's dependencies so a theme change rebuilds the map on `mapStyleUrl(theme)`, and create it on the current theme. The lazy wrapper's placeholder uses `bg-map`, and mounting it must not request the light style on a dark page (e2e/theme.spec.ts checks the listing's map).
+- location-map.tsx and location-map-lazy.tsx (WP5, not WP3): keep the map theme (`useMapTheme()`: the resolved theme, light while printing) in the map effect's dependencies and call `markDrawnStyle` on each new map (print CSS keys off it), so a theme change rebuilds the map on `mapStyleUrl(theme)`, and create it on the current theme. The lazy wrapper's placeholder uses `bg-map`, and mounting it must not request the light style on a dark page (e2e/theme.spec.ts checks the listing's map).
 - The photo viewer, action bar and tour sheet use `shade` for photo overlays and the tokens elsewhere. The listing page stays in the dark axe matrix, with the tour sheet open too.
 
 ## WP6 Staff on phones: lead cards and reliable lead controls (P0), dashboard shell and #10 staff pages (P1)

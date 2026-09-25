@@ -37,3 +37,16 @@ export function useResolvedTheme(): ResolvedTheme | null {
 export function useClientTheme(): ResolvedTheme {
   return useResolvedTheme() ?? readResolvedTheme();
 }
+
+/** Print media: `print` while the page is being printed (or print is emulated). */
+export const PRINT_QUERY = "print";
+
+/**
+ * The theme a map should draw: the page's theme on screen, and light while printing, since
+ * printouts are always light (globals.css). See `markDrawnStyle` for the print fallback.
+ */
+export function useMapTheme(): ResolvedTheme {
+  const printing = useMediaQuery(PRINT_QUERY, false);
+  const theme = useClientTheme();
+  return printing ? "light" : theme;
+}

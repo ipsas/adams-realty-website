@@ -1,4 +1,10 @@
-import { type BrowserContext, type Page, expect, type test as baseTest } from "@playwright/test";
+import {
+  type BrowserContext,
+  type Locator,
+  type Page,
+  expect,
+  type test as baseTest,
+} from "@playwright/test";
 import { signIn } from "./helpers";
 import { expectNoSeriousAxe, gotoHydrated } from "./mobile/helpers";
 
@@ -43,6 +49,119 @@ export async function storePref(context: BrowserContext, pref: "light" | "dark")
 /** Forces Dark on every document the context loads (for suites that never change it). */
 export async function forceDark(context: BrowserContext) {
   await context.addInitScript((key) => localStorage.setItem(key, '"dark"'), KEY);
+}
+
+/* ───────────────────────── printing ───────────────────────── */
+
+/**
+ * Mean relative luminance (0 black … 1 white) of what `locator` shows right now, from a
+ * screenshot, so it sees the map canvas exactly as the page renders it under the current
+ * emulated media. Decoded in the page with an offscreen canvas.
+ */
+export async function meanLuminance(page: Page, locator: Locator) {
+  const png = (await locator.screenshot({ animations: "disabled" })).toString("base64");
+  return page.evaluate(async (b64) => {
+    const img = new Image();
+    img.src = `data:image/png;base64,${b64}`;
+    await img.decode();
+    const c = document.createElement("canvas");
+    c.width = img.naturalWidth;
+    c.height = img.naturalHeight;
+    const ctx = c.getContext("2d")!;
+    ctx.drawImage(img, 0, 0);
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    const lin = (v: number) => {
+      const s = v / 255;
+      return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    };
+    let sum = 0;
+    for (let i = 0; i < d.length; i += 4)
+      sum += 0.2126 * lin(d[i]) + 0.7152 * lin(d[i + 1]) + 0.0722 * lin(d[i + 2]);
+    return sum / (d.length / 4);
+  }, png);
+}
+
+/** Every element's colours outside the maps (checked by their pixels), keyed by position. */
+const printedColours = (page: Page) =>
+  page.evaluate(() => {
+    const out: Record<string, string> = {};
+    document.querySelectorAll("body *").forEach((el, i) => {
+      if (el.closest(".maplibregl-map")) return;
+      const cs = getComputedStyle(el);
+      out[`${i} ${el.tagName.toLowerCase()}.${el.getAttribute("class") ?? ""}`] = [
+        cs.color,
+        cs.backgroundColor,
+        cs.backgroundImage,
+        cs.borderTopColor,
+        cs.borderBottomColor,
+        cs.boxShadow,
+        cs.fill,
+        cs.stroke,
+      ].join(" | ");
+    });
+    return out;
+  });
+
+/**
+ * A listing printed with Dark forced on a dark OS prints exactly like one printed in Light,
+ * map included. The page is dark on screen first, with its location map drawn dark, so the
+ * check can tell a dark printout from a light one.
+ */
+export async function expectListingPrintsLight(page: Page) {
+  await page.emulateMedia({ media: "screen", colorScheme: "dark" });
+  await forceDark(page.context());
+  const path = await firstListingPath(page);
+  await gotoHydrated(page, path, "main p.tabular");
+  await page.getByRole("heading", { name: "Location" }).scrollIntoViewIfNeeded();
+  const map = page.locator(".maplibregl-map");
+  await expect(map).toHaveAttribute("data-map-style", "dark", { timeout: 20_000 });
+  expect(await meanLuminance(page, map), "the map is dark on screen").toBeLessThan(0.1);
+  // Colours are read at their end state, not mid-transition.
+  await page.addStyleTag({ content: "*, *::before, *::after { transition: none !important }" });
+
+  // Hold the light style back until the print fallback has been checked: a real print can't
+  // wait for a map to restyle, so until it has, the dark canvas must not print.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  let lightRequested = false;
+  await page.route(/styles\/positron/, async (route) => {
+    lightRequested = true;
+    await held;
+    await route.continue();
+  });
+  await page.emulateMedia({ media: "print", colorScheme: "dark" });
+  expect(await dataTheme(page)).toBe("dark");
+  expect(await canvas(page)).toBe(LIGHT_CANVAS);
+  expect(await page.evaluate(() => getComputedStyle(document.body).color)).toBe(LIGHT_INK);
+
+  // Nothing prints in a dark colour: every element matches the same page printed in Light.
+  const printedDark = await printedColours(page);
+  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "light"));
+  const printedLight = await printedColours(page);
+  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+  expect(Object.keys(printedDark).length).toBeGreaterThan(100);
+  const differences = Object.keys(printedLight)
+    .filter((k) => printedDark[k] !== printedLight[k])
+    .map((k) => `${k}: ${printedDark[k]} (Dark) vs ${printedLight[k]} (Light)`);
+  expect(differences).toEqual([]);
+
+  // The map never prints dark. Until its light style is drawn, no canvas prints (just the
+  // light map panel); then it redraws in its light style, which prints.
+  await expect.poll(() => lightRequested, "the map asks for its light style").toBe(true);
+  expect(await map.getAttribute("data-map-style")).not.toBe("light");
+  expect(
+    await map.locator(".maplibregl-canvas").evaluate((c) => getComputedStyle(c).visibility),
+  ).toBe("hidden");
+  expect(await meanLuminance(page, map), "the printed map, restyling").toBeGreaterThan(0.6);
+  release();
+  await expect(map).toHaveAttribute("data-map-style", "light", { timeout: 20_000 });
+  await expect(map.locator(".maplibregl-canvas")).toBeVisible();
+  expect(await meanLuminance(page, map), "the printed map, redrawn").toBeGreaterThan(0.6);
+
+  // Back on screen, it is dark again.
+  await page.emulateMedia({ media: "screen", colorScheme: "dark" });
+  await expect(map).toHaveAttribute("data-map-style", "dark", { timeout: 20_000 });
+  expect(await meanLuminance(page, map)).toBeLessThan(0.1);
 }
 
 /* ───────────────────────── the dark axe matrix ───────────────────────── */
