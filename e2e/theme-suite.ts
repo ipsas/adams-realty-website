@@ -199,6 +199,8 @@ const PAGES = {
   listing: { name: "a listing", path: firstListingPath, ready: "main p.tabular" },
   signIn: { name: "/sign-in", path: "/sign-in", ready: "#email" },
   about: { name: "/about", path: "/about", ready: "main h1" },
+  // The broker's page lists her under-contract homes, whose amber badge once failed contrast.
+  agent: { name: "the broker's page", path: "/agents/andrea-anderegg", ready: "main h1" },
   contact: { name: "/contact", path: "/contact", ready: "#c-name" },
   sell: { name: "/sell", path: "/sell", ready: "main h1" },
   areas: { name: "/areas", path: "/areas", ready: "main h1" },

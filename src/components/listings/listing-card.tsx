@@ -142,7 +142,7 @@ function Badge({
   const tones = {
     brand: "bg-primary text-white",
     violet: "bg-status-soon text-white",
-    amber: "bg-status-pending text-white",
+    amber: "bg-status-pending text-shade",
     clay: "bg-clay-500 text-white",
     brass: "bg-surface text-brass-700",
     ink: "bg-shade/80 text-white",
