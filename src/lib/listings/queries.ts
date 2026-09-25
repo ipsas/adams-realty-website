@@ -270,3 +270,60 @@ export async function getMarketStats() {
     .where(isNull(listings.removedAt));
   return row;
 }
+
+/** The for-sale set the default /homes search shows (and `listings_buy_*` indexes cover). */
+const forSaleNow = () =>
+  and(
+    isNull(listings.removedAt),
+    eq(listings.transactionType, "sale"),
+    inArray(listings.status, ["active", "coming_soon"]),
+  );
+
+export type CityCount = { city: string; count: number };
+
+/**
+ * The cities with the most homes for sale, busiest first: the home page's
+ * town chips, computed from the feed rather than a hard-coded list. Each
+ * links to `/homes?q=<city>`. Changes only when the feed does, so callers
+ * cache it with the other home-page stats.
+ */
+export async function getTopCities(limit = 12): Promise<CityCount[]> {
+  return db
+    .select({ city: listings.city, count: sql<number>`count(*)::int` })
+    .from(listings)
+    .where(forSaleNow())
+    .groupBy(listings.city)
+    .orderBy(sql`count(*) desc`, listings.city)
+    .limit(limit);
+}
+
+export type PlacesIndexCounty = {
+  /** County name as the feed spells it; null collects listings with no county. */
+  county: string | null;
+  cities: CityCount[];
+};
+
+/**
+ * Every city with homes for sale, grouped by county (A–Z, no-county last) and
+ * alphabetical within it: the statewide "See all towns" index. A city that
+ * spans counties appears under each, with that county's count.
+ */
+export async function getPlacesIndex(): Promise<PlacesIndexCounty[]> {
+  const rows = await db
+    .select({
+      county: listings.county,
+      city: listings.city,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(listings)
+    .where(forSaleNow())
+    .groupBy(listings.county, listings.city)
+    .orderBy(sql`${listings.county} asc nulls last`, listings.city);
+  const out: PlacesIndexCounty[] = [];
+  for (const r of rows) {
+    const last = out.at(-1);
+    if (last && last.county === r.county) last.cities.push({ city: r.city, count: r.count });
+    else out.push({ county: r.county, cities: [{ city: r.city, count: r.count }] });
+  }
+  return out;
+}

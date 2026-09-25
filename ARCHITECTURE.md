@@ -34,7 +34,7 @@ Browser ──► Next.js (App Router, React Server Components)
 | `src/server/actions/` | Server actions — every one authorizes via the policy                                                                                                                                                                    |
 | `src/config/site.ts`  | Brand, firm contact details, Georgia MLS office, market (Northeast Georgia), finance defaults, legal links                                                                                                              |
 | `docs/`               | `mobile-spec/` (the phone and PWA design, by work package) and `mobile-contracts.md` (what the built foundation guarantees)                                                                                             |
-| `scripts/`            | Seed data (Andrea Anderegg's real profile; fictional agents and listings: Adams in Northeast Georgia, others statewide; `dev/` pool generator), CLI sync, MapLibre worker copy                                          |
+| `scripts/`            | Seed data (Andrea Anderegg's real profile; fictional agents and listings: Adams in Northeast Georgia, others statewide; `dev/` pool generator), CLI sync, `perf/` scale harness (`adams_perf`), MapLibre worker copy    |
 
 ## Listing data
 
@@ -85,14 +85,17 @@ Adding a non-RESO feed means implementing `ListingProvider` (`src/lib/mls/types.
   therefore linkable, works with back/forward, and is stored verbatim as a saved
   search.
 - **SQL** (`buildConditions` / `buildOrderBy`, unit-tested by rendering SQL):
-  - **Location:** ZIP match, or Postgres full-text search on a generated, weighted `tsvector`, plus prefix and trigram matching for half-typed names and addresses.
-  - **Map area:** `point(lng, lat) <@ box(...)`, backed by a GiST expression index. No PostGIS needed.
+  - **Location:** ZIP match, or full-text search on `location_vector` (address, city, ZIP, neighborhood, lake from RESO WaterBodyName, MLS number; never the description), plus prefix and trigram matching for half-typed names and addresses. A guide name or alias ("Lake Hartwell", "Lanier") also matches the way its guide does (`areaCondition`, inside the guide's counties). `search_vector` (descriptions included) stays for keyword search.
+  - **Map area:** `longitude BETWEEN … AND latitude BETWEEN …`, backed by a partial (latitude, longitude) btree. No PostGIS needed.
+  - **Order:** one partial btree per sort order and mode (for sale, `pending=1`, rent, sold), each matching `buildOrderBy` exactly, so a page reads straight off an index. `src/lib/search/indexes.test.ts` checks the migrations against `buildOrderBy`/`buildConditions`.
   - **Filters:** ordinary indexed columns.
 - **Map pins** are a separate lightweight query over all matches, capped at 750.
   MapLibre clusters them and draws collision-aware price pills with dots underneath.
   The map loads its self-hosted web worker from `/vendor/maplibre/<version>/`.
-- **Scaling path.** Postgres handles a statewide MLS (tens of thousands of listings)
-  comfortably. The rest of the app depends only on `searchListings` and
+- **Scaling path.** Postgres handles a statewide MLS comfortably: `npm run perf:seed` builds
+  `adams_perf` (about 220k synthetic listings: 45k for sale, 5k rentals, 160k closed) and
+  `npm run perf:measure` times every search against its targets (default /homes page 1 in
+  about 0.1 ms, its count about 5 ms). The rest of the app depends only on `searchListings` and
   `searchMapPins`, so swapping in Typesense or OpenSearch later is contained.
 
 ## Accounts and permissions

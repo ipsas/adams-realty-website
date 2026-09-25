@@ -1,13 +1,15 @@
 /**
  * Seeds a development database with a realistic sample market: Adams Realty's
  * real office and broker, a few sample agents, open houses, price history,
- * leads and demo logins, and about 406 FICTIONAL listings:
+ * leads and demo logins, and about 409 FICTIONAL listings:
  * - 180 in Northeast Georgia, the towns and lakes the firm serves: Adams
  *   Realty's own listings plus a demo MLS feed. Adams listings are only here.
  * - 226 statewide (Atlanta and its suburbs, the regional cities, the
  *   mountains and south Georgia), all from other (fictional) brokerages in
  *   the demo feed, generated after the Northeast Georgia block from their own
  *   PRNG seed so that block never changes.
+ * - 3 lake homes shaped like the real feed (LAKE_FIXTURES): the lake only in
+ *   WaterBodyName, never in `neighborhood`, so lake searches stay tested.
  *
  *   npm run db:seed
  *
@@ -34,6 +36,7 @@ import {
   users,
 } from "@/db/schema";
 import { upsertListing, type PersistSource } from "@/lib/listings/persist";
+import { getPlacesIndex, getTopCities } from "@/lib/listings/queries";
 import { slugify } from "@/lib/listings/slug";
 import { DEFAULT_CRITERIA, type SearchCriteria } from "@/lib/search/params";
 import { searchListings } from "@/lib/search/service";
@@ -58,6 +61,7 @@ import {
   INTERIOR_FEATURES,
   INTERIORS,
   LAKE_HIGHLIGHTS,
+  LAKE_FIXTURES,
   LAKE_LOT_DETAILS,
   LAKE_PHOTOS,
   LAKE_SUFFIXES,
@@ -989,6 +993,39 @@ async function main() {
       });
     }
   }
+
+  // Lake homes shaped like the real feed: the subdivision in `neighborhood`,
+  // the lake only in WaterBodyName. The rest of the seed keeps the lake in
+  // `neighborhood`, which the real feed never does, so without these a lake
+  // search could break without any test noticing. Unique prices let tests
+  // pick each one out.
+  for (const [k, f] of LAKE_FIXTURES.entries()) {
+    const area = [...AREAS, ...STATEWIDE_AREAS].find((a) => a.slug === f.area)!;
+    const key = total + statewideAreas.length + k + 1;
+    const { listing } = generateListing(key, {
+      area,
+      type: "single_family",
+      onWater: true,
+      mlsNumber: String(10_500_000 + key),
+    });
+    Object.assign(listing, {
+      status: "active",
+      transactionType: "sale",
+      listPrice: f.price,
+      originalListPrice: f.price,
+      closePrice: null,
+      closeDate: null,
+      addressLine1: f.street,
+      unitNumber: null,
+      neighborhood: f.neighborhood,
+      waterBodyName: f.waterBody,
+      isWaterfront: true,
+    } satisfies Partial<typeof listing>);
+    perArea.set(area.slug, (perArea.get(area.slug) ?? 0) + 1);
+    await db.transaction((tx) =>
+      upsertListing(tx, toSource(demoSource), listing, { agentIdsByMlsId, isFeatured: false }),
+    );
+  }
   await assertStatewideFixtures();
 
   const [{ count }] = await db
@@ -1060,6 +1097,36 @@ async function assertStatewideFixtures() {
   ];
   for (const area of site.featuredAreas) {
     checks.push([`featured area "${area}" has a result`, (await buy({ q: area })) >= 1]);
+  }
+  // The data-driven town lists (home page chips, "See all towns") against a direct count.
+  const forSale = sql`transaction_type = 'sale' and status in ('active', 'coming_soon')`;
+  const byCity = await db
+    .execute<{ city: string; n: number }>(
+      sql`select city, count(*)::int as n from listings where removed_at is null and ${forSale}
+          group by city order by n desc, city`,
+    )
+    .then((r) => r.rows);
+  const top = await getTopCities(12);
+  const places = await getPlacesIndex();
+  const placeCities = new Set(places.flatMap((p) => p.cities.map((c) => c.city)));
+  checks.push(
+    [
+      "getTopCities(12) is the 12 busiest cities, busiest first",
+      JSON.stringify(top.map((c) => [c.city, c.count])) ===
+        JSON.stringify(byCity.slice(0, 12).map((c) => [c.city, c.n])),
+    ],
+    [
+      "getPlacesIndex lists every city with homes for sale, and every home once",
+      byCity.every((c) => placeCities.has(c.city)) &&
+        places.flatMap((p) => p.cities).reduce((s, c) => s + c.count, 0) ===
+          byCity.reduce((s, c) => s + c.n, 0),
+    ],
+  );
+  for (const f of LAKE_FIXTURES) {
+    checks.push([
+      `/homes?q=${f.query} finds ${f.street} (lake only in WaterBodyName "${f.waterBody}")`,
+      (await buy({ q: f.query, minPrice: f.price, maxPrice: f.price })) === 1,
+    ]);
   }
   const failed = checks.filter(([, ok]) => !ok).map(([label]) => label);
   if (failed.length) throw new Error(`Seed fixtures missing:\n- ${failed.join("\n- ")}`);

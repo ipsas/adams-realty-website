@@ -7,6 +7,8 @@ import {
   areaKeyRows,
   areaMatchKeys,
   guideForLocation,
+  inAreaCounties,
+  normalizeCounty,
   normalizedMatch,
   normalizedSql,
   prefilterPatterns,
@@ -51,18 +53,25 @@ describe("areaMatchKeys", () => {
 describe("areaCondition", () => {
   it("prefilters with LIKE, then compares normalized names, all as bound parameters", () => {
     const { sql, params } = dialect.sqlToQuery(areaCondition(area("Lake Hartwell")));
+    const match = (col: string, n: number) =>
+      `(lower("listings"."${col}") like any(array[$${n}, $${n + 1}]::text[]) and ` +
+      `btrim(regexp_replace(lower("listings"."${col}"), '[^a-z0-9]+', ' ', 'g')) = any(array[$${n + 2}, $${n + 3}]::text[]))`;
     expect(sql).toBe(
-      `((lower("listings"."neighborhood") like any(array[$1, $2]::text[]) and ` +
-        `btrim(regexp_replace(lower("listings"."neighborhood"), '[^a-z0-9]+', ' ', 'g')) = any(array[$3, $4]::text[])))`,
+      `((${match("neighborhood", 1)} or ${match("water_body", 5)}) and ` +
+        `("listings"."county" is null or regexp_replace(btrim(regexp_replace(lower("listings"."county"), '[^a-z0-9]+', ' ', 'g')), ' county$', '') = any(array[$9, $10, $11]::text[])))`,
     );
-    expect(params).toEqual(["%lake%", "%hartwell%", "lake hartwell", "hartwell lake"]);
+    const keys = ["%lake%", "%hartwell%", "lake hartwell", "hartwell lake"];
+    expect(params).toEqual([...keys, ...keys, "hart", "franklin", "stephens"]);
   });
 
   it("adds the city clause only for town-level areas", () => {
     const { sql, params } = dialect.sqlToQuery(areaCondition(area("Toccoa")));
     expect(sql).toContain(`lower("listings"."city")`);
     expect(sql).toContain(" or ");
-    expect(params).toEqual(["%toccoa%", "toccoa", "%toccoa%", "toccoa"]);
+    expect(params).toEqual([
+      ...["%toccoa%", "toccoa", "%toccoa%", "toccoa", "%toccoa%", "toccoa"],
+      "stephens",
+    ]);
     expect(dialect.sqlToQuery(areaCondition(area("Lake Lanier"))).sql).not.toContain("city");
   });
 
@@ -72,10 +81,26 @@ describe("areaCondition", () => {
         name: "O'Brien Park",
         city: "Royston",
         aliases: ["'; drop table listings; --"],
+        counties: ["'; drop table agents; --"],
       }),
     );
     expect(sql).not.toContain("drop");
     expect(sql).not.toContain("brien");
+  });
+});
+
+describe("county scoping", () => {
+  it("normalizes county spellings the way feeds vary them", () => {
+    expect(normalizeCounty("Hart")).toBe("hart");
+    expect(normalizeCounty("HART COUNTY")).toBe("hart");
+    expect(normalizeCounty(" McIntosh  County ")).toBe("mcintosh");
+    expect(normalizeCounty("Jeff Davis")).toBe("jeff davis");
+  });
+
+  it("keeps listings with no county, or in one of the area's counties", () => {
+    const { sql, params } = dialect.sqlToQuery(inAreaCounties(area("Jefferson")));
+    expect(sql.startsWith(`("listings"."county" is null or `)).toBe(true);
+    expect(params).toEqual(["jackson"]);
   });
 });
 
@@ -121,11 +146,13 @@ describe("prefilterPatterns", () => {
 
 describe("areaKeyRows", () => {
   it("emits one row per area, kind and key", () => {
+    const royston = ["franklin", "hart", "madison"];
+    const lake = ["hart", "franklin", "stephens"];
     expect(areaKeyRows([area("Royston"), area("Lake Hartwell")])).toEqual([
-      { slug: "royston", kind: "neighborhood", key: "royston" },
-      { slug: "royston", kind: "city", key: "royston" },
-      { slug: "lake-hartwell", kind: "neighborhood", key: "lake hartwell" },
-      { slug: "lake-hartwell", kind: "neighborhood", key: "hartwell lake" },
+      { slug: "royston", kind: "neighborhood", key: "royston", counties: royston },
+      { slug: "royston", kind: "city", key: "royston", counties: royston },
+      { slug: "lake-hartwell", kind: "neighborhood", key: "lake hartwell", counties: lake },
+      { slug: "lake-hartwell", kind: "neighborhood", key: "hartwell lake", counties: lake },
     ]);
   });
 });
@@ -160,5 +187,27 @@ describe("serviceAreaKeys / guideForLocation", () => {
     expect(guideForLocation("Pine Valley", "Royston")?.slug).toBe("royston");
     expect(guideForLocation(null, "Athens")).toBeUndefined();
     expect(guideForLocation("Hidden Hills", "Bowman")).toBeUndefined();
+  });
+
+  it("finds a lake named only in WaterBodyName, as real feeds do", () => {
+    expect(guideForLocation("Cedar Cove", "Lavonia", "Franklin", "Lake Hartwell")?.slug).toBe(
+      "lake-hartwell",
+    );
+    expect(guideForLocation("Harbour Point", "Gainesville", "Hall", "Lanier")?.slug).toBe(
+      "lake-lanier",
+    );
+  });
+
+  it("never matches a guide outside the listing's county", () => {
+    // A statewide feed repeats names: a subdivision called "Jefferson" in Savannah.
+    expect(guideForLocation("Jefferson", "Savannah", "Chatham")).toBeUndefined();
+    expect(guideForLocation("Jefferson", "Jefferson", "Jackson")?.slug).toBe("jefferson");
+    expect(guideForLocation("Jefferson", "Jefferson", "Jackson County")?.slug).toBe("jefferson");
+    // A Martin in another county, and a "Lanier" lake name in Lanier County.
+    expect(guideForLocation(null, "Martin", "Stephens")?.slug).toBe("martin");
+    expect(guideForLocation(null, "Martin", "Coweta")).toBeUndefined();
+    expect(guideForLocation("Oak Hill", "Lakeland", "Lanier", "Lanier")).toBeUndefined();
+    // No county on the listing: the name alone decides, as before.
+    expect(guideForLocation("Jefferson", "Savannah", null)?.slug).toBe("jefferson");
   });
 });

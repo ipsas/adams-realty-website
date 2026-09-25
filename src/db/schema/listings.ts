@@ -1,4 +1,4 @@
-import { sql, type SQL } from "drizzle-orm";
+import { sql, type AnyColumn, type SQL } from "drizzle-orm";
 import {
   boolean,
   customType,
@@ -32,6 +32,31 @@ const tsvector = customType<{ data: string }>({
     return "tsvector";
   },
 });
+
+// Partial-index predicates: each is the WHERE clause `buildConditions`
+// (src/lib/search/query.ts) sends for a search mode, so the planner can prove
+// the query implies it.
+const FOR_SALE = sql.raw(
+  `"removed_at" is null and "transaction_type" = 'sale' and "status" in ('active', 'coming_soon')`,
+);
+const LIVE_SALE = sql.raw(
+  `"removed_at" is null and "transaction_type" = 'sale' and "status" in ('active', 'coming_soon', 'active_under_contract', 'pending')`,
+);
+const RENT = sql.raw(
+  `"removed_at" is null and "transaction_type" = 'rent' and "status" = 'active'`,
+);
+/** Location autocomplete's scope (`getLocationSuggestions`): every listing still on the market. */
+const LIVE = sql.raw(
+  `"removed_at" is null and "status" in ('active', 'coming_soon', 'active_under_contract', 'pending')`,
+);
+const SOLD = sql.raw(
+  `"removed_at" is null and "transaction_type" = 'sale' and "status" = 'closed'`,
+);
+
+/** `normalizedSql` from src/lib/areas/match.ts, for expression indexes. */
+function normalized(column: AnyColumn): SQL {
+  return sql`btrim(regexp_replace(lower(${column}), '[^a-z0-9]+', ' ', 'g'))`;
+}
 
 /**
  * Where a listing came from. Every listing belongs to exactly one source.
@@ -204,20 +229,115 @@ export const listings = pgTable(
           coalesce(${listings.headline}, '') || ' ' || coalesce(${listings.propertySubType}, '')), 'B') ||
         setweight(to_tsvector('english', coalesce(${listings.description}, '')), 'C')`,
     ),
+    /**
+     * Where the listing is, and nothing else. The location box (`q`) matches
+     * this, never the description, so "Atlanta" finds homes in Atlanta rather
+     * than every listing "minutes from Atlanta". 'simple' (no stemming): these
+     * are names. It includes the lake (`water_body`), which real feeds keep
+     * out of `neighborhood`. Keyword search over descriptions stays on `searchVector`.
+     */
+    locationVector: tsvector("location_vector").generatedAlwaysAs(
+      (): SQL => sql`
+        to_tsvector('simple',
+          coalesce(${listings.addressLine1}, '') || ' ' || coalesce(${listings.city}, '') || ' ' ||
+          coalesce(${listings.postalCode}, '') || ' ' || coalesce(${listings.neighborhood}, '') || ' ' ||
+          coalesce(${listings.waterBodyName}, '') || ' ' || coalesce(${listings.mlsNumber}, ''))`,
+    ),
   },
   (t) => [
     uniqueIndex("listings_source_key_idx").on(t.sourceId, t.listingKey),
     index("listings_status_price_idx").on(t.status, t.listPrice),
     index("listings_city_idx").on(t.city),
-    index("listings_postal_code_idx").on(t.postalCode),
+    // text_pattern_ops also serves the autocomplete's ZIP prefix (LIKE '306%').
+    index("listings_postal_code_idx").on(t.postalCode.op("text_pattern_ops")),
     index("listings_list_agent_idx").on(t.listAgentId),
     index("listings_updated_idx").on(t.updatedAt),
-    // Bounding-box map search with built-in geometric types (no PostGIS needed):
-    //   point(longitude, latitude) <@ box(point(w, s), point(e, n))
-    index("listings_geo_idx").using("gist", sql`point(${t.longitude}, ${t.latitude})`),
+    index("listings_mls_number_idx").on(t.mlsNumber),
     index("listings_search_idx").using("gin", t.searchVector),
-    // Trigram index for address autocomplete (requires pg_trgm, see migrations).
+    index("listings_location_idx").using("gin", t.locationVector),
+    // Trigram indexes (pg_trgm, see migrations): address autocomplete, and the
+    // location box's and autocomplete's city/neighborhood prefix matches.
     index("listings_address_trgm_idx").using("gin", sql`${t.addressLine1} gin_trgm_ops`),
+    index("listings_city_trgm_idx").using("gin", sql`${t.city} gin_trgm_ops`),
+    index("listings_neighborhood_trgm_idx").using("gin", sql`${t.neighborhood} gin_trgm_ops`),
+    // The same, for live listings only: autocomplete reads a few thousand
+    // entries instead of every closed sale sharing the prefix.
+    index("listings_live_city_trgm_idx")
+      .using("gin", sql`${t.city} gin_trgm_ops`)
+      .where(LIVE),
+    index("listings_live_neighborhood_trgm_idx")
+      .using("gin", sql`${t.neighborhood} gin_trgm_ops`)
+      .where(LIVE),
+    // Area-guide matching: the exact expression `normalizedSql` in
+    // src/lib/areas/match.ts renders, so a guide name in the location box
+    // ("Lake Hartwell") and the guide pages can use an index.
+    index("listings_neighborhood_norm_idx").on(normalized(t.neighborhood)),
+    index("listings_water_body_norm_idx").on(normalized(t.waterBodyName)),
+    index("listings_city_norm_idx").on(normalized(t.city)),
+
+    // One partial index per result order, each matching `buildOrderBy` in
+    // src/lib/search/query.ts exactly (the id tiebreak included), so a page
+    // reads its rows off the index instead of sorting the whole feed. The
+    // predicates are the modes' WHERE clauses. Numbers: `npm run perf:measure`.
+    // Nulls placement must match too: Drizzle's `desc(col)` renders plain
+    // DESC (NULLS FIRST), while drizzle-kit writes a bare `.desc()` as
+    // DESC NULLS LAST, hence the explicit `.nullsFirst()`.
+    index("listings_buy_recommended_idx")
+      .on(
+        t.isFeatured.desc().nullsFirst(),
+        t.listDate.desc().nullsLast(),
+        t.photoCount.desc().nullsFirst(),
+        t.id,
+      )
+      .where(FOR_SALE),
+    index("listings_buy_newest_idx").on(t.listDate.desc().nullsLast(), t.id).where(FOR_SALE),
+    index("listings_buy_price_idx").on(t.listPrice, t.id).where(FOR_SALE),
+    index("listings_buy_price_desc_idx").on(t.listPrice.desc().nullsFirst(), t.id).where(FOR_SALE),
+    index("listings_buy_sqft_idx").on(t.livingAreaSqft.desc().nullsLast(), t.id).where(FOR_SALE),
+    index("listings_buy_ppsf_idx")
+      .on(sql`(${t.listPrice}::float / nullif(${t.livingAreaSqft}, 0)) asc nulls last`, t.id)
+      .where(FOR_SALE),
+    // Map bounds are `longitude/latitude BETWEEN`. The migration adds
+    // INCLUDE (list_price) so viewport counts stay index-only.
+    index("listings_buy_geo_idx").on(t.latitude, t.longitude).where(FOR_SALE),
+    // `pending=1` (under contract and pending too): its 4-status IN doesn't
+    // imply FOR_SALE, so it gets the same set.
+    index("listings_live_recommended_idx")
+      .on(
+        t.isFeatured.desc().nullsFirst(),
+        t.listDate.desc().nullsLast(),
+        t.photoCount.desc().nullsFirst(),
+        t.id,
+      )
+      .where(LIVE_SALE),
+    index("listings_live_newest_idx").on(t.listDate.desc().nullsLast(), t.id).where(LIVE_SALE),
+    index("listings_live_price_idx").on(t.listPrice, t.id).where(LIVE_SALE),
+    index("listings_live_price_desc_idx")
+      .on(t.listPrice.desc().nullsFirst(), t.id)
+      .where(LIVE_SALE),
+    index("listings_live_sqft_idx").on(t.livingAreaSqft.desc().nullsLast(), t.id).where(LIVE_SALE),
+    index("listings_live_ppsf_idx")
+      .on(sql`(${t.listPrice}::float / nullif(${t.livingAreaSqft}, 0)) asc nulls last`, t.id)
+      .where(LIVE_SALE),
+    // Rentals: few enough that one index serves every order and the count.
+    index("listings_rent_recommended_idx")
+      .on(
+        t.isFeatured.desc().nullsFirst(),
+        t.listDate.desc().nullsLast(),
+        t.photoCount.desc().nullsFirst(),
+        t.id,
+      )
+      .where(RENT),
+    // Sold: about 150k closed sales a year statewide, inside the close-date window.
+    index("listings_sold_recommended_idx")
+      .on(
+        t.isFeatured.desc().nullsFirst(),
+        t.closeDate.desc().nullsLast(),
+        t.photoCount.desc().nullsFirst(),
+        t.id,
+      )
+      .where(SOLD),
+    index("listings_sold_newest_idx").on(t.closeDate.desc().nullsLast(), t.id).where(SOLD),
   ],
 );
 

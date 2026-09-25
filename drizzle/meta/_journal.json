@@ -36,6 +36,13 @@
       "when": 1790357042483,
       "tag": "0004_water_body",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790363237547,
+      "tag": "0005_statewide_indexes",
+      "breakpoints": true
     }
   ]
 }

@@ -38,3 +38,36 @@ test("statewide listings belong to other brokerages, never Adams Realty", async 
   await page.goto("/homes?q=Savannah&ourListings=1");
   expect(await resultCount(page)).toBe(0);
 });
+
+// Real feeds keep the subdivision in `neighborhood` and the lake only in
+// WaterBodyName (LAKE_FIXTURES in scripts/seed-data.ts). Each price is unique
+// in the seed, so the price filter narrows the search to that one home.
+for (const f of [
+  { q: "Lake Hartwell", price: 612345, street: "118 Cedar Cove Court" },
+  { q: "Lake Lanier", price: 734567, street: "412 Harbour Point Drive" },
+  { q: "Lake Sinclair", price: 456789, street: "27 Twin Oaks Trail" },
+]) {
+  test(`a ${f.q} search finds a home that names the lake only in WaterBodyName`, async ({
+    page,
+  }) => {
+    const qs = new URLSearchParams({
+      q: f.q,
+      minPrice: String(f.price),
+      maxPrice: String(f.price),
+    });
+    await page.goto(`/homes?${qs}`);
+    expect(await resultCount(page)).toBe(1);
+    await expect(page.getByTestId("card-address").first()).toContainText(f.street);
+  });
+}
+
+test("the location box matches places, not words in descriptions", async ({ page }) => {
+  // 64 seeded homes for sale have "quartz" in their description (it used to
+  // match); no address, town, ZIP, subdivision or lake does. Keyword search
+  // over descriptions is a separate filter (WP4's `kw`).
+  await page.goto("/homes?q=quartz");
+  expect(await resultCount(page)).toBe(0);
+  // A place still does.
+  await page.goto("/homes?q=Decatur");
+  expect(await resultCount(page)).toBeGreaterThanOrEqual(10);
+});

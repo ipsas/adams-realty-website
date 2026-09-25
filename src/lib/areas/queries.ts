@@ -7,6 +7,7 @@ import { selectCards, withPhotos } from "@/lib/listings/card";
 import {
   areaCondition,
   areaKeyRows,
+  normalizedCountySql,
   normalizedSql,
   prefilterPatterns,
   serviceAreaKeys,
@@ -49,9 +50,10 @@ type StatsRow = {
 
 /**
  * Live market stats for any number of areas in one query. Each listing's
- * neighborhood and city are normalized once (only for rows that pass the LIKE
- * prefilter), then hash-joined to one row per (area, key); `union` dedupes a
- * listing that matches an area both ways. A listing counts once per area it
+ * neighborhood, lake (water_body), city and county are normalized once (only
+ * for rows that pass the LIKE prefilter), then hash-joined to one row per
+ * (area, key), keeping listings in the area's counties (or with no county);
+ * `union` dedupes a listing that matches an area more than one way. A listing counts once per area it
  * belongs to, and medians are true medians. Dates are the market's calendar
  * dates, not the server's. (~0.2s for 50k listings × 20 areas on a laptop;
  * the naive OR-join was ~1.5s.)
@@ -81,7 +83,9 @@ export async function getAreaStats(
 
   const rows = areaKeyRows(list);
   const keys = sql.join(
-    rows.map((r) => sql`(${r.slug}::text, ${r.kind}::text, ${r.key}::text)`),
+    rows.map(
+      (r) => sql`(${r.slug}::text, ${r.kind}::text, ${r.key}::text, ${textArray(r.counties)})`,
+    ),
     sql`, `,
   );
   const keysOf = (kind: AreaKeyRow["kind"]) =>
@@ -90,22 +94,31 @@ export async function getAreaStats(
   const cityKeys = keysOf("city");
 
   const result = await db.execute<StatsRow>(sql`
-    with area_keys (slug, kind, key) as (values ${keys}),
+    with area_keys (slug, kind, key, counties) as (values ${keys}),
     normalized as (
       select ${L.id} as id,
         ${normalizedSql(L.neighborhood)} as neighborhood,
-        ${normalizedSql(L.city)} as city
+        ${normalizedSql(L.waterBodyName)} as water_body,
+        ${normalizedSql(L.city)} as city,
+        ${normalizedCountySql(L.county)} as county
       from ${L}
       where ${L.removedAt} is null
         and (lower(${L.neighborhood}) like any(${textArray(prefilterPatterns(neighborhoodKeys))})
+          or lower(${L.waterBodyName}) like any(${textArray(prefilterPatterns(neighborhoodKeys))})
           or lower(${L.city}) like any(${textArray(prefilterPatterns(cityKeys))}))
     ),
     matched as (
       select n.id, k.slug from normalized n
         join area_keys k on k.kind = 'neighborhood' and k.key = n.neighborhood
+        where n.county is null or n.county = any(k.counties)
+      union
+      select n.id, k.slug from normalized n
+        join area_keys k on k.kind = 'neighborhood' and k.key = n.water_body
+        where n.county is null or n.county = any(k.counties)
       union
       select n.id, k.slug from normalized n
         join area_keys k on k.kind = 'city' and k.key = n.city
+        where n.county is null or n.county = any(k.counties)
     )
     select
       m.slug,

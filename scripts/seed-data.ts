@@ -1369,3 +1369,40 @@ export const APPLIANCES = [
 ];
 export const FLOORING = ["Hardwood", "Tile", "Carpet", "Vinyl"];
 export const COMMUNITY = ["Clubhouse", "Pool", "Playground", "Sidewalks", "Street Lights"];
+
+/**
+ * Lake homes shaped like the real Georgia MLS feed: RESO SubdivisionName in
+ * `neighborhood` and the lake only in WaterBodyName. Each proves one way the
+ * location box finds a lake (src/lib/search/query.ts `locationCondition`):
+ * - Lake Hartwell: the lake's full name in WaterBodyName.
+ * - Lake Lanier: only the guide's alias "Lanier" in WaterBodyName, so just the
+ *   area-guide match finds it for "Lake Lanier" (no word "lake" anywhere).
+ * - Lake Sinclair: no area guide, so just `location_vector` finds it.
+ * Prices are unique in the seed; e2e/statewide.spec.ts uses them.
+ */
+export const LAKE_FIXTURES = [
+  {
+    area: "lake-hartwell",
+    query: "Lake Hartwell",
+    street: "118 Cedar Cove Court",
+    neighborhood: "Cedar Cove",
+    waterBody: "Lake Hartwell",
+    price: 612_345,
+  },
+  {
+    area: "lake-lanier",
+    query: "Lake Lanier",
+    street: "412 Harbour Point Drive",
+    neighborhood: "Harbour Point",
+    waterBody: "Lanier",
+    price: 734_567,
+  },
+  {
+    area: "milledgeville",
+    query: "Lake Sinclair",
+    street: "27 Twin Oaks Trail",
+    neighborhood: "Twin Oaks",
+    waterBody: "Lake Sinclair",
+    price: 456_789,
+  },
+] as const;
