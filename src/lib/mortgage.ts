@@ -1,3 +1,5 @@
+import { site } from "@/config/site";
+
 /** Monthly principal & interest for a fixed-rate loan. */
 export function monthlyPrincipalAndInterest(
   principal: number,
@@ -69,4 +71,75 @@ export function monthlyHoaAmount(
   if (frequency === "quarterly") return fee / 3;
   if (frequency === "annually") return fee / 12;
   return fee;
+}
+
+/** The subset of `site.finance` the cost model needs. */
+export type FinanceDefaults = {
+  interestRate: number;
+  downPaymentPct: number;
+  loanTermYears: number;
+  insuranceRatePct: number;
+  propertyTaxRatePct: number;
+};
+
+/**
+ * Linear coefficients of the all-in monthly cost, per dollar of price, under
+ * fixed finance defaults. Monthly cost = price × (piPerDollar +
+ * insuranceRateMonthly + pmiRateMonthly) + tax + HOA, where tax falls back to
+ * price × taxFallbackRateMonthly. Cards, pins and (later) the SQL maxMonthly
+ * filter all use these numbers so they agree to the dollar.
+ */
+export type MonthlyCostModel = {
+  /** Principal & interest per dollar of price (the down payment is already applied). */
+  piPerDollar: number;
+  insuranceRateMonthly: number;
+  /** Used when a listing has no tax figure. */
+  taxFallbackRateMonthly: number;
+  /** PMI per dollar of price; 0 at 20% down or more. */
+  pmiRateMonthly: number;
+};
+
+export function monthlyCostModel(finance: FinanceDefaults = site.finance): MonthlyCostModel {
+  const loanPerDollar = Math.max(0, 1 - finance.downPaymentPct / 100);
+  return {
+    piPerDollar: monthlyPrincipalAndInterest(
+      loanPerDollar,
+      finance.interestRate,
+      finance.loanTermYears,
+    ),
+    insuranceRateMonthly: finance.insuranceRatePct / 100 / 12,
+    taxFallbackRateMonthly: finance.propertyTaxRatePct / 100 / 12,
+    // Same rule as estimateMonthlyCost: 0.5%/yr of the loan below 20% down.
+    pmiRateMonthly: finance.downPaymentPct < 20 ? (loanPerDollar * 0.005) / 12 : 0,
+  };
+}
+
+const defaultModel = monthlyCostModel();
+
+/**
+ * All-in monthly cost of buying a for-sale listing with site finance defaults
+ * (unrounded; format with formatMonthly). Callers skip rentals and sold homes.
+ * Matches estimateMonthlyCost; like the payment calculator, a missing or zero
+ * tax figure uses the fallback rate. Null without a price.
+ */
+export function quickMonthlyCost(
+  listing: {
+    price: number | null | undefined;
+    annualTax?: number | null;
+    hoaFee?: number | null;
+    hoaFrequency?: string | null;
+  },
+  model: MonthlyCostModel = defaultModel,
+): number | null {
+  const { price } = listing;
+  if (!price || price <= 0) return null;
+  const tax =
+    listing.annualTax && listing.annualTax > 0
+      ? listing.annualTax / 12
+      : price * model.taxFallbackRateMonthly;
+  return (
+    price * (model.piPerDollar + model.insuranceRateMonthly + model.pmiRateMonthly) +
+    tax +
+    monthlyHoaAmount(listing.hoaFee, listing.hoaFrequency)
+  );
 }

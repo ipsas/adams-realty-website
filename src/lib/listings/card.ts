@@ -36,6 +36,10 @@ export const cardColumns = {
   isCompanyListing: listings.isCompanyListing,
   isFeatured: listings.isFeatured,
   listOfficeName: listings.listOfficeName,
+  // For the all-in monthly estimate (quickMonthlyCost) on cards and rows.
+  taxAnnualAmount: listings.taxAnnualAmount,
+  hoaFee: listings.hoaFee,
+  hoaFrequency: listings.hoaFrequency,
   hasVirtualTour: sql<boolean>`"listings"."virtual_tour_url" is not null`,
   removedAt: listings.removedAt,
   // Written with explicit aliases: Drizzle renders column references inside

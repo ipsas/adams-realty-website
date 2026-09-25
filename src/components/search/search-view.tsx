@@ -2,7 +2,7 @@
 
 import { List, Map as MapIcon, SearchX } from "lucide-react";
 import dynamic from "next/dynamic";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ListingCard } from "@/components/listings/listing-card";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Select } from "@/components/ui/form";
@@ -13,29 +13,24 @@ import { site } from "@/config/site";
 import {
   countActiveFilters,
   describeCriteria,
+  serializeCriteria,
   SORTS,
+  sortLabel,
   type SearchCriteria,
   type SortValue,
 } from "@/lib/search/params";
+import { recordSearch } from "@/lib/search/recent";
 import type { MapPin } from "@/lib/search/service";
 import { FilterBar } from "./filter-bar";
 import { Pagination } from "./pagination";
-import { useSearchNav } from "./use-search-nav";
+import { SaveSearchButton } from "./save-search-button";
+import { currentView, useSearchNav } from "./use-search-nav";
 
 // MapLibre touches `window` at import time, so the map only renders on the client.
 const SearchMap = dynamic(() => import("./search-map"), {
   ssr: false,
   loading: () => <div className="size-full animate-pulse bg-sunken" />,
 });
-
-const SORT_LABELS: Record<SortValue, string> = {
-  recommended: "Recommended",
-  newest: "Newest",
-  price_asc: "Price (low to high)",
-  price_desc: "Price (high to low)",
-  sqft_desc: "Square feet",
-  price_per_sqft_asc: "Price per sqft",
-};
 
 export function SearchView({
   criteria,
@@ -59,6 +54,14 @@ export function SearchView({
   const [searchAsMove, setSearchAsMove] = useState(true);
   const [mobileView, setMobileView] = useState<"list" | "map">("list");
   const listRef = useRef<HTMLDivElement>(null);
+
+  // Remember this search on the device (recents, tab bar, relaunch cookie).
+  const serialized = serializeCriteria(criteria).toString();
+  useEffect(() => {
+    recordSearch(criteria, currentView());
+    // `serialized` captures every criteria change; the object itself is new each render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serialized]);
 
   // Re-fit the map only when the "what" changes, not the "where".
   const fitKey = JSON.stringify({
@@ -100,23 +103,24 @@ export function SearchView({
                   {countActiveFilters(criteria) > 0 && ` · ${describeCriteria(criteria)}`}
                 </p>
               </div>
-              <label className="flex items-center gap-2 text-sm text-muted">
-                Sort
-                <Select
-                  aria-label="Sort results"
-                  className="h-9 w-auto rounded-full py-0 text-sm"
-                  value={criteria.sort}
-                  onChange={(e) => update({ sort: e.target.value as SortValue })}
-                >
-                  {SORTS.map((s) => (
-                    <option key={s} value={s}>
-                      {s === "newest" && criteria.mode === "sold"
-                        ? "Recently sold"
-                        : SORT_LABELS[s]}
-                    </option>
-                  ))}
-                </Select>
-              </label>
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-2 text-sm text-muted">
+                  Sort
+                  <Select
+                    aria-label="Sort results"
+                    className="h-9 w-auto rounded-full py-0 text-sm"
+                    value={criteria.sort}
+                    onChange={(e) => update({ sort: e.target.value as SortValue })}
+                  >
+                    {SORTS.map((s) => (
+                      <option key={s} value={s}>
+                        {sortLabel(s, criteria.mode)}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+                <SaveSearchButton criteria={criteria} signedIn={signedIn} />
+              </div>
             </div>
           </div>
 

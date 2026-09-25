@@ -1,4 +1,7 @@
 @import "tailwindcss";
+/* Specs and patches quote class names; scanning them emits stray (sometimes invalid) CSS. */
+@source not "../../docs";
+@source not "../../handoff";
 
 /*
  * Design tokens. Warm neutrals + evergreen: calm, premium, and deliberately
@@ -11,7 +14,8 @@
   --color-ink: #15201c;
   --color-ink-soft: #3b4843;
   --color-muted: #66716c;
-  --color-faint: #98a19c;
+  /* 4.82:1 on canvas, 4.50:1 on sunken (was #98a19c, 2.54:1). */
+  --color-faint: #68716d;
   --color-line: #e8e4db;
   --color-line-strong: #d6d1c4;
 
@@ -28,7 +32,8 @@
 
   --color-brass-100: #f5ecdc;
   --color-brass-400: #c89b5a;
-  --color-brass-500: #b3843f;
+  /* Eyebrow text: 4.81:1 on canvas (was #b3843f, 3.20:1). brass-400 stays for dark backgrounds. */
+  --color-brass-500: #8a6a2f;
   --color-brass-700: #7d5a26;
 
   --color-clay-50: #fbefe8;
@@ -50,6 +55,7 @@
 
   --animate-fade-in: fade-in 0.25s var(--ease-out-quint);
   --animate-rise: rise 0.35s var(--ease-out-quint);
+  --animate-sheet-up: sheet-up 0.32s var(--ease-out-quint);
 
   @keyframes fade-in {
     from {
@@ -69,6 +75,14 @@
       transform: translateY(0);
     }
   }
+  @keyframes sheet-up {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
 }
 
 @theme inline {
@@ -76,11 +90,232 @@
   --font-display: var(--font-fraunces), ui-serif, Georgia, serif;
 }
 
+/*
+ * ── Mobile & PWA contracts ──────────────────────────────────────────────────
+ * Shared by every mobile package; see ARCHITECTURE.md "Mobile & PWA".
+ *
+ * Variants: `phone:` / `wide:` decide the app shell (tab bar, sheets, carousels);
+ * sm/md/lg stay for sizing; the built-in `pointer-coarse:` handles touch sizing.
+ * The phone query string must match PHONE_QUERY in src/lib/use-media-query.ts.
+ *
+ * z-scale: map overlays 10/20 · results sheet 30 · bottom bars 40 ·
+ * popover scrim/sheet 45 · header 50 · full-screen search 60 · toasts 70 ·
+ * dialogs live in the top layer (above everything; toasts portal into them).
+ */
+@custom-variant phone {
+  @media (max-width: 767.98px), (pointer: coarse) and (max-height: 500px) {
+    @slot;
+  }
+}
+@custom-variant wide {
+  @media (min-width: 768px) and (min-height: 501px), (min-width: 768px) and (pointer: fine) {
+    @slot;
+  }
+}
+@custom-variant standalone (@media (display-mode: standalone));
+@custom-variant not-standalone (@media not (display-mode: standalone));
+
+:root {
+  --header-h: 4rem;
+  --tabbar-h: 3.5rem;
+  /* Height of the chrome actually visible at the top/bottom (0 when a page owns it). */
+  --top-chrome-h: var(--header-h);
+  /* Static: reserved as #main padding so content never hides behind a bottom bar. */
+  --bottom-chrome-h: 0px;
+  /* Dynamic: where bottom-anchored overlays (toasts, install card, FABs) sit. */
+  --bottom-overlay-h: 0px;
+  /* Safe-area insets. Everything reads these, so tests can simulate a notch. */
+  --sai-top: env(safe-area-inset-top, 0px);
+  --sai-right: env(safe-area-inset-right, 0px);
+  --sai-bottom: env(safe-area-inset-bottom, 0px);
+  --sai-left: env(safe-area-inset-left, 0px);
+}
+@media (pointer: coarse) and (max-height: 500px) {
+  :root {
+    --tabbar-h: 3rem;
+  }
+}
+
+/* Safe-area utilities. Top/bottom ones add the inset; left/right ones take max(N, inset)
+   so portrait layouts are unchanged and landscape content clears the notch. */
+@utility pt-safe {
+  padding-top: var(--sai-top);
+}
+@utility pt-safe-* {
+  padding-top: calc(var(--sai-top) + --spacing(--value(number)));
+}
+@utility pb-safe {
+  padding-bottom: var(--sai-bottom);
+}
+@utility pb-safe-* {
+  padding-bottom: calc(var(--sai-bottom) + --spacing(--value(number)));
+}
+@utility bottom-safe-* {
+  bottom: calc(var(--sai-bottom) + --spacing(--value(number)));
+}
+@utility pl-safe {
+  padding-left: var(--sai-left);
+}
+@utility pl-safe-* {
+  padding-left: max(--spacing(--value(number)), var(--sai-left));
+}
+@utility pr-safe {
+  padding-right: var(--sai-right);
+}
+@utility pr-safe-* {
+  padding-right: max(--spacing(--value(number)), var(--sai-right));
+}
+
+/* Chrome markers (phone shell). A component that supplies replacement chrome renders
+   data-own-chrome="top|bottom"; the header/tab bar stay mounted and hide via CSS only. */
+@media (max-width: 767.98px), (pointer: coarse) and (max-height: 500px) {
+  body:has([data-own-chrome~="top"]) {
+    --top-chrome-h: 0px;
+  }
+  body:has([data-own-chrome~="top"]) [data-site-header] {
+    display: none;
+  }
+  body:has([data-own-chrome~="bottom"]) [data-tabbar] {
+    display: none;
+  }
+  body:has([data-tabbar]):not(:has([data-own-chrome~="bottom"])) {
+    --bottom-chrome-h: calc(var(--tabbar-h) + var(--sai-bottom));
+    --bottom-overlay-h: calc(var(--tabbar-h) + var(--sai-bottom));
+  }
+  html:has([data-app-shell]) {
+    overscroll-behavior: none;
+  }
+}
+
+/* Page-owned bottom bars (lg:hidden, so they show up to 1023px in both variants).
+   --bottom-overlay-h ignores bars that are data-state="hidden". */
+@media (max-width: 1023.98px) {
+  body:has(:is([data-bottom-bar="action"], [data-bottom-bar="contact"])) {
+    --bottom-chrome-h: calc(4.5rem + var(--sai-bottom));
+  }
+  body:has(
+    :is([data-bottom-bar="action"], [data-bottom-bar="contact"]):not([data-state="hidden"])
+  ) {
+    --bottom-overlay-h: calc(4.5rem + var(--sai-bottom));
+  }
+  body:has([data-bottom-bar="staff"]) {
+    --bottom-chrome-h: calc(3.5rem + var(--sai-bottom));
+  }
+  body:has([data-bottom-bar="staff"]:not([data-state="hidden"])) {
+    --bottom-overlay-h: calc(3.5rem + var(--sai-bottom));
+  }
+}
+
+/* Every page except the app shell (/homes) reserves the static bottom chrome. */
+body:not(:has([data-app-shell])) #main {
+  padding-bottom: var(--bottom-chrome-h);
+}
+
+/* On-screen keyboard: a focused text field hides the tab bar and keyboard-hidden bars.
+   Checkboxes, radios, ranges, buttons and selects never do. Also on coarse tablets
+   (768–1023px), where page bottom bars are still visible. */
+@media (max-width: 767.98px),
+  (pointer: coarse) and (max-height: 500px),
+  (pointer: coarse) and (max-width: 1023.98px) {
+  body:has(
+    :is(
+      input:not(
+        [type="checkbox"],
+        [type="radio"],
+        [type="range"],
+        [type="button"],
+        [type="submit"],
+        [type="reset"],
+        [type="file"],
+        [type="color"],
+        [type="image"]
+      ),
+      textarea,
+      [contenteditable=""],
+      [contenteditable="true"]
+    ):focus
+  ) {
+    --bottom-overlay-h: 0px;
+  }
+  body:has(
+      :is(
+        input:not(
+          [type="checkbox"],
+          [type="radio"],
+          [type="range"],
+          [type="button"],
+          [type="submit"],
+          [type="reset"],
+          [type="file"],
+          [type="color"],
+          [type="image"]
+        ),
+        textarea,
+        [contenteditable=""],
+        [contenteditable="true"]
+      ):focus
+    )
+    :is([data-tabbar], [data-hide-on-keyboard]) {
+    display: none;
+  }
+}
+
+/* Full-screen search (phone): the focused search <form> gets data-search-fullscreen and
+   becomes a fixed panel. Hide all chrome, lock scroll, and neutralize every ancestor
+   property that would make an ancestor its containing block or trap its z-index. */
+@media (max-width: 767.98px), (pointer: coarse) and (max-height: 500px) {
+  body:has([data-search-fullscreen]) :is([data-site-header], [data-tabbar], [data-bottom-bar]) {
+    display: none !important;
+  }
+  html:has([data-search-fullscreen]) {
+    overflow: hidden;
+  }
+  body :has([data-search-fullscreen]) {
+    transform: none !important;
+    filter: none !important;
+    backdrop-filter: none !important;
+    perspective: none !important;
+    contain: none !important;
+    container-type: normal !important;
+    will-change: auto !important;
+    isolation: auto !important;
+    z-index: auto !important;
+    clip-path: none !important;
+    mask: none !important;
+  }
+}
+
+/* Lock page scroll behind any open <dialog> (sheets, lightbox). */
+html:has(dialog[open]) {
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 @layer base {
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* No double-tap-zoom delay on controls; pinch zoom stays enabled. */
+  a,
+  button,
+  [role="button"],
+  label,
+  summary {
+    touch-action: manipulation;
   }
 
   body {
@@ -129,6 +364,14 @@
   &::-webkit-scrollbar {
     display: none;
   }
+}
+
+/* Full-bleed maps (app shell): keep controls clear of landscape notches. */
+[data-app-shell] :is(.maplibregl-ctrl-top-left, .maplibregl-ctrl-bottom-left) {
+  margin-left: var(--sai-left);
+}
+[data-app-shell] :is(.maplibregl-ctrl-top-right, .maplibregl-ctrl-bottom-right) {
+  margin-right: var(--sai-right);
 }
 
 /* MapLibre: keep attribution tidy and on-brand. */

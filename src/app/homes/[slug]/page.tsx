@@ -24,6 +24,7 @@ import { ListingCard } from "@/components/listings/listing-card";
 import { LocationMapLazy } from "@/components/listings/location-map-lazy";
 import { PaymentCalculator } from "@/components/listings/payment-calculator";
 import { PhotoGallery } from "@/components/listings/photo-gallery";
+import { RecordView } from "@/components/listings/record-view";
 import { SaveButton } from "@/components/listings/save-button";
 import { ShareButton } from "@/components/listings/share-button";
 import { Avatar } from "@/components/ui/avatar";
@@ -121,6 +122,20 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
     <>
       <main className="flex-1 pb-24 lg:pb-0">
         <JsonLd data={data} />
+        <RecordView
+          snapshot={{
+            slug: l.slug,
+            address: street,
+            cityLine: formatCityLine(l),
+            price: sold && l.closePrice ? l.closePrice : l.listPrice,
+            photo: l.primaryPhotoUrl ?? photos[0]?.url ?? null,
+            beds: l.bedrooms,
+            baths: l.bathrooms,
+            listOfficeName: l.listOfficeName,
+            transactionType: l.transactionType,
+            status: l.status,
+          }}
+        />
         <Container className="pt-5">
           {l.removedAt && (
             <p className="mb-4 rounded-2xl bg-clay-50 px-4 py-3 text-sm text-clay-600">

@@ -164,3 +164,151 @@ export function initials(name: string): string {
     .map((p) => p[0]!.toUpperCase())
     .join("");
 }
+
+/** Calendar year of `d` in the market time zone. */
+function yearIn(d: Date): string {
+  return d.toLocaleDateString("en-US", { year: "numeric", timeZone: tz });
+}
+
+/** Whole-dollar monthly amount: $3,412/mo. */
+export function formatMonthly(n: number): string {
+  return `${usd.format(Math.round(n))}/mo`;
+}
+
+/** Compact thousands: $950, $3.4K, $12.5K, $125K, $1.25M (no "/mo"). */
+function compactDollars(n: number): string {
+  const v = Math.round(Math.abs(n));
+  if (v >= 1_000_000) return formatPriceShort(v);
+  if (v >= 100_000) return `$${Math.round(v / 1_000)}K`;
+  if (v >= 1_000) return `$${(v / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
+  return `$${v}`;
+}
+
+/** Compact monthly amount for pins and chips: $3.4K/mo, $950/mo. */
+export function formatMonthlyShort(n: number): string {
+  return `${compactDollars(n)}/mo`;
+}
+
+/**
+ * Terse age for rows and chips: "now", "6m", "3h", "3d", then a date
+ * ("Oct 2", or "Oct 2, 2025" outside the current year) in the market time zone.
+ */
+export function formatRelativeShort(d: Date | string, now: Date = new Date()): string {
+  const date = new Date(d);
+  const secs = (now.getTime() - date.getTime()) / 1000;
+  if (secs < 60) return "now";
+  if (secs < 3600) return `${Math.floor(secs / 60)}m`;
+  if (secs < 86_400) return `${Math.floor(secs / 3600)}h`;
+  if (secs < 86_400 * 7) return `${Math.floor(secs / 86_400)}d`;
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: yearIn(date) === yearIn(now) ? undefined : "numeric",
+    timeZone: tz,
+  });
+}
+
+/** The latest listing event, as selected for saved-home rows. */
+export type ChangeEvent = {
+  type: "listed" | "price_change" | "status_change" | "sold" | "relisted" | "removed";
+  price?: number | null;
+  previousPrice?: number | null;
+  toStatus?: string | null;
+  occurredAt: Date | string;
+};
+
+/**
+ * Short label for "what changed since you saved it": "Price cut $25K · 3d",
+ * "Price up $10K · 1d", "Now pending", "Sold", "Back on market". Null when
+ * there is nothing worth showing.
+ */
+export function formatChangeChip(e: ChangeEvent, now: Date = new Date()): string | null {
+  switch (e.type) {
+    case "price_change": {
+      if (!e.price || !e.previousPrice || e.price === e.previousPrice) return null;
+      const diff = e.price - e.previousPrice;
+      // Small amounts (rent changes) stay exact: "$150", "$1,500".
+      const amount = Math.abs(diff) < 10_000 ? usd.format(Math.abs(diff)) : compactDollars(diff);
+      return `${diff < 0 ? "Price cut" : "Price up"} ${amount} · ${formatRelativeShort(e.occurredAt, now)}`;
+    }
+    case "sold":
+      return "Sold";
+    case "relisted":
+      return "Back on market";
+    case "removed":
+      return "Off market";
+    case "listed":
+      return "Newly listed";
+    case "status_change":
+      switch (e.toStatus) {
+        case "pending":
+        case "active_under_contract":
+          return "Now pending";
+        case "active":
+          return "Back on market";
+        case "coming_soon":
+          return "Coming soon";
+        case "closed":
+          return "Sold";
+        case "withdrawn":
+        case "expired":
+        case "canceled":
+          return "Off market";
+        default:
+          return null;
+      }
+  }
+}
+
+/** A feed older than this is stale: pages must not claim "Updated N min ago". */
+export const STALE_FEED_MS = 2 * 60 * 60 * 1000;
+
+export type Freshness = {
+  stale: boolean;
+  /** "Updated 12 min ago" — only when fresh; append " from <source>" as needed. */
+  label: string | null;
+  /** "Listing data last updated Sep 25, 9:14 AM — it may be out of date" — only when stale. */
+  notice: string | null;
+};
+
+/**
+ * How current the listing feed is. A missing sync time counts as stale, so the
+ * app never makes a freshness claim it can't back up.
+ */
+export function freshness(
+  lastSyncedAt: Date | string | null | undefined,
+  now: Date = new Date(),
+): Freshness {
+  if (!lastSyncedAt) {
+    return { stale: true, label: null, notice: "Listing data may be out of date" };
+  }
+  const at = new Date(lastSyncedAt);
+  const age = now.getTime() - at.getTime();
+  if (!Number.isFinite(age) || age > STALE_FEED_MS) {
+    const when = Number.isFinite(age)
+      ? at.toLocaleString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: yearIn(at) === yearIn(now) ? undefined : "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+          timeZone: tz,
+        })
+      : null;
+    return {
+      stale: true,
+      label: null,
+      notice: when
+        ? `Listing data last updated ${when} — it may be out of date`
+        : "Listing data may be out of date",
+    };
+  }
+  const mins = Math.floor(Math.max(0, age) / 60_000);
+  const label =
+    mins < 1
+      ? "Updated just now"
+      : mins < 60
+        ? `Updated ${mins} min ago`
+        : `Updated ${Math.floor(mins / 60)} hr ago`;
+  return { stale: false, label, notice: null };
+}

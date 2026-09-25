@@ -157,7 +157,7 @@ STEPS:
 - src/app/(site)/page.tsx (P1):
 - In the phone variant, shorten the hero (min-h-[78svh] sm:min-h-[92svh]) and make the Popular chips h-11.
 - Put <ReturningVisitor /> right after the hero: a 'Continue your search' card from lastSearch, and a 'Recently viewed' SnapRow of snapshot tiles. Tiles are not article elements and each shows 'Listing by <office>'. Render nothing when there is no local data.
-- snap-row.tsx: below sm, 'flex snap-x snap-mandatory overflow-x-auto overscroll-x-contain scrollbar-none -mx-4 px-4 gap-4 [&>_]:w-[82%] [&>_]:shrink-0 [&>*]:snap-start'; the existing grid from sm up. Use it for Featured, New on the market, Neighborhoods and Agents.
+- snap-row.tsx: below sm, 'flex snap-x snap-mandatory overflow-x-auto overscroll-x-contain scrollbar-none -mx-4 px-4 gap-4 [&>*]:w-[82%] [&>*]:shrink-0 [&>*]:snap-start'; the existing grid from sm up. Use it for Featured, New on the market, Neighborhoods and Agents.
 - Hide marketing-only paragraphs below sm.
 - theme-color-sync.tsx (F49).
 - Keep the h1 text and the ListingCard articles. Never add transform, filter or will-change to the hero; the foundation neutralizes isolate during full-screen search.

@@ -17,6 +17,13 @@ type SavedHomes = {
   isSaved: (id: string) => boolean;
   toggle: (id: string) => void;
   pending: boolean;
+  /** Number of saved homes (tab bar badge). */
+  count: number;
+  /**
+   * Client-only override with no server call (pending removal / Undo, post-sign-in save).
+   * The next server reconcile (fresh `initialIds`) wins.
+   */
+  setLocal: (id: string, saved: boolean) => void;
 };
 
 const Ctx = createContext<SavedHomes | null>(null);
@@ -76,9 +83,26 @@ export function SavedHomesProvider({
     [ids, signedIn, router, pathname],
   );
 
+  const setLocal = useCallback((id: string, saved: boolean) => {
+    setIds((prev) => {
+      if (prev.has(id) === saved) return prev;
+      const next = new Set(prev);
+      if (saved) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+
   const value = useMemo<SavedHomes>(
-    () => ({ signedIn, isSaved: (id) => ids.has(id), toggle, pending }),
-    [ids, signedIn, toggle, pending],
+    () => ({
+      signedIn,
+      isSaved: (id) => ids.has(id),
+      toggle,
+      pending,
+      count: ids.size,
+      setLocal,
+    }),
+    [ids, signedIn, toggle, pending, setLocal],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

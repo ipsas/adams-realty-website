@@ -1,9 +1,17 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
 
+/** Page-width container. Side padding clears landscape notches (max(N, safe-area inset)). */
 export function Container({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cn("mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8", className)}>{children}</div>
+    <div
+      className={cn(
+        "mx-auto w-full max-w-7xl pr-safe-4 pl-safe-4 sm:pr-safe-6 sm:pl-safe-6 lg:pr-safe-8 lg:pl-safe-8",
+        className,
+      )}
+    >
+      {children}
+    </div>
   );
 }
 

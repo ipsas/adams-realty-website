@@ -17,7 +17,6 @@ import {
 } from "@/lib/search/params";
 import { LocationSearch } from "./location-search";
 import { MoreFilters } from "./more-filters";
-import { SaveSearchButton } from "./save-search-button";
 
 // Low steps matter here: land, manufactured homes and small-town houses often list under $200K.
 const SALE_PRICES = [
@@ -41,7 +40,6 @@ const VISIBLE_TYPES: PropertyTypeValue[] = [
 export function FilterBar({
   criteria: c,
   update,
-  signedIn,
 }: {
   criteria: SearchCriteria;
   update: (patch: Partial<SearchCriteria>) => void;
@@ -153,10 +151,6 @@ export function FilterBar({
               </span>
             )}
           </button>
-
-          <div className="ml-auto flex shrink-0 items-center gap-2 pl-2">
-            <SaveSearchButton criteria={c} signedIn={signedIn} />
-          </div>
         </div>
       </div>
       <MoreFilters

@@ -35,6 +35,59 @@ export const SORTS = [
 ] as const;
 export type SortValue = (typeof SORTS)[number];
 
+export const SORT_LABELS: Record<SortValue, string> = {
+  recommended: "Recommended",
+  newest: "Newest",
+  price_asc: "Price (low to high)",
+  price_desc: "Price (high to low)",
+  sqft_desc: "Square feet",
+  price_per_sqft_asc: "Price per sqft",
+};
+
+/** Sort label for the current mode: "newest" reads "Recently sold" in sold mode. */
+export function sortLabel(sort: SortValue, mode: SearchMode): string {
+  return sort === "newest" && mode === "sold" ? "Recently sold" : SORT_LABELS[sort];
+}
+
+/** Shown next to the sort control: how "Recommended" is ordered. */
+export const SORT_HELP =
+  "No paid placement. Recommended shows Adams-featured homes first, then newest.";
+
+/**
+ * The phone results sheet's position, kept in the URL as `view` so Back and
+ * relaunch restore it: "map" (sheet at peek) or "list" (sheet full); absent
+ * means half. UI state only: not part of SearchCriteria or saved searches.
+ *
+ * The `view` key is shared with the "View" amenity filter (FEATURE_FLAGS),
+ * which serializes as `view=1`. The two are told apart by value and can both
+ * be present (`view=1&view=list`), so sheet code must only ever read, add or
+ * remove the "map"/"list" values (parseViewParam over getAll("view"),
+ * setViewParam) and never set() or delete() the key as a whole.
+ */
+export const VIEW_PARAMS = ["map", "list"] as const;
+export type ViewParam = (typeof VIEW_PARAMS)[number];
+
+const isViewParam = (v: unknown): v is ViewParam => (VIEW_PARAMS as readonly unknown[]).includes(v);
+
+/** The sheet position among `view` value(s); the amenity filter's "1" is ignored. */
+export function parseViewParam(
+  value: string | readonly string[] | null | undefined,
+): ViewParam | undefined {
+  const values = typeof value === "string" ? [value] : (value ?? []);
+  return values.find(isViewParam);
+}
+
+/**
+ * Sets the sheet position on `params` in place (null/undefined removes it),
+ * leaving the amenity filter's `view=1` untouched.
+ */
+export function setViewParam(params: URLSearchParams, view: ViewParam | null | undefined): void {
+  const kept = params.getAll("view").filter((v) => !isViewParam(v));
+  params.delete("view");
+  for (const v of kept) params.append("view", v);
+  if (view) params.append("view", view);
+}
+
 export const FEATURE_FLAGS = [
   "garage",
   "pool",
@@ -85,6 +138,12 @@ function get(raw: RawParams, key: string): string | undefined {
   if (raw instanceof URLSearchParams) return raw.get(key) ?? undefined;
   const v = raw[key];
   return Array.isArray(v) ? v[0] : v;
+}
+
+function getAll(raw: RawParams, key: string): string[] {
+  if (raw instanceof URLSearchParams) return raw.getAll(key);
+  const v = raw[key];
+  return Array.isArray(v) ? v : v === undefined ? [] : [v];
 }
 
 const intish = (min: number, max: number) =>
@@ -169,7 +228,10 @@ export function parseSearchParams(raw: RawParams): SearchCriteria {
   assign("types", parseList(get(raw, "types"), PROPERTY_TYPES));
   assign("bounds", parseBounds(get(raw, "bounds")));
 
-  for (const f of FEATURE_FLAGS) assign(f, flag.parse(get(raw, f)));
+  // Any value counts: `view` also carries the sheet position (`view=list&view=1`).
+  for (const f of FEATURE_FLAGS) {
+    assign(f, getAll(raw, f).some((v) => flag.parse(v)) || undefined);
+  }
 
   // Swap inverted ranges instead of returning nothing.
   if (c.minPrice !== undefined && c.maxPrice !== undefined && c.minPrice > c.maxPrice) {

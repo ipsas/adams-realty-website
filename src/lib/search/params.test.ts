@@ -4,9 +4,15 @@ import {
   describeCriteria,
   parseBounds,
   parseSearchParams,
+  parseViewParam,
   propertyTypeLabel,
   searchHref,
   serializeCriteria,
+  setViewParam,
+  SORT_HELP,
+  SORT_LABELS,
+  SORTS,
+  sortLabel,
 } from "./params";
 
 describe("parseSearchParams", () => {
@@ -124,5 +130,68 @@ describe("describeCriteria and countActiveFilters", () => {
       page: "4",
     });
     expect(countActiveFilters(c)).toBe(3);
+  });
+});
+
+describe("sort labels", () => {
+  it("labels every sort and renames newest in sold mode", () => {
+    for (const s of SORTS) expect(SORT_LABELS[s]).toBeTruthy();
+    expect(sortLabel("newest", "buy")).toBe("Newest");
+    expect(sortLabel("newest", "rent")).toBe("Newest");
+    expect(sortLabel("newest", "sold")).toBe("Recently sold");
+    expect(sortLabel("price_asc", "sold")).toBe("Price (low to high)");
+  });
+
+  it("explains that there is no paid placement", () => {
+    expect(SORT_HELP).toMatch(/^No paid placement\./);
+  });
+});
+
+describe("parseViewParam", () => {
+  it("accepts only map and list", () => {
+    expect(parseViewParam("map")).toBe("map");
+    expect(parseViewParam("list")).toBe("list");
+    expect(parseViewParam("half")).toBeUndefined();
+    expect(parseViewParam(null)).toBeUndefined();
+    expect(parseViewParam(undefined)).toBeUndefined();
+  });
+
+  it("is not part of the criteria", () => {
+    expect(serializeCriteria(parseSearchParams({ q: "Decatur", view: "map" })).toString()).toBe(
+      "q=Decatur",
+    );
+  });
+
+  it("finds the sheet position among the amenity filter's view=1", () => {
+    expect(parseViewParam(["1", "list"])).toBe("list");
+    expect(parseViewParam(["map", "1"])).toBe("map");
+    expect(parseViewParam(["1"])).toBeUndefined();
+    expect(parseViewParam("1")).toBeUndefined();
+  });
+});
+
+describe("the shared view key", () => {
+  it("keeps the View amenity filter when the sheet position is also present", () => {
+    for (const qs of ["view=1&view=list", "view=list&view=1"]) {
+      const c = parseSearchParams(new URLSearchParams(`q=Hartwell&${qs}`));
+      expect(c.view).toBe(true);
+      expect(serializeCriteria(c).toString()).toBe("q=Hartwell&view=1");
+    }
+    expect(parseSearchParams({ q: "Hartwell", view: ["map", "1"] }).view).toBe(true);
+    expect(parseSearchParams({ view: ["map"] }).view).toBeUndefined();
+  });
+
+  it("setViewParam changes only the sheet position", () => {
+    const p = new URLSearchParams("q=Hartwell&view=1");
+    setViewParam(p, "list");
+    expect(p.toString()).toBe("q=Hartwell&view=1&view=list");
+    setViewParam(p, "map");
+    expect(p.toString()).toBe("q=Hartwell&view=1&view=map");
+    setViewParam(p, null);
+    expect(p.toString()).toBe("q=Hartwell&view=1");
+
+    const plain = new URLSearchParams("q=Hartwell&view=list");
+    setViewParam(plain, undefined);
+    expect(plain.toString()).toBe("q=Hartwell");
   });
 });

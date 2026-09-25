@@ -14,11 +14,12 @@ const variants = {
   danger: "bg-clay-600 text-white hover:bg-clay-500",
 } as const;
 
+// Touch devices get 44px targets; fine pointers keep the desktop sizes.
 const sizes = {
-  sm: "h-8 rounded-lg px-3 text-sm",
-  md: "h-10 rounded-xl px-4 text-sm",
+  sm: "h-8 pointer-coarse:h-11 rounded-lg px-3 text-sm",
+  md: "h-10 pointer-coarse:h-11 rounded-xl px-4 text-sm",
   lg: "h-12 rounded-xl px-6 text-base",
-  icon: "size-10 rounded-full",
+  icon: "size-10 pointer-coarse:size-11 rounded-full",
 } as const;
 
 export type ButtonVariant = keyof typeof variants;

@@ -12,6 +12,7 @@ import { Popover } from "../ui/popover";
 import { Logo } from "./logo";
 
 export type HeaderUser = {
+  id: string;
   name: string;
   email: string;
   image: string | null;
@@ -49,6 +50,7 @@ export function SiteHeader({ user }: { user: HeaderUser }) {
 
   return (
     <header
+      data-site-header
       className={cn(
         "z-50 w-full transition-[background-color,border-color,box-shadow] duration-300",
         overHero ? "fixed top-0" : "sticky top-0",
@@ -57,7 +59,7 @@ export function SiteHeader({ user }: { user: HeaderUser }) {
           : "border-b border-line bg-canvas/85 backdrop-blur-xl backdrop-saturate-150",
       )}
     >
-      <div className="mx-auto flex h-16 max-w-[1600px] items-center gap-3 px-4 sm:gap-8 sm:px-6 lg:px-8">
+      <div className="mx-auto flex h-16 max-w-[1600px] items-center gap-3 pr-safe-4 pl-safe-4 sm:gap-8 sm:pr-safe-6 sm:pl-safe-6 lg:pr-safe-8 lg:pl-safe-8">
         <Logo inverse={transparent} className="min-w-0 shrink overflow-hidden" />
         <nav className="hidden items-center gap-1 md:flex" aria-label="Main">
           {nav.map((item) => (

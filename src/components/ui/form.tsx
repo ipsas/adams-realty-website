@@ -1,8 +1,9 @@
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "@/lib/cn";
 
+// pointer-coarse:text-base = 16px on every touch device, so iOS never zooms on focus.
 const control =
-  "w-full rounded-xl border border-line-strong bg-surface px-3.5 text-sm text-ink placeholder:text-faint transition-colors outline-none hover:border-faint focus:border-brand-500 focus:ring-3 focus:ring-brand-100 disabled:bg-sunken disabled:text-muted aria-invalid:border-clay-500";
+  "w-full rounded-xl border border-line-strong bg-surface px-3.5 text-sm pointer-coarse:text-base text-ink placeholder:text-faint transition-colors outline-none hover:border-faint focus:border-brand-500 focus:ring-3 focus:ring-brand-100 disabled:bg-sunken disabled:text-muted aria-invalid:border-clay-500";
 
 export function Input({ className, ...props }: ComponentProps<"input">) {
   return <input className={cn(control, "h-11", className)} {...props} />;
@@ -71,13 +72,13 @@ export function Checkbox({
   return (
     <label
       className={cn(
-        "flex cursor-pointer items-center gap-2.5 text-sm text-ink-soft select-none",
+        "flex cursor-pointer items-center gap-2.5 text-sm text-ink-soft select-none pointer-coarse:min-h-11 pointer-coarse:py-2",
         className,
       )}
     >
       <input
         type="checkbox"
-        className="size-4.5 cursor-pointer rounded-md border-line-strong accent-brand-700"
+        className="size-4.5 cursor-pointer rounded-md border-line-strong accent-brand-700 pointer-coarse:size-5"
         {...props}
       />
       {label}

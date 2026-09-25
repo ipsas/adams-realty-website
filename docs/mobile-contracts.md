@@ -1,0 +1,195 @@
+# Mobile contracts
+
+The detail behind ARCHITECTURE.md's "Mobile & PWA" section: the markers,
+layers, selectors, storage keys and exports that the phone shell depends on.
+The design is in `docs/mobile-spec/`, which assigns each feature to a work
+package (WP1–WP6). Contracts nothing uses yet are marked _reserved_, with the
+package that adds the first user. Like ARCHITECTURE.md, this file is
+lead-owned: packages do not edit it.
+
+## Variants and safe areas
+
+- `phone` is `(max-width: 767.98px), (pointer: coarse) and (max-height: 500px)`.
+  `wide` is `(min-width: 768px) and (min-height: 501px), (min-width: 768px) and
+(pointer: fine)`. `standalone` and `not-standalone` match the installed app's
+  display mode. `PHONE_QUERY` in `src/lib/use-media-query.ts` must equal the
+  `phone` query; `use-media-query.test.ts` reads `globals.css` to check.
+- The root layout sets `viewportFit: "cover"` and
+  `interactiveWidget: "resizes-content"`. `--sai-top|right|bottom|left`
+  default to `env(safe-area-inset-*)`. `pt-safe` and `pb-safe` (plus `-N`
+  forms) add the inset; `pl-safe-N` and `pr-safe-N` take the larger of N and
+  the inset, which is what `Container` and the header use.
+
+## Chrome markers
+
+Every marker is reserved: `TabBar` returns `null` until WP2, nothing renders
+the others, and both bottom variables are 0 on every page.
+
+- `data-own-chrome~="top"` hides the header on phones and zeroes
+  `--top-chrome-h` (WP4's compact search bar, WP5's listing top bar).
+- `data-own-chrome~="bottom"` hides the tab bar on phones (WP2's auth shell,
+  WP5's action bar, WP6's staff bar).
+- `data-bottom-bar` marks a page's own fixed bar below 1024px: `action` (WP5)
+  and `contact` reserve 4.5rem, `staff` (WP6) 3.5rem, plus the bottom inset.
+  No package produces `contact` yet. The tab bar reserves `--tabbar-h` (3.5rem;
+  3rem on short landscape screens) plus the inset. `data-state="hidden"` on a
+  bar stops it counting toward the overlay height.
+- While a text field has focus (not checkboxes, radios, selects or other
+  non-text inputs), the tab bar and `[data-hide-on-keyboard]` (WP5's action
+  bar) hide, on phones and on coarse-pointer screens up to 1023px.
+- `data-app-shell` (WP3's full-height /homes) drops `#main`'s bottom padding,
+  stops overscroll on phones and moves MapLibre's controls clear of notches.
+
+## Bottom variables
+
+- `--bottom-chrome-h` is static: `#main`'s bottom padding outside the app
+  shell, so the footer stays reachable and hiding a bar never shifts layout.
+- `--bottom-overlay-h` is the height the visible bars cover right now, and 0
+  while typing.
+
+Non-modal overlays that float over the page sit at
+`calc(var(--bottom-overlay-h) + 12px)`; today that is only the toaster. The
+exceptions:
+
+- the bars themselves, at `bottom-0`;
+- the popover's bottom card (below `lg`), which is modal over its scrim at z-45,
+  covers the bars on purpose and uses only the safe inset (`bottom-safe-3`);
+- two bars older than the markers: the /homes List/Map toggle (`bottom-6`) and
+  the listing's call-to-action bar, which pads `<main>` itself (`pb-24`) until
+  WP5 replaces it.
+
+## Stacking
+
+`globals.css` has the short version; the full order is:
+
+| z         | Layer                                                                               |
+| --------- | ----------------------------------------------------------------------------------- |
+| 10 / 20   | Map overlays; local layers inside a component (sticky form footers, row links)      |
+| 30        | /homes List/Map toggle and the listing's call-to-action bar; results sheet (WP3)    |
+| 40        | Bottom bars (WP2, WP5, WP6); a popover panel that isn't a bottom card (`lg` and up) |
+| 45        | Popover scrim and bottom card, below `lg`                                           |
+| 50        | Site header, and inside it the location suggestions and the user menu's panel       |
+| 60        | Full-screen search (WP4)                                                            |
+| 70        | Toasts                                                                              |
+| 100       | Skip link, while focused                                                            |
+| top layer | Native `<dialog>`, above everything; toasts move into the open dialog               |
+
+## One of each
+
+e2e selectors depend on these:
+
+- On /homes, the results count (`search-view.tsx`) is the only
+  `[aria-live=polite]`. Other live regions that can appear there use
+  `role="status"` without `aria-live`: the toaster, and WP1's offline banner.
+- There is one Save search button, in the results header next to Sort.
+- A page has at most one `ContactForm`, because it hardcodes its field ids
+  (`c-name`, `c-phone`, `c-email`, `c-message`). It appears on /contact,
+  /agents/[slug] and in the listing's `aside#contact`. After WP5 the listing
+  renders it in the tour sheet on phones or inline otherwise, never both.
+- On a listing, the first `main p.tabular` is the summary price. Nothing above
+  it may be a `p.tabular`; use a `span` for counters.
+- On pages that show listings, `article` means a `ListingCard`, and e2e finds
+  cards with `article a`. Other listing tiles (WP3's map strip, WP2's recently
+  viewed, WP1's saved rows) must not be `article`s. Pages without listings,
+  such as the legal pages, may use `article` for their text.
+
+## Device storage
+
+`STORE_KEYS` in `src/lib/local-store.ts` lists every key.
+`src/lib/search/recent.ts` sanitizes everything it reads back (only `/homes`
+hrefs, slug-shaped slugs, http(s) or root-relative photos) and writes:
+
+- `ar:recentSearches`: at most 8, one per place and filters (map area, sort,
+  page and sheet position don't count); the unfiltered `/homes` isn't listed.
+- `ar:lastSearch` and the `ar_last_search` cookie: the query string without
+  `?`, URI-encoded, `Path=/`, 90 days, `SameSite=Lax`, `Secure` on https, and
+  deleted instead when over 1500 characters. Both keep the sheet position. The
+  `/homes?source=pwa` relaunch redirect that reads the cookie is WP3's.
+- `ar:recentlyViewed`: at most 20, written by `RecordView` on the listing page.
+
+`clearRecents()` removes all three and the cookie. `ar:searchAsMove`,
+`ar:installDismissedAt`, `ar:visitDays` and `ar:uid` are reserved.
+
+## The `view` param
+
+The "View" amenity filter has always been `view=1` in `SearchCriteria`. The
+phone results sheet (reserved, WP3) will keep its position in the same key:
+`view=map` (peek) or `view=list` (full), absent for half. The values tell them
+apart, and both can be present (`?q=Hartwell&view=1&view=list`):
+
+- `parseSearchParams` turns the filter on if any `view` value is `1`.
+- `parseViewParam(params.getAll("view"))` finds the sheet position.
+- `setViewParam()` adds, replaces or removes only the sheet position. Never
+  `set()` or `delete()` the whole key, which would drop the filter.
+- `useSearchNav().update()` keeps the sheet position through filter changes,
+  and `setView()` rewrites it with `history.replaceState`, without a server
+  request. Nothing calls `setView()` yet; /homes still switches between list
+  and map with local React state.
+- Recent searches ignore the sheet position but not the filter.
+
+## Service worker protocol
+
+Reserved (WP1). `src/lib/pwa/protocol.ts` defines the caches (`static-v1` for
+`/_next/static` and `/vendor`; `pages` and `images`, which hold one user's
+data), the messages (`CACHE_PAGES`, `CLEAR_USER_DATA`), `PAGE_ALLOW` (`/`,
+`/homes`, `/homes/<slug>`, `/saved`, `/agents`, `/agents/<slug>`) and
+`isNeverIntercepted`: non-GET, Range and RSC requests, and the private paths in
+`NEVER`. `NEVER` wins over every allow list.
+
+`src/lib/pwa/client.ts` never throws:
+
+- `clearUserCaches()` clears recents and the cookie, posts `CLEAR_USER_DATA`
+  and deletes the `pages` and `images` caches. It leaves `ar:uid` alone.
+- `prepareSignOut()` unsubscribes from push, then clears, within 1.5s. Sign-out
+  must await it before `authClient.signOut()`, and the runtime must run it
+  when the signed-in user no longer matches `ar:uid`. Neither is wired yet: the
+  header's Sign out (WP2) and the runtime (WP1).
+- `warmPages(urls)` asks the worker to cache up to 50 same-origin `PAGE_ALLOW`
+  URLs, and does nothing without an active worker.
+
+## Pending removal
+
+Reserved (WP1). `SaveIntercept` (`save-button.tsx`) lets a saved heart call an
+interceptor instead of unsaving. `SavedHomesProvider` exposes
+`setLocal(id, saved)`, a client-only override, and `count`. WP1's hook will
+call `setLocal(id, false)` and show "Removed from saved" with Undo for 5s,
+committing when the timer ends, on unmount or on `pagehide`; Undo never touches
+the server, so the saved date and note survive. Today only `/dev/primitives`
+uses it, and /saved still unsaves immediately. The provider adopts the server's
+IDs only when that list changes, so a failed commit must restore the heart.
+
+## Primitives
+
+Both are exercised on `/dev/primitives`, which is a 404 in production.
+
+- `Dialog` (`src/components/ui/dialog.tsx`) keeps the native `<dialog>` and the
+  wide-screen card. On phones, `mobile` picks `sheet` (the default; swipe its
+  handle down to close), `fullscreen` or `center`. Sheets and full-screen
+  dialogs end `--kb-inset` above the bottom and never extend past the top of
+  the screen, so the whole dialog, header included, stays above the on-screen
+  keyboard (`foundation.spec.ts` checks this). With `closeOnBack`, opening pushes a same-URL history
+  entry, so Back closes the dialog. Close it with `requestClose()` and leave it
+  with `navigateFromDialog(href)`, both from `useDialogControls()`, so a single
+  Back returns to where the dialog opened.
+- `toast(message, { action, tone, duration })` (`src/components/ui/toast.tsx`)
+  shows one toast at a time. While a dialog is open the toast renders in that
+  dialog's `[data-toast-slot]`, because outside it Undo would be inert.
+
+## Exports other modules rely on
+
+Keep these when editing the files that hold them:
+
+- `site-header.tsx`: `data-site-header`, `HeaderUser.id`.
+- `saved-homes-provider.tsx`: `count`, `setLocal`.
+- `search-view.tsx`: the `recordSearch` effect and the single Save search
+  button.
+- `params.ts`: `SORT_LABELS`, `sortLabel`, `SORT_HELP`, and `VIEW_PARAMS`,
+  `ViewParam`, `parseViewParam` and `setViewParam`, which `use-search-nav.ts`
+  and `recent.ts` import.
+- `homes/[slug]/page.tsx`: the `RecordView` mount.
+- `pwa-runtime.tsx`, `install-entry.tsx`: their signatures.
+
+Which package may edit which file is set out in `docs/mobile-spec/foundation.md`
+("Ownership after the foundation"). This file is part of ARCHITECTURE.md's
+contract, split out for length, so it is lead-owned like ARCHITECTURE.md: a
+package that needs a contract changed sends the lead a patch and a reason.
