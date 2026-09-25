@@ -632,4 +632,4 @@ There is no custom pull-to-refresh gesture, because it would fight the sheet and
 ## F49 [P1] Status-bar color over the dark home hero
 
 Value: The status bar matches the dark hero instead of a light strip over it.
-A small client component on the home page watches the hero with an IntersectionObserver. While the hero is under the header, it sets meta[name=theme-color] to brand-900 (#0f2a20), and it restores #fbfaf7 when the hero leaves or on unmount. Dark mode itself is deferred.
+A small client component on the home page watches the hero with an IntersectionObserver. While the hero is under the header, it sets the status-bar colour to brand-900 (#0f2a20) through `setChromeColor`, and it hands the colour back to the theme (the canvas: #fbfaf7 in light, #0f1412 in dark) when the hero leaves or on unmount. Dark mode has shipped, so the restored colour depends on the theme.

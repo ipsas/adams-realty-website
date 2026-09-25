@@ -197,6 +197,11 @@ storage keys) and marks what is reserved for which work package.
   phones, sitting above the keyboard through `--kb-inset`; with `closeOnBack`,
   Back closes it. `toast()` renders inside an open dialog, where it stays
   clickable. `/dev/primitives` exercises both (a 404 in production).
+- **Themes.** Every page works in light and dark (see "Themes" below). New UI
+  uses the theme tokens and the class rules the theme guard enforces, and each
+  package's new pages join the dark axe matrix. The switch lives in the header
+  (`wide:`) and the phone menu (`phone:`); `theme-color` belongs to the theme
+  code, and other code changes it only through `setChromeColor`.
 - **Ownership during the mobile build.** Shared files (layout, `globals.css`,
   the `ui/` primitives, the helpers above, `e2e/mobile/` helpers and this file)
   are listed in `docs/mobile-spec/foundation.md` and edited only by the lead; a
@@ -207,9 +212,12 @@ storage keys) and marks what is reserved for which work package.
 
 ## Themes
 
-Dark mode is being built in steps (docs/plans/dark-mode-and-georgia.md, "DM");
-DM1 (the mechanism), DM2 (the class renames), DM3 (the switch) and DM4 (the
-maps) are in place; DM5 (the full test matrix and hand-off docs) comes next.
+Dark mode (docs/plans/dark-mode-and-georgia.md, "DM") is complete: the
+mechanism, the class renames, the switch, the maps and the test matrix. The
+theme files (`globals.css`'s tokens, `src/lib/theme*.ts`, `src/lib/store-keys.ts`,
+`src/components/theme/`, `map-style.ts`) are lead-owned like the rest of the
+foundation; `docs/mobile-contracts.md` ("Themes") lists what each work package
+must keep.
 
 - **Three appearances.** Match my device (the default) is no `data-theme` on
   `<html>`; Light and Dark set `data-theme="light|dark"`. The choice is stored in
@@ -273,6 +281,19 @@ maps) are in place; DM5 (the full test matrix and hand-off docs) comes next.
   `setChromeColor` (for WP2's hero) and `watchTheme`; hooks `useThemePref`,
   `useResolvedTheme` and `useClientTheme` (client-only widgets: never null) in
   `src/components/theme/use-theme.ts`. Emails stay light by design.
+- **Tests.** Unit: `src/lib/theme.test.ts` (preference parsing, storage,
+  `applyTheme`, the head script run against fakes, and drift between the CSS,
+  the script and the module boundaries) and `theme-guard.test.ts` (the class
+  rules above). e2e: `e2e/theme-suite.ts` holds the shared helpers and the dark
+  axe matrix; `e2e/theme.spec.ts` runs on desktop (no flash, zero JS, the
+  switch, persistence, Match my device, cross-tab, print, maps, keyboard) and
+  `e2e/mobile/theme.spec.ts` on the phone projects, including
+  iphone13-landscape and ipad-mini. The dark axe matrix requires 0 contrast
+  violations on every page with its own design, on desktop, pixel7 and
+  iphone13; a new page adds itself to `DARK_AXE_PAGES`.
+  `e2e/theme-light-regression.spec.ts` compares light pages pixel for pixel
+  with baselines taken before dark mode (Windows, 1440×900); a change meant to
+  alter light mode updates them in the same commit.
 
 ## Testing
 
@@ -290,3 +311,5 @@ maps) are in place; DM5 (the full test matrix and hand-off docs) comes next.
   skips the folder. `helpers.ts` has the touch gestures and the environment
   fakes (`simulateNotch`, `simulateKeyboard`); `axe-allowlist.ts` lists the
   known serious accessibility findings, each with an owner and a reason.
+- **Themes:** see "Themes" above. Dark contrast is checked by axe on every
+  page with its own design, and light mode against pre-dark-mode baselines.

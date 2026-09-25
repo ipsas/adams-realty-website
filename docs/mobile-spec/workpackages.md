@@ -1,3 +1,12 @@
+## Every package: dark mode
+
+Dark mode landed before the packages (docs/plans/dark-mode-and-georgia.md, "DM"). Each package inherits it, and these rules are part of every package's acceptance:
+
+- New UI follows the theme contract in docs/mobile-contracts.md ("Themes"): theme tokens, `shade` for overlays on photos and maps, `bg-surface` for chips on photos, `text-on-ink` on a solid `bg-ink`, `bg-primary` for the primary fill, no hex colours in class names. `src/lib/theme-guard.test.ts` stays green.
+- Every page a package adds or redesigns joins the dark axe matrix in `e2e/theme-suite.ts` (`DARK_AXE_PAGES` and `DARK_AXE_PHONE_PAGES`, with the role that sees it): with Dark forced, `expectNoSeriousAxe` reports 0 color-contrast violations (never allowlisted) and no un-allowlisted serious or critical finding, on desktop, pixel7 and iphone13.
+- A package's own axe checks (the sweeps below) run in light and again with Dark forced.
+- `e2e/theme.spec.ts`, `e2e/mobile/theme.spec.ts` and `e2e/theme-light-regression.spec.ts` pass. A package that changes a light page on purpose updates that page's baseline in the same commit and says so.
+
 ## WP1 Installable app and saved homes that work offline (PWA shell, SW, install coach, /saved redesign, notes)
 
 features: ['F01', 'F02', 'F03', 'F30', 'F31', 'F32', 'F47', 'F48', 'F35', 'F36']
@@ -105,6 +114,12 @@ ACCEPTANCE:
 - P1: install-store.test.ts shows shouldShowInstall is false on the first visit, when standalone, in in-app browsers and within 30 days of a dismissal, and true after 3 viewed listings. The install card never renders on first load in e2e.
 - sw-assets.test.ts passes on a captured listing HTML fixture. Lint, typecheck and unit tests pass. The existing desktop and mobile public.spec, accounts.spec and dashboard.spec pass unchanged. axe reports 0 serious or critical issues on both /saved tabs and on /offline for pixel7, iphone13, iphone13-landscape and ipad-mini.
 
+DARK MODE (hand-off from DM):
+
+- The manifest's `theme_color` and `background_color` stay #fbfaf7: a manifest can't vary by colour scheme, and the page's own `theme-color` pair (THEME_COLORS) takes over once it loads.
+- Decide `appleWebApp.statusBarStyle` here (today `"default"` in layout.tsx, so an installed iOS app draws a light status bar even in dark mode). `black-translucent` plus the safe-area padding the header already has is the likely answer; test it under both schemes in standalone mode.
+- Manifest icons are unaffected. /saved and /offline join the dark axe matrix.
+
 ## WP2 App shell: tab bar, mobile header and menu, save-through-sign-in, auth polish, home page and owned-page sweep
 
 features: ['F06', 'F07', 'F08', 'F09', 'F10', 'F49', 'F40', 'F47', 'F34', 'F36']
@@ -203,13 +218,20 @@ Each tab is at least 44x44, the active tab has aria-current='page', and the bar'
 - The document height is at most 7,500px (from 12,291).
 - The featured row has scroll-snap-type x and scrollWidth > clientWidth, while the document's scrollWidth equals its clientWidth.
 - After opening two listings, 'Recently viewed' shows both street addresses, each with a 'Listing by' line, and a 'Continue your search' link points to the last search.
-- P1: while the hero is in view, meta[name=theme-color] is '#0f2a20'; after scrolling past it, the value is '#fbfaf7'.
+- P1: while the hero is in view, the first meta[name=theme-color] that applies is '#0f2a20'; after scrolling past it, it is the resolved canvas colour ('#fbfaf7' in light, '#0f1412' in dark). Tested under both colour schemes, and with Dark forced.
 - On iphone13-landscape with simulateNotch({left:47, right:47, bottom:21}):
 - the header logo's left edge is at least 47px from the left, and the hamburger's right edge is at least 47px from the right;
 - the tab bar is 48px plus the bottom inset;
 - there is no horizontal overflow on /, /agents and /account.
 - content.spec passes on pixel7, iphone13, iphone13-landscape and ipad-mini for every owned page: no overflow, controls at least 16px, targets at least 44px (inline prose links allowlisted), and axe reports 0 serious or critical issues.
 - Lint, typecheck and unit tests pass. The existing public.spec (desktop and mobile), accounts.spec and dashboard.spec pass unchanged.
+
+DARK MODE (hand-off from DM):
+
+- Keep `<ThemeMenuButton>` in the wide header (`hidden wide:block`, first in the right-hand group). `mobile-menu.tsx` renders `<AppearanceControl variant="segmented">` (the sheet replaces today's inline phone menu, which carries it now), so phones, iphone13-landscape and ipad-mini keep a reachable switch and no sun/moon button.
+- F49's `theme-color-sync.tsx` calls `setChromeColor("#0f2a20")` while the hero is in view and `setChromeColor(null)` afterwards and on unmount; it never writes meta tags itself. The F49 acceptance below reads "the resolved canvas colour" (#fbfaf7 in light, #0f1412 in dark), tested under both colour schemes.
+- Keep the `on-ink`, `surface` and `shade` classes the dark-mode renames put in the header, home page, auth shell, area pages and cards.
+- The owned-page sweep (content.spec) and home.spec run axe with Dark forced too.
 
 ## WP3 Search map and results sheet: detents, pin strip, restoration, relaunch, map fixes, cards with all-in monthly, freshness footer
 
@@ -302,6 +324,13 @@ ACCEPTANCE:
 - On iphone13-landscape (844x390), /homes uses the phone shell (sheet, no split pane), the half detent shows at least 150px of list, and there is no horizontal overflow. On ipad-mini (744x1133), the phone shell renders with no overflow.
 - Navigating from /homes to a listing never shows the search skeleton: no [data-skeleton=search] appears during the navigation. The existing public.spec passes unchanged on desktop and on the Pixel 7 mobile project, including 'search is URL-driven', 'location autocomplete' and 'property page', with the first 'article a' clickable at half.
 - sheet-snaps.test.ts and last-search.test.ts pass. Lint and typecheck pass. axe on /homes reports 0 serious or critical issues on pixel7, iphone13, iphone13-landscape and ipad-mini.
+
+DARK MODE (hand-off from DM):
+
+- search-map.tsx: keep `installOverlays` on every `style.load`, the theme swap `setStyle(url, { transformStyle: carryOverlays })`, the missing-image resolver, the handlers registered once, `MAP_OVERLAY_COLORS` (pins look the same in both themes) and the dev-only `window.__searchMap` that e2e/theme.spec.ts reads. The map is created on `mapStyleUrl(readResolvedTheme())`, so it never starts on the wrong style.
+- New map layers (clusters, the pin strip's highlight) go in `OVERLAY_LAYERS` so a theme swap carries them. The map's placeholder uses `bg-map`.
+- The results sheet, pin strip and cards follow the tokens; the sheet's handle and scrim use `shade`.
+- /homes stays in the dark axe matrix; the theme map tests (pins drawn after each swap, no light style requested on a dark page, no console warnings) pass.
 
 ## WP4 Search input and filters: compact bar, full-screen search, filters sheet with live count, near me, keywords and wider autocomplete
 
@@ -402,6 +431,10 @@ ACCEPTANCE:
 - At 1280, the desktop More dialog shows 'Show N results'. At 800px, tapping outside an open popover never navigates to a listing.
 - P1: /homes?kw=basement returns fewer or equal results than /homes, the summary contains 'basement', and countActiveFilters counts it. Typing a seeded MLS number shows a suggestion that opens /homes/<slug>. Typing 'DeKalb' shows 'DeKalb County', and choosing it yields q='DeKalb County' with at least 1 result.
 - Lint, typecheck and all unit tests pass (including the existing params and query tests, plus geo and count-key). The desktop public.spec, accounts.spec and dashboard.spec pass unchanged. axe on /homes with the Filters sheet open reports 0 serious or critical issues.
+
+DARK MODE (hand-off from DM):
+
+- The compact bar, full-screen search and the filters sheet follow the tokens; the full-screen panel and its suggestions use `bg-canvas`/`bg-surface`, never `bg-white`. The rules in "Every package: dark mode" apply.
 
 ## WP5 Listing page, photo viewer, action bar, tour sheet, lazy map and listing context
 
@@ -522,6 +555,11 @@ ACCEPTANCE:
 - The 'Add to calendar' download contains 'BEGIN:VEVENT', 'STATUS:TENTATIVE', a DTSTART ending in 'Z', and CRLF line endings.
 - calendar.test.ts and pinch-math.test.ts pass. The existing accounts.spec 'tour requests reach the listing agent' and public.spec 'property page' pass unchanged. axe reports 0 serious or critical issues on the listing and on the open tour sheet on pixel7, iphone13 and iphone13-landscape.
 
+DARK MODE (hand-off from DM):
+
+- location-map.tsx and location-map-lazy.tsx (WP5, not WP3): keep the resolved theme (`useClientTheme()`) in the map effect's dependencies so a theme change rebuilds the map on `mapStyleUrl(theme)`, and create it on the current theme. The lazy wrapper's placeholder uses `bg-map`, and mounting it must not request the light style on a dark page (e2e/theme.spec.ts checks the listing's map).
+- The photo viewer, action bar and tour sheet use `shade` for photo overlays and the tokens elsewhere. The listing page stays in the dark axe matrix, with the tour sheet open too.
+
 ## WP6 Staff on phones: lead cards and reliable lead controls (P0), dashboard shell and #10 staff pages (P1)
 
 features: ['F33', 'F42', 'F34', 'F36']
@@ -580,3 +618,8 @@ ACCEPTANCE:
 - P1: on iphone13, the overview stats render as 2 columns, and 'Needs reply' cards come before the stats.
 - P2: demoting an agent shows the confirmation dialog, and cancelling leaves the role unchanged. A failed listing save focuses the first aria-invalid field, and that field is fully visible above both bars.
 - At 1280 the dashboard tables and sidebar are unchanged. dashboard.spec and accounts.spec pass unchanged. Lint, typecheck and unit tests, including #10's dashboard tests, pass.
+
+DARK MODE (hand-off from DM):
+
+- Lead cards, status chips, the dashboard bar and the More sheet follow the tokens (`bg-surface` cards, `text-on-ink` on any solid `bg-ink`, `bg-primary` for primary actions). Keep the renames already in leads/page.tsx, listings-filter, photo-manager, agent-form and open-house-manager.
+- /dashboard, /dashboard/leads and /dashboard/listings are in the dark axe matrix, signed in as staff; keep them green and add the staff pages you redesign. Remove the `target-size` entry for the wide leads table from e2e/mobile/axe-allowlist.ts when the table's contact links are fixed.

@@ -113,6 +113,14 @@ describe("theme guard", () => {
     }
   });
 
+  it("the plan's deliberate keeps are still in the source and pass", () => {
+    // save-button's faint hover tint follows the theme on purpose (review correction 10).
+    const save = "src/components/listings/save-button.tsx";
+    const source = readFileSync(join(root, save), "utf8");
+    expect(source).toContain("hover:bg-ink/5");
+    expect(themeViolations(source, save)).toEqual([]);
+  });
+
   describe("catches each mistake", () => {
     const check = (src: string, file = "src/x.tsx") =>
       themeViolations(src, file).map((v) => v.rule);

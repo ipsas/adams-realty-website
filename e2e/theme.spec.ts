@@ -1,36 +1,24 @@
-import { type Browser, type BrowserContext, type Page, expect, test } from "@playwright/test";
+import { type Browser, type Page, expect, test } from "@playwright/test";
+import {
+  DARK_AXE_PAGES,
+  DARK_CANVAS,
+  KEY,
+  LIGHT_CANVAS,
+  LIGHT_INK,
+  SYSTEM_DARK_PAGES,
+  canvas,
+  darkAxeSuite,
+  dataTheme,
+  firstThemeColor,
+  storePref,
+  stored,
+} from "./theme-suite";
 
 /**
- * Dark mode, DM1: the mechanism without the switch UI (DM3 adds it). The stored
- * preference is set the way the switch will write it: localStorage["ar:theme"].
+ * Dark mode on desktop: the mechanism (DM1), the header switch (DM3), the maps (DM4) and the
+ * dark axe matrix (DM5). Shared cases and helpers live in theme-suite.ts; the phone projects
+ * run e2e/mobile/theme.spec.ts. The stored preference is localStorage["ar:theme"].
  */
-
-const KEY = "ar:theme";
-const LIGHT_CANVAS = "rgb(251, 250, 247)";
-const DARK_CANVAS = "rgb(15, 20, 18)";
-const LIGHT_INK = "rgb(21, 32, 28)";
-
-async function storePref(context: BrowserContext, pref: "light" | "dark") {
-  // Only on the first document, so later writes in the test are not undone by reloads.
-  await context.addInitScript(
-    ([key, value]) => {
-      if (!sessionStorage.getItem("seeded")) {
-        localStorage.setItem(key, JSON.stringify(value));
-        sessionStorage.setItem("seeded", "1");
-      }
-    },
-    [KEY, pref] as const,
-  );
-}
-
-const canvas = (page: Page) => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-const dataTheme = (page: Page) =>
-  page.evaluate(() => document.documentElement.getAttribute("data-theme"));
-const firstThemeColor = (page: Page) =>
-  page.evaluate(() => {
-    const m = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
-    return { content: m?.content, media: m?.getAttribute("media") ?? null };
-  });
 
 type ContextOptions = NonNullable<Parameters<Browser["newContext"]>[0]>;
 function newContext(browser: Browser, baseURL: string | undefined, options: ContextOptions) {
@@ -51,6 +39,40 @@ test.describe("no flash", () => {
     expect(await canvas(page)).toBe(DARK_CANVAS);
     expect(await firstThemeColor(page)).toEqual({ content: "#0f1412", media: null });
     await context.close();
+  });
+
+  test("at DOMContentLoaded, before hydration, the canvas is already the stored theme", async ({
+    browser,
+    baseURL,
+  }) => {
+    for (const [pref, os, expected] of [
+      ["dark", "light", DARK_CANVAS],
+      ["light", "dark", LIGHT_CANVAS],
+    ] as const) {
+      const context = await newContext(browser, baseURL, { colorScheme: os });
+      await storePref(context, pref);
+      // Records the first frame's state: the attribute, the body's computed background and
+      // whether React has touched the body yet (it must not have).
+      await context.addInitScript(() => {
+        document.addEventListener("DOMContentLoaded", () => {
+          const body = document.body;
+          (window as unknown as { __dcl: unknown }).__dcl = {
+            theme: document.documentElement.getAttribute("data-theme"),
+            canvas: getComputedStyle(body).backgroundColor,
+            hydrated: Object.keys(body).some((k) => k.startsWith("__react")),
+          };
+        });
+      });
+      const page = await context.newPage();
+      await page.goto("/about");
+      const dcl = await page.evaluate(() => (window as unknown as { __dcl: unknown }).__dcl);
+      expect(dcl, `${pref} over a ${os} OS`).toEqual({
+        theme: pref,
+        canvas: expected,
+        hydrated: false,
+      });
+      await context.close();
+    }
   });
 
   test("the server HTML has no data-theme, and its first inline script reads ar:theme in <head>", async ({
@@ -194,8 +216,6 @@ test("another tab's change is followed live", async ({ browser, baseURL }) => {
 
 /* ───────────────────────── DM3: the switch ───────────────────────── */
 
-const themeKey = (page: Page) => page.evaluate((key) => localStorage.getItem(key), KEY);
-
 async function openAppearanceMenu(page: Page) {
   const trigger = page.getByRole("button", { name: "Appearance", exact: true });
   await expect(trigger).toBeVisible();
@@ -219,7 +239,7 @@ test.describe("the header's appearance menu", () => {
     expect(await dataTheme(page)).toBe("dark");
     expect(await canvas(page)).toBe(DARK_CANVAS);
     expect(await firstThemeColor(page)).toEqual({ content: "#0f1412", media: null });
-    expect(await themeKey(page)).toBe('"dark"');
+    expect(await stored(page)).toBe('"dark"');
     // Choosing leaves the menu open, with the choice checked.
     await expect(group.getByRole("radio", { name: "Dark" })).toBeChecked();
 
@@ -238,11 +258,11 @@ test.describe("the header's appearance menu", () => {
     expect(await dataTheme(page)).toBe("light");
     expect(await canvas(page)).toBe(LIGHT_CANVAS);
     expect(await firstThemeColor(page)).toEqual({ content: "#fbfaf7", media: null });
-    expect(await themeKey(page)).toBe('"light"');
+    expect(await stored(page)).toBe('"light"');
 
     // Match my device: no key, no attribute, no override; the OS (dark here) decides.
     await page.getByRole("radio", { name: "Match my device" }).check();
-    expect(await themeKey(page)).toBeNull();
+    expect(await stored(page)).toBeNull();
     expect(await dataTheme(page)).toBeNull();
     expect(await page.locator("#theme-color-override").count()).toBe(0);
     expect(await canvas(page)).toBe(DARK_CANVAS);
@@ -294,34 +314,90 @@ test.describe("the header's appearance menu", () => {
 
 /* ───────────────────────── DM4: maps ───────────────────────── */
 
-type MapProbe = { style: boolean; layers: string[]; rendered: number } | null;
+type Base = "light" | "dark";
+type MapProbe = {
+  style: boolean;
+  base: Base | "other";
+  layers: string[];
+  rendered: number;
+  pins: number;
+} | null;
 const OVERLAY_LAYERS = ["clusters", "cluster-count", "pin-dots", "pins", "pins-active"];
 
-/** Reads the dev-only window.__searchMap: style loaded, overlay layers present, pins drawn. */
+/**
+ * Reads the dev-only window.__searchMap: style loaded, overlay layers present, and how many
+ * features are drawn (clusters and pins together, and on the price-pill `pins` layer alone).
+ * `base` tells the applied base style apart by its background layer (OpenFreeMap positron
+ * is rgb(242,243,240), dark rgb(12,12,12)), so a check can't pass on the style being replaced.
+ */
 const probeSearchMap = (page: Page) =>
-  page.evaluate((ids): MapProbe => {
+  page.evaluate(async (ids): Promise<MapProbe> => {
     type M = {
       isStyleLoaded(): boolean;
       getLayer(id: string): unknown;
+      getPaintProperty(layer: string, name: string): unknown;
       queryRenderedFeatures(o: { layers: string[] }): unknown[];
+      once(e: string, cb: () => void): void;
+      triggerRepaint(): void;
     };
     const map = (window as unknown as { __searchMap?: M }).__searchMap;
     if (!map) return null;
+    // Symbol queries read the last frame's placement: render a fresh frame first.
+    await Promise.race([
+      new Promise<void>((resolve) => {
+        map.once("idle", resolve);
+        map.triggerRepaint();
+      }),
+      new Promise((resolve) => setTimeout(resolve, 3000)),
+    ]);
     const layers = ids.filter((id) => map.getLayer(id));
+    const complete = layers.length === ids.length;
+    const bg = map.getLayer("background")
+      ? String(map.getPaintProperty("background", "background-color")).replace(/\s/g, "")
+      : "";
     return {
       style: map.isStyleLoaded(),
+      base: bg === "rgb(12,12,12)" ? "dark" : bg === "rgb(242,243,240)" ? "light" : "other",
       layers,
-      rendered:
-        layers.length === ids.length
-          ? map.queryRenderedFeatures({ layers: ["clusters", "pin-dots", "pins"] }).length
-          : 0,
+      rendered: complete
+        ? map.queryRenderedFeatures({ layers: ["clusters", "pin-dots", "pins"] }).length
+        : 0,
+      pins: complete ? map.queryRenderedFeatures({ layers: ["pins"] }).length : 0,
     };
   }, OVERLAY_LAYERS);
 
-const mapReady = async (page: Page) => {
+/** The `base` style is applied and loaded, every overlay layer is there and something is drawn. */
+const mapReady = async (page: Page, base: Base) => {
   const p = await probeSearchMap(page);
-  return !!p && p.style && p.layers.length === OVERLAY_LAYERS.length && p.rendered > 0;
+  return (
+    !!p && p.style && p.base === base && p.layers.length === OVERLAY_LAYERS.length && p.rendered > 0
+  );
 };
+
+/** Price pills drawn on the `pins` layer of the `base` style (0 while it is swapping). */
+const pinsDrawn = async (page: Page, base: Base) => {
+  const p = await probeSearchMap(page);
+  return p && p.style && p.base === base && p.layers.length === OVERLAY_LAYERS.length ? p.pins : 0;
+};
+
+/** Zooms past the cluster limit onto the biggest cluster, so individual pins are drawn. */
+async function zoomToPins(page: Page) {
+  await page.evaluate(async () => {
+    type F = { geometry: { coordinates: [number, number] }; properties: { point_count: number } };
+    type M = {
+      queryRenderedFeatures(o: { layers: string[] }): F[];
+      jumpTo(o: { center: [number, number]; zoom: number }): void;
+      once(e: string, cb: () => void): void;
+    };
+    const map = (window as unknown as { __searchMap: M }).__searchMap;
+    const [biggest] = map
+      .queryRenderedFeatures({ layers: ["clusters"] })
+      .sort((a, b) => b.properties.point_count - a.properties.point_count);
+    const idle = new Promise<void>((resolve) => map.once("idle", resolve));
+    map.jumpTo({ center: biggest.geometry.coordinates, zoom: 13 });
+    await idle;
+  });
+}
 
 test("the search map swaps to the dark style and back, keeping its pins", async ({ page }) => {
   const problems: string[] = [];
@@ -346,22 +422,27 @@ test("the search map swaps to the dark style and back, keeping its pins", async 
 
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/homes");
-  await expect.poll(() => mapReady(page), { timeout: 20_000 }).toBe(true);
+  await expect.poll(() => mapReady(page, "light"), { timeout: 20_000 }).toBe(true);
   expect(styles.some((u) => /styles\/positron/.test(u))).toBe(true);
   expect(styles.filter((u) => /styles\/dark/.test(u))).toEqual([]);
+  await zoomToPins(page);
+  await expect.poll(() => pinsDrawn(page, "light"), { timeout: 20_000 }).toBeGreaterThan(0);
 
   await openAppearanceMenu(page);
   const dark = page.waitForRequest(/styles\/dark/);
   await page.getByRole("radio", { name: "Dark" }).check();
   await dark;
-  await expect.poll(() => mapReady(page), { timeout: 20_000 }).toBe(true);
+  await expect.poll(() => mapReady(page, "dark"), { timeout: 20_000 }).toBe(true);
+  // Price pills are drawn on the new style (queryRenderedFeatures on the pins layer).
+  await expect.poll(() => pinsDrawn(page, "dark"), { timeout: 20_000 }).toBeGreaterThan(0);
   // The same map, restyled: not a second canvas.
   await expect(page.locator(".maplibregl-canvas")).toHaveCount(1);
 
   const light = page.waitForRequest(/styles\/positron/);
   await page.getByRole("radio", { name: "Light" }).check();
   await light;
-  await expect.poll(() => mapReady(page), { timeout: 20_000 }).toBe(true);
+  await expect.poll(() => mapReady(page, "light"), { timeout: 20_000 }).toBe(true);
+  await expect.poll(() => pinsDrawn(page, "light"), { timeout: 20_000 }).toBeGreaterThan(0);
   expect(failed).toEqual([]);
   expect(problems).toEqual([]);
 });
@@ -378,7 +459,7 @@ test("a dark page creates its maps on the dark style, never the light one first"
     if (/\/styles\//.test(r.url())) styles.push(r.url());
   });
   await page.goto("/homes");
-  await expect.poll(() => mapReady(page), { timeout: 20_000 }).toBe(true);
+  await expect.poll(() => mapReady(page, "dark"), { timeout: 20_000 }).toBe(true);
   const href = await page.locator("article a[href^='/homes/']").first().getAttribute("href");
   expect(href).toMatch(/^\/homes\/[a-z0-9-]+$/);
 
@@ -400,3 +481,7 @@ test("a dark page creates its maps on the dark style, never the light one first"
   await expect(page.locator(".maplibregl-canvas")).toHaveCount(1);
   await context.close();
 });
+
+/* ───────────────────────── DM5: the dark axe matrix ───────────────────────── */
+
+darkAxeSuite(test, { pages: DARK_AXE_PAGES, systemPages: SYSTEM_DARK_PAGES });

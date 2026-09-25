@@ -183,6 +183,51 @@ Both are exercised on `/dev/primitives`, which is a 404 in production.
   shows one toast at a time. While a dialog is open the toast renders in that
   dialog's `[data-toast-slot]`, because outside it Undo would be inert.
 
+## Themes
+
+Every page renders in light and dark. ARCHITECTURE.md ("Themes") has the
+mechanism; these are the parts other code depends on.
+
+- **The attribute.** Match my device is no `data-theme` on `<html>`; Light and
+  Dark set `data-theme="light|dark"`. The head script sets it before first
+  paint and `<ThemeSync>` keeps it; nothing else writes it. Style with the
+  `dark:` variant (screen only: printing is always light), never by reading the
+  attribute in JS. Client widgets that need the theme in JS (maps, canvases)
+  use `useClientTheme()`, or `readResolvedTheme()` when they create something
+  synchronously.
+- **Classes.** Use the tokens (`canvas`, `surface`, `sunken`, `ink`, `ink-soft`,
+  `muted`, `line`, `primary`, …), which follow the theme. On photos, maps and
+  the lightbox, overlays and gradients use `shade` (never `ink`); chips and
+  buttons on photos use `bg-surface/90|95`; labels on a solid `bg-ink` use
+  `text-on-ink`; the primary fill is `bg-primary hover:bg-primary-hover`; no hex
+  colours in class names. `src/lib/theme-guard.test.ts` fails on a violation,
+  and a reasoned exception goes in its `ALLOW_WHITE` list.
+- **The switch.** `<ThemeMenuButton>` (the header's Appearance menu) is mounted
+  with `hidden wide:block`; `<AppearanceControl variant="segmented">` sits in the
+  phone menu, shown with `phone:`. A phone in landscape counts as a phone, so it
+  gets the menu, not the button. e2e finds the control as the group named
+  "Appearance" and its radios by name ("Match my device", "Light", "Dark"; on
+  phones "Auto (match my device)"); `[data-appearance=segmented|list]` marks the
+  variant. The control announces nothing, so /homes keeps one live region.
+- **theme-color.** The layout renders a `theme-color` pair per
+  `prefers-color-scheme` (`THEME_COLORS`: #fbfaf7 light, #0f1412 dark). A
+  forced theme adds `meta#theme-color-override` first in `<head>`. Code that
+  wants another colour for a while (WP2's hero, F49) calls
+  `setChromeColor(color)` and `setChromeColor(null)` when done, which returns
+  to the theme's colour; it never writes the meta tags itself. The web app
+  manifest can't vary by scheme, so its colours stay light.
+- **Maps.** Map styles come from `mapStyleUrl(theme)` (`map-style.ts`, re-exported
+  by `map-setup.ts`). The search map keeps its overlays across a theme swap:
+  `setStyle(url, { transformStyle: carryOverlays })`, with `installOverlays` on
+  every `style.load` and the missing-image resolver for the pill images. The
+  location map is recreated when the theme changes. Map placeholders use
+  `bg-map`. `window.__searchMap` exists in development only, for e2e.
+- **Tests.** Every new page joins the dark axe matrix: add it to
+  `DARK_AXE_PAGES` in `e2e/theme-suite.ts` (and `DARK_AXE_PHONE_PAGES`), with the
+  role that sees it; it must report 0 contrast violations, which can never be
+  allowlisted. `e2e/theme-light-regression.spec.ts` holds light-mode baselines
+  from before dark mode; a change meant to alter those pages updates them.
+
 ## Exports other modules rely on
 
 Keep these when editing the files that hold them:
@@ -196,6 +241,12 @@ Keep these when editing the files that hold them:
   and `recent.ts` import.
 - `homes/[slug]/page.tsx`: the `RecordView` mount.
 - `pwa-runtime.tsx`, `install-entry.tsx`: their signatures.
+- `src/lib/theme.ts` and `src/lib/theme-script.ts`: `THEME_COLORS`,
+  `setChromeColor`, `readResolvedTheme`, `applyTheme`, `writeThemePref`;
+  `src/components/theme/`: `ThemeMenuButton`, `AppearanceControl`,
+  `useResolvedTheme`, `useClientTheme`; `map-setup.ts`: `mapStyleUrl`.
+- `search-map.tsx`: `installOverlays` on `style.load`, the theme `setStyle` with
+  `carryOverlays`, and the dev-only `window.__searchMap`.
 
 Which package may edit which file is set out in `docs/mobile-spec/foundation.md`
 ("Ownership after the foundation"). This file is part of ARCHITECTURE.md's

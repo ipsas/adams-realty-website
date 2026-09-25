@@ -55,6 +55,13 @@ export const AXE_ALLOWLIST: readonly AxeAllowEntry[] = [
     reason: "Same listing fact grid: its dt/dd have a div parent that is not a direct child of dl.",
   },
   {
+    rule: "target-size",
+    selector: "main table tbody tr",
+    owner: "WP6",
+    reason:
+      "Wide leads table (dashboard/leads/page.tsx): the stacked text-xs mailto/tel links and the row's stretched name link are under 24px apart. WP6's lead cards and sweep fix it.",
+  },
+  {
     rule: "aria-prohibited-attr",
     selector: ".maplibregl-marker",
     owner: "WP5",

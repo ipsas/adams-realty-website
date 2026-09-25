@@ -1,24 +1,24 @@
 import type { Page } from "@playwright/test";
+import {
+  DARK_AXE_PHONE_PAGES,
+  DARK_CANVAS,
+  LIGHT_CANVAS,
+  LIGHT_INK,
+  SYSTEM_DARK_PAGES,
+  canvas,
+  darkAxeSuite,
+  dataTheme,
+  firstThemeColor,
+  stored,
+} from "../theme-suite";
 import { expect, expectTapTargets, gotoHydrated, test } from "./helpers";
 
 /*
- * Dark mode on phones and tablets (DM3). Tagged @landscape, so it runs on pixel7, iphone13,
- * iphone13-landscape and ipad-mini: the phone menu's Appearance control must be reachable
- * on each, and the header's sun/moon button must not show on any of them.
+ * Dark mode on phones and tablets. The switch tests are tagged @landscape, so they run on
+ * pixel7, iphone13, iphone13-landscape and ipad-mini: the phone menu's Appearance control
+ * must be reachable on each, and the header's sun/moon button must not show on any of them.
+ * The dark axe matrix (untagged) runs on pixel7 and iphone13. Shared helpers: ../theme-suite.ts.
  */
-
-const KEY = "ar:theme";
-const DARK_CANVAS = "rgb(15, 20, 18)";
-const LIGHT_CANVAS = "rgb(251, 250, 247)";
-
-const dataTheme = (page: Page) =>
-  page.evaluate(() => document.documentElement.getAttribute("data-theme"));
-const canvas = (page: Page) => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-const firstThemeColor = (page: Page) =>
-  page.evaluate(
-    () => document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.content ?? null,
-  );
-const stored = (page: Page) => page.evaluate((k) => localStorage.getItem(k), KEY);
 
 async function openMenu(page: Page) {
   await page.getByRole("button", { name: "Open menu" }).click();
@@ -48,11 +48,23 @@ test(
     await expect(dark).toBeChecked();
     expect(await dataTheme(page)).toBe("dark");
     expect(await canvas(page)).toBe(DARK_CANVAS);
-    expect(await firstThemeColor(page)).toBe("#0f1412");
+    expect((await firstThemeColor(page)).content).toBe("#0f1412");
     expect(await stored(page)).toBe('"dark"');
 
     await page.reload();
     await page.waitForLoadState("networkidle");
+    expect(await dataTheme(page)).toBe("dark");
+    expect(await canvas(page)).toBe(DARK_CANVAS);
+
+    // A client-side navigation from the phone menu keeps it (same document: the marker stays).
+    await page.evaluate(() => ((window as unknown as { __sameDoc: boolean }).__sameDoc = true));
+    await openMenu(page);
+    await page.getByRole("navigation", { name: "Mobile" }).getByRole("link", { name: "Buy" }).tap();
+    await expect(page).toHaveURL(/\/homes$/);
+    await expect(page.locator("[aria-live=polite]")).toBeAttached();
+    expect(
+      await page.evaluate(() => (window as unknown as { __sameDoc?: boolean }).__sameDoc),
+    ).toBe(true);
     expect(await dataTheme(page)).toBe("dark");
     expect(await canvas(page)).toBe(DARK_CANVAS);
 
@@ -66,5 +78,40 @@ test(
     expect(await stored(page)).toBeNull();
     expect(await canvas(page)).toBe(LIGHT_CANVAS);
     expect(await page.locator("#theme-color-override").count()).toBe(0);
+
+    // Auto follows the device live.
+    await page.emulateMedia({ colorScheme: "dark" });
+    await expect.poll(() => canvas(page)).toBe(DARK_CANVAS);
+    expect(await dataTheme(page)).toBeNull();
+    await page.emulateMedia({ colorScheme: "light" });
+    await expect.poll(() => canvas(page)).toBe(LIGHT_CANVAS);
   },
 );
+
+test(
+  "a forced Light stays light on a dark device, and printing is light in Dark",
+  { tag: "@landscape" },
+  async ({ page }) => {
+    await page.emulateMedia({ colorScheme: "dark" });
+    await gotoHydrated(page, "/about", "header button");
+    expect(await canvas(page)).toBe(DARK_CANVAS);
+    const group = await openMenu(page);
+    const light = group.getByRole("radio", { name: "Light" });
+    await light.scrollIntoViewIfNeeded();
+    await light.tap();
+    expect(await dataTheme(page)).toBe("light");
+    expect(await canvas(page)).toBe(LIGHT_CANVAS);
+    expect(await firstThemeColor(page)).toEqual({ content: "#fbfaf7", media: null });
+
+    const dark = group.getByRole("radio", { name: "Dark" });
+    await dark.tap();
+    expect(await canvas(page)).toBe(DARK_CANVAS);
+    await page.emulateMedia({ media: "print", colorScheme: "dark" });
+    expect(await canvas(page)).toBe(LIGHT_CANVAS);
+    expect(await page.evaluate(() => getComputedStyle(document.body).color)).toBe(LIGHT_INK);
+  },
+);
+
+/* ───────────────────────── the dark axe matrix ───────────────────────── */
+
+darkAxeSuite(test, { pages: DARK_AXE_PHONE_PAGES, systemPages: SYSTEM_DARK_PAGES });
