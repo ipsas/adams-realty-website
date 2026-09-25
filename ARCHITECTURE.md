@@ -1,7 +1,8 @@
 # Architecture
 
 This document explains how the Adams Realty site is put together and why. Read
-it before changing listing data, search, accounts or permissions.
+it before changing listing data, search, accounts or permissions. The firm is in
+Royston and serves Northeast Georgia; its listings feed comes from Georgia MLS.
 
 ```
 Browser ──► Next.js (App Router, React Server Components)
@@ -14,7 +15,7 @@ Browser ──► Next.js (App Router, React Server Components)
               └─ /api/locations/* .... search autocomplete
                         │
                         ▼
-                    Postgres (Drizzle ORM) ◄── MLS sync ◄── RESO Web API (FMLS / Georgia MLS)
+                    Postgres (Drizzle ORM) ◄── MLS sync ◄── RESO Web API (Georgia MLS)
 ```
 
 ## Directory map
@@ -30,8 +31,8 @@ Browser ──► Next.js (App Router, React Server Components)
 | `src/lib/search/`     | Search criteria parsing (`params.ts`), SQL building (`query.ts`), service                                                                                                                                               |
 | `src/lib/auth/`       | Better Auth config, session helpers, **permissions policy**                                                                                                                                                             |
 | `src/server/actions/` | Server actions — every one authorizes via the policy                                                                                                                                                                    |
-| `src/config/site.ts`  | Brand, market (Georgia), finance defaults, legal links                                                                                                                                                                  |
-| `scripts/`            | Seed data (fictional Metro Atlanta), CLI sync, MapLibre worker copy                                                                                                                                                     |
+| `src/config/site.ts`  | Brand, firm contact details, Georgia MLS office, market (Northeast Georgia), finance defaults, legal links                                                                                                              |
+| `scripts/`            | Seed data (Andrea Anderegg's real public profile plus fictional sample agents and Northeast Georgia listings), CLI sync, MapLibre worker copy                                                                           |
 
 ## Listing data
 
@@ -88,7 +89,7 @@ Adding a non-RESO feed means implementing `ListingProvider` (`src/lib/mls/types.
 - **Map pins** are a separate lightweight query over all matches, capped at 750.
   MapLibre clusters them and draws collision-aware price pills with dots underneath.
   The map loads its self-hosted web worker from `/vendor/maplibre/<version>/`.
-- **Scaling path.** Postgres handles a metro MLS (tens of thousands of listings)
+- **Scaling path.** Postgres handles a statewide MLS (tens of thousands of listings)
   comfortably. The rest of the app depends only on `searchListings` and
   `searchMapPins`, so swapping in Typesense or OpenSearch later is contained.
 

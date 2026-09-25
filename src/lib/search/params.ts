@@ -17,6 +17,7 @@ export const PROPERTY_TYPES = [
   "manufactured",
   "land",
   "farm_ranch",
+  "commercial",
   "other",
 ] as const;
 export type PropertyTypeValue = (typeof PROPERTY_TYPES)[number];
@@ -242,7 +243,17 @@ const TYPE_LABELS: Record<PropertyTypeValue, string> = {
   manufactured: "Manufactured",
   land: "Land",
   farm_ranch: "Farms & ranches",
+  commercial: "Commercial",
   other: "Other",
+};
+
+/** Plural nouns for search summaries ("Commercial property in Commerce"). */
+const TYPE_NOUNS: Record<PropertyTypeValue, string> = {
+  ...TYPE_LABELS,
+  multi_family: "Multi-family homes",
+  manufactured: "Manufactured homes",
+  commercial: "Commercial property",
+  other: "Properties",
 };
 
 export function propertyTypeLabel(t: PropertyTypeValue): string {
@@ -261,7 +272,7 @@ export function describeCriteria(c: SearchCriteria): string {
   if (c.beds) parts.push(`${c.beds}+ bd`);
   const noun =
     c.types?.length === 1
-      ? TYPE_LABELS[c.types[0]].toLowerCase()
+      ? TYPE_NOUNS[c.types[0]].toLowerCase()
       : c.mode === "rent"
         ? "rentals"
         : "homes";

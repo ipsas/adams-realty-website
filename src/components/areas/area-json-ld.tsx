@@ -36,7 +36,7 @@ export function AreaJsonLd({ area, baseUrl }: { area: Area; baseUrl: string }) {
           {
             "@type": "ListItem",
             position: 2,
-            name: "Neighborhood guides",
+            name: "Area guides",
             item: `${baseUrl}/areas`,
           },
           { "@type": "ListItem", position: 3, name: area.name, item: url },

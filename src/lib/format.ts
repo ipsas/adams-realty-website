@@ -86,6 +86,7 @@ export const PROPERTY_TYPE_LABELS: Record<string, string> = {
   manufactured: "Manufactured home",
   land: "Land",
   farm_ranch: "Farm / ranch",
+  commercial: "Commercial",
   other: "Other",
 };
 

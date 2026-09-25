@@ -19,7 +19,7 @@ type Method = {
 function methods(subject?: string): Method[] {
   const street = hasStreetAddress(site.address);
   const directions = directionsHref(site.address);
-  return [
+  const all: (Method | null)[] = [
     {
       key: "phone",
       icon: Phone,
@@ -34,7 +34,8 @@ function methods(subject?: string): Method[] {
       lines: [site.email],
       href: mailtoHref(site.email, subject),
     },
-    { key: "hours", icon: Clock, label: "Office hours", lines: [site.hours] },
+    // Hidden until the firm publishes its hours.
+    site.hours ? { key: "hours", icon: Clock, label: "Office hours", lines: [site.hours] } : null,
     {
       key: "office",
       icon: MapPin,
@@ -46,6 +47,7 @@ function methods(subject?: string): Method[] {
       hint: street ? "Get directions" : `Serving ${site.market.region}`,
     },
   ];
+  return all.filter((m): m is Method => m !== null);
 }
 
 /**

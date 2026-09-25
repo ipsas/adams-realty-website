@@ -273,7 +273,7 @@ function AgentFields({
             htmlFor="bio"
             error={e.bio}
             className="sm:col-span-2"
-            hint="The neighborhoods you know, how you work, what clients can expect. A few sentences is plenty."
+            hint="The areas you know, how you work, what clients can expect. A few sentences is plenty."
           >
             <Textarea
               id="bio"
@@ -322,7 +322,7 @@ function AgentFields({
             htmlFor="specialties"
             error={e.specialties}
             className="sm:col-span-2"
-            hint={listHint("First-time buyers, Relocation, New construction")}
+            hint={listHint("First-time buyers, Land, Lake property")}
           >
             <Input
               id="specialties"
@@ -333,11 +333,11 @@ function AgentFields({
             />
           </Field>
           <Field
-            label="Neighborhoods served"
+            label="Areas served"
             htmlFor="serviceAreas"
             error={e.serviceAreas}
             className="sm:col-span-2"
-            hint={listHint("Decatur, Kirkwood, East Atlanta")}
+            hint={listHint("Royston, Lake Hartwell, Franklin County")}
           >
             <Input
               id="serviceAreas"

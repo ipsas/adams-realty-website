@@ -58,9 +58,10 @@ export default function AccessibilityPage() {
             Need help right now?
           </h2>
           <p className="mt-3 leading-relaxed text-ink-soft">
-            Call ({site.hours}) or email, and a person on our team will help you search for homes,
-            read listing details or schedule a tour. If you&apos;re deaf, hard of hearing or have a
-            speech disability, you can reach us through your preferred relay service, or by dialing{" "}
+            Call{site.hours ? ` (${site.hours})` : ""} or email, and a person on our team will help
+            you search for homes, read listing details or schedule a tour. If you&apos;re deaf, hard
+            of hearing or have a speech disability, you can reach us through your preferred relay
+            service, or by dialing{" "}
             <a
               href={telHref("711")}
               className="font-medium text-brand-700 underline decoration-brand-200 underline-offset-2 hover:decoration-brand-600"

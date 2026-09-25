@@ -7,7 +7,7 @@ import { site } from "@/config/site";
 
 export const metadata: Metadata = {
   title: "Sell your home",
-  description: `Sell your ${site.market.region} home with ${site.name}. Free, no-obligation valuation from a local agent within one business day.`,
+  description: `Sell your ${site.market.region} home, land, farm or lake property with ${site.legalName} in ${site.address.city}. Start with a free, no-obligation valuation from a local agent.`,
 };
 
 const IMAGE =
@@ -17,22 +17,22 @@ const STEPS = [
   {
     icon: ChartNoAxesCombined,
     title: "Price it right",
-    body: "A walk-through and a pricing plan built from this month's comparable sales — not a zestimate.",
+    body: "A walk-through and a pricing plan built from recent comparable sales nearby — not a zestimate.",
   },
   {
     icon: Camera,
-    title: "Make it shine",
-    body: "Professional photography, floor plans and a 3D tour, plus staging advice that pays for itself.",
+    title: "Show it well",
+    body: "Photos and a description that show buyers what matters — the house, the land, the water or the business location.",
   },
   {
     icon: Megaphone,
-    title: "Reach every buyer",
-    body: "Syndicated to the MLS and every major portal on day one — and featured first here, where buyers don't see ads.",
+    title: "Reach buyers",
+    body: `Listed on ${site.mls.name}, so it reaches buyers' agents and the home-search sites that show MLS listings — and featured here, where buyers don't see ads.`,
   },
   {
     icon: Handshake,
     title: "Negotiate to close",
-    body: "Offer strategy, inspections, appraisal and closing — we manage every step and keep you posted.",
+    body: "Offer strategy, inspections, appraisal and closing — one agent keeps you posted at every step.",
   },
 ];
 
@@ -57,14 +57,15 @@ export default function SellPage() {
               Sell for more, <em className="text-brass-100">with less stress.</em>
             </h1>
             <p className="mt-6 max-w-lg text-lg leading-relaxed text-white/75">
-              Local pricing expertise, standout marketing and a single point of contact from list to
-              close. Start with a free, no-obligation valuation.
+              Houses in town, lake homes, acreage, farms and commercial property across{" "}
+              {site.market.region} — with one local point of contact from list to close. Start with
+              a free, no-obligation valuation.
             </p>
           </div>
           <div id="valuation" className="scroll-mt-24 rounded-3xl bg-surface p-6 shadow-pop sm:p-8">
             <h2 className="text-xl font-semibold text-ink">What&apos;s my home worth?</h2>
             <p className="mt-1 mb-6 text-sm text-muted">
-              A local agent will prepare a personal valuation — usually within a day.
+              Tell us about your home or land, and a local agent will prepare a personal valuation.
             </p>
             <ValuationForm />
           </div>

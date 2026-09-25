@@ -6,7 +6,7 @@ import { cn } from "@/lib/cn";
 import { formatNumber, formatPriceShort } from "@/lib/format";
 import { regionLabel, type AreaStats } from "@/lib/areas/stats";
 
-/** "Atlanta · Fulton County"; long county lists collapse to a count on cards. */
+/** "Hartwell · 3 counties" / "Franklin County"; long county lists collapse to a count on cards. */
 function placeLine(area: Area): string {
   const county = area.counties.length > 2 ? `${area.counties.length} counties` : countyLabel(area);
   return area.city === area.name ? county : `${area.city} · ${county}`;
@@ -51,8 +51,8 @@ export function AreaCard({
 }
 
 /**
- * Wide variant for a region with a single guide (Lake Lanier), so it reads
- * as a feature rather than one lonely tile in a five-column grid.
+ * Wide variant for a region with a single guide, so it reads as a feature
+ * rather than one lonely tile in a five-column grid.
  */
 export function AreaFeatureCard({
   area,
@@ -75,7 +75,7 @@ export function AreaFeatureCard({
             {area.name}
           </h3>
           <p className="mt-1 text-sm text-white/75">
-            {area.city} · {countyLabel(area)}
+            {area.city === area.name ? countyLabel(area) : `${area.city} · ${countyLabel(area)}`}
           </p>
         </div>
       </div>

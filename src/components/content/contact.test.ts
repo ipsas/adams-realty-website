@@ -10,12 +10,12 @@ import {
 
 describe("telHref", () => {
   it("formats 10-digit US numbers as E.164", () => {
-    expect(telHref("(404) 555-0142")).toBe("tel:+14045550142");
-    expect(telHref("404.555.0142")).toBe("tel:+14045550142");
+    expect(telHref("(706) 246-0053")).toBe("tel:+17062460053");
+    expect(telHref("706.246.0053")).toBe("tel:+17062460053");
   });
 
   it("keeps a leading country code", () => {
-    expect(telHref("+1 404 555 0142")).toBe("tel:+14045550142");
+    expect(telHref("+1 706 246 0053")).toBe("tel:+17062460053");
     expect(telHref("1-800-669-9777")).toBe("tel:+18006699777");
   });
 
@@ -37,15 +37,15 @@ describe("mailtoHref", () => {
 });
 
 describe("addressLines", () => {
-  const full = { line1: "123 Peachtree St NE", city: "Atlanta", state: "GA", postalCode: "30303" };
+  const full = { line1: "69 Mill Street", city: "Royston", state: "GA", postalCode: "30662" };
 
   it("returns street and city lines", () => {
-    expect(addressLines(full)).toEqual(["123 Peachtree St NE", "Atlanta, GA 30303"]);
+    expect(addressLines(full)).toEqual(["69 Mill Street", "Royston, GA 30662"]);
   });
 
   it("drops an empty street line and ZIP", () => {
-    expect(addressLines({ ...full, line1: "", postalCode: "" })).toEqual(["Atlanta, GA"]);
-    expect(addressLines({ ...full, line1: "   " })).toEqual(["Atlanta, GA 30303"]);
+    expect(addressLines({ ...full, line1: "", postalCode: "" })).toEqual(["Royston, GA"]);
+    expect(addressLines({ ...full, line1: "   " })).toEqual(["Royston, GA 30662"]);
   });
 
   it("handles a missing city", () => {
@@ -55,20 +55,20 @@ describe("addressLines", () => {
 
 describe("hasStreetAddress / directionsHref", () => {
   it("needs a street line", () => {
-    const blank = { line1: "", city: "Atlanta", state: "GA", postalCode: "" };
+    const blank = { line1: "", city: "Royston", state: "GA", postalCode: "" };
     expect(hasStreetAddress(blank)).toBe(false);
     expect(directionsHref(blank)).toBeNull();
   });
 
   it("links a map search for the full address", () => {
     const href = directionsHref({
-      line1: "1 Main St",
-      city: "Decatur",
+      line1: "69 Mill Street",
+      city: "Royston",
       state: "GA",
-      postalCode: "30030",
+      postalCode: "30662",
     });
     expect(href).toBe(
-      "https://www.google.com/maps/search/?api=1&query=1%20Main%20St%2C%20Decatur%2C%20GA%2030030",
+      "https://www.google.com/maps/search/?api=1&query=69%20Mill%20Street%2C%20Royston%2C%20GA%2030662",
     );
   });
 });

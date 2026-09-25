@@ -16,7 +16,7 @@ export async function generateMetadata(props: PageProps<"/homes">): Promise<Meta
   const canonical = serializeCriteria({ mode: c.mode, q: c.q });
   return {
     title,
-    description: `Browse ${title.toLowerCase()} with real-time MLS data, honest monthly cost estimates and local agents.`,
+    description: `Browse ${title.toLowerCase()} with listings from ${site.mls.name}, honest monthly cost estimates and local agents.`,
     alternates: { canonical: canonical.size ? `/homes?${canonical}` : "/homes" },
     robots: c.bounds || c.page > 1 ? { index: false, follow: true } : undefined,
   };

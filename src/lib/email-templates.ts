@@ -275,10 +275,10 @@ function button(label: string, href: string): EmailBlock {
   };
 }
 
+/** Firm name, phone and postal address (CAN-SPAM wants the address on every marketing email). */
 function firmLine(): string {
-  const place = [site.address.line1, site.address.city, site.address.state]
-    .filter(Boolean)
-    .join(", ");
+  const { line1, city, state, postalCode } = site.address;
+  const place = [line1, city, `${state} ${postalCode}`.trim()].filter(Boolean).join(", ");
   return [site.legalName, site.phone, place].filter(Boolean).join(" · ");
 }
 
@@ -525,8 +525,8 @@ export function leadNotificationEmail(input: {
   propertyAddress?: string | null;
   listing?: EmailListing | null;
   /**
-   * How the heading names the home: its street, or "a home in Decatur, GA
-   * 30030" when the seller withheld the address.
+   * How the heading names the home: its street, or "a home in Royston, GA
+   * 30662" when the seller withheld the address.
    */
   listingPlace?: string | null;
   source: string;

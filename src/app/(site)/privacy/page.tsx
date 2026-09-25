@@ -23,7 +23,12 @@
 
 import type { Metadata } from "next";
 import Link from "next/link";
-import { addressLines, formatLongDate, mailtoHref } from "@/components/content/contact";
+import {
+  addressLines,
+  formatLongDate,
+  hasStreetAddress,
+  mailtoHref,
+} from "@/components/content/contact";
 import { ContactMethods } from "@/components/content/contact-methods";
 import { KeyPoints, LegalLayout, LegalSection, type TocItem } from "@/components/content/legal";
 import { PageIntro } from "@/components/content/page-intro";
@@ -102,9 +107,10 @@ export default function PrivacyPage() {
         <LegalSection id="who-we-are" title="Who we are">
           <p>
             This website is operated by {site.legalName} (“{site.name},” “we,” “us”), a real estate
-            brokerage licensed in {site.market.stateName} and based in{" "}
-            {addressLines(site.address).join(", ")}. This policy explains what information the site
-            collects, why we collect it, who can see it and the choices you have.
+            brokerage licensed in {site.market.stateName} and based{" "}
+            {hasStreetAddress(site.address) ? "at" : "in"} {addressLines(site.address).join(", ")}.
+            This policy explains what information the site collects, why we collect it, who can see
+            it and the choices you have.
           </p>
           <p>
             It applies to this website and the emails it sends. It doesn&apos;t cover other websites

@@ -47,7 +47,7 @@ export default async function HomePage() {
         <Container className="pt-36 pb-10 sm:pb-14">
           <p className="mb-5 flex items-center gap-2 text-xs font-semibold tracking-[0.22em] text-white/75 uppercase">
             <span className="h-px w-8 bg-brass-400" />
-            {site.market.region} · {site.market.stateName}
+            {site.address.city} · {site.market.region}
           </p>
           <h1 className="max-w-3xl font-display-tight text-5xl leading-[1.02] font-normal text-white sm:text-7xl">
             Homes worth
@@ -55,8 +55,8 @@ export default async function HomePage() {
             <em className="font-light text-brass-100">coming home to.</em>
           </h1>
           <p className="mt-6 max-w-xl text-lg leading-relaxed text-white/80">
-            Every home on the market, refreshed every 15 minutes. Honest monthly costs. Local agents
-            who actually pick up the phone.
+            Homes, land, farms and lake property, updated directly from {site.mls.name}. Honest
+            monthly costs. Local agents who actually pick up the phone.
           </p>
           <div className="mt-9">
             <HeroSearch />
@@ -152,7 +152,7 @@ export default async function HomePage() {
                 {
                   icon: RefreshCcw,
                   title: "Straight from the MLS",
-                  body: "Listings sync every 15 minutes, so the home you love is actually still available.",
+                  body: `Listings come directly from ${site.mls.name}, not another portal's copy, and every one credits the brokerage that listed it.`,
                 },
                 {
                   icon: ShieldCheck,
@@ -181,19 +181,19 @@ export default async function HomePage() {
         </Container>
       </section>
 
-      {/* Neighborhoods */}
+      {/* Towns */}
       <section className="py-20 sm:py-24">
         <Container>
           <SectionHeading
             eyebrow="Explore"
-            title={`Neighborhoods across ${site.market.region}`}
-            description="From intown bungalows to lake houses on Lanier."
+            title={`Towns across ${site.market.region}`}
+            description="From small-town main streets to Lake Hartwell and open farmland."
           />
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             {areas.map((a, i) => (
               <Link
-                key={`${a.neighborhood}-${a.city}`}
-                href={searchHref({ q: a.neighborhood ?? a.city })}
+                key={a.city}
+                href={searchHref({ q: a.city })}
                 className={`group relative isolate overflow-hidden rounded-[var(--radius-card)] bg-brand-800 ${i === 0 ? "col-span-2 row-span-2 aspect-square sm:aspect-auto" : "aspect-[4/5] sm:aspect-[4/3]"}`}
               >
                 <Photo
@@ -210,7 +210,7 @@ export default async function HomePage() {
                   <p
                     className={`font-display-tight font-medium ${i === 0 ? "text-3xl" : "text-xl"}`}
                   >
-                    {a.neighborhood}
+                    {a.city}
                   </p>
                   <p className="mt-1 text-sm text-white/75">
                     {a.count} homes · median {formatPriceShort(a.medianPrice)}
@@ -231,11 +231,12 @@ export default async function HomePage() {
                 Selling?
               </p>
               <h2 className="font-display-tight text-4xl font-normal text-ink sm:text-5xl">
-                Find out what your home is really worth.
+                Find out what your property is really worth.
               </h2>
               <p className="mt-5 max-w-md text-lg leading-relaxed text-ink-soft">
-                Algorithms guess. Our agents walk the neighborhood every week. Get a free,
-                no-obligation valuation from a local expert within 24 hours.
+                Algorithms guess. A local agent looks at your home or land and what has actually
+                sold nearby — in town, on the lake or by the acre. Get a free, no-obligation
+                valuation.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <LinkButton href="/sell#valuation" size="lg">
@@ -263,7 +264,7 @@ export default async function HomePage() {
         <Container>
           <SectionHeading
             eyebrow="Our team"
-            title="Local experts, not call centers"
+            title="Local agents, not call centers"
             action={
               <LinkButton href="/agents" variant="secondary">
                 Meet all {agents.length} agents <ArrowRight />

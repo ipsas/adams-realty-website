@@ -38,9 +38,9 @@ describe("buildWhere", () => {
 
   it("matches ZIP codes exactly and other text with full-text search", () => {
     expect(render({ q: "78704" }).sql).toContain(`"listings"."postal_code" = $`);
-    const text = render({ q: "Virginia-Highland, GA" });
+    const text = render({ q: "Lake Hartwell, GA" });
     expect(text.sql).toContain("websearch_to_tsquery('english',");
-    expect(text.params).toContain("Virginia-Highland");
+    expect(text.params).toContain("Lake Hartwell");
   });
 
   it("uses the GiST-indexed point-in-box expression for map bounds", () => {
@@ -67,6 +67,14 @@ describe("buildWhere", () => {
   });
 });
 
+describe("property types", () => {
+  it("filters on any mix of types, commercial included", () => {
+    const { sql, params } = render({ types: "land,farm_ranch,commercial" });
+    expect(sql).toContain(`"listings"."property_type" in ($`);
+    expect(params.slice(-3)).toEqual(["land", "farm_ranch", "commercial"]);
+  });
+});
+
 describe("buildOrderBy", () => {
   it("sorts sold results by close date for 'newest'", () => {
     const order = buildOrderBy(parseSearchParams({ mode: "sold", sort: "newest" }));
@@ -76,8 +84,8 @@ describe("buildOrderBy", () => {
 
 describe("normalizeLocationQuery", () => {
   it("strips the state", () => {
-    expect(normalizeLocationQuery("Decatur, GA")).toBe("Decatur");
-    expect(normalizeLocationQuery("Johns Creek, Georgia 30097")).toBe("Johns Creek 30097");
+    expect(normalizeLocationQuery("Royston, GA")).toBe("Royston");
+    expect(normalizeLocationQuery("Flowery Branch, Georgia 30542")).toBe("Flowery Branch 30542");
     expect(normalizeLocationQuery("Gainesville")).toBe("Gainesville");
   });
 });

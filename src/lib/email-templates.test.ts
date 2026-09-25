@@ -18,21 +18,21 @@ const home = (over: Partial<EmailListing> = {}): EmailListing => ({
   bathrooms: 2.5,
   livingAreaSqft: 1850,
   street: "123 Oak St",
-  cityLine: "Decatur, GA 30030",
-  attribution: "Listed by Peachtree Partners",
+  cityLine: "Lavonia, GA 30553",
+  attribution: "Listed by Example Realty Group",
   ...over,
 });
 
 const alert = (over: Partial<Parameters<typeof savedSearchAlertEmail>[0]> = {}) =>
   savedSearchAlertEmail({
-    searchName: "3+ bd homes in Decatur",
+    searchName: "3+ bd homes in Lavonia",
     frequency: "daily",
     mode: "buy",
     newListings: [home()],
     newTotal: 1,
     priceCuts: [],
     priceCutTotal: 0,
-    searchUrl: "https://adams.example/homes?q=Decatur&sort=newest",
+    searchUrl: "https://adams.example/homes?q=Lavonia&sort=newest",
     unsubscribeUrl: "https://adams.example/alerts/unsubscribe?token=abc",
     manageUrl: "https://adams.example/saved",
     ...over,
@@ -63,21 +63,21 @@ describe("savedSearchAlertEmail", () => {
       priceCuts: [home({ badge: { label: "Price cut $15,000", tone: "clay" } })],
       priceCutTotal: 1,
     });
-    expect(email.subject).toBe("12 new homes, 1 price cut: 3+ bd homes in Decatur");
+    expect(email.subject).toBe("12 new homes, 1 price cut: 3+ bd homes in Lavonia");
     expect(email.html).toContain("12 new homes and 1 price cut");
     expect(email.html).toContain("See all 12 new homes");
     expect(email.html).toContain("Price cut $15,000");
-    expect(email.text).toContain("See all 12 new homes: https://adams.example/homes?q=Decatur");
+    expect(email.text).toContain("See all 12 new homes: https://adams.example/homes?q=Lavonia");
   });
 
   it("uses rental and sold wording", () => {
-    expect(alert({ mode: "rent" }).subject).toBe("1 new rental: 3+ bd homes in Decatur");
+    expect(alert({ mode: "rent" }).subject).toBe("1 new rental: 3+ bd homes in Lavonia");
     expect(alert({ mode: "sold", newTotal: 2 }).subject).toBe(
-      "2 homes just sold: 3+ bd homes in Decatur",
+      "2 homes just sold: 3+ bd homes in Lavonia",
     );
     expect(
       alert({ newListings: [], newTotal: 0, priceCuts: [home()], priceCutTotal: 1 }).subject,
-    ).toBe("1 price cut: 3+ bd homes in Decatur");
+    ).toBe("1 price cut: 3+ bd homes in Lavonia");
   });
 
   it("escapes user-provided text in HTML but not in plain text", () => {
@@ -87,7 +87,7 @@ describe("savedSearchAlertEmail", () => {
     expect(email.text).toContain(`<script>alert("x")</script> & co`);
   });
 
-  it("carries the unsubscribe link, the firm's legal name and phone, and disclaimers", () => {
+  it("carries the unsubscribe link, the firm's legal name, phone and address, and disclaimers", () => {
     const email = alert({
       disclaimers: ["MLS data deemed reliable.", "MLS data deemed reliable."],
     });
@@ -95,6 +95,9 @@ describe("savedSearchAlertEmail", () => {
       expect(out).toContain("https://adams.example/alerts/unsubscribe?token=abc");
       expect(out).toContain(escapeHtml(site.legalName));
       expect(out).toContain(site.phone);
+      expect(out).toContain(
+        `${site.address.city}, ${site.address.state} ${site.address.postalCode}`,
+      );
       expect(out).toContain("MLS data deemed reliable.");
     }
     expect(email.html.match(/MLS data deemed reliable/g)).toHaveLength(1);
@@ -102,10 +105,10 @@ describe("savedSearchAlertEmail", () => {
 
   it("renders listing rows with attribution and resized photos", () => {
     const { html, text } = alert();
-    expect(html).toContain("Listed by Peachtree Partners");
+    expect(html).toContain("Listed by Example Realty Group");
     expect(html).toContain("w=504");
     expect(html).toContain("$485,000");
-    expect(text).toContain("3 bd · 2.5 ba · 1,850 sqft\n123 Oak St, Decatur, GA 30030");
+    expect(text).toContain("3 bd · 2.5 ba · 1,850 sqft\n123 Oak St, Lavonia, GA 30553");
     const noPhoto = alert({ newListings: [home({ photoUrl: null })] });
     expect(noPhoto.html).toContain("Photo coming soon");
   });
@@ -136,11 +139,11 @@ describe("savedHomesUpdateEmail", () => {
 describe("leadNotificationEmail", () => {
   it("lays out the lead's details and keeps line breaks in their message", () => {
     const email = leadNotificationEmail({
-      subject: "Tour request: 123 Oak St, Decatur, GA 30030",
+      subject: "Tour request: 123 Oak St, Lavonia, GA 30553",
       type: "tour",
       name: "Jordan Rivers",
       email: "jordan@example.com",
-      phone: "(404) 555-0199",
+      phone: "(706) 555-0199",
       message: "Saturday works.\nWe're pre-approved.",
       tourLabel: "Sat, Sep 26, 10:00 AM EDT",
       tourType: "video",
@@ -150,9 +153,9 @@ describe("leadNotificationEmail", () => {
       dashboardUrl: "https://adams.example/dashboard/leads?focus=1",
       assignedAgentName: "Daniel Brooks",
     });
-    expect(email.subject).toBe("Tour request: 123 Oak St, Decatur, GA 30030");
+    expect(email.subject).toBe("Tour request: 123 Oak St, Lavonia, GA 30553");
     expect(email.html).toContain("Jordan Rivers wants to tour 123 Oak St");
-    expect(email.html).toContain('href="tel:4045550199"');
+    expect(email.html).toContain('href="tel:7065550199"');
     expect(email.html).toContain("Saturday works.<br>We&#39;re pre-approved.");
     expect(email.text).toContain("> Saturday works.\n> We're pre-approved.");
     expect(email.text).toContain("Tour type: Video tour");
@@ -164,26 +167,26 @@ describe("leadNotificationEmail", () => {
 
   it("names the area instead of a withheld address", () => {
     const email = leadNotificationEmail({
-      subject: "Tour request: Decatur, GA 30030",
+      subject: "Tour request: Lavonia, GA 30553",
       type: "tour",
       name: "Jane Doe",
       email: "jane@example.com",
       listing: home({ street: "Address withheld by seller" }),
-      listingPlace: "a home in Decatur, GA 30030",
+      listingPlace: "a home in Lavonia, GA 30553",
       source: "listing",
       dashboardUrl: "https://adams.example/dashboard/leads?focus=2",
     });
-    expect(email.text).toContain("Jane Doe wants to tour a home in Decatur, GA 30030");
+    expect(email.text).toContain("Jane Doe wants to tour a home in Lavonia, GA 30553");
     const question = leadNotificationEmail({
       subject: "New question from Jane Doe",
       type: "question",
       name: "Jane Doe",
       email: "jane@example.com",
-      listingPlace: "a home in Decatur, GA 30030",
+      listingPlace: "a home in Lavonia, GA 30553",
       source: "listing",
       dashboardUrl: "https://adams.example/dashboard/leads?focus=3",
     });
-    expect(question.text).toContain("Jane Doe asked about a home in Decatur, GA 30030");
+    expect(question.text).toContain("Jane Doe asked about a home in Lavonia, GA 30553");
   });
 });
 

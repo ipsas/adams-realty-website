@@ -31,10 +31,10 @@ const columns: { title: string; links: FooterLink[] }[] = [
     ],
   },
   {
-    title: "Neighborhoods",
+    title: "Towns",
     links: [
       ...site.featuredAreas.map((a) => ({ label: a, href: `/homes?q=${encodeURIComponent(a)}` })),
-      { label: "Neighborhood guides", href: "/areas", emphasis: true },
+      { label: "Area guides", href: "/areas", emphasis: true },
     ],
   },
   {
@@ -76,8 +76,8 @@ export function SiteFooter({ disclaimer }: { disclaimer?: string | null }) {
           <div className="col-span-2 max-w-sm sm:col-span-4 lg:col-span-1 lg:pr-4">
             <Logo className="min-h-10 w-fit sm:min-h-0" />
             <p className="mt-4 text-sm leading-relaxed text-muted">
-              Independent and local. No ads, no selling your information — just great agents and
-              every home on the market.
+              Homes, land, farms and lake property across {site.market.region}, from our office in{" "}
+              {site.address.city}. No ads, and we never sell your information.
             </p>
             {/* Each line is 40px tall on phones (tap targets, even rhythm); plain text lines from sm up. */}
             <div className="mt-3.5 text-sm text-ink-soft sm:mt-6">

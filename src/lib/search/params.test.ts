@@ -4,6 +4,7 @@ import {
   describeCriteria,
   parseBounds,
   parseSearchParams,
+  propertyTypeLabel,
   searchHref,
   serializeCriteria,
 } from "./params";
@@ -97,6 +98,19 @@ describe("describeCriteria and countActiveFilters", () => {
     const c = parseSearchParams({ q: "78704", beds: "3", maxPrice: "900000" });
     expect(describeCriteria(c)).toBe("3+ bd homes in 78704 under $900K");
     expect(describeCriteria(parseSearchParams({ mode: "rent", types: "condo" }))).toBe("Condos");
+    expect(describeCriteria(parseSearchParams({ q: "Commerce", types: "commercial" }))).toBe(
+      "Commercial property in Commerce",
+    );
+    expect(describeCriteria(parseSearchParams({ q: "Carnesville", types: "land" }))).toBe(
+      "Land in Carnesville",
+    );
+  });
+
+  it("accepts commercial as a property type and labels it", () => {
+    const c = parseSearchParams({ types: "commercial,farm_ranch,skyscraper" });
+    expect(c.types).toEqual(["commercial", "farm_ranch"]);
+    expect(propertyTypeLabel("commercial")).toBe("Commercial");
+    expect(serializeCriteria(c).get("types")).toBe("commercial,farm_ranch");
   });
 
   it("counts filters but not location, sort or page", () => {

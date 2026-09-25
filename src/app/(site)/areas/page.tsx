@@ -19,8 +19,8 @@ import {
 import { formatNumber } from "@/lib/format";
 
 export const metadata: Metadata = {
-  title: "Neighborhood guides",
-  description: `Live market stats and local context for ${areas.length} neighborhoods and cities across ${site.market.region}: median prices, days on market, recent sales, and the parks and landmarks that define each area.`,
+  title: "Area guides",
+  description: `Live market stats and local context for ${areas.length} towns and lakes across ${site.market.region}: median prices, days on market, recent sales, and the parks, lakes and landmarks that define each area.`,
   alternates: { canonical: "/areas" },
 };
 
@@ -40,14 +40,14 @@ export default async function AreasPage(props: PageProps<"/areas">) {
           <div className="min-w-0">
             <p className="mb-4 flex items-center gap-2 text-xs font-semibold tracking-[0.2em] text-brass-500 uppercase">
               <span className="h-px w-8 bg-brass-500" />
-              Neighborhood guides
+              Area guides
             </p>
             <h1 className="max-w-3xl font-display-tight text-4xl leading-[1.05] font-normal text-ink sm:text-5xl lg:text-6xl">
-              Know the neighborhood <em className="text-brand-700">before you tour.</em>
+              Know the area <em className="text-brand-700">before you tour.</em>
             </h1>
             <p className="mt-6 max-w-2xl text-lg leading-relaxed text-muted">
               Live numbers from the homes on the market today (asking prices, days on market, recent
-              sales) alongside the parks, trails and landmarks that define each part of{" "}
+              sales) alongside the lakes, parks and landmarks that define each part of{" "}
               {site.market.region}.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
@@ -121,8 +121,19 @@ export default async function AreasPage(props: PageProps<"/areas">) {
                     {formatNumber(items.reduce((n, s) => n + s.stats.forSale, 0))} homes for sale
                   </p>
                 </div>
-                {items.length === 1 ? (
-                  <AreaFeatureCard area={items[0].area} stats={items[0].stats} />
+                {items.length <= 2 ? (
+                  // One or two guides read better as wide features than as a
+                  // couple of lonely tiles in a five-column grid.
+                  <div className="space-y-6">
+                    {items.map((s, i) => (
+                      <AreaFeatureCard
+                        key={s.area.slug}
+                        area={s.area}
+                        stats={s.stats}
+                        priority={gi === 0 && i === 0}
+                      />
+                    ))}
+                  </div>
                 ) : (
                   <AreaGrid items={items} priority={gi === 0} />
                 )}
@@ -143,8 +154,8 @@ export default async function AreasPage(props: PageProps<"/areas">) {
               each guide shows how many homes sit behind every number.
             </p>
             <p>
-              Our guides describe places (parks, landmarks, trails and housing styles), never the
-              people who live there.{" "}
+              Our guides describe places (lakes, parks, landmarks and historic downtowns), never
+              the people who live there.{" "}
               <Link href="/fair-housing" className="font-medium text-brand-700 hover:underline">
                 Our fair housing commitment
               </Link>

@@ -62,7 +62,7 @@ function tabFor(status: string): StatusTab | null {
 
 const normalize = (s: string) => s.toLowerCase().replace(/[#.,]/g, " ").replace(/\s+/g, " ").trim();
 
-/** Every word of the query must appear in the street, unit or city ("oak decatur" matches). */
+/** Every word of the query must appear in the street, unit or city ("oak royston" matches). */
 export function matchesAddress(row: Filterable, q: string): boolean {
   const words = normalize(q).split(" ").filter(Boolean);
   if (!words.length) return true;

@@ -166,8 +166,8 @@ export function SearchView({
               }}
             />
             <p className="pb-6 text-center text-xs text-faint">
-              Listing data is refreshed from the MLS every 15 minutes. Information deemed reliable
-              but not guaranteed.
+              Listing data comes from {site.mls.name} and is refreshed regularly. Information deemed
+              reliable but not guaranteed.
             </p>
           </div>
         </div>

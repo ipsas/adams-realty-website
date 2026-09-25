@@ -8,6 +8,7 @@ import { Container } from "@/components/ui/section";
 import { site } from "@/config/site";
 import { getAgentBySlug } from "@/lib/agents/queries";
 import { getSession } from "@/lib/auth/session";
+import { cn } from "@/lib/cn";
 import { getAgentListings } from "@/lib/listings/queries";
 
 export async function generateMetadata(props: PageProps<"/agents/[slug]">): Promise<Metadata> {
@@ -25,6 +26,12 @@ export default async function AgentPage(props: PageProps<"/agents/[slug]">) {
   if (!data) notFound();
   const { agent: a, stats } = data;
   const [listings, session] = await Promise.all([getAgentListings(a.id), getSession()]);
+  // Only figures we actually have: years in the business is left off until the agent supplies it.
+  const tiles: [string, number][] = [
+    ["Active listings", stats.active],
+    ["Recent sales", stats.sold],
+  ];
+  if (a.yearsExperience !== null) tiles.unshift(["Years in real estate", a.yearsExperience]);
 
   return (
     <Container className="py-12">
@@ -57,12 +64,13 @@ export default async function AgentPage(props: PageProps<"/agents/[slug]">) {
             </div>
           </div>
 
-          <dl className="mt-10 grid grid-cols-3 gap-px overflow-hidden rounded-2xl border border-line bg-line">
-            {[
-              ["Years in real estate", a.yearsExperience ?? "—"],
-              ["Active listings", stats.active],
-              ["Recent sales", stats.sold],
-            ].map(([label, value]) => (
+          <dl
+            className={cn(
+              "mt-10 grid gap-px overflow-hidden rounded-2xl border border-line bg-line",
+              tiles.length === 3 ? "grid-cols-3" : "grid-cols-2",
+            )}
+          >
+            {tiles.map(([label, value]) => (
               <div key={label} className="bg-surface px-5 py-4">
                 <dd className="text-2xl font-semibold text-ink tabular">{value}</dd>
                 <dt className="text-xs text-muted">{label}</dt>
@@ -71,13 +79,15 @@ export default async function AgentPage(props: PageProps<"/agents/[slug]">) {
           </dl>
 
           {a.bio && (
-            <p className="mt-10 max-w-2xl text-lg leading-relaxed whitespace-pre-line text-ink-soft">{a.bio}</p>
+            <p className="mt-10 max-w-2xl text-lg leading-relaxed whitespace-pre-line text-ink-soft">
+              {a.bio}
+            </p>
           )}
 
           <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-3">
             {[
               ["Specialties", a.specialties],
-              ["Neighborhoods", a.serviceAreas],
+              ["Areas served", a.serviceAreas],
               ["Languages", a.languages],
             ].map(([label, items]) =>
               (items as string[]).length ? (

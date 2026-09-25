@@ -125,7 +125,7 @@ export function nextAvailableSlug(base: string, taken: ReadonlySet<string>): str
   }
 }
 
-/** "Buckhead, sandy springs,, Buckhead" → ["Buckhead", "sandy springs"] (trimmed, de-duplicated). */
+/** "Royston, lake hartwell,, Royston" → ["Royston", "lake hartwell"] (trimmed, de-duplicated). */
 export function splitList(value: string | null | undefined): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -139,7 +139,7 @@ export function splitList(value: string | null | undefined): string[] {
   return out;
 }
 
-/** US numbers are stored as (404) 555-0142 so every profile reads the same; others are kept as typed. */
+/** US numbers are stored as (706) 555-0142 so every profile reads the same; others are kept as typed. */
 export function formatPhone(raw: string): string {
   const digits = raw.replace(/\D/g, "");
   const d = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;

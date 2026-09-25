@@ -1,6 +1,13 @@
 import Link from "next/link";
 import { Photo } from "@/components/ui/photo";
-import { formatBaths, formatDate, formatNumber, formatPrice, formatStreet } from "@/lib/format";
+import {
+  formatBaths,
+  formatDate,
+  formatLot,
+  formatNumber,
+  formatPrice,
+  formatStreet,
+} from "@/lib/format";
 import { formatRatio } from "@/lib/areas/stats";
 import type { CardRow } from "@/lib/listings/card";
 
@@ -29,16 +36,7 @@ export function RecentSales({ sales }: { sales: CardRow[] }) {
               />
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium text-ink">{formatStreet(s)}</p>
-                <p className="mt-0.5 truncate text-sm text-muted">
-                  {s.propertyType === "land" ? (
-                    "Land"
-                  ) : (
-                    <>
-                      {s.bedrooms ?? "—"} bd · {formatBaths(s.bathrooms)} ba ·{" "}
-                      {formatNumber(s.livingAreaSqft)} sqft
-                    </>
-                  )}
-                </p>
+                <p className="mt-0.5 truncate text-sm text-muted">{saleFacts(s)}</p>
                 <p className="mt-0.5 text-xs text-muted sm:hidden">
                   Sold {formatDate(s.closeDate)}
                 </p>
@@ -61,4 +59,22 @@ export function RecentSales({ sales }: { sales: CardRow[] }) {
       })}
     </ul>
   );
+}
+
+/** "3 bd · 2 ba · 1,850 sqft", or the facts that matter for land, farms and commercial. */
+function saleFacts(s: CardRow): string {
+  const lot = s.lotSizeSqft ? formatLot(s.lotSizeSqft).replace(" lot", "") : null;
+  switch (s.propertyType) {
+    case "land":
+      return lot ? `Land · ${lot}` : "Land";
+    case "commercial":
+      return s.livingAreaSqft
+        ? `Commercial · ${formatNumber(s.livingAreaSqft)} sqft`
+        : "Commercial";
+    case "farm_ranch":
+      if (s.bedrooms === null) return lot ? `Farm · ${lot}` : "Farm";
+      return `${s.bedrooms} bd · ${formatBaths(s.bathrooms)} ba${lot ? ` · ${lot}` : ""}`;
+    default:
+      return `${s.bedrooms ?? "—"} bd · ${formatBaths(s.bathrooms)} ba · ${formatNumber(s.livingAreaSqft)} sqft`;
+  }
 }

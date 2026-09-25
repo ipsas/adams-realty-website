@@ -18,10 +18,10 @@ test("admins can create a listing that appears in public search", async ({ page 
   await page.selectOption("#status", "active");
   await page.fill("#listPrice", "515000");
   await page.fill("#addressLine1", street);
-  await page.fill("#city", "Decatur");
-  await page.fill("#postalCode", "30030");
-  await page.fill("#latitude", "33.77");
-  await page.fill("#longitude", "-84.29");
+  await page.fill("#city", "Royston");
+  await page.fill("#postalCode", "30662");
+  await page.fill("#latitude", "34.2871");
+  await page.fill("#longitude", "-83.1101");
   await page.getByRole("button", { name: "Create listing" }).click();
   await expect(page).toHaveURL(/\/dashboard\/listings\/[0-9a-f-]+\?created=1/);
 

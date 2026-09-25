@@ -33,7 +33,8 @@ export function AuthShell({
         <div className="absolute inset-0 bg-gradient-to-t from-ink/70 via-transparent to-transparent" />
         <blockquote className="absolute inset-x-10 bottom-10 text-white">
           <p className="font-display-tight text-3xl leading-snug font-light">
-            “Save homes, get alerts the minute something fits, and keep every note in one place.”
+            “Save homes, get an email when something new fits, and keep every favorite in one
+            place.”
           </p>
           <footer className="mt-4 text-sm text-white/70">Your free Adams Realty account</footer>
         </blockquote>

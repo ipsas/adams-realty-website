@@ -19,20 +19,23 @@ import { LocationSearch } from "./location-search";
 import { MoreFilters } from "./more-filters";
 import { SaveSearchButton } from "./save-search-button";
 
+// Low steps matter here: land, manufactured homes and small-town houses often list under $200K.
 const SALE_PRICES = [
-  100_000, 200_000, 300_000, 400_000, 500_000, 600_000, 700_000, 800_000, 900_000, 1_000_000,
-  1_250_000, 1_500_000, 2_000_000, 3_000_000, 5_000_000, 10_000_000,
+  50_000, 100_000, 150_000, 200_000, 250_000, 300_000, 400_000, 500_000, 600_000, 750_000,
+  1_000_000, 1_500_000, 2_000_000, 3_000_000, 5_000_000,
 ];
 const RENT_PRICES = [
-  1_000, 1_500, 2_000, 2_500, 3_000, 3_500, 4_000, 5_000, 6_000, 8_000, 10_000, 15_000,
+  500, 750, 1_000, 1_250, 1_500, 2_000, 2_500, 3_000, 4_000, 5_000, 7_500, 10_000,
 ];
 const VISIBLE_TYPES: PropertyTypeValue[] = [
   "single_family",
-  "condo",
-  "townhouse",
-  "multi_family",
   "land",
+  "farm_ranch",
   "manufactured",
+  "townhouse",
+  "condo",
+  "multi_family",
+  "commercial",
 ];
 
 export function FilterBar({
@@ -100,7 +103,7 @@ export function FilterBar({
 
           <Popover label={typeLabel(c)} active={!!c.types?.length}>
             <fieldset>
-              <legend className="mb-3 text-sm font-semibold text-ink">Home type</legend>
+              <legend className="mb-3 text-sm font-semibold text-ink">Property type</legend>
               <div className="grid grid-cols-2 gap-2">
                 {VISIBLE_TYPES.map((t) => {
                   const checked = c.types?.includes(t) ?? false;
@@ -305,7 +308,7 @@ function bedBathLabel(c: SearchCriteria): string {
 }
 
 function typeLabel(c: SearchCriteria): string {
-  if (!c.types?.length) return "Home type";
+  if (!c.types?.length) return "Property type";
   if (c.types.length === 1) return propertyTypeLabel(c.types[0]);
-  return `Home type (${c.types.length})`;
+  return `Property type (${c.types.length})`;
 }

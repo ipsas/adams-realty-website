@@ -7,12 +7,12 @@ import { listings } from "@/db/schema";
  * access), so the rules are unit-tested by rendering the SQL.
  *
  * - Every area matches its name and aliases against `listings.neighborhood`.
- * - An area that *is* a city ("Decatur", "Roswell") also matches `listings.city`,
- *   so listings the feed didn't tag with a neighborhood still count. Intown
- *   neighborhoods never fall back to "Atlanta" — that would report the whole
- *   city's market as, say, Grant Park's.
+ * - An area that *is* a town ("Royston", "Toccoa") also matches `listings.city`,
+ *   so the many rural and small-town listings with no subdivision name still
+ *   count. A lake never falls back to its post-office town — that would report
+ *   all of Hartwell's market as Lake Hartwell's.
  * - Comparisons ignore case and punctuation on both sides (`normalizeAreaName`
- *   and its SQL twin below), so "Virginia Highland" in a feed still matches.
+ *   and its SQL twin below), so "Hartwell-Lake" in a feed still matches.
  */
 export function areaMatchKeys(area: Pick<Area, "name" | "city" | "aliases">): {
   neighborhoods: string[];
@@ -81,15 +81,23 @@ export function areaKeyRows(
   });
 }
 
-/** Normalized names an agent's `serviceAreas` entry may use for this area. */
-export function serviceAreaKeys(area: Pick<Area, "name" | "city" | "aliases">): string[] {
+/**
+ * Normalized names an agent's `serviceAreas` entry may use for this area: the
+ * area's own names, or any of its counties ("Franklin County"), since agents
+ * in a rural market often describe their territory by county.
+ */
+export function serviceAreaKeys(
+  area: Pick<Area, "name" | "city" | "aliases" | "counties">,
+): string[] {
   const keys = areaMatchKeys(area);
-  return unique([...keys.neighborhoods, ...keys.cities]);
+  const counties = area.counties.map((c) => normalizeAreaName(`${c} County`));
+  return unique([...keys.neighborhoods, ...keys.cities, ...counties]);
 }
 
 /**
  * The guide for a listing's location, if we publish one: its neighborhood
- * first, then its city ("Decatur"). A bare "Atlanta" never matches.
+ * first ("Lake Hartwell"), then its city ("Royston"). A city without a guide
+ * never matches.
  */
 export function guideForLocation(
   neighborhood: string | null | undefined,

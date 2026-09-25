@@ -16,7 +16,7 @@ const at = (iso: string) => new Date(iso);
 
 describe("localClock", () => {
   it("reads the wall clock in the market time zone", () => {
-    // 2am UTC on Tuesday Sep 29 is still 10pm Monday in Atlanta (EDT, UTC-4).
+    // 2am UTC on Tuesday Sep 29 is still 10pm Monday in Georgia (EDT, UTC-4).
     expect(localClock(at("2026-09-29T02:00:00Z"), TZ)).toEqual({
       date: "2026-09-28",
       hour: 22,

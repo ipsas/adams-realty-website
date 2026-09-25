@@ -20,7 +20,7 @@ export function shortHash(s: string): string {
 
 /**
  * Address-first slugs read well in search results and shared links:
- * `/homes/1204-dogwood-ln-ne-atlanta-ga-30306-a1b2c3d`.
+ * `/homes/1204-dogwood-ln-royston-ga-30662-a1b2c3d`.
  */
 export function listingSlug(l: {
   addressLine1: string;

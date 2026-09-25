@@ -73,13 +73,22 @@ const SUBTYPE_MAP: Record<string, PropertyType> = {
   lot: "land",
 };
 
-const TYPE_FALLBACK: Record<string, { type: PropertyType; rent: boolean }> = {
+/**
+ * RESO `PropertyType` → our type and transaction. `fixed` types ignore the
+ * subtype: a Commercial Sale record's "Apartment" or "Multi Family" subtype is
+ * an apartment building or a lot sold as investment real estate, not a condo
+ * or a duplex someone lives in.
+ */
+const TYPE_FALLBACK: Record<string, { type: PropertyType; rent: boolean; fixed?: boolean }> = {
   residential: { type: "single_family", rent: false },
   "residential lease": { type: "single_family", rent: true },
   "residential income": { type: "multi_family", rent: false },
   land: { type: "land", rent: false },
   farm: { type: "farm_ranch", rent: false },
   "manufactured in park": { type: "manufactured", rent: false },
+  "commercial sale": { type: "commercial", rent: false, fixed: true },
+  "commercial lease": { type: "commercial", rent: true, fixed: true },
+  "business opportunity": { type: "commercial", rent: false, fixed: true },
 };
 
 // --- small coercion helpers -------------------------------------------------
@@ -161,11 +170,33 @@ export function mapPropertyType(
   const fallback = TYPE_FALLBACK[t];
   if (!fallback) return null;
   const sub = str(subType)?.toLowerCase();
-  const fromSub = sub ? SUBTYPE_MAP[sub] : undefined;
+  const fromSub = sub && !fallback.fixed ? SUBTYPE_MAP[sub] : undefined;
   return {
     propertyType: fromSub ?? fallback.type,
     transactionType: fallback.rent ? "rent" : "sale",
   };
+}
+
+/** Months per `LeaseAmountFrequency` period (RESO lookup values). */
+const LEASE_MONTHS: Record<string, number> = {
+  monthly: 1,
+  "bi-monthly": 2,
+  quarterly: 3,
+  "semi-annually": 6,
+  annually: 12,
+};
+
+/**
+ * Rentals are stored as a monthly rent. Commercial leases often quote the rent
+ * per year (or quarter) in `LeaseAmount` + `LeaseAmountFrequency`; when both are
+ * present and the frequency is one we can convert, use them. Otherwise fall
+ * back to `ListPrice`, which residential feeds already send as monthly rent.
+ */
+export function monthlyLeaseAmount(p: ResoProperty): number | null {
+  const amount = num(p.LeaseAmount);
+  const months = LEASE_MONTHS[str(p.LeaseAmountFrequency)?.toLowerCase() ?? ""];
+  if (amount === null || amount <= 0 || !months) return null;
+  return Math.round(amount / months);
 }
 
 export function formatStreet(p: ResoProperty): string | null {
@@ -177,7 +208,7 @@ export function formatStreet(p: ResoProperty): string | null {
     str(p.StreetDirSuffix),
   ].filter(Boolean);
   if (parts.length >= 2) return parts.join(" ");
-  // Fall back to the first line of UnparsedAddress ("123 Main St, Decatur, GA 30030").
+  // Fall back to the first line of UnparsedAddress ("123 Main St, Royston, GA 30662").
   const unparsed = str(p.UnparsedAddress);
   return unparsed ? unparsed.split(",")[0].trim() : null;
 }
@@ -249,8 +280,12 @@ export function mapResoProperty(p: ResoProperty): MapResult {
   const types = mapPropertyType(p.PropertyType, p.PropertySubType);
   if (!types) return { ok: false, listingKey, reason: "unsupported_property_type" };
 
-  const listPrice = int(p.ListPrice);
-  if (listPrice === null || listPrice <= 0)
+  const commercialLease = types.transactionType === "rent" && types.propertyType === "commercial";
+  const listPrice = (commercialLease ? monthlyLeaseAmount(p) : null) ?? int(p.ListPrice);
+  // A commercial lease priced under $100 is a per-square-foot rate ("14" for
+  // $14/sf/yr). Without the rentable area and basis it can't become a monthly
+  // rent, and showing "$14/mo" would mislead, so treat it as unpriced.
+  if (listPrice === null || listPrice <= 0 || (commercialLease && listPrice < 100))
     return { ok: false, listingKey, reason: "missing_price" };
 
   const street = formatStreet(p);

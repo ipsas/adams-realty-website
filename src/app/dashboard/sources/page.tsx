@@ -1,5 +1,6 @@
 import { SyncButton } from "@/components/dashboard/lead-controls";
 import { PageHeader } from "@/components/dashboard/ui";
+import { site } from "@/config/site";
 import { can } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { cn } from "@/lib/cn";
@@ -15,7 +16,7 @@ export default async function SourcesPage() {
     <>
       <PageHeader
         title="MLS feeds"
-        description="Listing sources and sync health. Feeds sync automatically every 15 minutes; off-market listings are purged daily."
+        description="Listing sources and sync health. Feeds sync on the schedule in vercel.json (daily on Vercel's free plan); off-market listings are purged daily."
       />
       <div className="space-y-4">
         {sources.map((s) => (
@@ -74,7 +75,7 @@ export default async function SourcesPage() {
             )}
             {s.kind === "reso_web_api" && !s.config.baseUrl && (
               <p className="mt-4 rounded-2xl bg-sunken px-4 py-3 text-xs leading-relaxed text-muted">
-                Not connected yet. Once your IDX agreement with FMLS or Georgia MLS is approved, set
+                Not connected yet. Once your IDX agreement with {site.mls.name} is approved, set
                 this source&apos;s <code>config.baseUrl</code> and add its credentials as
                 environment variables (see README → “Connecting your MLS”).
               </p>

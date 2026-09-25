@@ -13,7 +13,7 @@ const OPTIONS: { value: AreaSort; label: string }[] = [
 /** URL-driven sort for /areas (works without JavaScript; the default stays at the canonical URL). */
 export function AreaSortNav({ current }: { current: AreaSort }) {
   return (
-    <nav aria-label="Sort neighborhoods" className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+    <nav aria-label="Sort area guides" className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
       <ul className="flex w-max gap-1 rounded-xl bg-sunken p-1">
         {OPTIONS.map((o) => {
           const active = o.value === current;

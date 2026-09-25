@@ -19,7 +19,7 @@ import {
 
 describe("market dates", () => {
   it("uses the market's calendar date, not UTC", () => {
-    // 11:30pm in Atlanta is already the next day in UTC.
+    // 11:30pm in Georgia is already the next day in UTC.
     expect(marketToday(new Date("2026-09-26T03:30:00Z"))).toBe("2026-09-25");
     expect(marketToday(new Date("2026-09-26T04:30:00Z"))).toBe("2026-09-26");
   });
@@ -38,15 +38,16 @@ describe("mixSegments", () => {
   });
 
   it("keeps fixed bucket order and colors, drops empty buckets", () => {
-    const segs = mixSegments({ singleFamily: 0, townhouse: 1, condo: 3, other: 0 });
-    expect(segs.map((s) => s.key)).toEqual(["townhouse", "condo"]);
-    expect(segs.map((s) => s.pct)).toEqual([25, 75]);
+    const segs = mixSegments({ houses: 0, land: 3, attached: 0, other: 1 });
+    expect(segs.map((s) => s.key)).toEqual(["land", "other"]);
+    expect(segs.map((s) => s.label)).toEqual(["Land & farms", "Commercial & other"]);
+    expect(segs.map((s) => s.pct)).toEqual([75, 25]);
   });
 
   it("rounds shares so they always sum to 100", () => {
-    const thirds = mixSegments({ singleFamily: 1, townhouse: 1, condo: 1, other: 0 });
+    const thirds = mixSegments({ houses: 1, land: 1, attached: 1, other: 0 });
     expect(thirds.reduce((n, s) => n + s.pct, 0)).toBe(100);
-    const lopsided = mixSegments({ singleFamily: 5, townhouse: 1, condo: 1, other: 0 });
+    const lopsided = mixSegments({ houses: 5, land: 1, attached: 1, other: 0 });
     expect(lopsided.map((s) => s.pct)).toEqual([72, 14, 14]);
     expect(lopsided.reduce((n, s) => n + s.pct, 0)).toBe(100);
   });
@@ -85,10 +86,10 @@ describe("sorting and grouping", () => {
     return { area, stats: { ...emptyStats(), forSale, medianListPrice } };
   };
   const list = [
-    summary("midtown", 5, 600_000),
-    summary("buckhead", 8, 1_400_000),
-    summary("roswell", 0, null),
-    summary("lake-lanier", 7, 900_000),
+    summary("royston", 5, 310_000),
+    summary("lake-hartwell", 8, 745_000),
+    summary("toccoa", 0, null),
+    summary("lake-lanier", 7, 1_150_000),
   ];
 
   it("parses unknown sorts to the grouped default", () => {
@@ -100,58 +101,65 @@ describe("sorting and grouping", () => {
 
   it("sorts by homes for sale, then name", () => {
     expect(sortAreas(list, "homes").map((s) => s.area.slug)).toEqual([
-      "buckhead",
+      "lake-hartwell",
       "lake-lanier",
-      "midtown",
-      "roswell",
+      "royston",
+      "toccoa",
     ]);
   });
 
   it("sinks areas without a median to the end of price sorts, both directions", () => {
     expect(sortAreas(list, "price-high").map((s) => s.area.slug)).toEqual([
-      "buckhead",
       "lake-lanier",
-      "midtown",
-      "roswell",
+      "lake-hartwell",
+      "royston",
+      "toccoa",
     ]);
     expect(sortAreas(list, "price-low").map((s) => s.area.slug)).toEqual([
-      "midtown",
+      "royston",
+      "lake-hartwell",
       "lake-lanier",
-      "buckhead",
-      "roswell",
+      "toccoa",
     ]);
   });
 
   it("sorts by name and leaves config order alone for region", () => {
     expect(sortAreas(list, "name").map((s) => s.area.name)).toEqual([
-      "Buckhead",
+      "Lake Hartwell",
       "Lake Lanier",
-      "Midtown",
-      "Roswell",
+      "Royston",
+      "Toccoa",
     ]);
     expect(sortAreas(list, "region")).toEqual(list);
   });
 
   it("groups by region in the configured order", () => {
-    const groups = groupByRegion(list);
-    expect(groups.map((g) => g.region.id)).toEqual(["intown", "north", "lake"]);
-    expect(groups[0].items.map((s) => s.area.slug)).toEqual(["midtown", "buckhead"]);
+    const groups = groupByRegion([...list, summary("lavonia", 3, 289_000)]);
+    expect(groups.map((g) => g.region.id)).toEqual([
+      "franklin",
+      "hartwell",
+      "stephens",
+      "hall-gwinnett",
+    ]);
+    expect(groups[0].items.map((s) => s.area.slug)).toEqual(["royston", "lavonia"]);
   });
 });
 
 describe("titles and meta descriptions", () => {
-  const midtown = areas.find((a) => a.slug === "midtown")!;
-  const decatur = areas.find((a) => a.slug === "decatur")!;
+  const lake = areas.find((a) => a.slug === "lake-hartwell")!;
+  const royston = areas.find((a) => a.slug === "royston")!;
 
-  it("names neighborhoods with their city and cities with the state", () => {
-    expect(placeName(midtown)).toBe("Midtown, Atlanta");
-    expect(placeName(decatur)).toBe("Decatur, GA");
+  it("names lakes with their town and towns with the state", () => {
+    expect(placeName(lake)).toBe("Lake Hartwell, Hartwell");
+    expect(placeName(royston)).toBe("Royston, GA");
   });
 
   it("leads with live numbers and stays within the limit at a word boundary", () => {
-    const d = metaDescription(midtown, { forSale: 6, medianListPrice: 802_500 });
+    const d = metaDescription(lake, { forSale: 6, medianListPrice: 802_500 });
     expect(
-      d.startsWith("Midtown, Atlanta: 6 homes for sale, median list price $803K. Midtown is"),
+      d.startsWith(
+        "Lake Hartwell, Hartwell: 6 homes for sale, median list price $803K. Lake Hartwell is",
+      ),
     ).toBe(true);
     expect(d.length).toBeLessThanOrEqual(160);
     expect(d.endsWith("…")).toBe(true);
@@ -159,8 +167,8 @@ describe("titles and meta descriptions", () => {
   });
 
   it("skips the numbers when nothing is for sale", () => {
-    const d = metaDescription(decatur, { forSale: 0, medianListPrice: null });
-    expect(d.startsWith("Decatur, GA: Decatur is an independent city")).toBe(true);
+    const d = metaDescription(royston, { forSale: 0, medianListPrice: null });
+    expect(d.startsWith("Royston, GA: Royston is a small city")).toBe(true);
   });
 
   it("returns short text untouched", () => {

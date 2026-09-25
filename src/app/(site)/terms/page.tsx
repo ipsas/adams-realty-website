@@ -175,8 +175,9 @@ export default function TermsPage() {
               reliable but are not guaranteed and should be independently verified.
             </li>
             <li>
-              <strong>Timing.</strong> Listings sync from each MLS every 15 minutes, so a home can
-              sell or change between updates. Property pages show when their data was last updated.
+              <strong>Timing.</strong> Listings sync from each MLS on a regular schedule, so a home
+              can sell or change between updates. Property pages show when their data was last
+              updated.
             </li>
             <li>
               <strong>Ownership.</strong> Listing data belongs to the MLS and its participants and

@@ -12,18 +12,48 @@ test("home page shows live market stats and featured homes", async ({ page }) =>
 });
 
 test("search is URL-driven and filters results", async ({ page }) => {
-  await page.goto("/homes?q=Decatur&beds=3");
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText(/Homes for sale in Decatur/);
+  await page.goto("/homes?q=Royston&beds=3");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(/Homes for sale in Royston/);
   await expect(page.locator("[aria-live=polite]")).toContainText(/\d+ results?/);
   const addresses = await page.getByTestId("card-address").allTextContents();
   expect(addresses.length).toBeGreaterThan(0);
-  for (const a of addresses) expect(a).toContain("Decatur");
+  for (const a of addresses) expect(a).toContain("Royston, GA 30662");
 });
 
-test("location autocomplete suggests neighborhoods", async ({ page }) => {
+test("property type filter finds commercial listings", async ({ page }) => {
+  await page.goto("/homes?types=commercial&mode=rent");
+  await expect(page.locator("[aria-live=polite]")).toContainText(/\d+ results?/);
+  const cards = page.locator("article");
+  await expect(cards.first()).toBeVisible();
+  await cards.first().locator("a").first().click();
+  await expect(page).toHaveURL(/\/homes\/[a-z0-9-]+$/);
+  await expect(page.locator("main")).toContainText(
+    /Retail|Office|Mixed Use|Restaurant|Warehouse|Industrial/,
+  );
+});
+
+test("location autocomplete suggests lakes and towns", async ({ page }) => {
   await page.goto("/homes");
-  await page.getByRole("combobox", { name: "Search by location" }).fill("Virgin");
-  await expect(page.getByRole("option", { name: /Virginia-Highland/ })).toBeVisible();
+  const box = page.getByRole("combobox", { name: "Search by location" });
+  await box.fill("Lake Hart");
+  await expect(page.getByRole("option", { name: /Lake Hartwell/ }).first()).toBeVisible();
+  await box.fill("Flowery");
+  await expect(page.getByRole("option", { name: /Flowery Branch/ }).first()).toBeVisible();
+});
+
+test("area guides are grouped by county and link to a town guide", async ({ page }) => {
+  await page.goto("/areas");
+  await expect(page.getByRole("heading", { level: 2, name: "Franklin County" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 2, name: "Lake Hartwell & Hart County" }),
+  ).toBeVisible();
+  await page
+    .getByRole("link", { name: /^Royston/ })
+    .first()
+    .click();
+  await expect(page).toHaveURL(/\/areas\/royston$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Royston");
+  await expect(page.getByText("Andrea Anderegg").first()).toBeVisible();
 });
 
 test("property page has price, costs, attribution and structured data", async ({ page }) => {

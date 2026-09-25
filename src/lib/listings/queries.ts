@@ -229,11 +229,14 @@ export async function getLocationSuggestions(term: string): Promise<Suggestion[]
   ];
 }
 
-/** Areas with the most active listings, for the homepage "Explore neighborhoods" grid. */
+/**
+ * Towns with the most active listings, for the homepage "Towns across…" grid.
+ * Grouped by city: in a small-town and rural market the subdivision field is
+ * often blank or "None", so it's no use as an area name.
+ */
 export async function getPopularAreas(limit = 8) {
   return db
     .select({
-      neighborhood: listings.neighborhood,
       city: listings.city,
       count: sql<number>`count(*)::int`,
       medianPrice: sql<number>`percentile_cont(0.5) within group (order by ${listings.listPrice})::int`,
@@ -249,9 +252,8 @@ export async function getPopularAreas(limit = 8) {
         eq(listings.transactionType, "sale"),
       ),
     )
-    .groupBy(listings.neighborhood, listings.city)
-    .having(sql`${listings.neighborhood} is not null`)
-    .orderBy(sql`count(*) desc`)
+    .groupBy(listings.city)
+    .orderBy(sql`count(*) desc`, listings.city)
     .limit(limit);
 }
 

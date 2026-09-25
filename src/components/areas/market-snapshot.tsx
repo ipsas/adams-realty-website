@@ -186,7 +186,7 @@ function TypeMix({ stats, rentalsHref }: { stats: AreaStats; rentalsHref: string
         </>
       ) : (
         <p className="mt-5 text-sm leading-relaxed text-muted">
-          When homes list here, you&apos;ll see the mix of houses, townhomes and condos.
+          When homes list here, you&apos;ll see the mix of houses, land and more.
         </p>
       )}
       {stats.rentals > 0 && (

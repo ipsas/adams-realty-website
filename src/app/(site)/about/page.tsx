@@ -15,7 +15,7 @@ import { PageIntro } from "@/components/content/page-intro";
 import { Avatar } from "@/components/ui/avatar";
 import { LinkButton } from "@/components/ui/button";
 import { Container, SectionHeading } from "@/components/ui/section";
-import { site } from "@/config/site";
+import { serviceCounties, site } from "@/config/site";
 import { getAgents } from "@/lib/agents/queries";
 
 /*
@@ -27,7 +27,7 @@ import { getAgents } from "@/lib/agents/queries";
 
 export const metadata: Metadata = {
   title: "About us",
-  description: `${site.legalName} is a Georgia real estate brokerage serving ${site.market.region}. No ads, no selling your information — local agents and the full picture on every home.`,
+  description: `${site.legalName} is a real estate brokerage in ${site.address.city}, Georgia, serving ${site.market.region}: homes, land, farms, lake and commercial property. No ads, no selling your information.`,
   alternates: { canonical: "/about" },
 };
 
@@ -50,7 +50,7 @@ const COMMITMENTS = [
   {
     icon: RefreshCcw,
     title: "Straight from the MLS",
-    body: "Listings refresh from the MLS every 15 minutes, and every home credits the brokerage that listed it.",
+    body: `Listings come directly from ${site.mls.name}, and every home credits the brokerage that listed it.`,
   },
   {
     icon: MapPinned,
@@ -81,15 +81,15 @@ const BUYING = [
 const SELLING = [
   {
     title: "Get a free valuation",
-    body: "Tell us about your home and a local agent prepares a no-obligation opinion of its value.",
+    body: "Tell us about your home or land and a local agent prepares a no-obligation opinion of its value.",
   },
   {
     title: "Price it right",
-    body: "A pricing plan built from recent comparable sales in your neighborhood, not an algorithm's guess.",
+    body: "A pricing plan built from recent comparable sales nearby, not an algorithm's guess.",
   },
   {
     title: "Market it well",
-    body: "Listed on the MLS so it reaches buyers' agents and home-search sites — and shown here, where buyers see no ads.",
+    body: `Listed on ${site.mls.name} so it reaches buyers' agents and home-search sites — and shown here, where buyers see no ads.`,
   },
   {
     title: "Negotiate to close",
@@ -115,6 +115,7 @@ const ROUTING = [
 export default async function AboutPage() {
   const agents = await getAgents();
   const based = addressLines(site.address).join(" · ");
+  const broker = agents.find((a) => a.name === site.broker.name);
 
   const glance = [
     { label: "Company", value: site.legalName },
@@ -124,8 +125,21 @@ export default async function AboutPage() {
         ? `Georgia Real Estate Commission · Firm license ${site.brokerLicense}`
         : "Georgia Real Estate Commission",
     },
-    { label: "Based in", value: based },
-    { label: "Serving", value: `${site.market.region} and across ${site.market.stateName}` },
+    {
+      label: "Broker",
+      value: broker ? (
+        <Link
+          href={`/agents/${broker.slug}`}
+          className="underline decoration-white/30 underline-offset-4 hover:decoration-white"
+        >
+          {site.broker.name}
+        </Link>
+      ) : (
+        site.broker.name
+      ),
+    },
+    { label: "Office", value: based },
+    { label: "Serving", value: `${site.market.region}, including ${serviceCounties}` },
     ...(agents.length > 0
       ? [
           {
@@ -134,7 +148,7 @@ export default async function AboutPage() {
           },
         ]
       : []),
-    { label: "Office hours", value: site.hours },
+    ...(site.hours ? [{ label: "Office hours", value: site.hours }] : []),
   ];
 
   return (
@@ -147,7 +161,7 @@ export default async function AboutPage() {
             We sell homes, <em className="font-light text-brass-100">not your attention.</em>
           </>
         }
-        lead={`${site.legalName} is a Georgia real estate brokerage helping people buy, sell and rent homes across ${site.market.region}. We built this site to work the way we do: straightforward, local and on your side.`}
+        lead={`${site.legalName} is a real estate brokerage in ${site.address.city}, helping people buy and sell homes, land, farms, lake and commercial property across ${site.market.region}. We built this site to work the way we do: straightforward, local and on your side.`}
         aside={
           <dl className="divide-y divide-white/10 rounded-3xl bg-white/[0.04] px-6 py-2 ring-1 ring-white/10 backdrop-blur-sm sm:px-8">
             {glance.map((g) => (

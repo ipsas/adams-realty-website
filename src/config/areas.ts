@@ -1,25 +1,28 @@
 /**
- * Neighborhood guides (/areas). One entry per area our listings cover.
+ * Area guides (/areas). One entry per town or lake our listings cover, across
+ * the Northeast Georgia counties Adams Realty serves.
  *
  * Copy rules — these pages are advertising, so the Fair Housing Act applies:
- * describe places (parks, landmarks, trails, housing styles, transit), never
- * the people who live there. No claims about schools, crime or "who the area
- * suits". Stick to widely documented, verifiable facts about public places.
+ * describe places (parks, landmarks, lakes, rivers, historic downtowns,
+ * highways), never the people who live there. No claims about schools, crime
+ * or "who the area suits". Stick to widely documented, verifiable facts about
+ * public places; if a fact can't be checked, leave it out.
  *
  * Listings are matched to an area by neighborhood name (plus `aliases` for the
- * spellings MLS feeds use). An area that *is* a city (Decatur, Roswell, …) also
- * matches on city, which picks up listings the feed didn't tag with a
- * neighborhood. See `src/lib/areas/match.ts`.
+ * spellings MLS feeds use). An area that *is* a town (Royston, Toccoa, …) also
+ * matches on city, which picks up the many rural and small-town listings that
+ * carry no subdivision name. Lakes match on neighborhood only. See
+ * `src/lib/areas/match.ts`.
  */
 
-export type AreaRegion = "intown" | "north" | "west-south" | "lake";
+export type AreaRegion = "franklin" | "hartwell" | "stephens" | "madison-jackson" | "hall-gwinnett";
 
 export type Area = {
   slug: string;
   name: string;
-  /** Municipality shown with the name; also the city matched for city-level areas. */
+  /** Municipality shown with the name; also the city matched for town-level areas. */
   city: string;
-  /** County names without the word "County". Most areas have one; Lake Lanier touches five. */
+  /** County names without the word "County". Most towns have one; lakes and some towns span several. */
   counties: string[];
   region: AreaRegion;
   /** 2–3 factual sentences about the place. */
@@ -27,380 +30,355 @@ export type Area = {
   highlights: string[];
   /** Practical, buyer-relevant context portals leave out (permits, taxes, rules). */
   goodToKnow?: string;
-  /** Other spellings of the neighborhood seen in MLS data. */
+  /** Other spellings of the area seen in MLS data. */
   aliases?: string[];
   center: { lat: number; lng: number };
 };
 
 export const areaRegions: { id: AreaRegion; label: string; blurb: string }[] = [
   {
-    id: "intown",
-    label: "Intown Atlanta",
+    id: "franklin",
+    label: "Franklin County",
     blurb:
-      "Historic city neighborhoods and Decatur next door, close to the BeltLine, MARTA and Atlanta's big parks.",
+      "Home to our Royston office: small towns, farmland and timber along GA 17 and I-85, with Lake Hartwell to the north and east.",
   },
   {
-    id: "north",
-    label: "North suburbs",
-    blurb: "Cities along GA-400 and the Chattahoochee River, from Brookhaven to Johns Creek.",
+    id: "hartwell",
+    label: "Lake Hartwell & Hart County",
+    blurb: "Hartwell, the Hart County seat, and the Georgia shoreline of Lake Hartwell.",
   },
   {
-    id: "west-south",
-    label: "West & South",
-    blurb: "Cobb County's historic town centers, plus Peachtree City's path-connected villages.",
+    id: "stephens",
+    label: "Stephens County",
+    blurb: "Toccoa and Martin, in the Blue Ridge foothills near the Tugaloo River.",
   },
   {
-    id: "lake",
-    label: "Lake Lanier",
-    blurb: "Waterfront and lake-access homes on metro Atlanta's big reservoir.",
+    id: "madison-jackson",
+    label: "Madison & Jackson Counties",
+    blurb:
+      "County seats with historic courthouses, rolling farmland, and the I-85 towns of Commerce, Jefferson and Braselton.",
+  },
+  {
+    id: "hall-gwinnett",
+    label: "Hall & Gwinnett",
+    blurb: "Lake Lanier and the cities around it, from Gainesville to Buford and Dacula.",
   },
 ];
 
 export const areas: Area[] = [
-  // ── Intown Atlanta ─────────────────────────────────────────────────────────
+  // ── Franklin County ────────────────────────────────────────────────────────
   {
-    slug: "midtown",
-    name: "Midtown",
-    city: "Atlanta",
-    counties: ["Fulton"],
-    region: "intown",
+    slug: "royston",
+    name: "Royston",
+    city: "Royston",
+    counties: ["Franklin", "Hart", "Madison"],
+    region: "franklin",
     description:
-      "Midtown is Atlanta's arts and business district, stretching along Peachtree Street between Downtown and Buckhead. Piedmont Park, the Atlanta Botanical Garden and the Woodruff Arts Center anchor the neighborhood, and homes range from high-rise condos to early-1900s houses on tree-lined side streets.",
+      "Royston is a small city where Franklin, Hart and Madison counties meet, at the crossroads of U.S. 29 and GA 8. It was the hometown of baseball Hall of Famer Ty Cobb, and the Ty Cobb Museum on Cook Street tells his story.",
     highlights: [
-      "Piedmont Park and the Atlanta Botanical Garden",
-      "Woodruff Arts Center, home of the High Museum of Art and the Atlanta Symphony Orchestra",
-      "The Fox Theatre on Peachtree Street",
-      "Three MARTA rail stations: North Avenue, Midtown and Arts Center",
+      "The Ty Cobb Museum, open since 1998",
+      "Victoria Bryant State Park, with an 18-hole golf course, campground and trails",
+      "U.S. 29 toward Hartwell and Athens, with GA 17 skirting the city",
+      "Adams Realty, Inc., at 69 Mill Street",
     ],
-    center: { lat: 33.7838, lng: -84.383 },
+    center: { lat: 34.2871, lng: -83.1101 },
   },
   {
-    slug: "buckhead",
-    name: "Buckhead",
-    city: "Atlanta",
-    counties: ["Fulton"],
-    region: "intown",
+    slug: "franklin-springs",
+    name: "Franklin Springs",
+    city: "Franklin Springs",
+    counties: ["Franklin"],
+    region: "franklin",
     description:
-      "Buckhead covers much of north Atlanta, from the high-rises along Peachtree Road to wooded residential streets off West Paces Ferry Road. It's known for shopping at Lenox Square and Phipps Plaza, the Atlanta History Center, and Chastain Park.",
+      "Franklin Springs is a small city in southern Franklin County, just west of Royston. It's home to Emmanuel University, founded here in 1919 as the Franklin Springs Institute, and 502-acre Victoria Bryant State Park is close by.",
     highlights: [
-      "Atlanta History Center and the historic Swan House",
-      "Lenox Square and Phipps Plaza",
-      "Chastain Park, with an amphitheater, walking trail and public golf course",
-      "Buckhead (Red Line) and Lenox (Gold Line) MARTA stations",
+      "Emmanuel University's campus",
+      "Victoria Bryant State Park and its Highland Walk golf course",
+      "A few minutes from Royston and U.S. 29",
     ],
-    center: { lat: 33.843, lng: -84.378 },
+    center: { lat: 34.2848, lng: -83.1435 },
   },
   {
-    slug: "virginia-highland",
-    name: "Virginia-Highland",
-    city: "Atlanta",
-    counties: ["Fulton"],
-    region: "intown",
+    slug: "canon",
+    name: "Canon",
+    city: "Canon",
+    counties: ["Franklin", "Hart"],
+    region: "franklin",
     description:
-      "Virginia-Highland takes its name from the intersection of Virginia and North Highland Avenues, one of several small commercial pockets lined with restaurants and shops. Its streets are filled with early-20th-century bungalows and cottages, with Piedmont Park and the BeltLine Eastside Trail a short walk west.",
+      "Canon is a small city on GA 17 that straddles the Franklin–Hart county line. Known for years as West Bowersville, it was chartered under its current name in 1902.",
     highlights: [
-      "Restaurants and shops clustered around Virginia Ave and N Highland Ave",
-      "John Howell Park",
-      "Craftsman bungalows from the 1910s and 1920s",
-      "Virginia-Highland Summerfest each summer",
+      "Chartered as Canon in 1902",
+      "GA 17 north to Lavonia and I-85, south to Royston",
+      "A short drive to Victoria Bryant State Park",
     ],
-    aliases: ["Virginia Highland", "Virginia Highlands"],
-    center: { lat: 33.781, lng: -84.353 },
+    center: { lat: 34.3462, lng: -83.1107 },
   },
   {
-    slug: "inman-park",
-    name: "Inman Park",
-    city: "Atlanta",
-    counties: ["Fulton"],
-    region: "intown",
+    slug: "lavonia",
+    name: "Lavonia",
+    city: "Lavonia",
+    counties: ["Franklin", "Hart"],
+    region: "franklin",
     description:
-      "Inman Park was Atlanta's first planned suburb, laid out in the late 1880s and linked to downtown by the city's first electric streetcar line. Today it's known for restored Victorian homes, winding streets and parks, and quick access to the BeltLine Eastside Trail and Krog Street Market.",
+      "Lavonia sits on I-85 at Exit 173 in northern Franklin County, near the South Carolina line. GA 17 runs through its downtown, and Tugaloo State Park, on a wooded peninsula in Lake Hartwell, is a short drive away.",
     highlights: [
-      "Victorian-era homes and Springvale Park",
-      "Inman Park Festival and Tour of Homes each spring",
-      "BeltLine Eastside Trail and Krog Street Market",
-      "Inman Park/Reynoldstown MARTA station",
+      "Tugaloo State Park on Lake Hartwell",
+      "I-85 at Exit 173",
+      "Downtown Lavonia along GA 17",
     ],
-    goodToKnow:
-      "Inman Park is a City of Atlanta historic district, so exterior changes and additions go through the Urban Design Commission's review. Ask us what's allowed before you plan a renovation.",
-    center: { lat: 33.758, lng: -84.352 },
+    center: { lat: 34.4359, lng: -83.1068 },
   },
   {
-    slug: "old-fourth-ward",
-    name: "Old Fourth Ward",
-    city: "Atlanta",
-    counties: ["Fulton"],
-    region: "intown",
+    slug: "carnesville",
+    name: "Carnesville",
+    city: "Carnesville",
+    counties: ["Franklin"],
+    region: "franklin",
     description:
-      "Old Fourth Ward sits just east of Downtown and includes the Sweet Auburn historic district and the Martin Luther King Jr. National Historical Park. The BeltLine Eastside Trail runs through it, connecting Historic Fourth Ward Park and Ponce City Market with historic homes, townhomes and newer lofts.",
+      "Carnesville has been the Franklin County seat since 1806. Its 1906 Neoclassical courthouse, listed on the National Register of Historic Places, anchors a small downtown, and I-85 passes just northwest of town.",
     highlights: [
-      "Martin Luther King Jr. National Historical Park, including his birth home and Ebenezer Baptist Church",
-      "Historic Fourth Ward Park, with its stormwater pond, playground and skatepark",
-      "Ponce City Market in the former Sears, Roebuck building",
-      "BeltLine Eastside Trail",
+      "The 1906 Franklin County Courthouse",
+      "I-85 access at Exits 164 and 166",
+      "GA 59, GA 106 and GA 145 through town",
+      "Pasture, timber and farmland in every direction",
     ],
-    aliases: ["Old 4th Ward", "O4W"],
-    center: { lat: 33.764, lng: -84.372 },
-  },
-  {
-    slug: "grant-park",
-    name: "Grant Park",
-    city: "Atlanta",
-    counties: ["Fulton"],
-    region: "intown",
-    description:
-      "Grant Park is named for Atlanta's oldest city park, home to Zoo Atlanta, and has one of the city's largest collections of Victorian homes and Craftsman bungalows. Historic Oakland Cemetery lies just to the north, and the neighborhood hosts the Summer Shade Festival each year.",
-    highlights: [
-      "Grant Park, Atlanta's oldest city park",
-      "Zoo Atlanta",
-      "Victorian homes and Craftsman bungalows",
-      "Historic Oakland Cemetery nearby",
-    ],
-    goodToKnow:
-      "Grant Park is a City of Atlanta historic district, so exterior changes and additions go through the Urban Design Commission's review. Ask us what's allowed before you plan a renovation.",
-    center: { lat: 33.737, lng: -84.37 },
-  },
-  {
-    slug: "kirkwood",
-    name: "Kirkwood",
-    city: "Atlanta",
-    counties: ["DeKalb"],
-    region: "intown",
-    description:
-      "Kirkwood is an east Atlanta neighborhood of early-20th-century bungalows and cottages that was once its own town. Bessie Branham Park, a small business district and the redeveloped Pullman Yard give it a village feel, with Decatur a short drive away.",
-    highlights: [
-      "Bessie Branham Park",
-      "Pullman Yard, a historic rail yard turned arts and events venue",
-      "A compact business district along Hosea L. Williams Drive",
-      "East Lake MARTA station nearby",
-    ],
-    center: { lat: 33.754, lng: -84.319 },
-  },
-  {
-    slug: "east-atlanta",
-    name: "East Atlanta",
-    city: "Atlanta",
-    counties: ["DeKalb"],
-    region: "intown",
-    description:
-      "East Atlanta centers on East Atlanta Village, a compact business district at Flat Shoals and Glenwood Avenues known for independent restaurants, bars and live music. Surrounding streets mix bungalows, ranches and newer infill homes, and parts of the 1864 Battle of Atlanta were fought here.",
-    highlights: [
-      "East Atlanta Village restaurants and music venues",
-      "Brownwood Park",
-      "The annual East Atlanta Strut festival",
-      "Battle of Atlanta historical markers",
-    ],
-    aliases: ["East Atlanta Village", "EAV"],
-    center: { lat: 33.74, lng: -84.344 },
-  },
-  {
-    slug: "candler-park",
-    name: "Candler Park",
-    city: "Atlanta",
-    counties: ["DeKalb"],
-    region: "intown",
-    description:
-      "Candler Park is named for its park, land donated by Coca-Cola magnate Asa Candler, which includes a nine-hole public golf course, a pool and playing fields. Craftsman bungalows fill its streets, and the McLendon Avenue shops and Freedom Park trail are close at hand.",
-    highlights: [
-      "Candler Park's golf course, pool and fields",
-      "Shops and restaurants along McLendon Avenue",
-      "Freedom Park and its multi-use trail",
-      "Edgewood/Candler Park MARTA station",
-    ],
-    center: { lat: 33.765, lng: -84.338 },
-  },
-  {
-    slug: "decatur",
-    name: "Decatur",
-    city: "Decatur",
-    counties: ["DeKalb"],
-    region: "intown",
-    description:
-      "Decatur is an independent city just east of Atlanta and the seat of DeKalb County. Its walkable downtown square surrounds the Historic DeKalb Courthouse, with restaurants, shops, a MARTA station and a busy calendar of festivals.",
-    highlights: [
-      "Downtown square and the Historic DeKalb Courthouse",
-      "Decatur MARTA station on the Blue Line",
-      "Agnes Scott College's historic campus",
-      "Oakhurst's neighborhood restaurants and shops",
-    ],
-    goodToKnow:
-      "Homes inside Decatur's city limits pay City of Decatur property taxes on top of DeKalb County's, and many homes with a Decatur mailing address are actually in unincorporated DeKalb. We'll confirm which side of the line a home is on.",
-    center: { lat: 33.7748, lng: -84.2963 },
+    center: { lat: 34.3701, lng: -83.2352 },
   },
 
-  // ── North suburbs ──────────────────────────────────────────────────────────
+  // ── Lake Hartwell & Hart County ────────────────────────────────────────────
   {
-    slug: "brookhaven",
-    name: "Brookhaven",
-    city: "Brookhaven",
-    counties: ["DeKalb"],
-    region: "north",
+    slug: "hartwell",
+    name: "Hartwell",
+    city: "Hartwell",
+    counties: ["Hart"],
+    region: "hartwell",
     description:
-      "Brookhaven, incorporated as a city in 2012, sits just north of Buckhead along Peachtree Road. It's home to Oglethorpe University, Murphey Candler Park and Blackburn Park, with homes ranging from mid-century ranches to new construction and townhomes near the MARTA station.",
+      "Hartwell is the Hart County seat, named, like the county, for Revolutionary War heroine Nancy Hart. Its downtown commercial historic district holds buildings from about 1879 to 1925, and Lake Hartwell's shoreline reaches the edge of town.",
     highlights: [
-      "Murphey Candler Park and its lake",
-      "Blackburn Park and its tennis center",
-      "Oglethorpe University",
-      "Brookhaven/Oglethorpe MARTA station",
+      "The Hartwell Commercial Historic District",
+      "Hartwell Lakeside Park, formerly Hart State Park, on Lake Hartwell",
+      "The Center of the World monument on U.S. 29, about three miles south of town",
+      "Hart County, the only Georgia county named for a woman",
     ],
-    center: { lat: 33.8651, lng: -84.3366 },
+    center: { lat: 34.3529, lng: -82.9321 },
   },
   {
-    slug: "sandy-springs",
-    name: "Sandy Springs",
-    city: "Sandy Springs",
-    counties: ["Fulton"],
-    region: "north",
+    slug: "lake-hartwell",
+    name: "Lake Hartwell",
+    city: "Hartwell",
+    counties: ["Hart", "Franklin", "Stephens"],
+    region: "hartwell",
     description:
-      "Sandy Springs, incorporated as a city in 2005, stretches north from Atlanta to the Chattahoochee River along GA-400. City Springs, its civic center, hosts a performing arts center and year-round events, and the river's national recreation area offers trails and paddling.",
+      "Lake Hartwell is a 56,000-acre Army Corps of Engineers reservoir on the Georgia–South Carolina line, created by Hartwell Dam on the Savannah River and completed in 1962. Its 962 miles of shoreline take in the Savannah, Tugaloo and Seneca rivers, and on the Georgia side, Hart, Franklin and Stephens counties all have lakefront.",
     highlights: [
-      "City Springs and the Sandy Springs Performing Arts Center",
-      "Chattahoochee River National Recreation Area trails at Island Ford",
-      "Morgan Falls Overlook Park",
-      "Heritage Sandy Springs and the city's namesake spring",
-    ],
-    center: { lat: 33.9304, lng: -84.3733 },
-  },
-  {
-    slug: "roswell",
-    name: "Roswell",
-    city: "Roswell",
-    counties: ["Fulton"],
-    region: "north",
-    description:
-      "Roswell is one of metro Atlanta's oldest towns, founded in the 1830s around a cotton mill on Vickery Creek. Its historic district includes antebellum homes such as Bulloch Hall and Barrington Hall, and Canton Street is lined with restaurants and shops.",
-    highlights: [
-      "Canton Street's restaurants and shops",
-      "Bulloch Hall and Barrington Hall",
-      "Vickery Creek trails and the Roswell Mill ruins",
-      "Chattahoochee Nature Center and Riverside Park",
-    ],
-    center: { lat: 34.0232, lng: -84.3616 },
-  },
-  {
-    slug: "alpharetta",
-    name: "Alpharetta",
-    city: "Alpharetta",
-    counties: ["Fulton"],
-    region: "north",
-    description:
-      "Alpharetta is a north Fulton city on the GA-400 corridor, with a rebuilt downtown and the Avalon mixed-use district. The Big Creek Greenway runs through town, and Wills Park offers ball fields, a pool and an equestrian center.",
-    highlights: [
-      "Downtown Alpharetta's City Center",
-      "Avalon's shops, restaurants and events",
-      "Big Creek Greenway trail",
-      "Wills Park and its equestrian center",
-    ],
-    center: { lat: 34.0754, lng: -84.2941 },
-  },
-  {
-    slug: "johns-creek",
-    name: "Johns Creek",
-    city: "Johns Creek",
-    counties: ["Fulton"],
-    region: "north",
-    description:
-      "Johns Creek, incorporated as a city in 2006, sits along the Chattahoochee River in northeast Fulton County. It's largely residential, with established subdivisions and golf communities, Newtown Park, and the Autrey Mill Nature Preserve.",
-    highlights: [
-      "Autrey Mill Nature Preserve and Heritage Center",
-      "Newtown Park",
-      "Chattahoochee River access through the national recreation area",
-      "Atlanta Athletic Club, host of several major golf championships",
-    ],
-    center: { lat: 34.0289, lng: -84.1986 },
-  },
-
-  // ── West & South ───────────────────────────────────────────────────────────
-  {
-    slug: "marietta",
-    name: "Marietta",
-    city: "Marietta",
-    counties: ["Cobb"],
-    region: "west-south",
-    description:
-      "Marietta is the Cobb County seat, centered on a historic town square with Glover Park, the Strand Theatre and a weekend farmers market. Kennesaw Mountain National Battlefield Park lies just northwest of downtown, and historic homes line many surrounding streets.",
-    highlights: [
-      "Marietta Square, Glover Park and the Earl Smith Strand Theatre",
-      "Kennesaw Mountain National Battlefield Park",
-      "Marietta Square Farmers Market",
-      "Marietta National Cemetery",
-    ],
-    center: { lat: 33.9526, lng: -84.5499 },
-  },
-  {
-    slug: "smyrna",
-    name: "Smyrna",
-    city: "Smyrna",
-    counties: ["Cobb"],
-    region: "west-south",
-    description:
-      "Smyrna is a Cobb County city just northwest of Atlanta, with a walkable downtown built around Market Village. The Silver Comet Trail begins here, and Truist Park and The Battery Atlanta are a few minutes away.",
-    highlights: [
-      "Market Village and downtown Smyrna",
-      "The Silver Comet Trail's eastern trailhead",
-      "Minutes from Truist Park and The Battery Atlanta",
-      "The Jonquil Festival, a nod to Smyrna's nickname, the Jonquil City",
-    ],
-    center: { lat: 33.884, lng: -84.5144 },
-  },
-  {
-    slug: "kennesaw",
-    name: "Kennesaw",
-    city: "Kennesaw",
-    counties: ["Cobb"],
-    region: "west-south",
-    description:
-      "Kennesaw grew up along the Western & Atlantic Railroad and takes its name from nearby Kennesaw Mountain. Its downtown includes the Southern Museum of Civil War and Locomotive History, home of the General locomotive, and Kennesaw State University's main campus is nearby.",
-    highlights: [
-      "Kennesaw Mountain National Battlefield Park trails",
-      "Southern Museum of Civil War and Locomotive History",
-      "Swift-Cantrell Park",
-      "Downtown along the historic railroad",
-    ],
-    center: { lat: 34.0234, lng: -84.6155 },
-  },
-  {
-    slug: "peachtree-city",
-    name: "Peachtree City",
-    city: "Peachtree City",
-    counties: ["Fayette"],
-    region: "west-south",
-    description:
-      "Peachtree City is a planned community in Fayette County, about 30 miles south of downtown Atlanta. It's known for roughly 100 miles of multi-use paths traveled by golf cart, bike and foot, plus Lake Peachtree, Lake Kedron and The Fred amphitheater.",
-    highlights: [
-      "About 100 miles of golf-cart and multi-use paths",
-      "Lake Peachtree and Lake Kedron",
-      "The Fred, the city's outdoor amphitheater",
-      "Village shopping centers connected by the path system",
+      "Tugaloo State Park on a wooded peninsula",
+      "Hartwell Lakeside Park in Hartwell",
+      "Corps of Engineers parks with boat ramps, beaches and campgrounds",
+      "Hartwell Dam, seven miles below where the Tugaloo and Seneca rivers meet",
     ],
     goodToKnow:
-      "Golf carts driven on Peachtree City's path system must be registered with the city, and path rules apply. Many buyers budget for a cart along with the home.",
-    center: { lat: 33.3968, lng: -84.5958 },
+      "Lake Hartwell's shoreline is federal land managed by the Army Corps of Engineers. Private docks are allowed only where the Corps' Shoreline Management Plan marks the shoreline for limited development, and each needs a shoreline use permit, so ask us about a home's dock status before you fall for the view.",
+    aliases: ["Hartwell Lake"],
+    center: { lat: 34.4, lng: -82.9 },
   },
 
-  // ── Lake Lanier ────────────────────────────────────────────────────────────
+  // ── Stephens County ────────────────────────────────────────────────────────
+  {
+    slug: "toccoa",
+    name: "Toccoa",
+    city: "Toccoa",
+    counties: ["Stephens"],
+    region: "stephens",
+    description:
+      "Toccoa is the Stephens County seat, in the foothills of the Blue Ridge. Toccoa Falls, a 186-foot waterfall on the campus of the University of Toccoa Falls, is one of the tallest free-falling waterfalls east of the Mississippi. During World War II, paratroopers trained at Camp Toccoa at the foot of Currahee Mountain.",
+    highlights: [
+      "Toccoa Falls, 186 feet high",
+      "The Currahee Military Museum in the historic train depot",
+      "Currahee Mountain, where Camp Toccoa's paratroopers trained",
+      "Travelers Rest State Historic Site, an early-1800s stagecoach inn near the Tugaloo River",
+    ],
+    center: { lat: 34.5773, lng: -83.3324 },
+  },
+  {
+    slug: "martin",
+    name: "Martin",
+    city: "Martin",
+    counties: ["Stephens"],
+    region: "stephens",
+    description:
+      "Martin is a small town in eastern Stephens County on GA 17, about 11 miles southeast of Toccoa and 6 miles northwest of Lavonia. Lake Hartwell and Tugaloo State Park are a short drive east.",
+    highlights: [
+      "GA 17 to Toccoa and Lavonia",
+      "I-85 about 6 miles away at Lavonia",
+      "Lake Hartwell and Tugaloo State Park nearby",
+    ],
+    center: { lat: 34.4868, lng: -83.1851 },
+  },
+
+  // ── Madison & Jackson Counties ─────────────────────────────────────────────
+  {
+    slug: "danielsville",
+    name: "Danielsville",
+    city: "Danielsville",
+    counties: ["Madison"],
+    region: "madison-jackson",
+    description:
+      "Danielsville is the Madison County seat, and its town square is centered on the 1901 Madison County Courthouse. Crawford Long, the first physician to use ether as an anesthetic in surgery, was born here in 1815.",
+    highlights: [
+      "The 1901 Madison County Courthouse, listed on the National Register of Historic Places",
+      "Crawford W. Long's birthplace",
+      "U.S. 29 toward Athens and Royston",
+    ],
+    center: { lat: 34.1243, lng: -83.2213 },
+  },
+  {
+    slug: "comer",
+    name: "Comer",
+    city: "Comer",
+    counties: ["Madison"],
+    region: "madison-jackson",
+    description:
+      "Comer is a small city in eastern Madison County. Nearby Watson Mill Bridge State Park is named for its 229-foot covered bridge, built in 1885 across the South Fork of the Broad River and the longest original-site covered bridge in Georgia.",
+    highlights: [
+      "Watson Mill Bridge State Park and its 1885 covered bridge",
+      "Trails along the South Fork of the Broad River",
+      "GA 72 toward Athens and Elberton",
+    ],
+    center: { lat: 34.0637, lng: -83.1254 },
+  },
+  {
+    slug: "commerce",
+    name: "Commerce",
+    city: "Commerce",
+    counties: ["Jackson"],
+    region: "madison-jackson",
+    description:
+      "Commerce is a Jackson County city on I-85 and U.S. 441, founded in the early 1800s as Harmony Grove and renamed in 1909. Its historic downtown sits on one side of the interstate, with Tanger Outlets across it at Banks Crossing.",
+    highlights: [
+      "Tanger Outlets at Banks Crossing, I-85 Exit 149",
+      "Historic downtown Commerce",
+      "Atlanta Dragway nearby",
+    ],
+    center: { lat: 34.204, lng: -83.4571 },
+  },
+  {
+    slug: "jefferson",
+    name: "Jefferson",
+    city: "Jefferson",
+    counties: ["Jackson"],
+    region: "madison-jackson",
+    description:
+      "Jefferson is the Jackson County seat. Its 1879 courthouse, one of the first built in Georgia after the Civil War, is now a museum and visitor center, and the Crawford W. Long Museum downtown tells the story of the doctor who first used ether as an anesthetic here in 1842.",
+    highlights: [
+      "The historic 1879 Jackson County Courthouse",
+      "The Crawford W. Long Museum",
+      "I-85 access via U.S. 129",
+    ],
+    center: { lat: 34.1171, lng: -83.5724 },
+  },
+  {
+    slug: "braselton",
+    name: "Braselton",
+    city: "Braselton",
+    counties: ["Jackson", "Gwinnett", "Hall", "Barrow"],
+    region: "madison-jackson",
+    description:
+      "Braselton, incorporated in 1916, is a town of about 34 square miles that spreads across Jackson, Gwinnett, Hall and Barrow counties along I-85. It's home to Château Élan Winery & Resort, and Michelin Raceway Road Atlanta, home of the Petit Le Mans endurance race, is just north of town.",
+    highlights: [
+      "Château Élan Winery & Resort",
+      "Michelin Raceway Road Atlanta, a 2.54-mile road course",
+      "Historic downtown Braselton",
+      "I-85 at Exits 126 and 129",
+    ],
+    center: { lat: 34.1093, lng: -83.7627 },
+  },
+
+  // ── Hall & Gwinnett ────────────────────────────────────────────────────────
+  {
+    slug: "gainesville",
+    name: "Gainesville",
+    city: "Gainesville",
+    counties: ["Hall"],
+    region: "hall-gwinnett",
+    description:
+      "Gainesville is the Hall County seat, on the eastern shore of Lake Lanier. Lake Lanier Olympic Park hosted the rowing and canoe/kayak events of the 1996 Olympic Games, and the historic downtown square is lined with shops and restaurants.",
+    highlights: [
+      "Lake Lanier Olympic Park",
+      "The historic downtown square",
+      "Brenau University",
+      "The Poultry Capital of the World monument",
+    ],
+    center: { lat: 34.2979, lng: -83.8241 },
+  },
+  {
+    slug: "flowery-branch",
+    name: "Flowery Branch",
+    city: "Flowery Branch",
+    counties: ["Hall"],
+    region: "hall-gwinnett",
+    description:
+      "Flowery Branch is a Hall County city on the shore of Lake Lanier, established in 1874 along the new Air-Line railroad. It's home to the Atlanta Falcons' headquarters and training facility, and its historic train depot is now a museum.",
+    highlights: [
+      "The historic train depot museum and caboose",
+      "The Atlanta Falcons' headquarters and training facility",
+      "Lake Lanier parks and marinas nearby",
+      "I-985 access",
+    ],
+    center: { lat: 34.1851, lng: -83.9252 },
+  },
   {
     slug: "lake-lanier",
     name: "Lake Lanier",
-    city: "Buford",
+    city: "Gainesville",
     counties: ["Hall", "Forsyth", "Gwinnett", "Dawson", "Lumpkin"],
-    region: "lake",
+    region: "hall-gwinnett",
     description:
-      "Lake Sidney Lanier is a U.S. Army Corps of Engineers reservoir on the Chattahoochee River, formed by Buford Dam in the 1950s. With hundreds of miles of shoreline, it's metro Atlanta's lake for boating and waterfront living, from Lake Lanier Islands near Buford to quiet coves farther north.",
+      "Lake Sidney Lanier is an Army Corps of Engineers reservoir on the Chattahoochee River, formed by Buford Dam in the 1950s. With hundreds of miles of shoreline, it's the region's big lake for boating and waterfront living, from Lake Lanier Islands to quiet coves in Hall County.",
     highlights: [
       "Marinas, boat ramps and swimming beaches in Corps of Engineers parks",
       "Lake Lanier Islands resort",
       "Buford Dam and Lower Pool Park",
-      "Mall of Georgia a short drive away",
+      "Lake Lanier Olympic Park in Gainesville",
     ],
     goodToKnow:
       "Lanier's shoreline is federal land managed by the Army Corps of Engineers. A private dock needs a Corps permit, and not every lakefront lot qualifies, so ask us about a home's dock status before you fall for the view.",
     aliases: ["Lanier", "Lake Sidney Lanier"],
     center: { lat: 34.19, lng: -83.98 },
   },
+  {
+    slug: "buford",
+    name: "Buford",
+    city: "Buford",
+    counties: ["Gwinnett", "Hall"],
+    region: "hall-gwinnett",
+    description:
+      "Buford grew up around the railroad in the 1870s and was long home to the Bona Allen Company, whose leather goods sold nationwide. Its former tannery buildings now hold the Tannery Row artist studios downtown, and the Mall of Georgia and Lake Lanier Islands are a short drive away.",
+    highlights: [
+      "Tannery Row artist studios and historic downtown Buford",
+      "The Mall of Georgia",
+      "Lake Lanier Islands resort",
+      "The historic Bona Allen Mansion",
+    ],
+    center: { lat: 34.1207, lng: -84.0044 },
+  },
+  {
+    slug: "dacula",
+    name: "Dacula",
+    city: "Dacula",
+    counties: ["Gwinnett"],
+    region: "hall-gwinnett",
+    description:
+      "Dacula is a city in eastern Gwinnett County, with Winder Highway (U.S. 29 Business) as its main road. Nearby, the Elisha Winn House, built in 1812, served as Gwinnett's first courthouse and is the county's oldest surviving building.",
+    highlights: [
+      "Little Mulberry Park: 890 acres of trails, pastures and two lakes",
+      "The Elisha Winn House (1812)",
+      "U.S. 29 Business through the center of town",
+    ],
+    center: { lat: 33.9887, lng: -83.898 },
+  },
 ];
 
-/** Case/punctuation-insensitive key: "Virginia-Highland" and "virginia highland" match. */
+/** Case/punctuation-insensitive key: "Franklin-Springs" and "franklin springs" match. */
 export function normalizeAreaName(s: string): string {
   return s
     .toLowerCase()
@@ -415,13 +393,13 @@ for (const a of areas) {
   }
 }
 
-/** Finds an area by slug, name or alias ("buckhead", "Old 4th Ward", "Virginia Highland"). */
+/** Finds an area by slug, name or alias ("lake-hartwell", "Hartwell Lake", "FLOWERY BRANCH"). */
 export function findArea(nameOrSlug: string | null | undefined): Area | undefined {
   if (!nameOrSlug) return undefined;
   return byKey.get(normalizeAreaName(nameOrSlug));
 }
 
-/** "Fulton County" / "Hall, Forsyth, Gwinnett, Dawson and Lumpkin counties". */
+/** "Franklin County" / "Hart, Franklin and Stephens counties". */
 export function countyLabel(area: Pick<Area, "counties">): string {
   const c = area.counties;
   if (c.length === 1) return `${c[0]} County`;

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { list, mapPropertyType, mapResoProperty, mapStatus, type ResoProperty } from "./mapper";
+import {
+  list,
+  mapPropertyType,
+  mapResoProperty,
+  mapStatus,
+  monthlyLeaseAmount,
+  type ResoProperty,
+} from "./mapper";
 
 const base: ResoProperty = {
   ListingKey: "abc123",
@@ -94,7 +101,7 @@ describe("mapResoProperty", () => {
     expect(mapResoProperty({ ...base, StandardStatus: "Incomplete" })).toMatchObject({
       reason: "unsupported_status",
     });
-    expect(mapResoProperty({ ...base, PropertyType: "Commercial Sale" })).toMatchObject({
+    expect(mapResoProperty({ ...base, PropertyType: "Mobile Home Park" })).toMatchObject({
       reason: "unsupported_property_type",
     });
   });
@@ -153,6 +160,73 @@ describe("mapResoProperty", () => {
       hoaFrequency: "monthly",
     });
     expect(mapOk({ ...base, AssociationYN: false, AssociationFee: 300 }).hoaFee).toBeNull();
+  });
+});
+
+describe("commercial property", () => {
+  const storefront: ResoProperty = {
+    ...base,
+    PropertyType: "Commercial Sale",
+    PropertySubType: "Retail",
+    ListPrice: 385000,
+    BedroomsTotal: undefined,
+    BathroomsFull: undefined,
+    BathroomsHalf: undefined,
+    LivingArea: 4200,
+  };
+
+  it("maps Commercial Sale to a commercial sale and keeps the subtype for display", () => {
+    const l = mapOk(storefront);
+    expect(l).toMatchObject({
+      propertyType: "commercial",
+      transactionType: "sale",
+      propertySubType: "Retail",
+      listPrice: 385000,
+      livingAreaSqft: 4200,
+      bedrooms: null,
+      bathrooms: null,
+    });
+  });
+
+  it("maps Business Opportunity to a commercial sale", () => {
+    expect(mapPropertyType("Business Opportunity", "Restaurant")).toEqual({
+      propertyType: "commercial",
+      transactionType: "sale",
+    });
+  });
+
+  it("never lets a commercial subtype turn the record residential", () => {
+    expect(mapPropertyType("Commercial Sale", "Multi Family")).toEqual({
+      propertyType: "commercial",
+      transactionType: "sale",
+    });
+    expect(mapPropertyType("Commercial Lease", "Apartment")).toEqual({
+      propertyType: "commercial",
+      transactionType: "rent",
+    });
+  });
+
+  it("maps Commercial Lease to a rental priced per month", () => {
+    const l = mapOk({ ...storefront, PropertyType: "Commercial Lease", ListPrice: 2800 });
+    expect(l).toMatchObject({ propertyType: "commercial", transactionType: "rent", listPrice: 2800 });
+  });
+
+  it("converts yearly and quarterly lease amounts to monthly rent", () => {
+    const lease = { ...storefront, PropertyType: "Commercial Lease", ListPrice: 14 };
+    expect(
+      mapOk({ ...lease, LeaseAmount: 42000, LeaseAmountFrequency: "Annually" }).listPrice,
+    ).toBe(3500);
+    expect(monthlyLeaseAmount({ LeaseAmount: "9000", LeaseAmountFrequency: "Quarterly" })).toBe(
+      3000,
+    );
+    expect(monthlyLeaseAmount({ LeaseAmount: 42000, LeaseAmountFrequency: "Seasonal" })).toBeNull();
+    expect(monthlyLeaseAmount({ LeaseAmountFrequency: "Monthly" })).toBeNull();
+  });
+
+  it("skips leases priced per square foot rather than showing them as monthly rent", () => {
+    expect(
+      mapResoProperty({ ...storefront, PropertyType: "Commercial Lease", ListPrice: 14 }),
+    ).toMatchObject({ ok: false, reason: "missing_price" });
   });
 });
 

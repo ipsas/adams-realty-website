@@ -25,7 +25,7 @@ const DEFAULT_SOLD_WINDOW_DAYS = 365;
 const STATE_SUFFIX = new RegExp(`,?\\s+(${site.market.state}|${site.market.stateName})\\b`, "gi");
 
 /**
- * "Decatur, GA" / "Decatur Georgia 30030" → "Decatur" / "Decatur 30030". The
+ * "Royston, GA" / "Royston Georgia 30662" → "Royston" / "Royston 30662". The
  * state isn't part of the search vector, and every listing is in-market anyway.
  */
 export function normalizeLocationQuery(q: string): string {
@@ -39,7 +39,7 @@ function locationCondition(rawQ: string): SQL | undefined {
   const like = q.replace(/[%_\\]/g, "\\$&");
   return or(
     sql`${listings.searchVector} @@ websearch_to_tsquery('english', ${q})`,
-    // Prefix matches so a half-typed "trav" still finds Travis Heights.
+    // Prefix matches so a half-typed "flowery" still finds Flowery Branch.
     sql`${listings.city} ilike ${like + "%"}`,
     sql`${listings.neighborhood} ilike ${like + "%"}`,
     // Partial street addresses; served by the trigram index.

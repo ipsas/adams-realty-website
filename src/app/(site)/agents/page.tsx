@@ -8,7 +8,7 @@ import { getAgents } from "@/lib/agents/queries";
 
 export const metadata: Metadata = {
   title: "Our agents",
-  description: `Meet the local real estate agents at ${site.name}, serving ${site.market.region} and beyond.`,
+  description: `Meet the real estate agents at ${site.legalName} in ${site.address.city}, serving buyers and sellers across ${site.market.region}.`,
 };
 
 export default async function AgentsPage() {
@@ -20,11 +20,11 @@ export default async function AgentsPage() {
           Our team
         </p>
         <h1 className="font-display-tight text-5xl font-normal text-ink">
-          Local experts, not call centers.
+          Local agents, not call centers.
         </h1>
         <p className="mt-4 text-lg leading-relaxed text-muted">
-          Every {site.name} agent lives and works in the neighborhoods they serve. When you reach
-          out, you talk to one of them — directly.
+          {site.name} agents help people buy and sell homes, land, farms and lake property across{" "}
+          {site.market.region}. When you reach out, you talk to one of them — directly.
         </p>
       </div>
       <div className="mt-12 grid grid-cols-1 gap-x-6 gap-y-12 sm:grid-cols-2 lg:grid-cols-4">

@@ -9,7 +9,7 @@ import {
 const row = (
   status: string,
   addressLine1: string,
-  city = "Atlanta",
+  city = "Lavonia",
   unitNumber: string | null = null,
 ) => ({
   status,
@@ -19,12 +19,12 @@ const row = (
 });
 
 const rows = [
-  row("active", "12 Oak St", "Decatur"),
-  row("active", "400 Peachtree St NE", "Atlanta", "1204"),
-  row("coming_soon", "9 Oakleaf Dr NW"),
-  row("active_under_contract", "77 Pine Ave", "Marietta"),
-  row("pending", "5 Elm Ct", "Decatur"),
-  row("closed", "18 Oak Hollow Rd", "Smyrna"),
+  row("active", "12 Oak St", "Royston"),
+  row("active", "400 Depot St", "Lavonia", "1204"),
+  row("coming_soon", "9 Oakleaf Dr"),
+  row("active_under_contract", "77 Pine Ave", "Hartwell"),
+  row("pending", "5 Elm Ct", "Royston"),
+  row("closed", "18 Oak Hollow Rd", "Toccoa"),
   row("withdrawn", "3 Maple Way"),
   row("expired", "4 Birch Ln"),
   row("canceled", "6 Cedar Pl"),
@@ -65,10 +65,10 @@ describe("listingsHref", () => {
 
 describe("matchesAddress", () => {
   it("needs every word, in any order, across street, unit and city", () => {
-    expect(matchesAddress(rows[0], "oak decatur")).toBe(true);
-    expect(matchesAddress(rows[0], "DECATUR  oak")).toBe(true);
-    expect(matchesAddress(rows[0], "oak marietta")).toBe(false);
-    expect(matchesAddress(rows[1], "peachtree #1204")).toBe(true);
+    expect(matchesAddress(rows[0], "oak royston")).toBe(true);
+    expect(matchesAddress(rows[0], "ROYSTON  oak")).toBe(true);
+    expect(matchesAddress(rows[0], "oak hartwell")).toBe(false);
+    expect(matchesAddress(rows[1], "depot #1204")).toBe(true);
     expect(matchesAddress(rows[1], "")).toBe(true);
   });
 });
@@ -97,7 +97,7 @@ describe("filterListings", () => {
     const { rows: shown, counts } = filterListings(rows, { status: "", q: "oak" });
     expect(shown.map((r) => r.addressLine1)).toEqual([
       "12 Oak St",
-      "9 Oakleaf Dr NW",
+      "9 Oakleaf Dr",
       "18 Oak Hollow Rd",
     ]);
     expect(counts).toMatchObject({ "": 3, active: 1, "coming-soon": 1, sold: 1, "off-market": 0 });

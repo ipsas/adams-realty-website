@@ -14,7 +14,7 @@ export default async function SignUpPage(props: PageProps<"/sign-up">) {
   return (
     <AuthShell
       title="Create your account"
-      subtitle="Free forever. Save homes, track price drops, and get instant alerts."
+      subtitle="Free forever. Save homes, track price drops, and get new-listing alerts."
     >
       <SignUpForm next={next} googleEnabled={!!env.GOOGLE_CLIENT_ID} />
     </AuthShell>

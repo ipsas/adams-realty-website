@@ -39,9 +39,9 @@ type StatsRow = {
   recentSales: number;
   medianSoldPrice: number | null;
   medianSaleToList: number | null;
-  singleFamily: number;
-  townhouse: number;
-  condo: number;
+  houses: number;
+  land: number;
+  attached: number;
   other: number;
   photo: string | null;
   lastUpdated: Date | string | null;
@@ -71,7 +71,9 @@ export async function getAreaStats(
   const sale = sql`${L.transactionType} = 'sale'`;
   const forSale = sql`${sale} and ${L.status} in ('active', 'coming_soon')`;
   const sold = sql`${sale} and ${L.status} = 'closed' and ${L.closeDate} >= ${soldSince}::date`;
-  const hasSqft = sql`${forSale} and ${L.propertyType} <> 'land' and ${L.livingAreaSqft} > 0`;
+  // $/sqft only means something for homes: a farm's price is mostly land, a
+  // storefront's is priced as commercial space.
+  const hasSqft = sql`${forSale} and ${L.propertyType} in ('single_family', 'condo', 'townhouse', 'multi_family', 'manufactured') and ${L.livingAreaSqft} > 0`;
   const onMarket = sql`${sale} and ${L.status} = 'active' and ${L.listDate} <= ${today}::date`;
   const median = (expr: SQL, where: SQL) =>
     sql`percentile_cont(0.5) within group (order by ${expr}) filter (where ${where})`;
@@ -124,10 +126,10 @@ export async function getAreaStats(
         sql`${L.closePrice}::float8 / ${L.listPrice}`,
         sql`${sold} and ${L.closePrice} > 0 and ${L.listPrice} > 0`,
       )} as "medianSaleToList",
-      ${count(sql`${forSale} and ${L.propertyType} = 'single_family'`)} as "singleFamily",
-      ${count(sql`${forSale} and ${L.propertyType} = 'townhouse'`)} as "townhouse",
-      ${count(sql`${forSale} and ${L.propertyType} = 'condo'`)} as "condo",
-      ${count(sql`${forSale} and ${L.propertyType} not in ('single_family', 'townhouse', 'condo')`)} as "other",
+      ${count(sql`${forSale} and ${L.propertyType} in ('single_family', 'manufactured')`)} as "houses",
+      ${count(sql`${forSale} and ${L.propertyType} in ('land', 'farm_ranch')`)} as "land",
+      ${count(sql`${forSale} and ${L.propertyType} in ('townhouse', 'condo')`)} as "attached",
+      ${count(sql`${forSale} and ${L.propertyType} not in ('single_family', 'manufactured', 'land', 'farm_ranch', 'townhouse', 'condo')`)} as "other",
       (array_agg(${L.primaryPhotoUrl} order by ${L.isFeatured} desc, ${L.listPrice} desc)
         filter (where ${forSale} and ${L.primaryPhotoUrl} is not null))[1] as "photo",
       max(${L.updatedAt}) as "lastUpdated"
@@ -152,12 +154,7 @@ export async function getAreaStats(
       recentSales: r.recentSales,
       medianSoldPrice: r.medianSoldPrice,
       medianSaleToList: r.medianSaleToList === null ? null : Number(r.medianSaleToList),
-      mix: {
-        singleFamily: r.singleFamily,
-        townhouse: r.townhouse,
-        condo: r.condo,
-        other: r.other,
-      },
+      mix: { houses: r.houses, land: r.land, attached: r.attached, other: r.other },
       photo: r.photo,
       lastUpdated: r.lastUpdated ? new Date(r.lastUpdated) : null,
     });

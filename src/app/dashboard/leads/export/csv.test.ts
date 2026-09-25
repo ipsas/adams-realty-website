@@ -95,7 +95,7 @@ describe("csvDateTime", () => {
 
 describe("exportFilename", () => {
   it("names the file by brand, filter and local date", () => {
-    // 01:00 UTC on the 26th is still the 25th in Atlanta.
+    // 01:00 UTC on the 26th is still the 25th in Georgia.
     expect(
       exportFilename("Adams Realty", "open", new Date("2026-09-26T01:00:00Z"), "America/New_York"),
     ).toBe("adams-realty-leads-open-2026-09-25.csv");

@@ -39,7 +39,7 @@ export function HeroSearch() {
       <LocationSearch
         size="lg"
         onSearch={(q) => router.push(searchHref({ mode, q: q || undefined }))}
-        placeholder="Search a city, neighborhood, ZIP or address"
+        placeholder="Search a town, ZIP or address"
       />
     </div>
   );

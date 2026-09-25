@@ -66,7 +66,7 @@ type HomeLike = {
   hideAddress?: boolean;
 };
 
-/** "123 Oak St, Decatur" — or "the home in Decatur" when the seller withheld the address. */
+/** "123 Oak St, Royston" — or "the home in Royston" when the seller withheld the address. */
 export function homeLabel(home: HomeLike): string {
   return home.hideAddress ? `the home in ${home.city}` : `${formatStreet(home)}, ${home.city}`;
 }

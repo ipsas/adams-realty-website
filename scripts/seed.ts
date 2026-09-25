@@ -1,9 +1,14 @@
 /**
- * Seeds a development database with a realistic, fictional Metro Atlanta
- * market: one brokerage, eight sample agents, ~170 listings (ours plus a demo
- * MLS feed), open houses, price history, leads and demo logins.
+ * Seeds a development database with a realistic Northeast Georgia market:
+ * Adams Realty's real office and broker, a few sample agents, ~180 FICTIONAL
+ * listings (ours plus a demo MLS feed) across the towns and lakes the firm
+ * serves, open houses, price history, leads and demo logins.
  *
  *   npm run db:seed
+ *
+ * Only the office and Andrea Anderegg's profile are real. Every listing, every
+ * other agent and every other brokerage is a sample for demonstration, and
+ * both demo data sources carry a disclaimer saying so (shown in the footer).
  *
  * Listings are written through the same `upsertListing` pipeline the MLS
  * sync uses, so seeded data exercises the production code path.
@@ -29,28 +34,48 @@ import type { NormalizedListing, NormalizedMedia } from "@/lib/mls/types";
 import {
   AGENTS,
   APPLIANCES,
+  AREAS,
+  COMMERCIAL_DETAILS,
+  COMMERCIAL_PHOTOS,
+  COMMERCIAL_SUFFIXES,
   COMMUNITY,
   CONDO_EXTERIORS,
   CONDO_STREETS,
+  COUNTY_DISTRICTS,
   EXTERIOR_FEATURES,
   EXTERIORS,
+  FARM_DETAILS,
   FLOORING,
   HIGHLIGHTS,
   INTERIOR_FEATURES,
   INTERIORS,
-  NEIGHBORHOODS,
+  LAKE_HIGHLIGHTS,
+  LAKE_LOT_DETAILS,
+  LAKE_PHOTOS,
+  LAKE_SUFFIXES,
+  LAND_DETAILS,
+  LAND_PHOTOS,
   OPENERS,
   OTHER_BROKERAGES,
+  RURAL_SUFFIXES,
   STREETS,
   STYLES,
   SUFFIXES,
-  type Neighborhood,
+  TIMBER_DETAILS,
+  type SeedArea,
+  type SeedPropertyType,
 } from "./seed-data";
+import SITES from "./seed-sites.json";
 
 if (process.env.NODE_ENV === "production" && !process.argv.includes("--force")) {
   console.error("Refusing to seed a production database. Pass --force if you really mean it.");
   process.exit(1);
 }
+
+/** Adams Realty's Georgia MLS office ID (matches `site.mls.officeId`). */
+const OFFICE_MLS_ID = "ADAM01";
+const DEMO_DISCLAIMER =
+  "Demo data: every listing on this site, and every agent profile except Andrea Anderegg's, is a fictional sample for demonstration only. In production this notice is replaced by the IDX disclaimer Georgia MLS requires.";
 
 // Deterministic PRNG so every developer gets the same data.
 let state = 20260925;
@@ -62,6 +87,8 @@ function rand(): number {
 }
 const between = (min: number, max: number) => min + rand() * (max - min);
 const intBetween = (min: number, max: number) => Math.floor(between(min, max + 1));
+/** Skewed toward `min`, like real inventory: most tracts and homes are modest, a few are huge. */
+const skewed = ([min, max]: [number, number], power = 1.8) => min + (max - min) * rand() ** power;
 const pick = <T>(arr: readonly T[]): T => arr[Math.floor(rand() * arr.length)];
 const chance = (p: number) => rand() < p;
 function sample<T>(arr: readonly T[], n: number): T[] {
@@ -83,6 +110,7 @@ function weighted<T extends string>(weights: Partial<Record<T, number>>): T {
 const NOW = new Date();
 const daysAgo = (d: number) => new Date(NOW.getTime() - d * 86_400_000);
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
+const ACRE = 43_560;
 
 function roundPrice(p: number): number {
   const step = p < 500_000 ? 1_000 : p < 2_000_000 ? 5_000 : 25_000;
@@ -96,61 +124,246 @@ function nextWeekend(offsetWeeks = 0): Date {
   return d;
 }
 
-function buildMedia(type: string, count: number): NormalizedMedia[] {
-  const front = type === "condo" ? pick(CONDO_EXTERIORS) : pick(EXTERIORS);
-  const rooms = sample(INTERIORS, count - 1);
-  return [
-    { url: front, caption: "Exterior", kind: "photo" as const },
-    ...rooms.map((r) => ({ url: r.url, caption: r.caption, kind: "photo" as const })),
-  ].map((m, i) => ({ ...m, sourceKey: null, width: 1600, height: 1067, sortOrder: i }));
+// --- Coordinates -------------------------------------------------------------
+
+/**
+ * core: near downtown · town: inside city limits · rural: outside town ·
+ * waterfront: mainland within 100 m of the lake · near: lake area, not on it.
+ */
+type SiteKind = "core" | "town" | "rural" | "waterfront" | "near";
+type Site = { lat: number; lng: number; county: string; city?: string; zip?: string };
+
+const siteRows = SITES.areas as Record<string, Partial<Record<SiteKind, (string | number)[][]>>>;
+const pools = new Map<string, Site[]>();
+/** If a pool runs dry, a neighboring kind is still a valid spot for the same area. */
+const FALLBACK: Record<SiteKind, SiteKind[]> = {
+  core: ["town"],
+  town: ["core", "rural"],
+  rural: ["town"],
+  waterfront: [],
+  near: [],
+};
+
+/** Hands out each validated site at most once, so no two listings share a pin. */
+function takeSite(area: SeedArea, kind: SiteKind): Site {
+  for (const k of [kind, ...FALLBACK[kind]]) {
+    const key = `${area.slug}.${k}`;
+    if (!pools.has(key)) {
+      const rows = siteRows[area.slug]?.[k] ?? [];
+      const sites = rows.map(([lat, lng, county, city, zip]) => ({
+        lat: Number(lat),
+        lng: Number(lng),
+        county: String(county),
+        city: city === undefined ? undefined : String(city),
+        zip: zip === undefined ? undefined : String(zip),
+      }));
+      pools.set(key, sample(sites, sites.length));
+    }
+    const site = pools.get(key)!.pop();
+    if (site) return site;
+  }
+  throw new Error(`seed-sites.json ran out of "${kind}" sites for ${area.slug}; add more.`);
 }
 
-function describe(n: Neighborhood, type: string, beds: number, lotSqft: number): string {
-  const opener = pick(OPENERS[type] ?? OPENERS.single_family)
-    .replace("{style}", pick(STYLES))
-    .replace("{hood}", n.name)
-    .replace("{vibe}", n.vibe)
-    .replace("{lotAdj}", lotSqft > 20_000 ? "sprawling" : lotSqft > 9_000 ? "generous" : "sunny")
-    .replace("{view}", pick(["skyline views", "sweeping city views", "lake and sunset views"]))
-    .replace("{beds}", String(beds))
-    .replace("{acres}", (lotSqft / 43_560).toFixed(1));
-  const body = type === "land" ? [] : sample(HIGHLIGHTS, 3);
-  const closer = `All of it in ${n.name}, ${n.vibe}.`;
-  return [opener, ...body, closer].join(" ");
+// --- Listing generation --------------------------------------------------------
+
+function buildMedia(opts: {
+  type: SeedPropertyType;
+  onWater: boolean;
+  lakeView: boolean;
+}): NormalizedMedia[] {
+  const { type, onWater, lakeView } = opts;
+  let photos: Array<{ url: string; caption: string }>;
+  if (type === "land") {
+    photos = [...(onWater ? sample(LAKE_PHOTOS, 1) : []), ...sample(LAND_PHOTOS, intBetween(2, 3))];
+  } else if (type === "commercial") {
+    photos = [COMMERCIAL_PHOTOS[0], ...sample(COMMERCIAL_PHOTOS.slice(1), intBetween(2, 4))];
+  } else {
+    const front = {
+      url: pick(type === "condo" ? CONDO_EXTERIORS : EXTERIORS),
+      caption: "Exterior",
+    };
+    const outdoors = [
+      ...(onWater || lakeView ? sample(LAKE_PHOTOS, 1) : []),
+      ...(type === "farm_ranch" ? sample(LAND_PHOTOS, 2) : []),
+    ];
+    const rooms = sample(INTERIORS, intBetween(type === "farm_ranch" ? 4 : 6, 12));
+    photos = [front, ...outdoors, ...rooms];
+  }
+  return photos.map((m, i) => ({
+    url: m.url,
+    caption: m.caption,
+    kind: "photo" as const,
+    sourceKey: null,
+    width: 1600,
+    height: 1067,
+    sortOrder: i,
+  }));
 }
 
-type Generated = { listing: NormalizedListing; hood: Neighborhood; priceDropFrom?: number };
+type Generated = { listing: NormalizedListing; area: SeedArea; priceDropFrom?: number };
 
-function generateListing(i: number, opts: { office: string; agentName?: string }): Generated {
-  const hood = weightedHood();
-  const type = weighted(hood.mix);
+/**
+ * `n` areas in proportion to `weightOf` (largest remainder), shuffled. Quotas
+ * rather than weighted draws, so every town reliably gets enough listings for
+ * its guide's stats.
+ */
+function allocateAreas(n: number, weightOf: (a: SeedArea) => number): SeedArea[] {
+  const total = AREAS.reduce((s, a) => s + weightOf(a), 0);
+  const shares = AREAS.map((a) => {
+    const exact = (n * weightOf(a)) / total;
+    return { area: a, count: Math.floor(exact), rest: exact - Math.floor(exact) };
+  });
+  let left = n - shares.reduce((s, x) => s + x.count, 0);
+  for (const x of [...shares].sort((a, b) => b.rest - a.rest)) {
+    if (left-- <= 0) break;
+    x.count += 1;
+  }
+  const list = shares.flatMap((x) => Array.from({ length: x.count }, () => x.area));
+  return sample(list, list.length);
+}
+
+function siteKindFor(area: SeedArea, type: SeedPropertyType, onWater: boolean): SiteKind {
+  if (area.kind === "lake") return onWater ? "waterfront" : "near";
+  switch (type) {
+    case "commercial":
+      return chance(0.65) ? "core" : "town";
+    case "condo":
+    case "townhouse":
+    case "multi_family":
+      return chance(0.4) ? "core" : "town";
+    case "land":
+      return chance(0.15) ? "town" : "rural";
+    case "farm_ranch":
+    case "manufactured":
+      return "rural";
+    default:
+      return chance(0.72) ? "town" : "rural";
+  }
+}
+
+const COMMERCIAL_TYPES = {
+  core: ["Retail", "Office", "Mixed Use", "Restaurant"],
+  town: ["Office", "Retail", "Warehouse", "Industrial"],
+};
+
+function generateListing(
+  i: number,
+  opts: { area: SeedArea; type?: SeedPropertyType; onWater?: boolean },
+): Generated {
+  const { area } = opts;
+  const type = opts.type ?? weighted(area.mix);
+  const isLake = area.kind === "lake";
+  const onWater =
+    isLake &&
+    (type === "single_family" || type === "land") &&
+    (opts.onWater ?? chance(area.waterfrontChance ?? 0));
+  const kind = siteKindFor(area, type, onWater);
+  const site = takeSite(area, kind);
+  const rural = kind === "rural";
+
   const isLand = type === "land";
+  const isCommercial = type === "commercial";
+  const isFarm = type === "farm_ranch";
   const isCondo = type === "condo";
+  const hasHome = !isLand && !isCommercial;
 
-  // Skewed toward the small end, like real inventory: most homes are modest, a few are huge.
+  // Acreage for anything sold with land; in-town and lake lots are in square feet.
+  const acres = isFarm
+    ? skewed([Math.max(10, area.acres[0]), Math.max(20, area.acres[1])], 1.6)
+    : isLand
+      ? onWater
+        ? skewed(area.acres)
+        : isLake
+          ? skewed([1, 10])
+          : kind === "town"
+            ? between(0.3, 2)
+            : skewed(area.acres, 2.2)
+      : rural
+        ? skewed([1, type === "manufactured" ? 8 : 15], 2.5)
+        : null;
+  const lot = isCondo
+    ? null
+    : acres !== null
+      ? Math.round((acres * ACRE) / 10) * 10
+      : type === "townhouse"
+        ? intBetween(1800, 4500)
+        : isCommercial
+          ? intBetween(kind === "core" ? 5_000 : 20_000, kind === "core" ? 25_000 : 90_000)
+          : isLake && !onWater
+            ? intBetween(15_000, 60_000)
+            : Math.round(between(...area.lot) / 10) * 10;
+
   const sqft = isLand
     ? null
-    : Math.round((hood.sqft[0] + (hood.sqft[1] - hood.sqft[0]) * rand() ** 1.8) / 10) * 10;
-  const beds = isLand
+    : isCommercial
+      ? Math.round(skewed([1200, 12000], 2.2) / 10) * 10
+      : type === "manufactured"
+        ? Math.round(skewed([900, 2200]) / 10) * 10
+        : isCondo
+          ? Math.round(skewed([850, 2200]) / 10) * 10
+          : type === "townhouse"
+            ? Math.round(skewed([1200, 2400]) / 10) * 10
+            : Math.round(skewed(area.sqft) / 10) * 10;
+  const beds = !hasHome
     ? null
     : Math.max(
-        isCondo ? 0 : 2,
-        Math.min(isCondo ? 4 : 7, Math.round((sqft ?? 0) / 650 + between(-0.6, 0.8))),
+        isCondo ? 1 : 2,
+        Math.min(isCondo ? 3 : 6, Math.round((sqft ?? 0) / 650 + between(-0.6, 0.8))),
       );
-  const bathsFull = isLand
+  const bathsFull = !hasHome
     ? null
-    : Math.max(1, Math.min(6, Math.round((beds ?? 1) * 0.75 + between(-0.3, 0.6))));
-  const bathsHalf = isLand ? null : chance(0.45) ? 1 : 0;
-  const lot = isCondo ? null : Math.max(2_000, Math.round(between(...hood.lot) / 10) * 10);
-  const year = isLand ? null : intBetween(...hood.years);
-  const ppsf = between(...hood.ppsf) * (year && year > 2015 ? 1.06 : 1);
-  const salePrice = isLand
-    ? roundPrice(((lot ?? 43_560) / 43_560) * between(45_000, 110_000) + 120_000)
-    : roundPrice((sqft ?? 1000) * ppsf);
-  // Luxury homes rarely hit the rental market.
-  const mode = !isLand && salePrice < 1_200_000 && chance(isCondo ? 0.3 : 0.12) ? "rent" : "sale";
+    : Math.max(1, Math.min(5, Math.round((beds ?? 1) * 0.75 + between(-0.3, 0.6))));
+  const bathsHalf = !hasHome ? null : chance(0.4) ? 1 : 0;
+  const year = isLand
+    ? null
+    : type === "manufactured"
+      ? intBetween(1988, 2024)
+      : isCommercial
+        ? intBetween(1925, 2020)
+        : isFarm
+          ? intBetween(1900, 2022)
+          : intBetween(...area.years);
+  const newBuild = !!year && year > 2015 ? 1.06 : 1;
+  const ppsf = between(...area.ppsf) * newBuild * (isLake && !onWater ? 0.6 : 1);
+  const perAcre = between(...area.perAcre);
+
+  const salePrice = roundPrice(
+    isLand
+      ? onWater
+        ? acres! * perAcre
+        : isLake
+          ? acres! * perAcre * 0.2 + between(15_000, 35_000)
+          : acres! * perAcre + (acres! < 5 ? between(10_000, 25_000) : 0)
+      : isFarm
+        ? sqft! * ppsf * 0.9 + acres! * perAcre * 0.95 + between(40_000, 120_000)
+        : isCommercial
+          ? sqft! * ppsf * between(0.45, 0.85) + ((lot ?? 0) / ACRE) * perAcre * 0.5
+          : type === "manufactured"
+            ? sqft! * ppsf * 0.55 + (acres ?? 0.5) * perAcre * 0.6
+            : sqft! * ppsf + (acres ? Math.max(0, acres - 1) * perAcre * 0.5 : 0),
+  );
+
+  // Rentals: some houses, more townhomes and condos, and commercial leases.
+  // Luxury homes, land and farms rarely hit the rental market.
+  const rentChance = isCommercial
+    ? 0.3
+    : isLand || isFarm || salePrice > 900_000
+      ? 0
+      : isCondo || type === "multi_family"
+        ? 0.3
+        : type === "townhouse"
+          ? 0.2
+          : isLake
+            ? 0.05
+            : 0.1;
+  const mode = chance(rentChance) ? "rent" : "sale";
   const listPrice =
-    mode === "rent" ? Math.round((salePrice * between(0.0045, 0.006)) / 25) * 25 : salePrice;
+    mode === "sale"
+      ? salePrice
+      : isCommercial
+        ? Math.round(((sqft ?? 2000) * between(8, 18)) / 12 / 25) * 25
+        : Math.round((salePrice * between(0.0055, 0.0075)) / 25) * 25;
 
   const statusRoll = rand();
   const status: NormalizedListing["status"] =
@@ -168,62 +381,95 @@ function generateListing(i: number, opts: { office: string; agentName?: string }
               ? "pending"
               : "closed";
 
+  const maxDom = isLand || isFarm ? 240 : isCommercial ? 180 : 95;
   const dom =
     status === "coming_soon"
       ? -intBetween(2, 10)
       : status === "closed"
         ? intBetween(30, 200)
-        : intBetween(1, 95);
+        : intBetween(1, maxDom);
   const listDate = daysAgo(dom);
   const priceDrop = mode === "sale" && status === "active" && dom > 20 && chance(0.35);
   const originalPrice = priceDrop ? roundPrice(listPrice * between(1.02, 1.07)) : listPrice;
   const closeDate = status === "closed" ? daysAgo(intBetween(3, Math.max(4, dom - 20))) : null;
-  const closePrice = status === "closed" ? roundPrice(listPrice * between(0.95, 1.04)) : null;
+  const closePrice = status === "closed" ? roundPrice(listPrice * between(0.95, 1.03)) : null;
 
-  const stories = isLand ? null : isCondo ? 1 : chance(0.45) ? 1 : 2;
-  const garage = isLand || isCondo ? (isCondo ? intBetween(1, 2) : null) : intBetween(1, 3);
-  const pool = !isLand && !isCondo && chance(hood.poolChance ?? 0.08);
-  const view = chance(hood.viewChance ?? 0.05);
-  const waterfront = chance(hood.waterfrontChance ?? 0);
-  const newConstruction = !!year && year >= NOW.getUTCFullYear() - 1 && mode === "sale";
+  const stories = !hasHome
+    ? isCommercial
+      ? intBetween(1, 2)
+      : null
+    : isCondo
+      ? 1
+      : chance(0.5)
+        ? 1
+        : 2;
+  const garage = hasHome && !isCondo ? (chance(0.8) ? intBetween(1, 3) : null) : null;
+  const pool = hasHome && !isCondo && chance(area.poolChance ?? 0.05);
+  const lakeView = isLake && hasHome && !onWater && chance(0.35);
+  const view = onWater || lakeView || (area.slug === "toccoa" && chance(0.2)) || chance(0.04);
+  const basement = hasHome && !isCondo && chance(area.basementChance ?? 0.12);
+  const newConstruction = hasHome && !!year && year >= NOW.getUTCFullYear() - 1 && mode === "sale";
   const hoa = isCondo
-    ? intBetween(350, 1100)
+    ? intBetween(250, 600)
     : type === "townhouse"
-      ? intBetween(150, 400)
-      : chance(0.35)
-        ? intBetween(30, 120)
+      ? intBetween(125, 300)
+      : type === "single_family" && !rural && chance(onWater ? 0.2 : (area.hoaChance ?? 0.15))
+        ? intBetween(25, 90)
         : null;
 
-  const angle = rand() * Math.PI * 2;
-  const dist = Math.sqrt(rand()) * hood.radius;
-  const lat = hood.lat + Math.sin(angle) * dist;
-  // Longitude degrees are shorter at Atlanta's latitude (~1/cos 34°).
-  const lng = hood.lng + Math.cos(angle) * dist * 1.2;
+  const inPlace = isLake ? `${onWater ? "on" : "near"} ${area.name}` : `in ${area.name}`;
+  const city = site.city ?? area.city;
+  const zip = site.zip ?? area.zip;
+  const subtype = isCommercial ? pick(COMMERCIAL_TYPES[kind === "core" ? "core" : "town"]) : null;
 
-  const streetNumber = isCondo ? intBetween(100, 900) : intBetween(1000, 9999);
-  const quadrant = hood.quadrant ? ` ${hood.quadrant}` : "";
   const street = isCondo
-    ? `${pick(CONDO_STREETS)}${quadrant}`
-    : `${pick(STREETS)} ${pick(SUFFIXES)}${quadrant}`;
-  const unit = isCondo ? String(intBetween(3, 42) * 100 + intBetween(1, 12)) : null;
+    ? pick(CONDO_STREETS)
+    : `${pick(STREETS)} ${pick(
+        isCommercial
+          ? COMMERCIAL_SUFFIXES
+          : onWater || (isLake && chance(0.5))
+            ? LAKE_SUFFIXES
+            : rural
+              ? RURAL_SUFFIXES
+              : SUFFIXES,
+      )}`;
+  const streetNumber = isCondo
+    ? intBetween(100, 900)
+    : rural || isLake
+      ? intBetween(100, 9999)
+      : intBetween(100, 2999);
+  const unit = isCondo ? String(intBetween(1, 3) * 100 + intBetween(1, 24)) : null;
 
-  const photoCount = isLand ? intBetween(2, 4) : intBetween(7, 14);
-  // Georgia effective property-tax rates run roughly 0.8–1.2% of value.
-  const taxes = mode === "sale" ? Math.round(salePrice * between(0.008, 0.012)) : null;
+  // Georgia effective property-tax rates run roughly 0.8–1.2% of value;
+  // farm and timber land under conservation use pays far less.
+  const taxes =
+    mode === "sale"
+      ? Math.round(salePrice * (isLand || isFarm ? between(0.003, 0.007) : between(0.008, 0.012)))
+      : null;
+  const district = isCommercial
+    ? undefined
+    : !rural && !isLake && area.district
+      ? area.district
+      : COUNTY_DISTRICTS[site.county];
 
   const listing: NormalizedListing = {
     listingKey: `DEMO-${String(i).padStart(5, "0")}`,
-    mlsNumber: String(4_100_000 + intBetween(0, 899_999)),
+    mlsNumber: String(10_300_000 + intBetween(0, 199_999)),
     status,
     transactionType: mode,
     propertyType: type,
-    propertySubType: {
-      single_family: "Single Family Residence",
-      condo: "Condominium",
-      townhouse: "Townhouse",
-      multi_family: "Duplex",
-      land: "Unimproved Land",
-    }[type],
+    propertySubType:
+      subtype ??
+      {
+        single_family: "Single Family Residence",
+        condo: "Condominium",
+        townhouse: "Townhouse",
+        multi_family: "Duplex",
+        manufactured: "Manufactured Home",
+        land: kind === "rural" ? "Unimproved Land" : "Residential Lot",
+        farm_ranch: "Farm",
+        commercial: "Commercial",
+      }[type],
     listPrice,
     originalListPrice: originalPrice,
     closePrice,
@@ -244,78 +490,109 @@ function generateListing(i: number, opts: { office: string; agentName?: string }
     taxYear: taxes ? NOW.getUTCFullYear() - 1 : null,
     addressLine1: `${streetNumber} ${street}`,
     unitNumber: unit,
-    city: hood.city,
+    city,
     state: "GA",
-    postalCode: hood.zip,
-    county: hood.county,
-    neighborhood: hood.name,
-    latitude: Math.round(lat * 1e6) / 1e6,
-    longitude: Math.round(lng * 1e6) / 1e6,
+    postalCode: zip,
+    county: site.county,
+    // Lakes are the "neighborhood" MLS feeds use; small-town and rural
+    // listings usually have no subdivision, and guides match them by city.
+    neighborhood: isLake ? area.name : null,
+    latitude: site.lat,
+    longitude: site.lng,
     hideAddress: false,
     headline: null,
-    description: describe(hood, type, beds ?? 0, lot ?? 0),
+    description: describe({
+      area,
+      type,
+      inPlace,
+      beds: beds ?? 0,
+      acres,
+      lot: lot ?? 0,
+      sqft: sqft ?? 0,
+      subtype,
+      onWater,
+      basement,
+    }),
     features: isLand
       ? {
-          lot: sample(["Many Trees", "Views", "Level", "Sloped", "Native Plants"], 3),
-          utilities: ["Electricity Available", "Well Needed"],
+          lot: onWater
+            ? ["Waterfront", "Lake Frontage", ...sample(["Wooded", "Sloped", "Views"], 2)]
+            : sample(["Pasture", "Hardwoods", "Pines", "Level", "Rolling", "Road Frontage"], 3),
+          utilities:
+            kind === "town"
+              ? ["Electricity Available", "Public Water Available"]
+              : ["Electricity Available", "Well Needed", "Septic Needed"],
         }
-      : {
-          interior: sample(INTERIOR_FEATURES, intBetween(4, 7)),
-          exterior: sample(EXTERIOR_FEATURES, intBetween(2, 4)),
-          appliances: sample(APPLIANCES, intBetween(3, 6)),
-          heating: [pick(["Central", "Natural Gas", "Heat Pump"])],
-          cooling: ["Central Air"],
-          parking: garage
-            ? [`Garage (${garage} car)`, pick(["Attached", "Detached", "Garage Door Opener"])]
-            : ["Street"],
-          flooring: sample(FLOORING, 2),
-          community: isCondo
-            ? ["Concierge", "Fitness Center", "Pool", "Rooftop Deck"]
-            : sample(COMMUNITY, intBetween(0, 3)),
-          view: view
-            ? [
-                pick(
-                  hood.waterfrontChance
-                    ? ["Lake", "Water", "Trees/Woods"]
-                    : ["City", "Skyline", "Trees/Woods", "Mountain(s)"],
-                ),
-              ]
-            : [],
-          construction: isCondo
-            ? ["Concrete", "Glass"]
-            : sample(["Brick", "Stone", "HardiPlank Type", "Stucco", "Wood Siding"], 2),
-        },
-    schools: {
-      district: hood.district,
-      // Generic sample names — real listings carry the MLS's school assignments.
-      elementary: `${pick(["Oak Grove", "Brookside", "Heritage", "Willow Creek", "Parkview", "Magnolia"])} Elementary`,
-      middle: `${pick(["Lakeside", "Summit", "Riverside", "Crestwood", "Pinecrest"])} Middle`,
-      high: `${pick(["North Ridge", "Central", "Highland", "Valley View", "Westfield"])} High`,
-    },
+      : isCommercial
+        ? {
+            interior: sample(["Open Floorplan", "Private Offices", "Restrooms", "Break Room"], 2),
+            parking: [`Parking Lot (${intBetween(6, 60)} spaces)`],
+            utilities: ["Public Water", "Public Sewer", "Natural Gas Available"],
+            construction: sample(["Brick", "Block", "Metal", "Wood Siding"], 2),
+            lot: sample(["Corner Lot", "Road Frontage", "Level"], 2),
+          }
+        : {
+            interior: sample(INTERIOR_FEATURES, intBetween(4, 7)),
+            exterior: [
+              ...(onWater ? ["Boat Dock"] : []),
+              ...sample(EXTERIOR_FEATURES, intBetween(2, 4)),
+            ],
+            appliances: sample(APPLIANCES, intBetween(3, 6)),
+            heating: [pick(["Central", "Heat Pump", "Propane"])],
+            cooling: ["Central Air"],
+            parking: garage
+              ? [`Garage (${garage} car)`, pick(["Attached", "Detached", "Carport"])]
+              : ["Driveway"],
+            flooring: sample(FLOORING, 2),
+            community: isCondo
+              ? ["Pool", "Fitness Center", "Clubhouse"]
+              : hoa
+                ? sample(COMMUNITY, intBetween(1, 3))
+                : [],
+            view: view
+              ? [isLake ? "Lake" : area.slug === "toccoa" ? "Mountain(s)" : "Trees/Woods"]
+              : [],
+            lot: isFarm
+              ? ["Pasture", "Barn", "Fenced"]
+              : acres
+                ? sample(["Wooded", "Level", "Private"], 2)
+                : [],
+            utilities: rural || isFarm ? ["Well", "Septic Tank"] : ["Public Water", "Public Sewer"],
+            construction: isCondo
+              ? ["Brick", "HardiPlank Type"]
+              : sample(["Brick", "Stone", "HardiPlank Type", "Vinyl Siding", "Wood Siding"], 2),
+          },
+    schools: district
+      ? {
+          district,
+          // Generic sample names — real listings carry the MLS's school assignments.
+          elementary: `${pick(["Oak Grove", "Brookside", "Heritage", "Willow Creek", "Parkview", "Magnolia"])} Elementary`,
+          middle: `${pick(["Lakeside", "Summit", "Riverside", "Crestwood", "Pinecrest"])} Middle`,
+          high: `${pick(["North Ridge", "Central", "Highland", "Valley View", "Westfield"])} High`,
+        }
+      : {},
     hasPool: pool,
-    isWaterfront: waterfront,
+    isWaterfront: onWater,
     hasView: view,
-    hasBasement: !isLand && !isCondo && chance(hood.basementChance ?? 0.1),
+    hasBasement: basement,
     isNewConstruction: newConstruction,
-    isSingleStory: stories === 1 && !isCondo,
-    virtualTourUrl: chance(0.25) ? "https://my.matterport.com/show/?m=demo" : null,
+    isSingleStory: stories === 1 && hasHome && !isCondo,
+    virtualTourUrl: hasHome && chance(0.2) ? "https://my.matterport.com/show/?m=demo" : null,
     videoUrl: null,
     listAgentMlsId: null,
-    listAgentName:
-      opts.agentName ??
-      `${pick(["Chris", "Jordan", "Taylor", "Morgan", "Alex", "Casey", "Jamie", "Riley"])} ${pick(["Nguyen", "Smith", "Garcia", "Johnson", "Patel", "Brown", "Lee", "Wilson"])}`,
-    listAgentPhone: `(${pick(["404", "678", "770"])}) 555-${String(intBetween(1000, 9999))}`,
+    listAgentName: `${pick(["Chris", "Jordan", "Taylor", "Morgan", "Alex", "Casey", "Jamie", "Riley"])} ${pick(["Nguyen", "Smith", "Garcia", "Johnson", "Patel", "Brown", "Lee", "Wilson"])}`,
+    listAgentPhone: `(${pick(["706", "762", "470"])}) 555-${String(intBetween(1000, 9999))}`,
     listAgentEmail: null,
-    listOfficeName: opts.office,
+    listOfficeName: pick(OTHER_BROKERAGES),
     listOfficeMlsId: null,
     sourceModifiedAt: daysAgo(Math.max(0, Math.min(dom, intBetween(0, 10)))),
     statusChangedAt:
       status === "active" || status === "coming_soon"
         ? listDate
         : daysAgo(intBetween(1, Math.max(2, dom))),
-    media: buildMedia(type, photoCount),
+    media: buildMedia({ type, onWater, lakeView }),
     openHouses:
-      status === "active" && mode === "sale" && chance(0.25)
+      status === "active" && mode === "sale" && hasHome && !isFarm && chance(0.25)
         ? [0, ...(chance(0.4) ? [1] : [])].map((dayOffset) => {
             const d = nextWeekend();
             d.setUTCDate(d.getUTCDate() + dayOffset);
@@ -330,15 +607,49 @@ function generateListing(i: number, opts: { office: string; agentName?: string }
           })
         : [],
   };
-  return { listing, hood, priceDropFrom: priceDrop ? originalPrice : undefined };
+  return { listing, area, priceDropFrom: priceDrop ? originalPrice : undefined };
 }
 
-let hoodWeightsTotal = 0;
-function weightedHood(): Neighborhood {
-  hoodWeightsTotal ||= NEIGHBORHOODS.reduce((s, n) => s + n.weight, 0);
-  let r = rand() * hoodWeightsTotal;
-  for (const n of NEIGHBORHOODS) if ((r -= n.weight) <= 0) return n;
-  return NEIGHBORHOODS[0];
+function describe(c: {
+  area: SeedArea;
+  type: SeedPropertyType;
+  inPlace: string;
+  beds: number;
+  acres: number | null;
+  lot: number;
+  sqft: number;
+  subtype: string | null;
+  onWater: boolean;
+  basement: boolean;
+}): string {
+  const opener = pick(OPENERS[c.type])
+    .replace("{style}", pick(STYLES))
+    .replace("{in}", c.inPlace)
+    .replace("{lotAdj}", c.lot > 43_560 ? "sprawling" : c.lot > 15_000 ? "generous" : "sunny")
+    .replace("{view}", c.onWater || c.area.kind === "lake" ? "lake views" : "wooded views")
+    .replace("{beds}", String(c.beds))
+    .replace("{acres}", (c.acres ?? c.lot / 43_560).toFixed(c.acres && c.acres >= 10 ? 0 : 1))
+    .replace("{sqft}", c.sqft.toLocaleString("en-US"))
+    .replace("{subtype}", (c.subtype ?? "commercial").toLowerCase());
+  const homeHighlights = HIGHLIGHTS.filter((h) => c.basement || !h.includes("basement"));
+  const body =
+    c.type === "land"
+      ? c.onWater
+        ? sample(LAKE_LOT_DETAILS, 2)
+        : [...sample(LAND_DETAILS, 2), ...((c.acres ?? 0) >= 25 ? sample(TIMBER_DETAILS, 1) : [])]
+      : c.type === "commercial"
+        ? sample(COMMERCIAL_DETAILS, 2)
+        : c.type === "farm_ranch"
+          ? [...sample(FARM_DETAILS, 1), ...sample(homeHighlights, 1)]
+          : [
+              ...(c.onWater ? sample(LAKE_HIGHLIGHTS, 1) : []),
+              ...sample(homeHighlights, c.type === "condo" ? 2 : 3),
+            ];
+  const closer =
+    c.type === "commercial"
+      ? `Located ${c.inPlace}, ${c.area.vibe}.`
+      : `All of it ${c.inPlace}, ${c.area.vibe}.`;
+  return [opener, ...body, closer].join(" ");
 }
 
 async function createLogin(input: {
@@ -370,40 +681,35 @@ async function main() {
       accounts, users RESTART IDENTITY CASCADE
   `);
 
+  // REAL: Adams Realty's office, as published (Georgia MLS office ADAM01).
   const [office] = await db
     .insert(offices)
     .values({
       slug: "main-office",
       name: "Adams Realty, Inc.",
-      phone: "(404) 555-0142",
-      email: "hello@adamsrealty.example",
-      city: "Atlanta",
+      phone: "(706) 246-0053",
+      // PLACEHOLDER: the firm's public inbox isn't known yet (see src/config/site.ts).
+      email: "contracts.adamsrealty@gmail.com",
+      addressLine1: "69 Mill Street",
+      city: "Royston",
       state: "GA",
-      mlsOfficeId: "ADAMS01",
+      postalCode: "30662",
+      mlsOfficeId: OFFICE_MLS_ID,
     })
     .returning();
 
   console.info("Creating logins…");
+  // Andrea Anderegg's login keeps the admin@ address that tests and docs use.
   const adminId = await createLogin({
-    name: "Margaret Ellis",
+    name: AGENTS[0].name,
     email: "admin@adamsrealty.example",
     role: "admin",
     password,
   });
   const agentUserIds = [
     adminId,
-    await createLogin({
-      name: "Daniel Reyes",
-      email: "daniel@adamsrealty.example",
-      role: "agent",
-      password,
-    }),
-    await createLogin({
-      name: "Priya Natarajan",
-      email: "priya@adamsrealty.example",
-      role: "agent",
-      password,
-    }),
+    await createLogin({ name: AGENTS[1].name, email: AGENTS[1].email, role: "agent", password }),
+    await createLogin({ name: AGENTS[2].name, email: AGENTS[2].email, role: "agent", password }),
   ];
   const buyerId = await createLogin({
     name: "Jordan Buyer",
@@ -421,12 +727,13 @@ async function main() {
         slug: slugify(a.name),
         name: a.name,
         title: a.title,
-        email: `${a.name.split(" ")[0].toLowerCase()}@adamsrealty.example`,
-        phone: `(404) 555-01${String(50 + i)}`,
+        email: a.email,
+        phone: a.phone,
         bio: a.bio,
         photoUrl: a.photoUrl,
-        licenseNumber: `GA ${String(300000 + i * 7919)}`,
-        mlsAgentId: `ADAMS-A${i + 1}`,
+        // Never invent license numbers: unknown for Andrea, meaningless for samples.
+        licenseNumber: null,
+        mlsAgentId: a.mlsAgentId,
         specialties: a.specialties,
         languages: a.languages,
         serviceAreas: a.areas,
@@ -435,20 +742,27 @@ async function main() {
       })),
     )
     .returning();
+  const broker = agentRows[0];
+  const agentIdsByMlsId = new Map(agentRows.map((a) => [a.mlsAgentId!, a.id]));
 
   const [manualSource, demoSource] = await db
     .insert(dataSources)
     .values([
-      { slug: "adams", name: "Adams Realty listings", kind: "manual" as const, config: {} },
+      {
+        slug: "adams",
+        name: "Adams Realty listings",
+        kind: "manual" as const,
+        config: {},
+        disclaimer: DEMO_DISCLAIMER,
+      },
       {
         slug: "demo-mls",
         name: "Demo MLS (sample IDX feed)",
         kind: "reso_web_api" as const,
-        // Inactive: there's no real endpoint. Point a real source at your MLS's RESO Web API.
+        // Inactive: there's no real endpoint. Point a real source at Georgia MLS's RESO Web API.
         isActive: false,
-        config: { resource: "Property", companyOfficeIds: ["ADAMS01"] },
-        disclaimer:
-          "Listing information is fictional sample data for demonstration only. In production, this notice is replaced by your MLS's required IDX disclaimer.",
+        config: { resource: "Property", companyOfficeIds: [OFFICE_MLS_ID] },
+        disclaimer: DEMO_DISCLAIMER,
       },
     ])
     .returning();
@@ -460,28 +774,74 @@ async function main() {
     config: s.config,
   });
 
+  const areaBySlug = new Map(AREAS.map((a) => [a.slug, a]));
+  const areaNamed = (name: string) => AREAS.find((a) => a.name === name)!;
+  /**
+   * Our listings. Each sample agent starts with two in their own areas (one
+   * showing off their specialty); the rest follow the office's footprint and
+   * mostly go to Andrea, sometimes to a sample agent who works the area.
+   */
+  const starters: Array<{
+    agent: (typeof agentRows)[number];
+    area: SeedArea;
+    type?: SeedPropertyType;
+    onWater?: boolean;
+  }> = agentRows.slice(1).flatMap((agent, n) => {
+    const specialty = [
+      { area: areaBySlug.get("carnesville")!, type: "land" as const },
+      { area: areaBySlug.get("braselton")!, type: "single_family" as const },
+      { area: areaBySlug.get("lake-hartwell")!, type: "single_family" as const, onWater: true },
+      { area: areaBySlug.get("gainesville")!, type: "commercial" as const },
+    ][n];
+    return [
+      { agent, ...specialty },
+      { agent, area: areaNamed(agent.serviceAreas[1] ?? agent.serviceAreas[0]) },
+    ];
+  });
+  const total = 180;
+  const ourCount = 36;
+  const ourAreas = allocateAreas(ourCount - starters.length, (a) => a.ourWeight);
+  const feedAreas = allocateAreas(total - ourCount, (a) => a.weight);
+  function agentFor(area: SeedArea) {
+    const local = agentRows.slice(1).filter((a) => a.serviceAreas.includes(area.name));
+    return local.length && chance(0.35) ? pick(local) : broker;
+  }
+
   console.info("Generating listings…");
-  const total = 170;
-  const ourCount = 28;
   const listingIds: string[] = [];
   const ourListings: Array<{ id: string; agentId: string; price: number }> = [];
+  const perArea = new Map<string, number>();
 
   for (let i = 0; i < total; i++) {
     const ours = i < ourCount;
-    const agent = ours ? agentRows[i % agentRows.length] : null;
-    const { listing, priceDropFrom } = generateListing(i + 1, {
-      office: ours ? "Adams Realty" : pick(OTHER_BROKERAGES),
-      agentName: agent?.name,
-    });
+    const starter = starters[i];
+    const plan = starter ?? {
+      area: ours ? ourAreas[i - starters.length] : feedAreas[i - ourCount],
+    };
+    const { listing, area, priceDropFrom } = generateListing(i + 1, plan);
+    perArea.set(area.slug, (perArea.get(area.slug) ?? 0) + 1);
+    const agent = starter?.agent ?? (ours ? agentFor(area) : null);
+    // Most of our listings arrive through the MLS feed like they would in
+    // production (matched by office and agent MLS IDs); the rest are manual
+    // (pocket listings, rentals, coming soon).
+    const viaFeed = ours && i % 3 !== 0;
     if (agent) {
+      listing.listAgentName = agent.name;
       listing.listAgentEmail = agent.email;
       listing.listAgentPhone = agent.phone;
+      listing.listOfficeName = "Adams Realty, Inc.";
+      listing.listOfficeMlsId = OFFICE_MLS_ID;
+      listing.listAgentMlsId = agent.mlsAgentId;
     }
     const { id } = await db.transaction((tx) =>
-      upsertListing(tx, toSource(ours ? manualSource : demoSource), listing, {
-        listAgentId: agent?.id ?? null,
-        isFeatured: ours && listing.status === "active" && i % 3 === 0,
-      }),
+      upsertListing(
+        tx,
+        toSource(ours && !viaFeed ? manualSource : demoSource),
+        listing,
+        ours && !viaFeed
+          ? { listAgentId: agent!.id, isFeatured: listing.status === "active" && i % 3 === 0 }
+          : { agentIdsByMlsId, isFeatured: ours && listing.status === "active" && i % 4 === 1 },
+      ),
     );
     listingIds.push(id);
     if (agent) ourListings.push({ id, agentId: agent.id, price: listing.listPrice });
@@ -516,15 +876,17 @@ async function main() {
         agentId: type === "valuation" ? null : l.agentId,
         name,
         email: `${name.split(" ")[0].toLowerCase()}@example.com`,
-        phone: `(678) 555-${String(2000 + i * 37)}`,
+        phone: `(706) 555-${String(2000 + i * 37)}`,
         message:
           type === "tour"
             ? "We'd love to see this one this weekend if possible."
             : type === "offer"
               ? "We're pre-approved and ready to write an offer. What's the seller's timeline?"
               : type === "valuation"
-                ? "Thinking about selling our 3/2 in Kirkwood next spring. What's it worth?"
-                : "Is the HOA fee inclusive of water and trash?",
+                ? "Thinking about selling our 3/2 in Royston and about 12 acres near Carnesville next spring. What are they worth?"
+                : i === 1
+                  ? "Is the property on a well or county water? And is there a survey?"
+                  : "Are the appliances included, and how old is the roof?",
         tourAt: type === "tour" ? new Date(nextWeekend().setUTCHours(15, 0, 0, 0)) : null, // 11am Eastern
         tourType: type === "tour" ? ("in_person" as const) : null,
         source: type === "valuation" ? "sell" : "listing",
@@ -540,19 +902,26 @@ async function main() {
     );
   await db.insert(savedSearches).values({
     userId: buyerId,
-    name: "3+ bd homes in Decatur under $900K",
-    criteria: { mode: "buy", q: "Decatur", beds: 3, maxPrice: 900_000, sort: "newest", page: 1 },
+    name: "3+ bd homes in Royston under $400K",
+    criteria: { mode: "buy", q: "Royston", beds: 3, maxPrice: 400_000, sort: "newest", page: 1 },
     alertFrequency: "daily",
   });
 
   const [{ count }] = await db
     .execute<{ count: string }>(sql`select count(*)::text as count from listings`)
     .then((r) => r.rows);
-  console.info(`\nSeeded ${count} listings, ${agentRows.length} agents.\n`);
+  const perAgent = new Map<string, number>();
+  for (const l of ourListings) perAgent.set(l.agentId, (perAgent.get(l.agentId) ?? 0) + 1);
+  console.info(`\nSeeded ${count} listings, ${agentRows.length} agents.`);
+  console.info("By area: %s", AREAS.map((a) => `${a.slug} ${perArea.get(a.slug) ?? 0}`).join(", "));
+  console.info(
+    "Adams listings by agent: %s\n",
+    agentRows.map((a) => `${a.name} ${perAgent.get(a.id) ?? 0}`).join(", "),
+  );
   console.info("Demo logins (password: %s)", password);
-  console.info("  admin   admin@adamsrealty.example");
-  console.info("  agent   daniel@adamsrealty.example");
-  console.info("  agent   priya@adamsrealty.example");
+  console.info("  admin   admin@adamsrealty.example   (Andrea Anderegg, broker)");
+  console.info("  agent   daniel@adamsrealty.example  (sample agent)");
+  console.info("  agent   priya@adamsrealty.example   (sample agent)");
   console.info("  buyer   buyer@example.com\n");
 }
 

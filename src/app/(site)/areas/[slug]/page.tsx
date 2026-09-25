@@ -34,9 +34,9 @@ import { searchHref } from "@/lib/search/params";
 
 export async function generateMetadata(props: PageProps<"/areas/[slug]">): Promise<Metadata> {
   const guide = await getAreaGuide((await props.params).slug);
-  if (!guide) return { title: "Neighborhood not found" };
+  if (!guide) return { title: "Area not found" };
   const { area, stats } = guide;
-  const title = `${placeName(area)} homes for sale & neighborhood guide`;
+  const title = `${placeName(area)} homes for sale & area guide`;
   const description = metaDescription(area, stats);
   const url = areaHref(area);
   return {
@@ -66,7 +66,7 @@ export default async function AreaGuidePage(props: PageProps<"/areas/[slug]">) {
   const mapHref = searchHref({ q: area.name });
   const soldHref = searchHref({ q: area.name, mode: "sold", soldWithinDays: SOLD_WINDOW_DAYS });
   const siblings = areas.filter((a) => a.region === area.region && a.slug !== area.slug);
-  // A region of one (Lake Lanier) links a few guides from every other region instead.
+  // A region of one links a few guides from every other region instead.
   const related = siblings.length
     ? siblings
     : areaRegions.flatMap((r) =>
@@ -84,7 +84,7 @@ export default async function AreaGuidePage(props: PageProps<"/areas/[slug]">) {
             <ol className="flex items-center gap-1.5 text-sm text-muted">
               <li>
                 <Link href="/areas" className="inline-flex h-10 items-center hover:text-ink">
-                  Neighborhood guides
+                  Area guides
                 </Link>
               </li>
               <li aria-hidden>
@@ -323,7 +323,7 @@ export default async function AreaGuidePage(props: PageProps<"/areas/[slug]">) {
               id="more-guides-heading"
               className="text-xs font-semibold tracking-widest text-muted uppercase"
             >
-              {siblings.length ? `More in ${regionLabel(area.region)}` : "More neighborhood guides"}
+              {siblings.length ? `More in ${regionLabel(area.region)}` : "More area guides"}
             </h2>
             <ul className="mt-4 flex flex-wrap gap-2">
               {related.map((a) => (
@@ -354,7 +354,7 @@ export default async function AreaGuidePage(props: PageProps<"/areas/[slug]">) {
               only a few homes can shift quickly.
             </p>
             <p>
-              Neighborhood descriptions cover places and amenities, never the people who live there.{" "}
+              Area descriptions cover places and amenities, never the people who live there.{" "}
               <Link href="/fair-housing" className="underline hover:text-ink">
                 Fair housing
               </Link>

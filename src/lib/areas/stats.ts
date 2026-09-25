@@ -15,17 +15,21 @@ export const SOLD_WINDOW_DAYS = 180;
 export const MIN_SAMPLE = 3;
 
 /**
- * Property-type buckets for the "what's for sale" bar. The order and colors
- * are fixed per type (never by rank) so a color means the same thing on every
- * guide. Colors were checked with the dataviz palette validator on white:
+ * Property-type buckets for the "what's for sale" bar, sized for a market
+ * that's mostly houses and land. The order and colors are fixed per bucket
+ * (never by rank) so a color means the same thing on every guide. Colors were
+ * checked, in this order, with the dataviz palette validator on white:
  * lightness band, chroma, CVD and normal-vision separation all pass; the amber
  * sits under 3:1 contrast, so the legend always prints labels and values.
+ *
+ * houses = single-family + manufactured, land = land + farms,
+ * attached = townhomes + condos, other = commercial, multi-family and the rest.
  */
 export const MIX_BUCKETS = [
-  { key: "singleFamily", label: "Houses", color: "#1f7a55" },
-  { key: "townhouse", label: "Townhomes", color: "#e0a126" },
-  { key: "condo", label: "Condos", color: "#c2562a" },
-  { key: "other", label: "Land & other", color: "#5a69c4" },
+  { key: "houses", label: "Houses", color: "#1f7a55" },
+  { key: "land", label: "Land & farms", color: "#e0a126" },
+  { key: "attached", label: "Townhomes & condos", color: "#c2562a" },
+  { key: "other", label: "Commercial & other", color: "#5a69c4" },
 ] as const;
 
 export type MixKey = (typeof MIX_BUCKETS)[number]["key"];
@@ -41,7 +45,7 @@ export type AreaStats = {
   minListPrice: number | null;
   maxListPrice: number | null;
   medianPricePerSqft: number | null;
-  /** Listings behind the $/sqft median (those with a living area, excluding land). */
+  /** Homes behind the $/sqft median: residential types with a living area (no land, farms or commercial). */
   pricePerSqftSample: number;
   medianDaysOnMarket: number | null;
   daysOnMarketSample: number;
@@ -75,7 +79,7 @@ export function emptyStats(): AreaStats {
     recentSales: 0,
     medianSoldPrice: null,
     medianSaleToList: null,
-    mix: { singleFamily: 0, townhouse: 0, condo: 0, other: 0 },
+    mix: { houses: 0, land: 0, attached: 0, other: 0 },
     photo: null,
     lastUpdated: null,
   };
@@ -229,7 +233,7 @@ export function regionLabel(id: AreaRegion): string {
   return areaRegions.find((r) => r.id === id)?.label ?? id;
 }
 
-/** "Midtown, Atlanta" / "Decatur, GA": the place name used in titles. */
+/** "Lake Hartwell, Hartwell" / "Royston, GA": the place name used in titles. */
 export function placeName(area: Pick<Area, "name" | "city">): string {
   return area.city === area.name
     ? `${area.name}, ${site.market.state}`

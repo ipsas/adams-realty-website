@@ -9,7 +9,7 @@ import { getSession } from "@/lib/auth/session";
 
 export const metadata: Metadata = {
   title: "Contact us",
-  description: `Call, email or message ${site.name}. Talk to a local ${site.market.region} real estate agent about buying, selling or renting a home.`,
+  description: `Call, email or message ${site.legalName} in ${site.address.city}. Talk to a local ${site.market.region} real estate agent about buying or selling a home, land, a farm or lake property.`,
   alternates: { canonical: "/contact" },
 };
 
@@ -29,7 +29,7 @@ const SHORTCUTS = [
   {
     icon: Search,
     title: "Search homes",
-    body: `Homes for sale and for rent across ${site.market.region}.`,
+    body: `Homes, land and farms for sale across ${site.market.region}.`,
     href: "/homes",
   },
 ];
@@ -62,9 +62,9 @@ export default async function ContactPage() {
               Let&apos;s talk about <em className="font-light text-brass-100">home.</em>
             </h1>
             <p className="mt-6 max-w-xl text-lg leading-relaxed text-white/75">
-              Questions about a listing, a neighborhood or selling your house? Call, email or send a
-              message — it comes straight to our office, and we&apos;ll connect you with the right
-              agent.
+              Questions about a listing, a town or selling your house or land? Call, email or send a
+              message — it comes straight to our office in {site.address.city}, and we&apos;ll
+              connect you with the right agent.
             </p>
             <ContactMethods tone="dark" className="mt-10 max-w-2xl" />
           </div>

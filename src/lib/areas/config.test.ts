@@ -25,11 +25,11 @@ describe("area config", () => {
       expect(sentences, a.slug).toBeGreaterThanOrEqual(2);
       expect(sentences, a.slug).toBeLessThanOrEqual(3);
       expect(a.counties.length, a.slug).toBeGreaterThan(0);
-      // Rough Metro Atlanta / north Georgia bounding box.
-      expect(a.center.lat, a.slug).toBeGreaterThan(33.2);
-      expect(a.center.lat, a.slug).toBeLessThan(34.6);
-      expect(a.center.lng, a.slug).toBeGreaterThan(-84.9);
-      expect(a.center.lng, a.slug).toBeLessThan(-83.7);
+      // Rough bounding box of the Northeast Georgia counties we serve.
+      expect(a.center.lat, a.slug).toBeGreaterThan(33.9);
+      expect(a.center.lat, a.slug).toBeLessThan(34.7);
+      expect(a.center.lng, a.slug).toBeGreaterThan(-84.1);
+      expect(a.center.lng, a.slug).toBeLessThan(-82.8);
     }
   });
 
@@ -40,6 +40,13 @@ describe("area config", () => {
       const copy = [a.description, a.goodToKnow ?? "", ...a.highlights].join(" ");
       expect(copy, a.slug).not.toMatch(risky);
     }
+  });
+
+  it("groups every region's guides together, in region order (the index relies on it)", () => {
+    const order = areaRegions.map((r) => r.id);
+    const seen = areas.map((a) => order.indexOf(a.region));
+    expect(seen).toEqual([...seen].sort((x, y) => x - y));
+    for (const r of areaRegions) expect(areas.some((a) => a.region === r.id), r.id).toBe(true);
   });
 
   it("never lets two areas claim the same name or alias", () => {
@@ -55,14 +62,14 @@ describe("area config", () => {
 
 describe("findArea", () => {
   it("finds by slug, name or alias, ignoring case and punctuation", () => {
-    expect(findArea("virginia-highland")?.name).toBe("Virginia-Highland");
-    expect(findArea("Virginia Highland")?.slug).toBe("virginia-highland");
-    expect(findArea("  OLD 4TH WARD ")?.slug).toBe("old-fourth-ward");
-    expect(findArea("peachtree-city")?.city).toBe("Peachtree City");
+    expect(findArea("lake-hartwell")?.name).toBe("Lake Hartwell");
+    expect(findArea("Hartwell Lake")?.slug).toBe("lake-hartwell");
+    expect(findArea("  FLOWERY-BRANCH ")?.slug).toBe("flowery-branch");
+    expect(findArea("franklin-springs")?.city).toBe("Franklin Springs");
   });
 
   it("returns undefined for unknown or empty input", () => {
-    expect(findArea("Atlanta")).toBeUndefined();
+    expect(findArea("Athens")).toBeUndefined();
     expect(findArea("")).toBeUndefined();
     expect(findArea(null)).toBeUndefined();
   });
@@ -70,13 +77,13 @@ describe("findArea", () => {
 
 describe("labels", () => {
   it("formats one or many counties", () => {
-    expect(countyLabel({ counties: ["Fulton"] })).toBe("Fulton County");
-    expect(countyLabel({ counties: ["Hall", "Forsyth", "Gwinnett"] })).toBe(
-      "Hall, Forsyth and Gwinnett counties",
+    expect(countyLabel({ counties: ["Franklin"] })).toBe("Franklin County");
+    expect(countyLabel({ counties: ["Hart", "Franklin", "Stephens"] })).toBe(
+      "Hart, Franklin and Stephens counties",
     );
   });
 
   it("builds guide URLs", () => {
-    expect(areaHref({ slug: "grant-park" })).toBe("/areas/grant-park");
+    expect(areaHref({ slug: "royston" })).toBe("/areas/royston");
   });
 });

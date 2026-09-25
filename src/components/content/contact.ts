@@ -5,7 +5,7 @@
 
 type Address = { line1: string; city: string; state: string; postalCode: string };
 
-/** `tel:` link in E.164 form for a US display number: "(404) 555-0142" → "tel:+14045550142". */
+/** `tel:` link in E.164 form for a US display number: "(706) 246-0053" → "tel:+17062460053". */
 export function telHref(phone: string): string {
   const digits = phone.replace(/\D/g, "");
   if (digits.length === 10) return `tel:+1${digits}`;
@@ -21,7 +21,7 @@ export function mailtoHref(email: string, subject?: string): string {
 /**
  * Display lines for an address. The site config allows an empty street line
  * (and ZIP) until the firm publishes an office, so blank parts are dropped:
- * `{ line1: "", city: "Atlanta", state: "GA" }` → `["Atlanta, GA"]`.
+ * `{ line1: "", city: "Royston", state: "GA" }` → `["Royston, GA"]`.
  */
 export function addressLines(a: Address): string[] {
   const cityLine = [a.city.trim(), `${a.state} ${a.postalCode}`.trim()].filter(Boolean).join(", ");

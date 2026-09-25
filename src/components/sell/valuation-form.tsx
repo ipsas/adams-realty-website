@@ -15,7 +15,9 @@ export function ValuationForm() {
       <div className="flex flex-col items-center py-10 text-center">
         <CheckCircle2 className="size-12 text-brand-600" strokeWidth={1.5} />
         <p className="mt-4 text-lg font-semibold text-ink">{state.message}</p>
-        <p className="mt-1 text-sm text-muted">Expect your valuation within one business day.</p>
+        <p className="mt-1 text-sm text-muted">
+          We&apos;ll look at recent sales nearby and get back to you with your valuation.
+        </p>
       </div>
     );
   }
@@ -31,7 +33,7 @@ export function ValuationForm() {
           id="v-address"
           name="address"
           autoComplete="street-address"
-          placeholder="123 Main St, Decatur, GA"
+          placeholder="Street address, town and ZIP"
           required
         />
       </Field>
@@ -72,7 +74,7 @@ export function ValuationForm() {
           id="v-notes"
           name="notes"
           rows={3}
-          placeholder="Recent renovations, questions, preferred contact time…"
+          placeholder="Acreage, recent renovations, questions, preferred contact time…"
         />
       </Field>
       <FormMessage>{!state.ok && state.message}</FormMessage>

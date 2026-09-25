@@ -1,418 +1,459 @@
 /**
- * Static inputs for the demo seed: neighborhoods, agents, photo pools and
- * copy fragments. All listings generated from these are fictional.
+ * Static inputs for the demo seed: the Northeast Georgia market, the team,
+ * photo pools and copy fragments.
+ *
+ * Real vs. sample:
+ * - The office (Adams Realty, Inc., 69 Mill Street, Royston) and Andrea
+ *   Anderegg's agent profile are real, published facts. Don't embellish
+ *   them: her bio, photo, experience and email stay unset or placeholder
+ *   until she supplies them.
+ * - Every listing, every other agent and every other brokerage is a
+ *   FICTIONAL SAMPLE for demonstration only, and the demo data sources carry
+ *   a disclaimer saying so (shown in the site footer). Sample agents make no
+ *   real-world claims; street names are made up.
+ *
+ * Coordinates come from `seed-sites.json`: pools of points per area that were
+ * checked against USGS hydrography to be on land (and, for "waterfront", on
+ * the mainland within 100 m of the lake shore) inside the right county.
  */
 
-export type Neighborhood = {
+export type SeedPropertyType =
+  | "single_family"
+  | "condo"
+  | "townhouse"
+  | "multi_family"
+  | "manufactured"
+  | "land"
+  | "farm_ranch"
+  | "commercial";
+
+export type SeedArea = {
+  /** Key into seed-sites.json; matches the area guide slug in src/config/areas.ts. */
+  slug: string;
+  /** Town areas: the city written to listings. Lakes take city/ZIP from each site. */
   name: string;
+  kind: "town" | "lake";
   city: string;
   zip: string;
-  county: string;
-  lat: number;
-  lng: number;
-  /** Scatter radius in degrees (~0.01° ≈ 1 km). */
-  radius: number;
+  /** Home price per square foot (lake areas: waterfront). */
   ppsf: [number, number];
   sqft: [number, number];
   years: [number, number];
+  /** In-town lot size, square feet. */
   lot: [number, number];
-  mix: Partial<Record<"single_family" | "condo" | "townhouse" | "multi_family" | "land", number>>;
-  district: string;
-  /** Intown Atlanta addresses carry a quadrant suffix ("NE", "SE"…). */
-  quadrant?: "NE" | "NW" | "SE" | "SW";
+  /** Acreage for rural land and farms (lake areas: waterfront lots). */
+  acres: [number, number];
+  /** Land price per acre (lake areas: waterfront lots). */
+  perAcre: [number, number];
+  mix: Partial<Record<SeedPropertyType, number>>;
+  /** School district for in-town homes; rural homes use the county's district. */
+  district?: string;
+  /** Share of lake-area homes and lots on the water (the rest are "lake area"). */
   waterfrontChance?: number;
-  viewChance?: number;
   poolChance?: number;
   basementChance?: number;
+  /** Share of houses in a subdivision with an HOA. */
+  hoaChance?: number;
+  /**
+   * Finishes "…, all of it {in Royston}, {vibe}." Place facts only (see the
+   * copy rules in src/config/areas.ts), and never the name of another town:
+   * descriptions are full-text indexed, so "near Royston" would put this
+   * town's listings into a search for Royston.
+   */
   vibe: string;
+  /** Share of the sample MLS feed. */
   weight: number;
+  /** Share of Adams Realty's own listings (weighted toward the home office). */
+  ourWeight: number;
 };
 
-export const NEIGHBORHOODS: Neighborhood[] = [
+/** County school districts (names as the districts publish them). */
+export const COUNTY_DISTRICTS: Record<string, string> = {
+  Franklin: "Franklin County School District",
+  Hart: "Hart County School District",
+  Stephens: "Stephens County School District",
+  Madison: "Madison County School District",
+  Jackson: "Jackson County School District",
+  Hall: "Hall County School District",
+  Gwinnett: "Gwinnett County Public Schools",
+  Barrow: "Barrow County School System",
+};
+
+export const AREAS: SeedArea[] = [
+  // ── Franklin County ──────────────────────────────────────────────────────
   {
-    name: "Midtown",
-    city: "Atlanta",
-    zip: "30309",
-    county: "Fulton",
-    lat: 33.7838,
-    lng: -84.3857,
-    radius: 0.007,
-    ppsf: [360, 560],
-    sqft: [700, 2600],
-    years: [1915, 2025],
-    lot: [0, 6000],
-    mix: { condo: 6, townhouse: 2, single_family: 2 },
-    district: "Atlanta Public Schools",
-    quadrant: "NE",
-    viewChance: 0.45,
-    vibe: "steps from Piedmont Park, the Beltline and the Woodruff Arts Center",
-    weight: 9,
-  },
-  {
-    name: "Buckhead",
-    city: "Atlanta",
-    zip: "30305",
-    county: "Fulton",
-    lat: 33.8395,
-    lng: -84.3796,
-    radius: 0.012,
-    ppsf: [380, 650],
-    sqft: [1100, 6800],
-    years: [1935, 2025],
-    lot: [0, 40000],
-    mix: { single_family: 6, condo: 3, townhouse: 1 },
-    district: "Atlanta Public Schools",
-    quadrant: "NW",
-    viewChance: 0.3,
-    poolChance: 0.35,
-    basementChance: 0.45,
-    vibe: "Atlanta's most storied address, minutes from Chastain Park and the Buckhead Village shops",
-    weight: 9,
-  },
-  {
-    name: "Virginia-Highland",
-    city: "Atlanta",
-    zip: "30306",
-    county: "Fulton",
-    lat: 33.7818,
-    lng: -84.3539,
-    radius: 0.005,
-    ppsf: [420, 580],
-    sqft: [1300, 3600],
-    years: [1915, 2023],
-    lot: [5500, 11000],
-    mix: { single_family: 9, townhouse: 1 },
-    district: "Atlanta Public Schools",
-    quadrant: "NE",
-    basementChance: 0.4,
-    vibe: "a leafy, walkable neighborhood of 1920s bungalows, patios and corner restaurants",
-    weight: 7,
-  },
-  {
-    name: "Inman Park",
-    city: "Atlanta",
-    zip: "30307",
-    county: "Fulton",
-    lat: 33.7598,
-    lng: -84.3528,
-    radius: 0.004,
-    ppsf: [460, 640],
-    sqft: [1200, 3800],
-    years: [1890, 2024],
-    lot: [4000, 10000],
-    mix: { single_family: 6, townhouse: 3, condo: 1 },
-    district: "Atlanta Public Schools",
-    quadrant: "NE",
-    basementChance: 0.3,
-    vibe: "Atlanta's first garden suburb, right on the Beltline Eastside Trail",
-    weight: 6,
-  },
-  {
-    name: "Old Fourth Ward",
-    city: "Atlanta",
-    zip: "30312",
-    county: "Fulton",
-    lat: 33.7651,
-    lng: -84.3712,
-    radius: 0.005,
-    ppsf: [380, 520],
-    sqft: [900, 2800],
-    years: [1905, 2025],
-    lot: [2500, 7000],
-    mix: { townhouse: 4, single_family: 3, condo: 3 },
-    district: "Atlanta Public Schools",
-    quadrant: "NE",
-    vibe: "a short walk to Ponce City Market and Historic Fourth Ward Park",
-    weight: 7,
-  },
-  {
-    name: "Grant Park",
-    city: "Atlanta",
-    zip: "30312",
-    county: "Fulton",
-    lat: 33.7382,
-    lng: -84.3703,
-    radius: 0.005,
-    ppsf: [330, 460],
-    sqft: [1100, 3200],
-    years: [1890, 2024],
-    lot: [4500, 9000],
-    mix: { single_family: 8, townhouse: 2 },
-    district: "Atlanta Public Schools",
-    quadrant: "SE",
-    basementChance: 0.25,
-    vibe: "Victorian and craftsman homes around Atlanta's oldest park and Zoo Atlanta",
-    weight: 6,
-  },
-  {
-    name: "Kirkwood",
-    city: "Atlanta",
-    zip: "30317",
-    county: "DeKalb",
-    lat: 33.7531,
-    lng: -84.3187,
-    radius: 0.006,
-    ppsf: [300, 420],
-    sqft: [1100, 3000],
-    years: [1915, 2025],
-    lot: [6000, 12000],
-    mix: { single_family: 9, townhouse: 1 },
-    district: "Atlanta Public Schools",
-    quadrant: "NE",
-    basementChance: 0.3,
-    vibe: "a front-porch neighborhood with its own little village of cafes and pubs",
-    weight: 6,
-  },
-  {
-    name: "East Atlanta",
-    city: "Atlanta",
-    zip: "30316",
-    county: "DeKalb",
-    lat: 33.7402,
-    lng: -84.3435,
-    radius: 0.007,
-    ppsf: [270, 380],
+    slug: "royston",
+    name: "Royston",
+    kind: "town",
+    city: "Royston",
+    zip: "30662",
+    ppsf: [140, 200],
     sqft: [1000, 2800],
-    years: [1925, 2025],
-    lot: [6000, 13000],
-    mix: { single_family: 8, townhouse: 2 },
-    district: "Atlanta Public Schools",
-    quadrant: "SE",
-    basementChance: 0.3,
-    vibe: "eclectic and easygoing, anchored by the East Atlanta Village music scene",
-    weight: 6,
-  },
-  {
-    name: "Decatur",
-    city: "Decatur",
-    zip: "30030",
-    county: "DeKalb",
-    lat: 33.7748,
-    lng: -84.2963,
-    radius: 0.008,
-    ppsf: [340, 480],
-    sqft: [1200, 4000],
     years: [1920, 2025],
-    lot: [6000, 14000],
-    mix: { single_family: 8, townhouse: 1, condo: 1 },
-    district: "City Schools of Decatur",
-    basementChance: 0.4,
-    vibe: "a beloved small city with a walkable square, festivals and top-rated schools",
-    weight: 8,
-  },
-  {
-    name: "Brookhaven",
-    city: "Brookhaven",
-    zip: "30319",
-    county: "DeKalb",
-    lat: 33.8651,
-    lng: -84.3366,
-    radius: 0.01,
-    ppsf: [300, 460],
-    sqft: [1300, 4800],
-    years: [1950, 2025],
-    lot: [7000, 18000],
-    mix: { single_family: 7, townhouse: 2, condo: 1 },
-    district: "DeKalb County School District",
-    poolChance: 0.2,
-    basementChance: 0.5,
-    vibe: "close to Blackburn Park, Oglethorpe University and the Peachtree corridor",
-    weight: 7,
-  },
-  {
-    name: "Sandy Springs",
-    city: "Sandy Springs",
-    zip: "30328",
-    county: "Fulton",
-    lat: 33.9304,
-    lng: -84.3733,
-    radius: 0.015,
-    ppsf: [240, 380],
-    sqft: [1400, 5200],
-    years: [1965, 2025],
     lot: [9000, 30000],
-    mix: { single_family: 7, townhouse: 2, condo: 1 },
-    district: "Fulton County Schools",
-    poolChance: 0.25,
-    basementChance: 0.55,
-    viewChance: 0.15,
-    vibe: "wooded lots near the Chattahoochee River National Recreation Area",
-    weight: 7,
+    acres: [3, 60],
+    perAcre: [7000, 16000],
+    mix: { single_family: 7, land: 2, farm_ranch: 1, manufactured: 1, commercial: 1 },
+    vibe: "a few minutes from Victoria Bryant State Park and the Ty Cobb Museum",
+    weight: 9,
+    ourWeight: 14,
   },
   {
-    name: "Roswell",
-    city: "Roswell",
-    zip: "30075",
-    county: "Fulton",
-    lat: 34.0232,
-    lng: -84.3616,
-    radius: 0.016,
-    ppsf: [220, 330],
-    sqft: [1600, 5000],
-    years: [1975, 2025],
-    lot: [10000, 30000],
-    mix: { single_family: 9, townhouse: 1 },
-    district: "Fulton County Schools",
-    poolChance: 0.25,
-    basementChance: 0.6,
-    vibe: "historic Canton Street charm with parks along the Chattahoochee",
-    weight: 7,
-  },
-  {
-    name: "Alpharetta",
-    city: "Alpharetta",
-    zip: "30009",
-    county: "Fulton",
-    lat: 34.0754,
-    lng: -84.2941,
-    radius: 0.018,
-    ppsf: [230, 340],
-    sqft: [1800, 5400],
-    years: [1985, 2025],
-    lot: [8000, 25000],
-    mix: { single_family: 8, townhouse: 2 },
-    district: "Fulton County Schools",
-    poolChance: 0.3,
-    basementChance: 0.55,
-    vibe: "close to Avalon, the Alpharetta Greenway and top North Fulton schools",
-    weight: 8,
-  },
-  {
-    name: "Johns Creek",
-    city: "Johns Creek",
-    zip: "30097",
-    county: "Fulton",
-    lat: 34.029,
-    lng: -84.1986,
-    radius: 0.018,
-    ppsf: [210, 300],
-    sqft: [2200, 5600],
-    years: [1985, 2024],
-    lot: [12000, 30000],
-    mix: { single_family: 10 },
-    district: "Fulton County Schools",
-    poolChance: 0.3,
-    basementChance: 0.6,
-    vibe: "swim-and-tennis communities and some of Georgia's highest-rated schools",
-    weight: 6,
-  },
-  {
-    name: "Marietta",
-    city: "Marietta",
-    zip: "30064",
-    county: "Cobb",
-    lat: 33.9526,
-    lng: -84.5499,
-    radius: 0.018,
-    ppsf: [190, 280],
-    sqft: [1400, 4200],
+    slug: "franklin-springs",
+    name: "Franklin Springs",
+    kind: "town",
+    city: "Franklin Springs",
+    zip: "30639",
+    ppsf: [135, 190],
+    sqft: [1000, 2600],
     years: [1950, 2025],
-    lot: [9000, 25000],
-    mix: { single_family: 8, townhouse: 2 },
-    district: "Cobb County School District",
-    poolChance: 0.15,
-    basementChance: 0.5,
-    vibe: "a historic square, Kennesaw Mountain trails and easy I-75 access",
-    weight: 7,
+    lot: [10000, 40000],
+    acres: [2, 40],
+    perAcre: [7000, 15000],
+    mix: { single_family: 7, land: 2, manufactured: 1, farm_ranch: 0.5 },
+    vibe: "close to Victoria Bryant State Park and its Highland Walk golf course",
+    weight: 4,
+    ourWeight: 5,
   },
   {
-    name: "Smyrna",
-    city: "Smyrna",
-    zip: "30080",
-    county: "Cobb",
-    lat: 33.8839,
-    lng: -84.5144,
-    radius: 0.012,
-    ppsf: [230, 320],
-    sqft: [1200, 3600],
-    years: [1960, 2025],
-    lot: [6000, 15000],
-    mix: { single_family: 6, townhouse: 4 },
-    district: "Cobb County School District",
-    basementChance: 0.35,
-    vibe: "minutes from Truist Park and The Battery, with a lively Market Village",
+    slug: "canon",
+    name: "Canon",
+    kind: "town",
+    city: "Canon",
+    zip: "30520",
+    ppsf: [120, 175],
+    sqft: [900, 2400],
+    years: [1910, 2024],
+    lot: [10000, 45000],
+    acres: [3, 50],
+    perAcre: [6500, 13000],
+    mix: { single_family: 5, land: 3, farm_ranch: 1, manufactured: 1 },
+    vibe: "with GA 17 running through town and open farm country all around",
+    weight: 3,
+    ourWeight: 4,
+  },
+  {
+    slug: "lavonia",
+    name: "Lavonia",
+    kind: "town",
+    city: "Lavonia",
+    zip: "30553",
+    ppsf: [140, 215],
+    sqft: [1000, 3000],
+    years: [1920, 2025],
+    lot: [9000, 35000],
+    acres: [2, 40],
+    perAcre: [8000, 18000],
+    mix: { single_family: 7, land: 2, commercial: 1, townhouse: 0.5, manufactured: 0.5 },
+    vibe: "right off I-85 and a short drive from Tugaloo State Park",
     weight: 6,
+    ourWeight: 6,
   },
   {
-    name: "Kennesaw",
-    city: "Kennesaw",
-    zip: "30144",
-    county: "Cobb",
-    lat: 34.0234,
-    lng: -84.6155,
-    radius: 0.018,
-    ppsf: [175, 240],
-    sqft: [1500, 3800],
-    years: [1985, 2025],
-    lot: [8000, 18000],
-    mix: { single_family: 9, townhouse: 1 },
-    district: "Cobb County School District",
+    slug: "carnesville",
+    name: "Carnesville",
+    kind: "town",
+    city: "Carnesville",
+    zip: "30521",
+    ppsf: [125, 185],
+    sqft: [1000, 2800],
+    years: [1930, 2025],
+    lot: [15000, 60000],
+    acres: [5, 220],
+    perAcre: [6500, 15000],
+    mix: { single_family: 4, land: 4, farm_ranch: 2, manufactured: 1, commercial: 0.6 },
+    vibe: "near the 1906 Franklin County Courthouse, with I-85 just outside town",
+    weight: 6,
+    ourWeight: 7,
+  },
+
+  // ── Lake Hartwell & Hart County ──────────────────────────────────────────
+  {
+    slug: "hartwell",
+    name: "Hartwell",
+    kind: "town",
+    city: "Hartwell",
+    zip: "30643",
+    ppsf: [145, 225],
+    sqft: [1000, 3200],
+    years: [1900, 2025],
+    lot: [9000, 35000],
+    acres: [2, 50],
+    perAcre: [8000, 20000],
+    mix: { single_family: 7, land: 2, commercial: 1, multi_family: 0.4, manufactured: 0.5 },
+    vibe: "near the historic downtown square and Hartwell Lakeside Park",
+    weight: 6,
+    ourWeight: 7,
+  },
+  {
+    slug: "lake-hartwell",
+    name: "Lake Hartwell",
+    kind: "lake",
+    city: "Hartwell",
+    zip: "30643",
+    ppsf: [240, 420],
+    sqft: [1400, 4200],
+    years: [1968, 2025],
+    lot: [22000, 90000],
+    acres: [0.7, 4],
+    perAcre: [70000, 170000],
+    mix: { single_family: 8, land: 3 },
+    waterfrontChance: 0.6,
     poolChance: 0.1,
-    basementChance: 0.4,
-    vibe: "room to spread out near Kennesaw State and Swift-Cantrell Park",
+    basementChance: 0.5,
+    vibe: "with 962 miles of shoreline to explore",
+    weight: 11,
+    ourWeight: 10,
+  },
+
+  // ── Stephens County ──────────────────────────────────────────────────────
+  {
+    slug: "toccoa",
+    name: "Toccoa",
+    kind: "town",
+    city: "Toccoa",
+    zip: "30577",
+    ppsf: [130, 200],
+    sqft: [900, 3000],
+    years: [1910, 2025],
+    lot: [8000, 30000],
+    acres: [2, 60],
+    perAcre: [7000, 16000],
+    mix: {
+      single_family: 7,
+      land: 2,
+      commercial: 1,
+      multi_family: 0.5,
+      manufactured: 0.5,
+      farm_ranch: 0.5,
+    },
+    district: "Stephens County School District",
+    vibe: "close to Toccoa Falls and the Currahee Military Museum",
     weight: 6,
+    ourWeight: 4,
   },
   {
-    name: "Peachtree City",
-    city: "Peachtree City",
-    zip: "30269",
-    county: "Fayette",
-    lat: 33.3968,
-    lng: -84.5958,
-    radius: 0.02,
-    ppsf: [190, 270],
-    sqft: [1700, 4400],
-    years: [1975, 2024],
-    lot: [10000, 25000],
-    mix: { single_family: 9, townhouse: 1 },
-    district: "Fayette County Schools",
+    slug: "martin",
+    name: "Martin",
+    kind: "town",
+    city: "Martin",
+    zip: "30557",
+    ppsf: [125, 185],
+    sqft: [900, 2400],
+    years: [1940, 2024],
+    lot: [15000, 50000],
+    acres: [3, 40],
+    perAcre: [7000, 15000],
+    mix: { single_family: 5, land: 2, manufactured: 1, farm_ranch: 0.5 },
+    vibe: "on GA 17, a short drive from Tugaloo State Park",
+    weight: 3,
+    ourWeight: 4,
+  },
+
+  // ── Madison & Jackson Counties ───────────────────────────────────────────
+  {
+    slug: "danielsville",
+    name: "Danielsville",
+    kind: "town",
+    city: "Danielsville",
+    zip: "30633",
+    ppsf: [140, 200],
+    sqft: [1000, 2800],
+    years: [1930, 2025],
+    lot: [15000, 60000],
+    acres: [4, 80],
+    perAcre: [9000, 18000],
+    mix: { single_family: 5, land: 3, farm_ranch: 1.5, manufactured: 1, commercial: 0.4 },
+    vibe: "near the historic Madison County Courthouse on the town square",
+    weight: 4,
+    ourWeight: 5,
+  },
+  {
+    slug: "comer",
+    name: "Comer",
+    kind: "town",
+    city: "Comer",
+    zip: "30629",
+    ppsf: [135, 195],
+    sqft: [1000, 2700],
+    years: [1900, 2024],
+    lot: [15000, 50000],
+    acres: [4, 80],
+    perAcre: [8500, 17000],
+    mix: { single_family: 5, land: 3, farm_ranch: 1.5, manufactured: 0.8 },
+    vibe: "a few miles from Watson Mill Bridge State Park and its 1885 covered bridge",
+    weight: 3,
+    ourWeight: 4,
+  },
+  {
+    slug: "commerce",
+    name: "Commerce",
+    kind: "town",
+    city: "Commerce",
+    zip: "30529",
+    ppsf: [165, 225],
+    sqft: [1200, 3000],
+    years: [1940, 2026],
+    lot: [8000, 25000],
+    acres: [2, 40],
+    perAcre: [15000, 35000],
+    mix: { single_family: 7, townhouse: 1, land: 1.5, commercial: 1.5 },
+    district: "Commerce City School District",
+    hoaChance: 0.45,
+    vibe: "near the historic downtown and I-85",
+    weight: 6,
+    ourWeight: 3,
+  },
+  {
+    slug: "jefferson",
+    name: "Jefferson",
+    kind: "town",
+    city: "Jefferson",
+    zip: "30549",
+    ppsf: [175, 240],
+    sqft: [1500, 3600],
+    years: [1950, 2026],
+    lot: [9000, 26000],
+    acres: [2, 40],
+    perAcre: [20000, 45000],
+    mix: { single_family: 8, townhouse: 1, land: 1.5, commercial: 1 },
+    district: "Jefferson City School District",
+    hoaChance: 0.55,
+    vibe: "near the 1879 courthouse and the Crawford W. Long Museum",
+    weight: 6,
+    ourWeight: 2,
+  },
+  {
+    slug: "braselton",
+    name: "Braselton",
+    kind: "town",
+    city: "Braselton",
+    zip: "30517",
+    ppsf: [195, 290],
+    sqft: [1600, 4800],
+    years: [1992, 2026],
+    lot: [9000, 30000],
+    acres: [2, 25],
+    perAcre: [35000, 80000],
+    mix: { single_family: 8, townhouse: 2, land: 1, commercial: 0.8 },
+    district: "Jackson County School District",
     poolChance: 0.2,
-    waterfrontChance: 0.06,
-    vibe: "90 miles of golf-cart paths, two lakes and a strong community feel",
-    weight: 5,
+    basementChance: 0.35,
+    hoaChance: 0.8,
+    vibe: "close to Château Élan and Michelin Raceway Road Atlanta",
+    weight: 6,
+    ourWeight: 1,
+  },
+
+  // ── Hall & Gwinnett ──────────────────────────────────────────────────────
+  {
+    slug: "gainesville",
+    name: "Gainesville",
+    kind: "town",
+    city: "Gainesville",
+    zip: "30501",
+    ppsf: [185, 285],
+    sqft: [1000, 3800],
+    years: [1925, 2026],
+    lot: [8000, 26000],
+    acres: [2, 25],
+    perAcre: [25000, 60000],
+    mix: {
+      single_family: 7,
+      townhouse: 1.5,
+      condo: 1,
+      commercial: 1.2,
+      multi_family: 0.6,
+      land: 1,
+    },
+    district: "Gainesville City School District",
+    basementChance: 0.35,
+    hoaChance: 0.4,
+    vibe: "minutes from the historic downtown square and Brenau University",
+    weight: 8,
+    ourWeight: 2,
   },
   {
+    slug: "flowery-branch",
+    name: "Flowery Branch",
+    kind: "town",
+    city: "Flowery Branch",
+    zip: "30542",
+    ppsf: [190, 275],
+    sqft: [1400, 4000],
+    years: [1985, 2026],
+    lot: [8000, 26000],
+    acres: [2, 20],
+    perAcre: [35000, 75000],
+    mix: { single_family: 8, townhouse: 2, land: 1 },
+    basementChance: 0.45,
+    hoaChance: 0.7,
+    vibe: "near the historic train depot and I-985",
+    weight: 5,
+    ourWeight: 1,
+  },
+  {
+    slug: "lake-lanier",
     name: "Lake Lanier",
+    kind: "lake",
+    city: "Gainesville",
+    zip: "30506",
+    ppsf: [300, 520],
+    sqft: [1800, 5200],
+    years: [1975, 2026],
+    lot: [20000, 70000],
+    acres: [0.8, 3],
+    perAcre: [180000, 380000],
+    mix: { single_family: 8, land: 2, condo: 1 },
+    waterfrontChance: 0.55,
+    poolChance: 0.2,
+    basementChance: 0.65,
+    vibe: "with marinas and Corps of Engineers parks all around the lake",
+    weight: 8,
+    ourWeight: 1,
+  },
+  {
+    slug: "buford",
+    name: "Buford",
+    kind: "town",
     city: "Buford",
     zip: "30518",
-    county: "Gwinnett",
-    lat: 34.1655,
-    lng: -83.9915,
-    radius: 0.02,
-    ppsf: [230, 420],
-    sqft: [1800, 5200],
-    years: [1980, 2025],
-    lot: [15000, 60000],
-    mix: { single_family: 9, land: 1 },
-    district: "Gwinnett County Public Schools",
-    waterfrontChance: 0.35,
-    viewChance: 0.5,
-    poolChance: 0.25,
-    basementChance: 0.65,
-    vibe: "lake life with coves, marinas and sunset docks, under an hour from Atlanta",
-    weight: 5,
+    ppsf: [205, 300],
+    sqft: [1300, 4200],
+    years: [1940, 2026],
+    lot: [8000, 26000],
+    acres: [2, 15],
+    perAcre: [50000, 110000],
+    mix: { single_family: 8, townhouse: 2, commercial: 1, land: 0.6 },
+    district: "Buford City School District",
+    basementChance: 0.45,
+    hoaChance: 0.6,
+    vibe: "near the Tannery Row studios and the Mall of Georgia",
+    weight: 6,
+    ourWeight: 1,
   },
   {
-    name: "Candler Park",
-    city: "Atlanta",
-    zip: "30307",
-    county: "DeKalb",
-    lat: 33.7648,
-    lng: -84.3386,
-    radius: 0.004,
-    ppsf: [400, 540],
-    sqft: [1100, 3200],
-    years: [1915, 2024],
-    lot: [5000, 10000],
-    mix: { single_family: 9, townhouse: 1 },
-    district: "Atlanta Public Schools",
-    quadrant: "NE",
-    basementChance: 0.3,
-    vibe: "bungalows around a neighborhood park, golf course and pool",
+    slug: "dacula",
+    name: "Dacula",
+    kind: "town",
+    city: "Dacula",
+    zip: "30019",
+    ppsf: [190, 265],
+    sqft: [1500, 4200],
+    years: [1985, 2026],
+    lot: [9000, 30000],
+    acres: [2, 20],
+    perAcre: [40000, 90000],
+    mix: { single_family: 9, townhouse: 1, land: 1 },
+    basementChance: 0.4,
+    hoaChance: 0.7,
+    vibe: "close to Little Mulberry Park's trails and lakes",
     weight: 5,
+    ourWeight: 1,
   },
 ];
 
+/** Made-up street names. Residential, rural and commercial streets draw from these. */
 export const STREETS = [
   "Dogwood",
   "Magnolia",
@@ -439,20 +480,17 @@ export const STREETS = [
   "Foxhollow",
   "Creekview",
   "Muscadine",
-  "Piedmont Bluff",
-  "Summerour",
   "Cedar Crest",
-  "Fernbank Hollow",
+  "Quail Run",
+  "Persimmon",
+  "Wild Turkey",
+  "Blackberry",
 ];
-export const SUFFIXES = ["St", "Ave", "Dr", "Ln", "Way", "Trl", "Ct", "Rd", "Pl", "Cir"];
-export const CONDO_STREETS = [
-  "Crescent Walk",
-  "Linden Place",
-  "Juniper Park",
-  "Magnolia Tower Dr",
-  "Spring Terrace",
-  "Arbor Commons",
-];
+export const SUFFIXES = ["St", "Ave", "Dr", "Ln", "Way", "Trl", "Ct", "Pl", "Cir"];
+export const RURAL_SUFFIXES = ["Rd", "Rd", "Farm Rd", "Creek Rd", "Ridge Rd", "Mill Rd"];
+export const LAKE_SUFFIXES = ["Point Rd", "Cove Dr", "Shores Dr", "Landing Rd", "Bay Ct"];
+export const COMMERCIAL_SUFFIXES = ["Business Pkwy", "Trade Center Dr", "Industrial Blvd"];
+export const CONDO_STREETS = ["Harbor Pointe Dr", "Lakeshore Commons", "Mill Village Way"];
 
 const u = (id: string) => `https://images.unsplash.com/${id}?auto=format&fit=crop&w=1600&q=80`;
 
@@ -479,10 +517,33 @@ export const EXTERIORS = [
 
 export const CONDO_EXTERIORS = [
   "photo-1545324418-cc1a3fa10c00",
-  "photo-1486406146926-c627a92ad1ab",
   "photo-1460317442991-0ec209397118",
   "photo-1512918728675-ed5a9ecdebfd",
 ].map(u);
+
+/** Open land: pasture, hardwoods and pines. */
+export const LAND_PHOTOS: Array<{ url: string; caption: string }> = [
+  ["photo-1500382017468-9049fed747ef", "Open pasture"],
+  ["photo-1472214103451-9374bd1c798e", "Rolling fields"],
+  ["photo-1441974231531-c6227db76b6e", "Hardwoods"],
+  ["photo-1448375240586-882707db888b", "Timber"],
+  ["photo-1470071459604-3b5ec3a7fe05", "Morning over the property"],
+].map(([id, caption]) => ({ url: u(id), caption }));
+
+export const LAKE_PHOTOS: Array<{ url: string; caption: string }> = [
+  ["photo-1501785888041-af3ef285b470", "Lake view"],
+  ["photo-1439066615861-d1af74d74000", "The lake"],
+  ["photo-1506744038136-46273834b3fb", "Sunset over the water"],
+].map(([id, caption]) => ({ url: u(id), caption }));
+
+export const COMMERCIAL_PHOTOS: Array<{ url: string; caption: string }> = [
+  ["photo-1486406146926-c627a92ad1ab", "Exterior"],
+  ["photo-1441986300917-64674bd600d8", "Retail space"],
+  ["photo-1497366216548-37526070297c", "Office space"],
+  ["photo-1497366811353-6870744d04b2", "Office"],
+  ["photo-1555396273-367ea4eb4db5", "Dining room"],
+  ["photo-1586528116311-ad8dd3c8310d", "Warehouse"],
+].map(([id, caption]) => ({ url: u(id), caption }));
 
 export const INTERIORS: Array<{ url: string; caption: string }> = [
   ["photo-1600607687939-ce8a6c25118c", "Living room"],
@@ -508,150 +569,229 @@ export const INTERIORS: Array<{ url: string; caption: string }> = [
   ["photo-1586023492125-27b2c045efd7", "Living room"],
 ].map(([id, caption]) => ({ url: u(id), caption }));
 
-export const AGENTS = [
+const photo = (id: string) =>
+  `https://images.unsplash.com/${id}?auto=format&fit=crop&w=600&h=600&q=80`;
+
+/**
+ * The team. Index 0 is the broker and the admin login; indexes 1 and 2 get the
+ * sample agent logins (daniel@, priya@) that tests and docs use.
+ */
+export const AGENTS: Array<{
+  name: string;
+  title: string;
+  /** null = initials avatar. */
+  photoUrl: string | null;
+  phone: string;
+  email: string;
+  mlsAgentId: string;
+  /** null = not shown. */
+  years: number | null;
+  specialties: string[];
+  languages: string[];
+  /** Area guide names or "<Name> County"; both match guides (src/lib/areas/match.ts). */
+  areas: string[];
+  bio: string;
+  /** Real person (true) or fictional sample profile (false). */
+  real: boolean;
+}> = [
   {
-    name: "Margaret Ellis",
-    title: "Managing Broker",
-    photo: "photo-1573496359142-b8d87734a5a2",
-    years: 24,
-    specialties: ["Luxury homes", "Buckhead", "Relocation"],
+    // REAL: Andrea Anderegg, broker. Name, title, brokerage, direct phone, MLS
+    // agent ID, specialties and counties come from her public Georgia MLS and
+    // Homes.com profiles; the headshot and email were provided by Adams Realty.
+    // Don't add a bio, years or awards she hasn't provided; the bio below is
+    // true by construction.
+    name: "Andrea Anderegg",
+    title: "Broker",
+    photoUrl: "/team/andrea-anderegg.webp",
+    phone: "(850) 572-3287",
+    email: "contracts.adamsrealty@gmail.com",
+    mlsAgentId: "ANDEREGGAA",
+    years: null,
+    specialties: [
+      "First-time home buyers",
+      "Investments",
+      "Luxury homes",
+      "Military families",
+      "New construction",
+      "Senior communities",
+    ],
     languages: ["English"],
-    areas: ["Buckhead", "Brookhaven", "Sandy Springs"],
-    bio: "Margaret has guided buyers and sellers through two decades of Atlanta markets. She still answers her own phone, and she knows which Buckhead streets flood and which ones never do.",
+    areas: [
+      "Franklin County",
+      "Hart County",
+      "Stephens County",
+      "Madison County",
+      "Jackson County",
+      "Hall County",
+      "Gwinnett County",
+    ],
+    bio: "Andrea Anderegg is the broker at Adams Realty, Inc. in Royston, working with buyers and sellers across Northeast Georgia. The firm handles houses, land, lake property, hunting land, farms and commercial property.",
+    real: true,
   },
+  // ── FICTIONAL SAMPLE AGENTS (demo only; stock photos; 555 phone numbers) ──
   {
     name: "Daniel Reyes",
-    title: "Senior Agent",
-    photo: "photo-1560250097-0b93528c311a",
-    years: 14,
-    specialties: ["First-time buyers", "Beltline neighborhoods", "Investment property"],
+    title: "Agent",
+    photoUrl: photo("photo-1560250097-0b93528c311a"),
+    phone: "(706) 555-0151",
+    email: "daniel@adamsrealty.example",
+    mlsAgentId: "SAMPLE-1",
+    years: 11,
+    specialties: ["Land & acreage", "Farms", "Hunting & timber land"],
     languages: ["English", "Spanish"],
-    areas: ["Old Fourth Ward", "Inman Park", "Grant Park"],
-    bio: "Daniel has watched the Beltline transform intown Atlanta block by block, and he helps first-time buyers find value before everyone else notices it.",
+    areas: ["Carnesville", "Danielsville", "Comer", "Canon"],
+    bio: "Daniel walks every tract before he lists it: pasture, timber, hunting land and small farms, with the survey, road frontage and soil questions answered up front.",
+    real: false,
   },
   {
     name: "Priya Natarajan",
     title: "Agent",
-    photo: "photo-1580489944761-15a19d654956",
-    years: 8,
-    specialties: ["New construction", "North Fulton", "Negotiation"],
-    languages: ["English", "Tamil", "Hindi"],
-    areas: ["Alpharetta", "Johns Creek", "Roswell"],
-    bio: "A former software engineer, Priya brings data to every pricing conversation — and a calm head to every negotiation.",
+    photoUrl: photo("photo-1580489944761-15a19d654956"),
+    phone: "(470) 555-0152",
+    email: "priya@adamsrealty.example",
+    mlsAgentId: "SAMPLE-2",
+    years: 7,
+    specialties: ["New construction", "First-time buyers", "Relocation"],
+    languages: ["English", "Hindi"],
+    areas: ["Commerce", "Jefferson", "Braselton", "Dacula"],
+    bio: "Priya knows the new subdivisions along I-85 builder by builder, and she reads every contract addendum so her buyers don't have to guess.",
+    real: false,
   },
   {
-    name: "James Whitfield",
+    name: "Caroline Pruitt",
     title: "Lake Specialist",
-    photo: "photo-1507003211169-0a1dd7228f2d",
-    years: 18,
-    specialties: ["Waterfront", "Lake Lanier", "Acreage"],
+    photoUrl: photo("photo-1494790108377-be9c29b29330"),
+    phone: "(706) 555-0153",
+    email: "caroline@adamsrealty.example",
+    mlsAgentId: "SAMPLE-3",
+    years: 14,
+    specialties: ["Lake property", "Waterfront", "Second homes"],
     languages: ["English"],
-    areas: ["Lake Lanier", "Peachtree City"],
-    bio: "James lives on Lanier and knows dock permits, Corps of Engineers shoreline rules and water-depth quirks cove by cove.",
-  },
-  {
-    name: "Sofia Martinez",
-    title: "Agent",
-    photo: "photo-1494790108377-be9c29b29330",
-    years: 6,
-    specialties: ["Condos", "Midtown", "Sellers"],
-    languages: ["English", "Spanish"],
-    areas: ["Midtown", "Buckhead", "Old Fourth Ward"],
-    bio: "Sofia knows every Midtown tower's HOA, amenities and special-assessment history, and she stages listings that sell in a weekend.",
+    areas: ["Lake Hartwell", "Hartwell", "Lavonia", "Martin"],
+    bio: "Caroline checks dock permits, water depth and Corps of Engineers shoreline rules before anyone falls in love with a lake view.",
+    real: false,
   },
   {
     name: "Marcus Bell",
     title: "Agent",
-    photo: "photo-1519085360753-af0119f7cbe7",
-    years: 10,
-    specialties: ["Historic homes", "Renovation projects"],
-    languages: ["English"],
-    areas: ["Grant Park", "Virginia-Highland", "Kirkwood"],
-    bio: "Marcus restored his own 1910 Grant Park Victorian and loves helping buyers see what an older home could become.",
-  },
-  {
-    name: "Hannah Cho",
-    title: "Buyer's Agent",
-    photo: "photo-1438761681033-6461ffad8d80",
-    years: 5,
-    specialties: ["Buyers", "Relocation", "Schools"],
-    languages: ["English", "Korean"],
-    areas: ["Decatur", "Brookhaven", "Candler Park"],
-    bio: "Hannah relocated to Atlanta herself and now helps newcomers find the neighborhood that feels like home on the first try.",
-  },
-  {
-    name: "Tom Okafor",
-    title: "Agent",
-    photo: "photo-1472099645785-5658abf4ff4e",
+    photoUrl: photo("photo-1519085360753-af0119f7cbe7"),
+    phone: "(762) 555-0154",
+    email: "marcus@adamsrealty.example",
+    mlsAgentId: "SAMPLE-4",
     years: 12,
-    specialties: ["Cobb County", "Pricing strategy", "Sellers"],
+    specialties: ["Commercial property", "Investment property", "Lake Lanier"],
     languages: ["English"],
-    areas: ["Marietta", "Smyrna", "Kennesaw"],
-    bio: "Tom will tell you exactly what your home is worth — even when it isn't what you hoped to hear — and then show you how to beat it.",
+    areas: ["Gainesville", "Flowery Branch", "Lake Lanier", "Buford"],
+    bio: "Marcus handles storefronts, small warehouses and investment property, plus the occasional lake house for clients who'd rather be on the water.",
+    real: false,
   },
-].map((a) => ({
-  ...a,
-  photoUrl: `https://images.unsplash.com/${a.photo}?auto=format&fit=crop&w=600&h=600&q=80`,
-}));
-
-export const OTHER_BROKERAGES = [
-  "Magnolia Hill Realty",
-  "Red Clay Real Estate",
-  "Chattahoochee Home Group",
-  "Southern Oak Properties",
-  "Dogwood Lane Realty",
-  "Piedmont Crest Partners",
 ];
 
-export const OPENERS: Record<string, string[]> = {
+/** Fictional brokerages for the sample MLS feed. */
+export const OTHER_BROKERAGES = [
+  "Sweetgum & Pine Realty",
+  "Brown Thrasher Home Group",
+  "Chinquapin Land Co.",
+  "Muscadine Realty Partners",
+  "Red Fox Ridge Realty",
+  "Tupelo Lane Properties",
+];
+
+/** `{in}` becomes "in Royston", "on Lake Hartwell" or "near Lake Hartwell". */
+export const OPENERS: Record<SeedPropertyType, string[]> = {
   single_family: [
-    "Welcome home to this light-filled {style} in {hood}.",
-    "Set on a {lotAdj} lot in {hood}, this {style} was made for everyday living and easy entertaining.",
-    "Thoughtfully updated and move-in ready, this {style} puts you in {hood}, {vibe}.",
-    "This is the {hood} home you've been waiting for.",
+    "Welcome home to this light-filled {style} {in}.",
+    "Set on a {lotAdj} lot {in}, this {style} was made for everyday living and easy entertaining.",
+    "Thoughtfully updated and move-in ready, this {style} sits {in}.",
+    "This is the {style} you've been waiting for, {in}.",
   ],
   condo: [
-    "Lock-and-leave living with {view} from this {beds}-bedroom residence.",
-    "Floor-to-ceiling glass frames {view} in this sleek {hood} residence.",
-    "Live above it all in one of {hood}'s most sought-after buildings.",
+    "Low-maintenance living with {view} from this {beds}-bedroom condo {in}.",
+    "Lock up and go: a bright {beds}-bedroom condo {in} with {view}.",
   ],
   townhouse: [
-    "A low-maintenance {style} townhome in {hood}, {vibe}.",
-    "Modern, bright and just steps from everything {hood} is known for.",
+    "A low-maintenance {style} townhome {in}.",
+    "Bright, modern and easy to keep up, this townhome sits {in}.",
   ],
   multi_family: [
-    "A rare opportunity: a well-kept multi-unit property in {hood}.",
-    "Live in one, rent the other — this {hood} property works as hard as you do.",
+    "A well-kept duplex {in}: live in one side and rent the other.",
+    "An income property {in} with separate entrances and meters.",
+  ],
+  manufactured: [
+    "A move-in-ready manufactured home on a {lotAdj} lot {in}.",
+    "Room to breathe: a manufactured home on {acres} acres {in}.",
   ],
   land: [
-    "Build your North Georgia retreat on this {acres}-acre homesite.",
-    "Rolling land, mature oaks and room to breathe — {acres} acres in {hood}.",
+    "{acres} acres {in}, ready for your homesite, garden or getaway.",
+    "Rolling land, mature hardwoods and room to breathe: {acres} acres {in}.",
+  ],
+  farm_ranch: [
+    "A working farm on {acres} acres {in}, with a {style} farmhouse and room for animals.",
+    "{acres} acres of pasture and woods {in}, with a comfortable {style} home.",
+  ],
+  commercial: [
+    "A {sqft}-square-foot {subtype} building {in}, ready for your business.",
+    "Well-located {subtype} space {in} with on-site parking.",
   ],
 };
 
+export const LAND_DETAILS = [
+  "Mostly open pasture with a tree line along the back of the property.",
+  "A mix of hardwoods and planted pines, with an interior road already cut.",
+  "Paved road frontage, with power at the road.",
+  "Gently rolling ground with several good building sites.",
+  "Deer and turkey sign throughout, with room for a food plot and stand.",
+  "A seasonal creek crosses the lower corner of the tract.",
+];
+export const TIMBER_DETAILS = [
+  "Planted pines approaching harvest age, plus a mature hardwood bottom.",
+  "Recreational tract with established trails and a cleared camp spot.",
+];
+export const LAKE_LOT_DETAILS = [
+  "Gentle slope to the water through mature hardwoods.",
+  "Wide lake views from the top of the lot, with a building site already cleared.",
+  "Ask about dock eligibility under the Corps of Engineers shoreline plan.",
+];
+export const FARM_DETAILS = [
+  "A center-aisle barn, fenced and cross-fenced pasture, and a run-in shed.",
+  "Hay fields, a workshop and a covered equipment shed.",
+  "Two stocked ponds, woods for hunting and pasture for cattle or horses.",
+];
+export const COMMERCIAL_DETAILS = [
+  "Zoned commercial, with signage visible from the road.",
+  "Open floor plan with private offices, restrooms and a rear loading door.",
+  "Recent roof and HVAC, with a paved lot for customer parking.",
+  "Flexible space that has served as retail, office and restaurant.",
+];
+
 export const STYLES = [
   "modern farmhouse",
-  "mid-century ranch",
+  "brick ranch",
   "craftsman bungalow",
-  "contemporary",
-  "Tudor revival",
-  "Georgian colonial",
-  "brick traditional",
+  "traditional two-story",
+  "cottage",
+  "split-level",
+  "Cape Cod",
   "Victorian",
 ];
 
 export const HIGHLIGHTS = [
-  "The chef's kitchen features quartz counters, a gas range and an oversized island.",
+  "The kitchen features quartz counters, a gas range and an oversized island.",
   "An open floor plan connects the kitchen, dining and living areas under vaulted ceilings.",
   "The primary suite is a true retreat with a spa-like bath and walk-in closet.",
   "Wide-plank oak floors run throughout the main level.",
-  "Out back, a covered patio overlooks a private, landscaped yard.",
+  "Out back, a covered patio overlooks a private, level yard.",
   "A flexible bonus room works as an office, gym or guest space.",
   "Energy-efficient windows and a newer HVAC keep utility bills low.",
   "A screened porch off the kitchen makes the most of long Georgia evenings.",
-  "The finished terrace level adds a media room, guest suite and walk-out patio.",
-  "Built-ins, designer lighting and custom tile add character in every room.",
-  "The detached studio is perfect for a home office or guest suite.",
+  "The finished basement adds a media room, guest suite and walk-out patio.",
+  "A detached workshop has power and room for the boat or the tractor.",
+  "A rocking-chair front porch runs the width of the house.",
+];
+export const LAKE_HIGHLIGHTS = [
+  "A covered dock with a boat lift sits at the end of a short path.",
+  "Walls of windows frame the water from the great room and primary suite.",
+  "The deck steps down to a fire pit with a view of the main channel.",
 ];
 
 export const INTERIOR_FEATURES = [
@@ -664,38 +804,27 @@ export const INTERIOR_FEATURES = [
   "Ceiling Fan(s)",
   "Double Vanity",
   "Pantry",
-  "Smart Home",
   "Recessed Lighting",
   "Primary Bedroom on Main",
 ];
 export const EXTERIOR_FEATURES = [
   "Screened Porch",
   "Covered Patio",
-  "Private Yard",
+  "Front Porch",
   "Deck",
-  "Outdoor Fireplace",
+  "Fenced Yard",
+  "Storage Building",
+  "Garden",
   "Rain Gutters",
-  "Sprinkler System",
-  "Balcony",
 ];
 export const APPLIANCES = [
   "Dishwasher",
+  "Electric Range",
   "Gas Range",
   "Microwave",
   "Refrigerator",
   "Stainless Steel Appliance(s)",
-  "Tankless Water Heater",
-  "Wine Refrigerator",
   "Double Oven",
 ];
-export const FLOORING = ["Wood", "Tile", "Carpet", "Concrete", "Vinyl"];
-export const COMMUNITY = [
-  "Park",
-  "Playground",
-  "Swim/Tennis",
-  "Walk/Bike/Hike/Jog Trail(s)",
-  "Clubhouse",
-  "Dog Park",
-  "Sidewalks",
-  "Near Beltline",
-];
+export const FLOORING = ["Hardwood", "Tile", "Carpet", "Vinyl"];
+export const COMMUNITY = ["Clubhouse", "Pool", "Playground", "Sidewalks", "Street Lights"];
