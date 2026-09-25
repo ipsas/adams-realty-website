@@ -45,7 +45,7 @@ const COMMITMENTS = [
   {
     icon: BadgeDollarSign,
     title: "The full monthly cost",
-    body: "Every home shows an estimate with property taxes, homeowners insurance, HOA dues and mortgage insurance — not just principal and interest.",
+    body: "Every home for sale shows an estimate with property taxes, homeowners insurance, HOA dues and mortgage insurance — not just principal and interest.",
   },
   {
     icon: RefreshCcw,
@@ -62,7 +62,7 @@ const COMMITMENTS = [
 const BUYING = [
   {
     title: "Search every listing",
-    body: "Filter by what matters, search on the map, and see the real monthly cost of each home.",
+    body: "Filter by what matters, search on the map, and see the real monthly cost of every home for sale.",
   },
   {
     title: "Save homes and searches",
@@ -104,7 +104,7 @@ const ROUTING = [
   },
   {
     title: "It goes to one person",
-    body: "The home's listing agent, the agent you picked, or our office, which assigns a local agent.",
+    body: "Our agent who listed the home, the agent you picked, or our office, which assigns a local agent.",
   },
   {
     title: "That agent replies directly",
@@ -288,7 +288,7 @@ export default async function AboutPage() {
                   <p className="mt-3 font-semibold text-ink group-hover:text-brand-700">{a.name}</p>
                   {a.title && <p className="text-sm text-muted">{a.title}</p>}
                   {a.serviceAreas.length > 0 && (
-                    <p className="mt-1 truncate text-xs text-faint">
+                    <p className="mt-1 truncate text-xs text-muted">
                       {a.serviceAreas.slice(0, 3).join(" · ")}
                     </p>
                   )}

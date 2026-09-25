@@ -132,6 +132,8 @@ export function HomeAlertsToggle({
   const [pending, startTransition] = useTransition();
 
   const toggle = () => {
+    // aria-disabled rather than `disabled` while saving, so keyboard focus stays on the switch.
+    if (pending) return;
     const next = !enabled;
     setEnabled(next);
     setStatus(null);
@@ -168,9 +170,9 @@ export function HomeAlertsToggle({
           aria-checked={enabled}
           aria-labelledby="home-alerts-label"
           aria-describedby="home-alerts-hint"
-          disabled={pending}
+          aria-disabled={pending || undefined}
           onClick={toggle}
-          className="group -m-1.5 flex shrink-0 items-center rounded-full p-1.5 disabled:opacity-60"
+          className="group -m-1.5 flex shrink-0 items-center rounded-full p-1.5 aria-disabled:cursor-wait aria-disabled:opacity-60"
         >
           <span
             className={cn(

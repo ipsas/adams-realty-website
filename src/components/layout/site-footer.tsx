@@ -8,6 +8,8 @@ import { Logo } from "./logo";
 
 type FooterLink = { label: string; href: string; emphasis?: boolean };
 
+const contactLink = "inline-flex min-h-10 items-center hover:text-ink sm:min-h-0";
+
 const columns: { title: string; links: FooterLink[] }[] = [
   {
     title: "Find a home",
@@ -48,26 +50,48 @@ const columns: { title: string; links: FooterLink[] }[] = [
   },
 ];
 
+/**
+ * Label with a trailing arrow glued to its last word, so when the label wraps
+ * in a narrow column the arrow follows the text instead of pinning to the
+ * column's edge or dropping onto a line of its own.
+ */
+function ArrowLabel({ label }: { label: string }) {
+  const split = label.lastIndexOf(" ") + 1;
+  return (
+    <span>
+      {label.slice(0, split)}
+      <span className="whitespace-nowrap">
+        {label.slice(split)}
+        <ArrowRight aria-hidden className="ml-1.5 inline size-3.5 align-[-0.125em]" />
+      </span>
+    </span>
+  );
+}
+
 export function SiteFooter({ disclaimer }: { disclaimer?: string | null }) {
   return (
     <footer className="mt-24 border-t border-line bg-sunken/60">
       <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
         <div className="grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-4 lg:grid-cols-[1.5fr_repeat(4,minmax(0,1fr))] lg:gap-x-10">
           <div className="col-span-2 max-w-sm sm:col-span-4 lg:col-span-1 lg:pr-4">
-            <Logo />
+            <Logo className="min-h-10 w-fit sm:min-h-0" />
             <p className="mt-4 text-sm leading-relaxed text-muted">
               Independent and local. No ads, no selling your information — just great agents and
               every home on the market.
             </p>
-            <div className="mt-6 space-y-1 text-sm text-ink-soft">
-              <p>{addressLines(site.address).join(", ")}</p>
+            {/* Each line is 40px tall on phones (tap targets, even rhythm); plain text lines from sm up. */}
+            <div className="mt-3.5 text-sm text-ink-soft sm:mt-6">
+              <p className="py-2.5 sm:mb-1 sm:py-0">{addressLines(site.address).join(", ")}</p>
               <p>
-                <a href={telHref(site.phone)} className="hover:text-ink">
+                <a href={telHref(site.phone)} className={contactLink}>
                   {site.phone}
                 </a>
               </p>
-              <p className="[overflow-wrap:anywhere]">
-                <a href={`mailto:${site.email}`} className="hover:text-ink">
+              <p className="sm:mt-1">
+                <a
+                  href={`mailto:${site.email}`}
+                  className={cn(contactLink, "[overflow-wrap:anywhere]")}
+                >
                   {site.email}
                 </a>
               </p>
@@ -75,7 +99,7 @@ export function SiteFooter({ disclaimer }: { disclaimer?: string | null }) {
           </div>
           {columns.map((col) => (
             <div key={col.title} className="min-w-0">
-              <h2 className="text-xs font-semibold tracking-widest text-faint uppercase">
+              <h2 className="text-xs font-semibold tracking-widest text-muted uppercase">
                 {col.title}
               </h2>
               <ul className="mt-3 sm:mt-4 sm:space-y-2.5">
@@ -84,14 +108,13 @@ export function SiteFooter({ disclaimer }: { disclaimer?: string | null }) {
                     <Link
                       href={l.href}
                       className={cn(
-                        "flex min-h-10 items-center gap-1.5 text-sm transition-colors sm:min-h-0",
+                        "flex min-h-10 items-center text-sm transition-colors sm:min-h-0",
                         l.emphasis
                           ? "font-medium text-brand-700 hover:text-brand-800"
                           : "text-ink-soft hover:text-ink",
                       )}
                     >
-                      {l.label}
-                      {l.emphasis && <ArrowRight className="size-3.5 shrink-0" />}
+                      {l.emphasis ? <ArrowLabel label={l.label} /> : l.label}
                     </Link>
                   </li>
                 ))}

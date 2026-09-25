@@ -49,7 +49,7 @@ export function TocNav({ items }: { items: TocItem[] }) {
 
   return (
     <nav aria-label="On this page">
-      <p className="text-xs font-semibold tracking-widest text-faint uppercase">On this page</p>
+      <p className="text-xs font-semibold tracking-widest text-muted uppercase">On this page</p>
       <ol className="mt-4 border-l border-line">
         {items.map((item) => {
           const current = item.id === active;

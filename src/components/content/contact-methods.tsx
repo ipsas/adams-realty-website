@@ -83,7 +83,7 @@ export function ContactMethods({
               <span
                 className={cn(
                   "block text-xs font-semibold tracking-widest uppercase",
-                  dark ? "text-white/55" : "text-faint",
+                  dark ? "text-white/55" : "text-muted",
                 )}
               >
                 {m.label}

@@ -4,10 +4,10 @@ import { notFound } from "next/navigation";
 import { z } from "zod";
 import { AgentForm } from "@/components/dashboard/agent-form";
 import { PageHeader } from "@/components/dashboard/ui";
-import { FormMessage } from "@/components/ui/form";
 import { getAgentForEdit, getOfficeOptions, toAgentFormValues } from "@/lib/agents/admin-queries";
 import { can } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
+import { CreatedNotice } from "./created-notice";
 
 export const metadata = { title: "Edit agent" };
 
@@ -59,30 +59,30 @@ export default async function EditAgentPage(props: PageProps<"/dashboard/agents/
           </>
         }
       />
-      {created && (
-        <div className="mb-6">
-          <FormMessage tone="success">
-            Profile created
-            {a.isActive ? (
-              <>
-                {" "}
-                — it&apos;s live at{" "}
-                <Link href={`/agents/${a.slug}`} className="font-medium underline">
-                  /agents/{a.slug}
-                </Link>
-                .
-              </>
-            ) : (
-              ". It stays hidden until you mark it active."
-            )}
-          </FormMessage>
-        </div>
-      )}
       <AgentForm
         mode="edit"
         cancelHref="/dashboard/agents"
         offices={offices}
         values={toAgentFormValues(a)}
+        notice={
+          created && (
+            <CreatedNotice>
+              Profile created
+              {a.isActive ? (
+                <>
+                  {" "}
+                  — it&apos;s live at{" "}
+                  <Link href={`/agents/${a.slug}`} className="font-medium underline">
+                    /agents/{a.slug}
+                  </Link>
+                  .
+                </>
+              ) : (
+                ". It stays hidden until you mark it active."
+              )}
+            </CreatedNotice>
+          )
+        }
       />
     </>
   );

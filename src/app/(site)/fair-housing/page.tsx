@@ -105,7 +105,7 @@ export default function FairHousingPage() {
         <Container>
           <div className="grid grid-cols-1 gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] lg:gap-20">
             <div>
-              <p className="mb-2 text-xs font-semibold tracking-[0.18em] text-brass-500 uppercase">
+              <p className="mb-2 text-xs font-semibold tracking-[0.18em] text-brass-700 uppercase">
                 Our policy
               </p>
               <h2 className="font-display-tight text-3xl font-medium text-ink sm:text-4xl">

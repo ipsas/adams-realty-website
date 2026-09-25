@@ -104,7 +104,8 @@ export default function AccessibilityPage() {
               can move around them quickly with a screen reader.
             </li>
             <li>
-              Form fields have visible labels, and errors are explained in text, not by color alone.
+              Form fields are labeled for assistive technology, most have visible labels, and errors
+              are explained in text, not by color alone.
             </li>
             <li>
               Text and interface colors are chosen for readable contrast, pages adapt to small

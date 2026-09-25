@@ -1,6 +1,6 @@
 "use client";
 
-import { MapPin } from "lucide-react";
+import { Eye, EyeOff, Loader2, MapPin } from "lucide-react";
 import Link from "next/link";
 import {
   startTransition,
@@ -50,6 +50,8 @@ const ACTIONS = { create: createAgent, edit: updateAgent, self: updateMyProfile 
 
 const NO_FIELDS: ReadonlySet<string> = new Set();
 
+const INITIAL: AgentFormState = { ok: false };
+
 // Inputs stay at 16px on phones so iOS doesn't zoom into them.
 const control = "text-base sm:text-sm";
 
@@ -58,21 +60,24 @@ export function AgentForm({
   values,
   offices = [],
   cancelHref,
+  notice,
 }: {
   mode: Mode;
   values: AgentFormValues;
   offices?: { id: string; name: string; city: string | null }[];
   cancelHref: string;
+  /** A one-off message shown above the form until it's first submitted. */
+  notice?: ReactNode;
 }) {
-  const [state, dispatch, pending] = useActionState<AgentFormState, FormData>(
-    async (prev, data) => {
-      const next = await ACTIONS[mode](prev, data);
-      // Keep the last save's stamp through failed attempts so fields aren't remounted.
-      return { ...next, savedAt: next.savedAt ?? prev.savedAt };
-    },
-    { ok: false },
-  );
+  // The server action itself (not a client wrapper), so the form still posts
+  // to it before hydration instead of falling back to a native GET.
+  const [state, dispatch, pending] = useActionState(ACTIONS[mode], INITIAL);
   const formRef = useRef<HTMLFormElement>(null);
+
+  // Remount the fields after each save so they show the stored, normalized
+  // values; a failed attempt leaves what the user typed alone.
+  const [fieldsKey, setFieldsKey] = useState(state.savedAt ?? 0);
+  if (state.savedAt && state.savedAt !== fieldsKey) setFieldsKey(state.savedAt);
 
   // A field's error is hidden once the user edits it, until the next submit.
   const [edited, setEdited] = useState<{ after: AgentFormState; fields: ReadonlySet<string> }>({
@@ -95,9 +100,11 @@ export function AgentForm({
   return (
     <form
       ref={formRef}
+      action={dispatch}
       noValidate
-      // Submitting through a transition (instead of `action=`) keeps what the
-      // user typed when validation fails; React would otherwise reset the form.
+      // Once hydrated, submit through a transition instead of letting React run
+      // `action`: React resets the form after an action, which would wipe what
+      // the user typed when validation fails.
       onSubmit={(e) => {
         e.preventDefault();
         const data = new FormData(e.currentTarget);
@@ -109,14 +116,8 @@ export function AgentForm({
         setEdited({ after: state, fields: new Set(editedFields).add(field) });
       }}
     >
-      {/* Remount after a save so fields show the stored, normalized values. */}
-      <AgentFields
-        key={state.savedAt ?? 0}
-        mode={mode}
-        values={values}
-        offices={offices}
-        errors={errors}
-      />
+      {notice && state === INITIAL && <div className="mb-6">{notice}</div>}
+      <AgentFields key={fieldsKey} mode={mode} values={values} offices={offices} errors={errors} />
       <div className="sticky bottom-0 z-10 -mx-4 mt-8 flex flex-wrap items-center gap-3 border-t border-line bg-canvas/95 px-4 py-4 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-10 lg:px-10">
         <Button type="submit" size="lg" disabled={pending}>
           {pending
@@ -161,7 +162,8 @@ function AgentFields({
   // New profiles take their URL from the name until the admin types one.
   const [slug, setSlug] = useState(v.slug);
   const [slugEdited, setSlugEdited] = useState(mode !== "create");
-  const slugShown = slugPreview(slug) || slugPreview(name);
+  // A blank URL is generated from the name (create) or keeps the stored one (edit).
+  const slugShown = slugPreview(slug) || (mode === "create" ? slugPreview(name) : v.slug);
 
   const invalid = (field: string) => (e[field] ? true : undefined);
   const val = (n: number | null | undefined) => (n === null || n === undefined ? "" : String(n));
@@ -214,9 +216,11 @@ function AgentFields({
                 <>
                   Public page:{" "}
                   <span className="font-medium text-ink-soft">/agents/{slugShown}</span>
-                  {mode === "edit"
-                    ? " · Changing it breaks links people have already shared."
-                    : " · Filled in from the name; a number is added if it's taken."}
+                  {mode === "create"
+                    ? " · Filled in from the name; a number is added if it's taken."
+                    : slugPreview(slug)
+                      ? " · Changing it breaks links people have already shared."
+                      : " · Leave blank to keep the current URL."}
                 </>
               }
             >
@@ -269,7 +273,7 @@ function AgentFields({
             htmlFor="bio"
             error={e.bio}
             className="sm:col-span-2"
-            hint="A few short paragraphs: the neighborhoods you know, how you work, what clients can expect."
+            hint="The neighborhoods you know, how you work, what clients can expect. A few sentences is plenty."
           >
             <Textarea
               id="bio"
@@ -465,7 +469,7 @@ function AgentFields({
 
       <aside className="hidden xl:block" aria-label="Preview">
         <div className="sticky top-24">
-          <p className="mb-3 text-xs font-semibold tracking-widest text-faint uppercase">
+          <p className="mb-3 text-xs font-semibold tracking-widest text-muted uppercase">
             Agents page preview
           </p>
           <div className="rounded-3xl border border-line bg-surface p-4 shadow-card">
@@ -545,14 +549,19 @@ export function AgentActiveButton({
   active: boolean;
 }) {
   const [pending, start] = useTransition();
+  const Icon = pending ? Loader2 : active ? EyeOff : Eye;
   return (
     <button
       type="button"
       disabled={pending}
+      title={
+        active ? "Deactivate (hide from the public site)" : "Reactivate (show on the public site)"
+      }
+      aria-label={active ? `Deactivate ${name}` : `Reactivate ${name}`}
       className={
         active
-          ? "inline-flex h-10 items-center rounded-lg px-2 text-sm text-muted hover:bg-clay-50 hover:text-clay-600 disabled:opacity-50"
-          : "inline-flex h-10 items-center rounded-lg px-2 text-sm font-medium text-brand-700 hover:bg-brand-50 disabled:opacity-50"
+          ? "inline-flex size-10 items-center justify-center rounded-lg text-muted hover:bg-clay-50 hover:text-clay-600 disabled:opacity-50"
+          : "inline-flex size-10 items-center justify-center rounded-lg text-brand-700 hover:bg-brand-50 disabled:opacity-50"
       }
       onClick={() => {
         if (
@@ -567,7 +576,7 @@ export function AgentActiveButton({
         });
       }}
     >
-      {pending ? "Saving…" : active ? "Deactivate" : "Reactivate"}
+      <Icon className={pending ? "size-4 animate-spin" : "size-4"} />
     </button>
   );
 }

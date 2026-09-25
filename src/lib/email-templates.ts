@@ -524,12 +524,17 @@ export function leadNotificationEmail(input: {
   /** The address a seller typed on a valuation request. */
   propertyAddress?: string | null;
   listing?: EmailListing | null;
+  /**
+   * How the heading names the home: its street, or "a home in Decatur, GA
+   * 30030" when the seller withheld the address.
+   */
+  listingPlace?: string | null;
   source: string;
   dashboardUrl: string;
   /** Null when the lead went to the brokerage inbox for routing. */
   assignedAgentName?: string | null;
 }): RenderedEmail {
-  const where = input.listing?.street;
+  const where = input.listingPlace;
   const heading =
     input.type === "tour"
       ? `${input.name} wants to tour ${where ?? "a home"}`

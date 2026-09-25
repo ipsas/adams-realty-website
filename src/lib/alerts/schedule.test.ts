@@ -6,6 +6,7 @@ import {
   EVENT_SETTLE_MS,
   inWindow,
   isDue,
+  LISTING_SETTLE_MS,
   localClock,
   MAX_WINDOW_MS,
 } from "./schedule";
@@ -120,21 +121,40 @@ describe("alertWindows", () => {
   it("starts at creation for the first run", () => {
     const now = at("2026-09-21T11:00:00Z");
     const w = alertWindows({ createdAt, lastRunAt: null, now });
-    expect(w.listings).toEqual({ start: createdAt, end: now });
+    expect(w.listings).toEqual({
+      start: createdAt,
+      end: new Date(now.getTime() - LISTING_SETTLE_MS),
+    });
     expect(w.events).toEqual({ start: createdAt, end: new Date(now.getTime() - EVENT_SETTLE_MS) });
   });
 
   it("tiles consecutive runs with no gaps or overlaps", () => {
     const run1 = at("2026-09-21T11:00:00Z");
     const run2 = at("2026-09-21T12:00:00Z");
+    const run3 = at("2026-09-22T11:05:00Z"); // e.g. a daily search's next digest
     const w1 = alertWindows({ createdAt, lastRunAt: null, now: run1 });
     const w2 = alertWindows({ createdAt, lastRunAt: run1, now: run2 });
+    const w3 = alertWindows({ createdAt, lastRunAt: run2, now: run3 });
     expect(w2.listings.start).toEqual(w1.listings.end);
+    expect(w3.listings.start).toEqual(w2.listings.end);
     expect(w2.events.start).toEqual(w1.events.end);
+    expect(w3.events.start).toEqual(w2.events.end);
     // An event recorded late (stamped 10 minutes before run 1) still falls in run 2's window.
     const lateEvent = new Date(run1.getTime() - 10 * 60_000);
     expect(inWindow(lateEvent, w1.events)).toBe(false);
     expect(inWindow(lateEvent, w2.events)).toBe(true);
+  });
+
+  it("leaves listings from a sync transaction still open at run time for the next run", () => {
+    // created_at is the transaction's start; the page commits after run 1 has queried.
+    const run1 = at("2026-09-21T11:05:00Z");
+    const pageStartedAt = new Date(run1.getTime() - 90_000);
+    const w1 = alertWindows({ createdAt, lastRunAt: null, now: run1 });
+    const w2 = alertWindows({ createdAt, lastRunAt: run1, now: at("2026-09-21T12:05:00Z") });
+    expect(inWindow(pageStartedAt, w1.listings)).toBe(false);
+    expect(inWindow(pageStartedAt, w2.listings)).toBe(true);
+    // The settle period outlasts the longest sync transaction (the sync route's maxDuration).
+    expect(LISTING_SETTLE_MS).toBeGreaterThan(300_000);
   });
 
   it("never covers events from before the subscription existed", () => {
@@ -143,6 +163,13 @@ describe("alertWindows", () => {
     expect(w1.events.end < w1.events.start).toBe(true); // empty
     const w2 = alertWindows({ createdAt, lastRunAt: now, now: at("2026-09-20T13:20:00Z") });
     expect(w2.events.start).toEqual(createdAt);
+    // Same for listings: a run 5 minutes after saving covers nothing, the next starts at creation.
+    const soon = at("2026-09-20T12:05:00Z");
+    expect(alertWindows({ createdAt, lastRunAt: null, now: soon }).listings.end < createdAt).toBe(
+      true,
+    );
+    const next = alertWindows({ createdAt, lastRunAt: soon, now: at("2026-09-20T13:05:00Z") });
+    expect(next.listings.start).toEqual(createdAt);
   });
 
   it("caps how far back a window reaches", () => {

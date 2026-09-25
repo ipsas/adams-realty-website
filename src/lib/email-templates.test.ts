@@ -145,6 +145,7 @@ describe("leadNotificationEmail", () => {
       tourLabel: "Sat, Sep 26, 10:00 AM EDT",
       tourType: "video",
       listing: home(),
+      listingPlace: "123 Oak St",
       source: "listing",
       dashboardUrl: "https://adams.example/dashboard/leads?focus=1",
       assignedAgentName: "Daniel Brooks",
@@ -159,6 +160,30 @@ describe("leadNotificationEmail", () => {
       "Open lead in dashboard: https://adams.example/dashboard/leads?focus=1",
     );
     expect(email.html).not.toContain("Unsubscribe");
+  });
+
+  it("names the area instead of a withheld address", () => {
+    const email = leadNotificationEmail({
+      subject: "Tour request: Decatur, GA 30030",
+      type: "tour",
+      name: "Jane Doe",
+      email: "jane@example.com",
+      listing: home({ street: "Address withheld by seller" }),
+      listingPlace: "a home in Decatur, GA 30030",
+      source: "listing",
+      dashboardUrl: "https://adams.example/dashboard/leads?focus=2",
+    });
+    expect(email.text).toContain("Jane Doe wants to tour a home in Decatur, GA 30030");
+    const question = leadNotificationEmail({
+      subject: "New question from Jane Doe",
+      type: "question",
+      name: "Jane Doe",
+      email: "jane@example.com",
+      listingPlace: "a home in Decatur, GA 30030",
+      source: "listing",
+      dashboardUrl: "https://adams.example/dashboard/leads?focus=3",
+    });
+    expect(question.text).toContain("Jane Doe asked about a home in Decatur, GA 30030");
   });
 });
 

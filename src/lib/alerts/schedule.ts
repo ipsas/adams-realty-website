@@ -41,6 +41,16 @@ export const MAX_WINDOW_MS = 8 * DAY;
  */
 export const EVENT_SETTLE_MS = 30 * MINUTE;
 
+/**
+ * `listings.created_at` is the start of the transaction that inserted the
+ * row, and the MLS sync writes a whole page per transaction (up to the sync
+ * route's 300s maxDuration). A page that commits after an alert run has
+ * already queried can carry a `created_at` earlier than that run's `now`, so
+ * listing windows trail `now` by more than the longest sync transaction —
+ * every row is committed before any window that covers it is scanned.
+ */
+export const LISTING_SETTLE_MS = 10 * MINUTE;
+
 /** A row processed less than this long ago can't be claimed again — overlapping runs never double-send. */
 export const CLAIM_LEASE_MS = 10 * MINUTE;
 
@@ -113,13 +123,13 @@ export type Window = { start: Date; end: Date };
  * The half-open windows `(start, end]` one evaluation covers:
  *
  * - `listings`: new listings, by when we first recorded them (`created_at`),
- *   from the last run (or creation) up to now.
+ *   trailing by LISTING_SETTLE_MS.
  * - `events`: price cuts and status changes, trailing by EVENT_SETTLE_MS.
  *
  * Consecutive runs tile exactly: each run stores `now` as its last-run time,
- * and the next run starts where this one ended, so nothing is sent twice or
- * skipped. Neither window starts before the subscription existed (for events;
- * listings start at creation anyway) or reaches back more than MAX_WINDOW_MS.
+ * and the next run starts where this one ended (both shifted back by the same
+ * settle period), so nothing is sent twice or skipped. Neither window starts
+ * before the subscription existed or reaches back more than MAX_WINDOW_MS.
  */
 export function alertWindows(input: { createdAt: Date; lastRunAt: Date | null; now: Date }): {
   listings: Window;
@@ -127,14 +137,13 @@ export function alertWindows(input: { createdAt: Date; lastRunAt: Date | null; n
 } {
   const now = input.now.getTime();
   const floor = now - MAX_WINDOW_MS;
+  const created = input.createdAt.getTime();
   const last = (input.lastRunAt ?? input.createdAt).getTime();
-  return {
-    listings: { start: new Date(Math.max(last, floor)), end: new Date(now) },
-    events: {
-      start: new Date(Math.max(input.createdAt.getTime(), last - EVENT_SETTLE_MS, floor)),
-      end: new Date(now - EVENT_SETTLE_MS),
-    },
-  };
+  const trailing = (settle: number): Window => ({
+    start: new Date(Math.max(created, last - settle, floor)),
+    end: new Date(now - settle),
+  });
+  return { listings: trailing(LISTING_SETTLE_MS), events: trailing(EVENT_SETTLE_MS) };
 }
 
 /** True when `at` falls inside the half-open window `(start, end]`. */

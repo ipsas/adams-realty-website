@@ -11,7 +11,7 @@ import { getSession } from "@/lib/auth/session";
 import { sendEmail } from "@/lib/email";
 import { leadNotificationEmail } from "@/lib/email-templates";
 import { env } from "@/lib/env";
-import { formatFullAddress } from "@/lib/format";
+import { formatCityLine, formatFullAddress, formatStreet } from "@/lib/format";
 import { rateLimit } from "@/lib/rate-limit";
 import { zonedDateTime } from "@/lib/time";
 
@@ -154,6 +154,11 @@ export async function createInquiry(_prev: InquiryState, form: FormData): Promis
       : null,
     tourType: d.type === "tour" ? (d.tourType ?? "in_person") : null,
     listing: listing ? toEmailListing(listing) : null,
+    listingPlace: listing
+      ? listing.hideAddress
+        ? `a home in ${formatCityLine(listing)}`
+        : formatStreet(listing)
+      : null,
     source: d.source,
     dashboardUrl: `${env.NEXT_PUBLIC_SITE_URL}/dashboard/leads?focus=${row.id}`,
     assignedAgentName: agent?.name ?? null,

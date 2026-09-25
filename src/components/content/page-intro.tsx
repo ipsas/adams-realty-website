@@ -51,7 +51,7 @@ export function PageIntro({
           <p
             className={cn(
               "mb-4 flex items-center gap-2 text-xs font-semibold tracking-[0.2em] uppercase",
-              dark ? "text-brass-400" : "text-brass-500",
+              dark ? "text-brass-400" : "text-brass-700",
             )}
           >
             <span className={cn("h-px w-8", dark ? "bg-brass-400" : "bg-brass-500")} />
@@ -76,7 +76,7 @@ export function PageIntro({
             </p>
           )}
           {meta && (
-            <p className={cn("mt-5 text-sm", dark ? "text-white/60" : "text-faint")}>{meta}</p>
+            <p className={cn("mt-5 text-sm", dark ? "text-white/60" : "text-muted")}>{meta}</p>
           )}
           {children && <div className="mt-9 flex flex-wrap gap-3">{children}</div>}
         </div>
