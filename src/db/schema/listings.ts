@@ -255,7 +255,10 @@ export const listings = pgTable(
   },
   (t) => [
     uniqueIndex("listings_source_key_idx").on(t.sourceId, t.listingKey),
-    index("listings_status_price_idx").on(t.status, t.listPrice),
+    // No plain (status, …) index: every search mode's status filter is a
+    // partial-index predicate below. A status index only tempted the planner
+    // to AND a 50k–160k-row status bitmap into each location search (4 ms of
+    // q=Lake Lanier's 6 ms page; `npm run perf:measure`).
     index("listings_city_idx").on(t.city),
     // text_pattern_ops also serves the autocomplete's ZIP prefix (LIKE '306%').
     index("listings_postal_code_idx").on(t.postalCode.op("text_pattern_ops")),
@@ -302,6 +305,11 @@ export const listings = pgTable(
     index("listings_neighborhood_norm_idx").on(normalized(t.neighborhood)),
     index("listings_water_body_norm_idx").on(normalized(t.waterBodyName)),
     index("listings_city_norm_idx").on(normalized(t.city)),
+    // The location box's guide-name branch, by scope like its other branches.
+    index("listings_live_neighborhood_norm_idx").on(normalized(t.neighborhood)).where(LIVE),
+    index("listings_live_water_body_norm_idx").on(normalized(t.waterBodyName)).where(LIVE),
+    index("listings_sold_neighborhood_norm_idx").on(normalized(t.neighborhood)).where(SOLD),
+    index("listings_sold_water_body_norm_idx").on(normalized(t.waterBodyName)).where(SOLD),
 
     // One partial index per result order, each matching `buildOrderBy` in
     // src/lib/search/query.ts exactly (the id tiebreak included), so a page
@@ -356,7 +364,8 @@ export const listings = pgTable(
         t.id,
       )
       .where(RENT),
-    // Sold: about 150k closed sales a year statewide, inside the close-date window.
+    // Sold: about 150k closed sales a year statewide, inside the close-date
+    // window, so every order gets its own index (a sort is ~260 ms without).
     index("listings_sold_recommended_idx")
       .on(
         t.isFeatured.desc().nullsFirst(),
@@ -366,6 +375,12 @@ export const listings = pgTable(
       )
       .where(SOLD),
     index("listings_sold_newest_idx").on(t.closeDate.desc().nullsLast(), t.id).where(SOLD),
+    index("listings_sold_price_idx").on(t.listPrice, t.id).where(SOLD),
+    index("listings_sold_price_desc_idx").on(t.listPrice.desc().nullsFirst(), t.id).where(SOLD),
+    index("listings_sold_sqft_idx").on(t.livingAreaSqft.desc().nullsLast(), t.id).where(SOLD),
+    index("listings_sold_ppsf_idx")
+      .on(sql`(${t.listPrice}::float / nullif(${t.livingAreaSqft}, 0)) asc nulls last`, t.id)
+      .where(SOLD),
     // Listing sitemap chunks (src/app/homes/sitemap.ts) page through live
     // listings by id. The migration adds INCLUDE (slug, updated_at) so a chunk
     // is an index-only scan.

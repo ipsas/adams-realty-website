@@ -139,7 +139,10 @@ Use your model table: Opus High for the work packages, and Xhigh if one gets stu
       `38 9 * * *` (it only removes listings that left the feed; minute 38 is clear of the
       9:30 sync, which ends within 5 minutes, and of the 9:45 one. If they ever meet, the
       purge waits for the sync, or fails visibly in _Dashboard → MLS feeds_); `/api/cron/alerts` to
-      `5 * * * *` (hourly). Until then the schedules stay daily. If
+      `5 * * * *` (hourly), and update `src/app/api/cron/sync/schedule.test.ts`, which holds
+      `vercel.json` to Hobby's rules. Until then the schedules stay daily, with the purge at
+      `0 11 * * *`, two hours after the 9:00 sync: Hobby may fire a daily cron at any minute of
+      its hour, so a purge in the next hour could still meet a sync that started at 9:59. If
       a daily sync ends "partial" in _Dashboard → MLS feeds_, run `npm run mls:sync` from a
       computer to catch up.
 - [ ] **First statewide MLS load.** Run `npm run mls:sync -- --full` from a computer against the

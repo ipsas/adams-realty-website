@@ -177,12 +177,14 @@ describe("migration indexes vs buildOrderBy/buildConditions", () => {
     expect(found[0].where.join(" and ")).toContain("'active_under_contract', 'pending'");
   });
 
-  it.each([
-    ["rent (recommended)", { mode: "rent" }],
-    ["sold (recommended)", { mode: "sold" }],
-    ["sold, recently sold first", { mode: "sold", sort: "newest" }],
-  ])("%s: a partial index serves the page in order", (_, query) => {
-    expect(servingIndexes(query).length).toBeGreaterThan(0);
+  it.each(SORTS)("sold mode, sort=%s: one partial index serves the page in order", (sort) => {
+    const found = servingIndexes({ sort, mode: "sold" });
+    expect(found.map((i) => i.name)).toHaveLength(1);
+    expect(found[0].where.join(" and ")).toContain("status = 'closed'");
+  });
+
+  it("rent (recommended): a partial index serves the page in order", () => {
+    expect(servingIndexes({ mode: "rent" }).length).toBeGreaterThan(0);
   });
 
   it("a buy-mode map viewport has a covering lat/lng index", () => {
@@ -217,4 +219,62 @@ describe("migration indexes vs buildOrderBy/buildConditions", () => {
       ).toBe(true);
     }
   });
+
+  // Postgres ANDs any index it can use on a search's WHERE into the location
+  // box's bitmap. Each branch therefore has an index over just the mode's
+  // scope, and nothing indexes the status alone: a status bitmap is 50k–160k
+  // rows, 4 ms of q=Lake Lanier's 6 ms page (`npm run perf:measure`).
+  it("no index leads with the status column", () => {
+    const byStatus = [...indexes.values()].filter((ix) => ix.columns[0]?.startsWith("status "));
+    expect(byStatus.map((ix) => ix.name)).toEqual([]);
+  });
+
+  it.each([
+    ["buy", {}],
+    ["pending=1", { pending: "1" }],
+    ["rent", { mode: "rent" }],
+    ["sold", { mode: "sold" }],
+  ])("%s: every branch of the location box has an index over just that scope", (_, query) => {
+    const c = parseSearchParams({ ...query, q: "Lake Lanier" });
+    const conds = buildConditions({ ...c, q: undefined }, now).map(inline);
+    const branches = [
+      "location_vector",
+      "city gin_trgm_ops",
+      "neighborhood gin_trgm_ops",
+      "address_line1 gin_trgm_ops",
+      ...[listings.neighborhood, listings.waterBodyName].map(
+        (column) => `${norm(dialect.sqlToQuery(normalizedSql(column)).sql)} asc nulls last`,
+      ),
+    ];
+    for (const branch of branches) {
+      const scoped = [...indexes.values()].filter(
+        (ix) =>
+          ix.columns[0] === branch &&
+          ix.where.length > 0 &&
+          ix.where.every((w) => impliedBy(conds, w)),
+      );
+      expect(
+        scoped.map((ix) => ix.name),
+        branch,
+      ).not.toEqual([]);
+    }
+  });
 });
+
+/** The statuses a normalized `status in (…)` / `status = …` clause allows, or null. */
+function statuses(clause: string): Set<string> | null {
+  const m = /^status (?:in \((.*)\)|= (.*))$/.exec(clause);
+  if (!m) return null;
+  return new Set((m[1] ?? m[2]).split(",").map((x) => x.trim().replace(/^'|'$/g, "")));
+}
+
+/** Whether the conditions imply an index predicate clause (status sets by inclusion, the rest verbatim). */
+function impliedBy(conds: string[], clause: string): boolean {
+  if (conds.includes(clause)) return true;
+  const allowed = statuses(clause);
+  if (!allowed) return false;
+  return conds.some((c) => {
+    const s = statuses(c);
+    return s !== null && [...s].every((x) => allowed.has(x));
+  });
+}

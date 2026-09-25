@@ -1,12 +1,12 @@
 import { asc, eq, sql } from "drizzle-orm";
 import { Client } from "pg";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { agents, dataSources, listings, syncRuns } from "@/db/schema";
 import { closeDb, createSource, listing, resetDb } from "@/test/db/helpers";
 import { STALE_RUN_MS } from "./sync-engine";
 import { createSyncStore, STALE_RUN_ERROR } from "./sync-store";
-import { SyncFailedError, syncSource } from "./sync";
+import { FEED_GRACE_MS, SyncFailedError, syncSource } from "./sync";
 import type { FeedPosition, ListingProvider, MapResult, NormalizedListing } from "./types";
 
 // The sync end to end against Postgres: syncSource → runSync → the Postgres
@@ -239,6 +239,62 @@ describe("syncSource against Postgres", () => {
     expect(all.map((r) => r.status)).toEqual(["running", "skipped"]);
     expect(all[1].error).toMatch(/another sync of this feed was still running/);
     expect(await db.$count(listings)).toBe(0);
+  });
+});
+
+describe("syncSource: the run's deadline reaches the RESO feed", () => {
+  // The real provider (createProvider), with only the HTTP layer faked. The
+  // engine checks the deadline between pages; inside a page only the feed
+  // client can stop, so it must get the deadline (plus FEED_GRACE_MS).
+  let fetchCalls = 0;
+  beforeEach(() => {
+    fetchCalls = 0;
+    vi.stubEnv("MLS_TOKEN", "t");
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  /** A feed server that never answers: the request ends only when aborted. */
+  const hangingFetch = (init?: RequestInit) =>
+    new Promise<Response>((_, reject) => {
+      fetchCalls++;
+      init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
+    });
+
+  it("cuts off a request still in flight FEED_GRACE_MS after the deadline, and records the run failed", async () => {
+    vi.stubGlobal("fetch", (_url: string, init?: RequestInit) => hangingFetch(init));
+    // The deadline passed just under FEED_GRACE_MS ago: the page may start, with ~0.3 s left.
+    const deadline = Date.now() - FEED_GRACE_MS + 300;
+    const started = Date.now();
+    const error = await syncSource(source.id, { deadline }).catch((e: unknown) => e);
+    // Without the deadline the client would wait out its 60 s request timeout.
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(fetchCalls).toBe(1);
+    expect(error).toBeInstanceOf(SyncFailedError);
+    expect((error as Error).message).toMatch(/RESO request gave up/);
+    const [run] = await runs();
+    expect(run).toMatchObject({ status: "failed" });
+    expect(run.finishedAt).not.toBeNull();
+  });
+
+  it("starts no request once the deadline plus FEED_GRACE_MS has passed", async () => {
+    vi.stubGlobal("fetch", async () => {
+      fetchCalls++;
+      return Response.json({ value: [] });
+    });
+    const error = await syncSource(source.id, {
+      deadline: Date.now() - FEED_GRACE_MS - 1_000,
+    }).catch((e: unknown) => e);
+    expect(fetchCalls).toBe(0);
+    expect(error).toBeInstanceOf(SyncFailedError);
+    expect((error as Error).message).toMatch(/out of time after 0 attempt/);
+  });
+
+  it("keeps the grace inside the cron's 45 s margin (deadline = maxDuration − 45 s)", () => {
+    expect(FEED_GRACE_MS).toBeGreaterThan(0);
+    expect(FEED_GRACE_MS).toBeLessThan(45_000);
   });
 });
 

@@ -511,6 +511,45 @@ describe("runSync: purge", () => {
     expect(store.runs[1].error).toMatch(new RegExp(`^${PURGE_SKIPPED_PREFIX}`));
   });
 
+  // The cron gives a run 255 s (maxDuration 300 s − 45 s). A statewide key
+  // download is ~70 pages of 1,000 keys; at 1 s a page it needs over a minute.
+  it("never starts a key download without two minutes of its budget left: it fails as skipped instead", async () => {
+    seedLive(store, 70_000);
+    store.runs.push({ id: "sync", mode: "incremental", status: "running", heartbeat: START });
+    // The sync finishes 200 s in: too late for a 70-page download before the deadline.
+    store.onBeginRun = () => {
+      if (now >= START + 200_000) store.runs[0].status = "succeeded";
+      else store.runs[0].heartbeat = now;
+    };
+    const deadline = START + 255_000;
+    const { provider, scopes } = keyFeed(keysOf(69_500));
+    await expect(
+      runSync(store, provider, { mode: "purge", deadline, now: clock, sleep }),
+    ).rejects.toThrow(PURGE_SKIPPED_PREFIX);
+    expect(scopes).toEqual([]); // never asked the feed for keys
+    expect(deadline - now).toBeGreaterThanOrEqual(120_000);
+    expect(store.live()).toBe(70_000);
+  });
+
+  it("with the lock at the last moment it waits for, still finishes a statewide purge before the deadline", async () => {
+    seedLive(store, 70_000);
+    store.runs.push({ id: "sync", mode: "incremental", status: "running", heartbeat: START });
+    const deadline = START + 255_000;
+    // The sync finishes exactly when the purge's wait would end.
+    store.onBeginRun = () => {
+      if (now >= deadline - 120_000) store.runs[0].status = "succeeded";
+      else store.runs[0].heartbeat = now;
+    };
+    const result = await runSync(store, keyFeed(keysOf(69_500)).provider, {
+      mode: "purge",
+      deadline,
+      now: clock,
+      sleep,
+    });
+    expect(result).toMatchObject({ status: "succeeded", removed: 500 });
+    expect(now).toBeLessThanOrEqual(deadline);
+  });
+
   it("works with more keys than Postgres has bind parameters (100,000)", async () => {
     seedLive(store, 100_000);
     const { provider } = keyFeed(keysOf(99_000)); // 1% left the feed

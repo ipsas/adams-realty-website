@@ -126,16 +126,20 @@ Adding a non-RESO feed means implementing `ListingProvider` (`src/lib/mls/types.
   therefore linkable, works with back/forward, and is stored verbatim as a saved
   search.
 - **SQL** (`buildConditions` / `buildOrderBy`, unit-tested by rendering SQL):
-  - **Location:** ZIP match, or full-text search on `location_vector` (address, city, ZIP, neighborhood, lake from RESO WaterBodyName, MLS number; never the description), plus prefix and trigram matching for half-typed names and addresses. A guide name or alias ("Lake Hartwell", "Lanier") also matches the way its guide does (`areaCondition`, inside the guide's counties). Each branch has a GIN index per scope (live listings, sold homes), so the matches of other statuses are never read. `search_vector` (descriptions included) stays for keyword search.
+  - **Location:** ZIP match, or full-text search on `location_vector` (address, city, ZIP, neighborhood, lake from RESO WaterBodyName, MLS number; never the description), plus prefix and trigram matching for half-typed names and addresses. A guide name or alias ("Lake Hartwell", "Lanier") also matches the way its guide does (`areaCondition`, inside the guide's counties). Each branch, the guide-name one included, has an index per scope (live listings, sold homes), so the matches of other statuses are never read. Nothing indexes the status alone: Postgres would AND a 50k–160k-row status bitmap into every location search (4 ms of a 6 ms page), and `src/lib/search/indexes.test.ts` fails if such an index comes back. `search_vector` (descriptions included) stays for keyword search.
   - **Map area:** `longitude BETWEEN … AND latitude BETWEEN …`, backed by a partial (latitude, longitude) btree. No PostGIS needed.
-  - **Order:** one partial btree per sort order and mode (for sale, `pending=1`, rent, sold), each matching `buildOrderBy` exactly, so a page reads straight off an index. `src/lib/search/indexes.test.ts` checks the migrations against `buildOrderBy`/`buildConditions`.
+  - **Order:** one partial btree per sort order and mode (for sale, `pending=1`, sold; rent is small enough for one), each matching `buildOrderBy` exactly, so a page reads straight off an index. `src/lib/search/indexes.test.ts` checks the migrations against `buildOrderBy`/`buildConditions`.
   - **Filters:** ordinary indexed columns.
 - **Map pins** are a separate lightweight query over all matches, capped at 750 (the first 750
   in the search's order). Walking the order index reads 750 ÷ (share of rows matching) rows;
   for a location search Postgres can't judge that share and walked 20k rows for sold homes in
   Savannah (70–130 ms). So a location search picks the way itself (`walkPins`, from Postgres's
   row estimates): walk when matches are common along the order, else collect every match
-  through the location indexes and keep the first 750 (`locationPins`, about 15 ms there).
+  through the location indexes and keep the first 750 (`locationPins`, 12–15 ms there).
+  Either way a place with thousands of matches reads one heap row per match, about 1 µs each
+  on a warm local cache: `perf:measure` holds location pins to 12 ms for sale and 20 ms for
+  sold (a plain search's to 5 ms). The clustered map endpoint (hand-off WP3) is what takes
+  large pin sets off the request path.
   MapLibre clusters them and draws collision-aware price pills with dots underneath.
   The map loads its self-hosted web worker from `/vendor/maplibre/<version>/`.
 - **Scaling path.** Postgres handles a statewide MLS comfortably: `npm run perf:seed` builds

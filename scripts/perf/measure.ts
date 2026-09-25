@@ -135,10 +135,14 @@ async function main() {
 
   // [label, query string, [cards, count] targets, pins target]
   // A location search's pins either walk the order index or collect every
-  // match (`walkPins` in src/lib/search/service.ts picks); a place with
-  // thousands of matches can't be collected in 5 ms, so those get Q_PINS.
-  // Pins run in parallel with the list and the count (src/app/homes/page.tsx).
-  const Q_PINS = 20;
+  // match (`walkPins` in src/lib/search/service.ts picks). Either way a place
+  // with thousands of matches reads one heap row per match (about 1 µs each
+  // here), so it can't meet the 5 ms of a plain search: Q_PINS for sale,
+  // SOLD_Q_PINS for sold mode, whose places have three times the matches
+  // (sold q=Savannah collects 5,600). Pins run in parallel with the list and
+  // the count (src/app/homes/page.tsx).
+  const Q_PINS = 12;
+  const SOLD_Q_PINS = 20;
   const searches: [string, string, [number?, number?], number?][] = [
     ["default /homes", "", [2, 10], 5],
     ["sort=newest", "sort=newest", [2]],
@@ -159,11 +163,19 @@ async function main() {
     ["q=30662 (zip)", "q=30662", [5, 5], 5],
     ["price 300-500k, 3+ beds", "minPrice=300000&maxPrice=500000&beds=3", [5, 20]],
     ["mode=sold", "mode=sold", [5, 40], 10],
-    ["mode=sold q=Atlanta", "mode=sold&q=Atlanta", [5, 40], Q_PINS],
-    ["mode=sold q=Savannah", "mode=sold&q=Savannah", [5, 20], Q_PINS],
+    ["mode=sold q=Atlanta", "mode=sold&q=Atlanta", [5, 40], SOLD_Q_PINS],
+    ["mode=sold q=Savannah", "mode=sold&q=Savannah", [5, 20], SOLD_Q_PINS],
+    // The lake's 3,000 sold homes are collected for the page too (the planner
+    // can't tell how common "lake & lanier" is): about 1 µs a match plus the sort.
+    ["mode=sold q=Lake Lanier", "mode=sold&q=Lake+Lanier", [10, 20], SOLD_Q_PINS],
+    ["mode=sold sort=price_asc", "mode=sold&sort=price_asc", [2]],
+    ["mode=sold sort=price_desc", "mode=sold&sort=price_desc", [2]],
+    ["mode=sold sort=sqft_desc", "mode=sold&sort=sqft_desc", [2]],
+    ["mode=sold sort=price_per_sqft_asc", "mode=sold&sort=price_per_sqft_asc", [2]],
     ["mode=sold sort=newest", "mode=sold&sort=newest", [2]],
     ["mode=rent", "mode=rent", [2, 5], 5],
     ["pending=1", "pending=1", [2, 15], 5],
+    ["pending=1 q=Savannah", "pending=1&q=Savannah", [5, 20], Q_PINS],
     ["ATL box + price + beds", `bounds=${ATL}&minPrice=300000&maxPrice=500000&beds=3`, [5, 10]],
   ];
   for (const [name, qs, [cards, count], pins] of searches) {
@@ -173,12 +185,8 @@ async function main() {
     }
   }
 
-  // Sold and rent sorts other than their index's order: informational, no target.
-  for (const qs of [
-    "mode=sold&sort=price_desc",
-    "mode=rent&sort=price_asc",
-    "pending=1&sort=newest",
-  ]) {
+  // Sorts without an index of their own: informational, no target.
+  for (const qs of ["mode=rent&sort=price_asc", "pending=1&sort=newest"]) {
     await scenario(`list ${qs}`, () => searchListings(crit(qs)), [], total);
   }
 
