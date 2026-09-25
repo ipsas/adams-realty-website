@@ -13,7 +13,13 @@ import type {
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useRef } from "react";
 import { site } from "@/config/site";
-import { ensureMapLibre, handleMissingImages, mapStyleUrl, markDrawnStyle } from "./map-setup";
+import {
+  ensureMapLibre,
+  handleMissingImages,
+  mapStyleUrl,
+  markDrawnStyle,
+  swapDrawnStyle,
+} from "./map-setup";
 import { useMapTheme } from "@/components/theme/use-theme";
 import { readResolvedTheme } from "@/lib/theme";
 import { formatBaths, formatNumber, formatPrice, formatPriceShort } from "@/lib/format";
@@ -440,12 +446,12 @@ export default function SearchMap({
   // style.load if MapLibre has to rebuild the style from scratch).
   useEffect(() => {
     const map = mapRef.current;
+    const el = container.current;
     const url = mapStyleUrl(theme);
-    if (!map || styleUrl.current === url) return;
+    if (!map || !el || styleUrl.current === url) return;
     styleUrl.current = url;
-    map.setStyle(url, { transformStyle: carryOverlays });
-    if (container.current)
-      markDrawnStyle(map, container.current, url, () => styleUrl.current === url);
+    // Marked only once the new style, not the old one it keeps drawing meanwhile, is drawn.
+    swapDrawnStyle(map, el, url, () => styleUrl.current === url, carryOverlays);
   }, [theme]);
 
   // New results → update the source; new non-map criteria → fit to results.

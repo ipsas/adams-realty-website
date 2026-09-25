@@ -327,7 +327,7 @@ ACCEPTANCE:
 
 DARK MODE (hand-off from DM):
 
-- search-map.tsx: keep `installOverlays` on every `style.load`, the theme swap `setStyle(url, { transformStyle: carryOverlays })`, the missing-image resolver, the handlers registered once, `MAP_OVERLAY_COLORS` (pins look the same in both themes) and the dev-only `window.__searchMap` that e2e/theme.spec.ts reads. The map is created on `mapStyleUrl(readResolvedTheme())`, so it never starts on the wrong style; its theme then comes from `useMapTheme()` (light while printing), and `markDrawnStyle` marks each drawn style for the print CSS.
+- search-map.tsx: keep `installOverlays` on every `style.load`, the theme swap `swapDrawnStyle(..., carryOverlays)` (which marks the new style only once it has arrived, never on an `idle` of the old one), the missing-image resolver, the handlers registered once, `MAP_OVERLAY_COLORS` (pins look the same in both themes) and the dev-only `window.__searchMap` that e2e/theme.spec.ts reads. The map is created on `mapStyleUrl(readResolvedTheme())`, so it never starts on the wrong style; its theme then comes from `useMapTheme()` (light while printing), and `markDrawnStyle` marks each drawn style for the print CSS.
 - New map layers (clusters, the pin strip's highlight) go in `OVERLAY_LAYERS` so a theme swap carries them. The map's placeholder uses `bg-map`.
 - The results sheet, pin strip and cards follow the tokens; the sheet's handle and scrim use `shade`.
 - /homes stays in the dark axe matrix; the theme map tests (pins drawn after each swap, no light style requested on a dark page, no console warnings) pass.

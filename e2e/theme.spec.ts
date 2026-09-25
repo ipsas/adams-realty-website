@@ -13,6 +13,7 @@ import {
   expectListingPrintsLight,
   firstThemeColor,
   forceDark,
+  meanLuminance,
   storePref,
   stored,
 } from "./theme-suite";
@@ -581,6 +582,92 @@ test("a dark page creates its maps on the dark style, never the light one first"
   await page.getByRole("radio", { name: "Light" }).check();
   await light;
   await expect(page.locator(".maplibregl-canvas")).toHaveCount(1);
+  await context.close();
+});
+
+/* ───────────────────────── printing the search map ───────────────────────── */
+
+const searchMapBox = (page: Page) => page.locator(".maplibregl-map");
+const canvasVisibility = (page: Page) =>
+  page.locator(".maplibregl-canvas").evaluate((c) => getComputedStyle(c).visibility);
+
+test("/homes printed in Light prints its map", async ({ browser, baseURL }) => {
+  const context = await newContext(browser, baseURL, { colorScheme: "light" });
+  const page = await context.newPage();
+  await page.goto("/homes");
+  const map = searchMapBox(page);
+  await expect(map).toHaveAttribute("data-map-style", "light", { timeout: 20_000 });
+  await expect.poll(() => mapReady(page, "light"), { timeout: 20_000 }).toBe(true);
+  await page.emulateMedia({ media: "print", colorScheme: "light" });
+  // Already drawn light, so nothing restyles: the canvas prints as it is, pins and all.
+  expect(await canvasVisibility(page)).toBe("visible");
+  await expect(map.locator(".maplibregl-canvas")).toBeVisible();
+  expect(await meanLuminance(page, map), "the printed map").toBeGreaterThan(0.6);
+  await context.close();
+});
+
+test("/homes printed in Dark never prints the dark map, even if it repaints before the light style arrives", async ({
+  browser,
+  baseURL,
+}) => {
+  test.setTimeout(90_000);
+  const context = await newContext(browser, baseURL, { colorScheme: "dark" });
+  await forceDark(context);
+  const page = await context.newPage();
+  await page.goto("/homes");
+  const map = searchMapBox(page);
+  await expect(map).toHaveAttribute("data-map-style", "dark", { timeout: 20_000 });
+  await expect.poll(() => mapReady(page, "dark"), { timeout: 20_000 }).toBe(true);
+  expect(await meanLuminance(page, map), "the map is dark on screen").toBeLessThan(0.1);
+
+  // Hold the light style back: until it arrives, MapLibre keeps drawing the dark one.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  let lightRequested = false;
+  await page.route(/styles\/positron/, async (route) => {
+    lightRequested = true;
+    await held;
+    await route.continue();
+  });
+  await page.emulateMedia({ media: "print", colorScheme: "dark" });
+  await expect.poll(() => lightRequested, "the map asks for its light style").toBe(true);
+
+  // Repaint the dark style meanwhile, as a hover over the pins or a finished tile does, and
+  // wait for the 'idle' that follows. That idle is the dark style's: it must not mark light.
+  const box = (await map.boundingBox())!;
+  for (const [fx, fy] of [
+    [0.3, 0.3],
+    [0.5, 0.5],
+    [0.7, 0.6],
+  ])
+    await page.mouse.move(box.x + box.width * fx, box.y + box.height * fy, { steps: 4 });
+  const idled = await page.evaluate(
+    () =>
+      new Promise<boolean>((resolve) => {
+        type M = { once(e: string, cb: () => void): void; triggerRepaint(): void };
+        const m = (window as unknown as { __searchMap: M }).__searchMap;
+        m.once("idle", () => resolve(true));
+        m.triggerRepaint();
+        setTimeout(() => resolve(false), 10_000);
+      }),
+  );
+  expect(idled, "the dark style repainted and went idle").toBe(true);
+  expect((await probeSearchMap(page))?.base, "still the dark style").toBe("dark");
+  expect(await map.getAttribute("data-map-style")).not.toBe("light");
+  expect(await canvasVisibility(page)).toBe("hidden");
+  expect(await meanLuminance(page, map), "the printed map, restyling").toBeGreaterThan(0.6);
+
+  // Once the light style has arrived and is drawn, the canvas prints again.
+  release();
+  await expect(map).toHaveAttribute("data-map-style", "light", { timeout: 20_000 });
+  expect((await probeSearchMap(page))?.base).toBe("light");
+  expect(await canvasVisibility(page)).toBe("visible");
+  expect(await meanLuminance(page, map), "the printed map, redrawn").toBeGreaterThan(0.6);
+
+  // Back on screen, it is dark again.
+  await page.emulateMedia({ media: "screen", colorScheme: "dark" });
+  await expect(map).toHaveAttribute("data-map-style", "dark", { timeout: 20_000 });
+  expect(await meanLuminance(page, map)).toBeLessThan(0.1);
   await context.close();
 });
 

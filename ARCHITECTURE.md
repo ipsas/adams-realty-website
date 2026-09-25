@@ -271,14 +271,17 @@ must keep.
   `NEXT_PUBLIC_MAP_STYLE_DARK_URL`, else the custom light URL, else OpenFreeMap
   dark for dark. Both maps read the theme synchronously when created
   (`readResolvedTheme`), so they never start on the wrong style. The search map
-  swaps with `setStyle(url, { transformStyle: carryOverlays })`, which carries the
-  listings source and overlay layers across; `installOverlays` runs on every
+  swaps with `swapDrawnStyle` (`setStyle(url, { transformStyle: carryOverlays })`),
+  which carries the listings source and overlay layers across; `installOverlays` runs on every
   `style.load` and adds only what is missing, and `handleMissingImages` (MapLibre's
   missing-image resolver) supplies the pill images, and a blank pixel for icons a
   base style names but lacks. Event handlers are registered once. The location map
   is recreated on a theme change. `window.__searchMap` exists in dev only, for e2e.
   Both maps take their theme from `useMapTheme()`, which is light while printing,
   and `markDrawnStyle` sets `data-map-style` on the container once a style is drawn.
+  On a swap, MapLibre keeps drawing (and idling on) the old style until the new one
+  arrives, so `swapDrawnStyle` only counts an `idle` after its `transformStyle` has
+  run with the new style.
   Print CSS hides any map canvas not marked `light`, because a print can't wait for
   a map to restyle: a dark page prints the light map panel, then the light map.
 - **Client helpers** (`src/lib/theme.ts`, client components only):
