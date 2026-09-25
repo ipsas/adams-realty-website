@@ -53,8 +53,8 @@ async function main() {
   const { listings } = await import("@/db/schema");
   const { and, sql } = await import("drizzle-orm");
   const { parseSearchParams } = await import("@/lib/search/params");
-  const { buildWhere } = await import("@/lib/search/query");
-  const { searchListings, searchMapPins } = await import("@/lib/search/service");
+  const { buildOrderBy, buildWhere } = await import("@/lib/search/query");
+  const { locationPins, searchListings, searchMapPins } = await import("@/lib/search/service");
   const queries = await import("@/lib/listings/queries");
 
   const pool = (globalThis as unknown as { pgPool: { query: (...a: unknown[]) => unknown } })
@@ -91,7 +91,8 @@ async function main() {
     times.sort((a, b) => a - b);
     captured = [];
     await fn();
-    const stmts = captured as Captured[];
+    // Planner-only statements (searchMapPins' row estimates) aren't timed.
+    const stmts = (captured as Captured[]).filter((x) => !/^\s*explain\b/i.test(x.text));
     captured = null;
     const statements: Statement[] = [];
     for (let k = 0; k < stmts.length; k++) {
@@ -133,6 +134,11 @@ async function main() {
   const SMALL = `${SMALL_BOX.west},${SMALL_BOX.south},${SMALL_BOX.east},${SMALL_BOX.north}`;
 
   // [label, query string, [cards, count] targets, pins target]
+  // A location search's pins either walk the order index or collect every
+  // match (`walkPins` in src/lib/search/service.ts picks); a place with
+  // thousands of matches can't be collected in 5 ms, so those get Q_PINS.
+  // Pins run in parallel with the list and the count (src/app/homes/page.tsx).
+  const Q_PINS = 20;
   const searches: [string, string, [number?, number?], number?][] = [
     ["default /homes", "", [2, 10], 5],
     ["sort=newest", "sort=newest", [2]],
@@ -145,12 +151,16 @@ async function main() {
     ["statewide bounds", `bounds=${GA}`, [2, 10], 5],
     ["metro Atlanta bounds", `bounds=${ATL}`, [2, 10], 5],
     ["small rural box (3 homes)", `bounds=${SMALL}`, [2, 2], 2],
-    ["q=Atlanta", "q=Atlanta", [5, 40]],
-    ["q=Lake Hartwell", "q=Lake+Hartwell", [5, 20]],
-    ["q=Savannah, GA", "q=Savannah%2C+GA", [5, 20]],
-    ["q=30662 (zip)", "q=30662", [5, 5]],
+    ["q=Atlanta", "q=Atlanta", [5, 40], Q_PINS],
+    ["q=Lake Hartwell", "q=Lake+Hartwell", [5, 20], Q_PINS],
+    ["q=Savannah, GA", "q=Savannah%2C+GA", [5, 20], Q_PINS],
+    ["q=Peachtree (street)", "q=Peachtree", [5, 20], Q_PINS],
+    ["q=Lake Lanier", "q=Lake+Lanier", [5, 20], Q_PINS],
+    ["q=30662 (zip)", "q=30662", [5, 5], 5],
     ["price 300-500k, 3+ beds", "minPrice=300000&maxPrice=500000&beds=3", [5, 20]],
     ["mode=sold", "mode=sold", [5, 40], 10],
+    ["mode=sold q=Atlanta", "mode=sold&q=Atlanta", [5, 40], Q_PINS],
+    ["mode=sold q=Savannah", "mode=sold&q=Savannah", [5, 20], Q_PINS],
     ["mode=sold sort=newest", "mode=sold&sort=newest", [2]],
     ["mode=rent", "mode=rent", [2, 5], 5],
     ["pending=1", "pending=1", [2, 15], 5],
@@ -244,6 +254,23 @@ async function main() {
       "q=Lake Hartwell finds every home whose WaterBodyName is Lake Hartwell",
       onLake > 0 && gotLake === onLake,
       `${gotLake} of ${onLake}`,
+    ]);
+  }
+  // Collected pins (`locationPins`) are the walked ones: the first 750 matches in order.
+  for (const qs of ["q=Savannah", "mode=sold&q=Savannah", "q=Atlanta", "mode=sold&q=Atlanta"]) {
+    const c = crit(qs);
+    const pins = await locationPins(c);
+    const walked = await db
+      .select({ id: listings.id })
+      .from(listings)
+      .where(buildWhere(c))
+      .orderBy(...buildOrderBy(c))
+      .limit(750);
+    const same = pins.length === walked.length && pins.every((p, i) => p.id === walked[i].id);
+    checks.push([
+      `${qs}: collected pins match the ordered walk`,
+      same,
+      `${pins.length} pins, ${same ? "identical" : "different"}`,
     ]);
   }
   {

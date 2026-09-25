@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { AREAS, STATEWIDE_AREAS, type SeedArea } from "../../scripts/seed-data";
+import {
+  AREAS,
+  LAKE_FIXTURES,
+  STATEWIDE_AREAS,
+  STATEWIDE_LAKES,
+  type SeedArea,
+} from "../../scripts/seed-data";
 import SITES from "../../scripts/seed-sites.json";
 import { areas as guides } from "./areas";
 
@@ -12,7 +18,7 @@ import { areas as guides } from "./areas";
 
 type Row = [number, number, string, string?, string?];
 const sites = SITES.areas as unknown as Record<string, Record<string, Row[]>>;
-const ALL = [...AREAS, ...STATEWIDE_AREAS];
+const ALL = [...AREAS, ...STATEWIDE_AREAS, ...STATEWIDE_LAKES];
 
 /** Georgia, as the statewide listing coverage (GA-A moves this to site.coverage.bounds). */
 const GEORGIA = { west: -85.61, south: 30.35, east: -80.75, north: 35.01 };
@@ -85,7 +91,7 @@ describe("seed-sites.json", () => {
     },
   );
 
-  describe.each(AREAS.filter((a) => a.kind === "lake").map((a) => [a.slug, a] as const))(
+  describe.each(ALL.filter((a) => a.kind === "lake").map((a) => [a.slug, a] as const))(
     "%s",
     (_, a) => {
       it(`keeps every site within ${LAKE_MARGIN_KM} km of the lake`, () => {
@@ -135,8 +141,33 @@ describe("seed-sites.json", () => {
     }
   });
 
+  it("gives statewide lake rows their own city and ZIP, and enough waterfront for every listing", () => {
+    for (const a of STATEWIDE_LAKES) {
+      const pools = sites[a.slug];
+      for (const rows of Object.values(pools)) {
+        for (const [, , county, city, zip] of rows) {
+          expect(county, a.slug).toMatch(/^[A-Z][A-Za-z]+$/);
+          expect(city, a.slug).toMatch(/^[A-Z][A-Za-z ]+$/);
+          expect(zip, a.slug).toMatch(/^3\d{4}$/);
+        }
+      }
+      // Every listing could be on the water, plus the lake's fixture home.
+      const fixtures = LAKE_FIXTURES.filter((f) => f.area === a.slug).length;
+      expect(pools.waterfront.length, a.slug).toBeGreaterThanOrEqual(a.weight + fixtures);
+      expect(pools.near.length, a.slug).toBeGreaterThanOrEqual(a.weight);
+    }
+  });
+
+  it("puts each lake fixture home on its own lake's area", () => {
+    for (const f of LAKE_FIXTURES) {
+      const area = ALL.find((a) => a.slug === f.area);
+      expect(area?.kind, f.query).toBe("lake");
+      expect(f.query, f.area).toBe(area!.name);
+    }
+  });
+
   it("never puts two statewide listings on the same spot", () => {
-    const points = STATEWIDE_AREAS.flatMap((a) =>
+    const points = [...STATEWIDE_AREAS, ...STATEWIDE_LAKES].flatMap((a) =>
       Object.values(sites[a.slug]).flatMap((rows) => rows.map(([lat, lng]) => [lat, lng] as const)),
     );
     for (let i = 0; i < points.length; i++) {
@@ -150,9 +181,10 @@ describe("seed-sites.json", () => {
 });
 
 describe("statewide seed areas", () => {
-  it("are other brokerages' listings only, about 226 of them", () => {
-    for (const a of STATEWIDE_AREAS) expect(a.ourWeight, a.slug).toBe(0);
+  it("are other brokerages' listings only: 226, plus 12 on the statewide lakes", () => {
+    for (const a of [...STATEWIDE_AREAS, ...STATEWIDE_LAKES]) expect(a.ourWeight, a.slug).toBe(0);
     expect(STATEWIDE_AREAS.reduce((s, a) => s + a.weight, 0)).toBe(226);
+    expect(STATEWIDE_LAKES.reduce((s, a) => s + a.weight, 0)).toBe(12);
   });
 
   it("keep farms and manufactured homes out of urban areas", () => {

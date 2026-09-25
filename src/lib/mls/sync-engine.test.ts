@@ -3,15 +3,26 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { purgeCountQuery, purgeScope, purgeWhere } from "./purge";
 import {
   PURGE_CAP_PREFIX,
+  PURGE_RESERVE_MS,
+  PURGE_SKIPPED_PREFIX,
+  PURGE_WAIT_POLL_MS,
   PurgeCapError,
   runSync,
+  UPDATE_LOOKBACK_MS,
   type PageOutcome,
   type RunOutcome,
   type SyncCounts,
+  type SyncCursor,
   type SyncMode,
   type SyncStore,
 } from "./sync-engine";
-import type { ListingProvider, MapResult, NormalizedListing, PurgeScope } from "./types";
+import type {
+  FeedPosition,
+  ListingProvider,
+  MapResult,
+  NormalizedListing,
+  PurgeScope,
+} from "./types";
 
 // The engine against an in-memory store and a fake feed on a fake clock:
 // every page "takes" PAGE_MS, so a 300 s function is simulated instantly.
@@ -24,6 +35,10 @@ const PG_MAX_PARAMS = 65_535;
 
 let now = START;
 const clock = () => now;
+/** The engine's waits, on the fake clock. */
+const sleep = async (ms: number) => {
+  now += ms;
+};
 
 type StoredListing = {
   status: NormalizedListing["status"];
@@ -35,7 +50,7 @@ type StoredListing = {
 type Run = {
   id: string;
   mode: SyncMode;
-  status: RunOutcome["status"] | "running";
+  status: RunOutcome["status"] | "running" | "skipped";
   heartbeat: number;
   counts?: SyncCounts;
   cursor?: Date | null;
@@ -44,11 +59,16 @@ type Run = {
 
 class MemoryStore implements SyncStore {
   listings = new Map<string, StoredListing>();
-  cursor: Date | null = null;
+  cursor: SyncCursor | null = null;
   runs: Run[] = [];
   purgeParams: number[] = [];
+  /** skipUnchanged as passed to each writePage. */
+  skipFlags: boolean[] = [];
+  /** Called on every beginRun (lets a test finish a blocking run after a while). */
+  onBeginRun: () => void = () => {};
 
   async beginRun(mode: SyncMode, staleBefore: Date) {
+    this.onBeginRun();
     let staleFailed = 0;
     for (const r of this.runs) {
       if (r.status === "running" && r.heartbeat < staleBefore.getTime()) {
@@ -63,11 +83,26 @@ class MemoryStore implements SyncStore {
     return { runId: run.id, staleFailed };
   }
 
+  async recordSkipped(mode: SyncMode, status: "skipped" | "failed", message: string) {
+    this.runs.push({
+      id: `run-${this.runs.length + 1}`,
+      mode,
+      status,
+      heartbeat: now,
+      error: message,
+    });
+  }
+
   async savedCursor() {
     return this.cursor;
   }
 
-  async writePage(page: MapResult[], cursor: Date | null): Promise<PageOutcome> {
+  async writePage(
+    page: MapResult[],
+    cursor: SyncCursor | null,
+    { skipUnchanged }: { skipUnchanged: boolean },
+  ): Promise<PageOutcome> {
+    this.skipFlags.push(skipUnchanged);
     let upserted = 0;
     let unchanged = 0;
     let removed = 0;
@@ -83,7 +118,7 @@ class MemoryStore implements SyncStore {
       const n = item.listing;
       const modified = n.sourceModifiedAt!.getTime();
       const prev = this.listings.get(n.listingKey);
-      if (prev && !prev.removed && prev.modified === modified) {
+      if (skipUnchanged && prev && !prev.removed && prev.modified === modified) {
         unchanged++;
         continue;
       }
@@ -139,6 +174,9 @@ class MemoryStore implements SyncStore {
   }
 
   async finishRun(runId: string, outcome: RunOutcome) {
+    if (outcome.status !== "failed" && outcome.caughtUp && this.cursor) {
+      this.cursor = { ...this.cursor, key: null };
+    }
     Object.assign(
       this.runs.find((r) => r.id === runId)!,
       {
@@ -178,17 +216,47 @@ function record(i: number, over: Partial<NormalizedListing> = {}): MapResult {
   };
 }
 
-/** A feed of `pages` × `perPage` records; each page takes PAGE_MS on the fake clock. */
-function feed(pages: number, perPage = 200) {
+const modifiedOf = (r: MapResult) => (r.ok ? r.listing.sourceModifiedAt!.getTime() : 0);
+const keyOf = (r: MapResult) => (r.ok ? r.listing.listingKey : "");
+
+/** Records at or after `from` in (timestamp, key) order, like the RESO provider's filter. */
+function dueFrom(records: MapResult[], from: FeedPosition | null) {
+  const sorted = [...records].sort(
+    (a, b) => modifiedOf(a) - modifiedOf(b) || keyOf(a).localeCompare(keyOf(b)),
+  );
+  if (!from) return sorted;
+  const t = from.modifiedAt.getTime();
+  return sorted.filter((r) =>
+    from.key === null
+      ? modifiedOf(r) >= t
+      : modifiedOf(r) > t || (modifiedOf(r) === t && keyOf(r) > from.key!),
+  );
+}
+
+function pageOf(items: MapResult[]) {
+  const last = items[items.length - 1];
+  return {
+    items,
+    last: last?.ok
+      ? { modifiedAt: last.listing.sourceModifiedAt!, key: last.listing.listingKey }
+      : null,
+  };
+}
+
+/**
+ * A feed of `pages` × `perPage` records; each page takes PAGE_MS on the fake
+ * clock (or `pageMs(i)` for page i of a run). `records` can be changed between runs.
+ */
+function feed(pages: number, perPage = 200, pageMs: (i: number) => number = () => PAGE_MS) {
   const records = Array.from({ length: pages * perPage }, (_, i) => record(i));
-  const calls: Array<Date | null> = [];
+  const calls: Array<FeedPosition | null> = [];
   const provider: ListingProvider = {
-    async *fetchUpdates(since) {
-      calls.push(since);
-      const due = records.filter((r) => r.ok && (!since || r.listing.sourceModifiedAt! >= since));
-      for (let i = 0; i < due.length; i += perPage) {
-        now += PAGE_MS;
-        yield due.slice(i, i + perPage);
+    async *fetchUpdates(from) {
+      calls.push(from);
+      const due = dueFrom(records, from);
+      for (let i = 0; i * perPage < due.length; i++) {
+        now += pageMs(i);
+        yield pageOf(due.slice(i * perPage, (i + 1) * perPage));
       }
     },
     fetchActiveKeys() {
@@ -248,20 +316,82 @@ describe("runSync: time budget and resume", () => {
     const pagesDone = first.upserted / 200;
     expect(pagesDone).toBe(25);
     expect(store.runs[0]).toMatchObject({ status: "partial" });
-    // The cursor is the newest record written, saved with the page.
+    // The cursor is the last record written (timestamp and key), saved with the page.
     const lastWritten = records[first.upserted - 1];
-    expect(lastWritten.ok && store.cursor).toEqual(
-      lastWritten.ok ? lastWritten.listing.sourceModifiedAt : null,
-    );
-    expect(store.runs[0].cursor).toEqual(store.cursor);
+    if (!lastWritten.ok) throw new Error("fixture");
+    expect(store.cursor).toEqual({
+      modifiedAt: lastWritten.listing.sourceModifiedAt,
+      key: lastWritten.listing.listingKey,
+    });
+    expect(store.runs[0].cursor).toEqual(lastWritten.listing.sourceModifiedAt);
 
     const second = await runSync(store, provider, { deadline: now + 1_000_000, now: clock });
-    expect(calls[1]).toEqual(store.runs[0].cursor);
+    // Resumed exactly after the last record written: nothing is read twice.
+    expect(calls[1]).toEqual({
+      modifiedAt: lastWritten.listing.sourceModifiedAt,
+      key: lastWritten.listing.listingKey,
+    });
     expect(second.status).toBe("succeeded");
-    // Resumed, not restarted: only the boundary record (`ge` cursor) is seen again.
     expect(second.upserted).toBe(10_000 - first.upserted);
-    expect(second.unchanged).toBe(1);
+    expect(second.unchanged).toBe(0);
     expect(store.live()).toBe(10_000);
+    // Caught up: the next run starts afresh (with the lookback).
+    expect(store.cursor?.key).toBeNull();
+  });
+
+  it("gets through more same-timestamp records than one run can read, across runs", async () => {
+    // An MLS bulk edit: 10,000 records stamped with the same second, 25 pages per run.
+    const { provider, records } = feed(50);
+    const bulk = new Date(START - 3_600_000);
+    for (const r of records) if (r.ok) r.listing.sourceModifiedAt = bulk;
+    let runs = 0;
+    let unchanged = 0;
+    let result;
+    do {
+      result = await runSync(store, provider, { deadline: now + 255_000, now: clock });
+      unchanged += result.unchanged;
+      runs++;
+    } while (result.status === "partial" && runs < 5);
+    expect(result.status).toBe("succeeded");
+    expect(store.live()).toBe(10_000);
+    // Each run picked up where the last stopped, inside the one timestamp.
+    expect(unchanged).toBe(0);
+    expect(runs).toBeLessThanOrEqual(3);
+  });
+
+  it("re-reads the lookback window on a fresh run, so a record the feed showed late isn't missed", async () => {
+    const { provider, records, calls } = feed(1, 100);
+    await runSync(store, provider, { now: clock });
+    const cursor = store.cursor!;
+    expect(cursor.key).toBeNull();
+
+    // The MLS publishes an update stamped 10 minutes before our cursor (replication lag).
+    const late = record(5_000, {
+      listingKey: "LATE-1",
+      sourceModifiedAt: new Date(cursor.modifiedAt.getTime() - 10 * 60_000),
+    });
+    records.push(late);
+    const next = await runSync(store, provider, { now: clock });
+    expect(calls[1]).toEqual({
+      modifiedAt: new Date(cursor.modifiedAt.getTime() - UPDATE_LOOKBACK_MS),
+      key: null,
+    });
+    expect(next.upserted).toBe(1);
+    expect(store.listings.has("LATE-1")).toBe(true);
+    // Re-read records inside the window cost nothing: they're unchanged.
+    expect(next.unchanged).toBeGreaterThan(0);
+    expect(next.changed).toBe(true);
+  });
+
+  it("stops early enough that a page 1.4× slower than the slowest so far still ends in time", async () => {
+    // 10 s pages, then one slower page right where a run without slack would squeeze it in.
+    const deadline = START + 252_000;
+    const { provider } = feed(50, 200, (i) => (i === 24 ? 14_000 : PAGE_MS));
+    const result = await runSync(store, provider, { deadline, now: clock });
+    expect(result.status).toBe("partial");
+    expect(now).toBeLessThanOrEqual(deadline);
+    // …but not needlessly early either: page 25 would have ended at 250 s.
+    expect(result.upserted / 200).toBe(24);
   });
 
   it("without a deadline runs to the end", async () => {
@@ -283,22 +413,31 @@ describe("runSync: time budget and resume", () => {
     expect(result.status).toBe("succeeded");
   });
 
-  it("leaves a run that is still heartbeating alone and does nothing", async () => {
+  it("leaves a run that is still heartbeating alone, does nothing, and records the skip", async () => {
     store.runs.push({ id: "live", mode: "full", status: "running", heartbeat: START - 5_000 });
     const { provider, calls } = feed(1);
-    const result = await runSync(store, provider, { now: clock });
+    const result = await runSync(store, provider, { now: clock, sleep });
     expect(result).toMatchObject({ status: "skipped", runId: null, changed: false });
     expect(calls).toHaveLength(0);
-    expect(store.runs).toHaveLength(1);
     expect(store.runs[0].status).toBe("running");
+    // Visible in the run list, not silently dropped.
+    expect(store.runs).toHaveLength(2);
+    expect(store.runs[1]).toMatchObject({ mode: "incremental", status: "skipped" });
+    // An incremental sync doesn't wait: the next one carries on.
+    expect(now).toBe(START);
   });
 
-  it("a full run ignores the saved cursor", async () => {
-    store.cursor = new Date(START);
+  it("a full run ignores the saved cursor and rewrites unchanged records", async () => {
     const { provider, calls } = feed(2);
-    const result = await runSync(store, provider, { mode: "full", now: clock });
-    expect(calls).toEqual([null]);
-    expect(result.upserted).toBe(400);
+    await runSync(store, provider, { now: clock });
+    const again = await runSync(store, provider, { mode: "full", now: clock });
+    expect(calls[1]).toBeNull();
+    // A full run is how stored rows get repaired (a mapper fix, a new column).
+    expect(again).toMatchObject({ upserted: 400, unchanged: 0 });
+    expect(store.skipFlags).toEqual([true, true, false, false]);
+    // An incremental run skips them.
+    const incremental = await runSync(store, provider, { now: clock });
+    expect(incremental).toMatchObject({ upserted: 0, unchanged: 400, changed: false });
   });
 
   it("records a failure with its message and rethrows", async () => {
@@ -318,15 +457,58 @@ describe("runSync: time budget and resume", () => {
 describe("runSync: purge", () => {
   it("is purge-only: never fetches updates, removes what left the feed, keeps the cursor", async () => {
     seedLive(store, 1000);
-    store.cursor = new Date(START - 60_000);
+    store.cursor = { modifiedAt: new Date(START - 60_000), key: null };
     const { provider, scopes } = keyFeed(keysOf(980)); // 20 listings (2%) left the feed
     const result = await runSync(store, provider, { mode: "purge", now: clock });
-    expect(result).toMatchObject({ status: "succeeded", mode: "purge", removed: 20, fetched: 980 });
+    expect(result).toMatchObject({
+      status: "succeeded",
+      mode: "purge",
+      removed: 20,
+      fetched: 980,
+      // Removals alone must refresh the caches and places.
+      changed: true,
+    });
     expect(store.live()).toBe(980);
-    expect(store.cursor).toEqual(new Date(START - 60_000));
+    expect(store.cursor).toEqual({ modifiedAt: new Date(START - 60_000), key: null });
     // The feed is asked for the scope the site keeps: live, plus sales closed in the last year.
     expect(scopes).toEqual([purgeScope(new Date(START))]);
     expect(scopes[0].closedSince).toBe("2025-09-25");
+  });
+
+  it("waits for a sync that is still running instead of skipping, then purges", async () => {
+    seedLive(store, 1000);
+    store.runs.push({ id: "sync", mode: "incremental", status: "running", heartbeat: START });
+    // The sync finishes 40 s later.
+    store.onBeginRun = () => {
+      if (now >= START + 40_000) store.runs[0].status = "succeeded";
+    };
+    const result = await runSync(store, keyFeed(keysOf(990)).provider, {
+      mode: "purge",
+      deadline: START + 255_000,
+      now: clock,
+      sleep,
+    });
+    expect(result).toMatchObject({ status: "succeeded", removed: 10 });
+    expect(now).toBeGreaterThanOrEqual(START + 40_000);
+    expect(store.runs.map((r) => r.status)).toEqual(["succeeded", "succeeded"]);
+  });
+
+  it("fails loudly, recorded, when the other run outlasts its wait", async () => {
+    seedLive(store, 1000);
+    store.runs.push({ id: "sync", mode: "incremental", status: "running", heartbeat: START });
+    store.onBeginRun = () => {
+      store.runs[0].heartbeat = now; // still alive
+    };
+    const deadline = START + 255_000;
+    await expect(
+      runSync(store, keyFeed(keysOf(990)).provider, { mode: "purge", deadline, now: clock, sleep }),
+    ).rejects.toThrow(PURGE_SKIPPED_PREFIX);
+    // It gave up in time to leave the purge its reserve, and removed nothing.
+    expect(now).toBeLessThanOrEqual(deadline - PURGE_RESERVE_MS);
+    expect(now).toBeGreaterThan(deadline - PURGE_RESERVE_MS - PURGE_WAIT_POLL_MS);
+    expect(store.live()).toBe(1000);
+    expect(store.runs[1]).toMatchObject({ mode: "purge", status: "failed" });
+    expect(store.runs[1].error).toMatch(new RegExp(`^${PURGE_SKIPPED_PREFIX}`));
   });
 
   it("works with more keys than Postgres has bind parameters (100,000)", async () => {

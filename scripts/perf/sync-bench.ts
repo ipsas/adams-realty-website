@@ -109,14 +109,32 @@ async function main() {
     });
   }
 
-  /** A feed serving `records` (oldest first) in pages of 200, honoring `since`. */
+  /**
+   * A feed serving `records` in (timestamp, key) order in pages of 200,
+   * honoring `from` like the RESO provider's keyset filter.
+   */
   function feedOf(records: NormalizedListing[], pageDelayMs = 0): ListingProvider {
+    const t = (r: NormalizedListing) => r.sourceModifiedAt!.getTime();
+    const sorted = [...records].sort(
+      (a, b) => t(a) - t(b) || a.listingKey.localeCompare(b.listingKey),
+    );
     return {
-      async *fetchUpdates(since) {
-        const due = records.filter((r) => !since || r.sourceModifiedAt! >= since);
+      async *fetchUpdates(from) {
+        const due = sorted.filter((r) => {
+          if (!from) return true;
+          const m = from.modifiedAt.getTime();
+          return from.key === null
+            ? t(r) >= m
+            : t(r) > m || (t(r) === m && r.listingKey > from.key);
+        });
         for (let i = 0; i < due.length; i += 200) {
           if (pageDelayMs) await new Promise((r) => setTimeout(r, pageDelayMs));
-          yield due.slice(i, i + 200).map((listing): MapResult => ({ ok: true, listing }));
+          const page = due.slice(i, i + 200);
+          const last = page[page.length - 1];
+          yield {
+            items: page.map((listing): MapResult => ({ ok: true, listing })),
+            last: { modifiedAt: last.sourceModifiedAt!, key: last.listingKey },
+          };
         }
       },
       fetchActiveKeys() {
@@ -159,7 +177,9 @@ async function main() {
   console.info("\nunchanged (the same 300 records again)");
   statements = 0;
   t = performance.now();
-  const same = await syncSource(source.id, { mode: "full", provider: feedOf(changed) });
+  // Incremental: the run above caught up, so this one re-reads the lookback
+  // window before its cursor, which holds all 300.
+  const same = await syncSource(source.id, { provider: feedOf(changed) });
   ms = performance.now() - t;
   console.info(`  ${Math.round(ms)} ms, ${statements} statements`);
   expectThat(

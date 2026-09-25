@@ -1,7 +1,7 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import { parseSearchParams } from "./params";
-import { buildOrderBy, buildWhere, normalizeLocationQuery } from "./query";
+import { buildOrderBy, buildWhere, hasLocation, normalizeLocationQuery } from "./query";
 
 const dialect = new PgDialect();
 const now = new Date("2026-09-25T12:00:00Z");
@@ -138,5 +138,14 @@ describe("normalizeLocationQuery", () => {
     expect(normalizeLocationQuery("The Georgia Club")).toBe("The Georgia Club");
     expect(normalizeLocationQuery("Georgia Ave, Macon")).toBe("Georgia Ave Macon");
     expect(normalizeLocationQuery("Gaines Road")).toBe("Gaines Road");
+  });
+});
+
+describe("hasLocation", () => {
+  it("is true for a place and false for no q or the state alone", () => {
+    expect(hasLocation({ q: "Savannah, GA" })).toBe(true);
+    expect(hasLocation({ q: "30662" })).toBe(true);
+    expect(hasLocation({ q: undefined })).toBe(false);
+    expect(hasLocation({ q: "Georgia, USA" })).toBe(false);
   });
 });

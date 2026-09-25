@@ -4,7 +4,7 @@
  * first statewide load (~65k listings, 20–60 minutes) is done.
  *
  *   npm run mls:sync                                  # incremental sync of all active feeds
- *   npm run mls:sync -- --full                        # ignore cursors, re-fetch everything
+ *   npm run mls:sync -- --full                        # ignore cursors, re-fetch and rewrite everything
  *   npm run mls:sync -- --purge                       # only remove listings that left the feed
  *   npm run mls:sync -- --purge --allow-large-purge   # …even past the 5% removal cap
  *   npm run mls:sync -- --minutes 4                   # stop between pages after ~4 minutes

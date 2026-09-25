@@ -1,6 +1,13 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
-import { PURGE_LIVE_STATUSES, purgeCap, purgeCountQuery, purgeScope, purgeWhere } from "./purge";
+import {
+  PURGE_LIVE_STATUSES,
+  purgeCap,
+  purgeCountQuery,
+  purgeOverdue,
+  purgeScope,
+  purgeWhere,
+} from "./purge";
 import { mapStatus } from "./reso/mapper";
 import { purgeScopeFilter } from "./reso/provider";
 
@@ -81,5 +88,27 @@ describe("purgeScopeFilter (RESO)", () => {
 
   it("rejects a date that isn't YYYY-MM-DD (it goes into the URL unquoted)", () => {
     expect(() => purgeScopeFilter({ closedSince: "2025-09-25' or 1 eq 1" })).toThrow();
+  });
+});
+
+describe("purgeOverdue", () => {
+  const now = new Date("2026-09-25T12:00:00Z");
+  const hoursAgo = (h: number) => new Date(now.getTime() - h * 3_600_000);
+
+  it("is fine within a day and a half of the last successful purge", () => {
+    expect(purgeOverdue({ firstRunAt: hoursAgo(900), lastPurgeAt: hoursAgo(35) }, now)).toBe(false);
+  });
+
+  it("warns once a purge has been missing longer than that", () => {
+    expect(purgeOverdue({ firstRunAt: hoursAgo(900), lastPurgeAt: hoursAgo(37) }, now)).toBe(true);
+  });
+
+  it("counts from the first run for a feed that has never purged", () => {
+    expect(purgeOverdue({ firstRunAt: hoursAgo(2), lastPurgeAt: null }, now)).toBe(false);
+    expect(purgeOverdue({ firstRunAt: hoursAgo(40), lastPurgeAt: null }, now)).toBe(true);
+  });
+
+  it("says nothing for a feed that has never run", () => {
+    expect(purgeOverdue({ firstRunAt: null, lastPurgeAt: null }, now)).toBe(false);
   });
 });

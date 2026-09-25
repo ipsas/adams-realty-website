@@ -44,6 +44,11 @@ export function normalizeLocationQuery(q: string): string {
   return trimmed.replace(STATE_SUFFIX, "").replace(/,/g, " ").replace(/\s+/g, " ").trim();
 }
 
+/** Whether the criteria search a place (a `q` that is more than just the state). */
+export function hasLocation(c: Pick<SearchCriteria, "q">): boolean {
+  return !!c.q && normalizeLocationQuery(c.q) !== "";
+}
+
 /**
  * The location box. It matches where a listing is (address, city, ZIP,
  * neighborhood, lake, MLS number) through `location_vector`, never the

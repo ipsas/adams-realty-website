@@ -136,7 +136,9 @@ Use your model table: Opus High for the work packages, and Xhigh if one gets stu
       after the project is on Pro (a sub-daily cron fails every deployment on Hobby, which the
       preview link uses), change the `crons` in `vercel.json`: `/api/cron/sync` to
       `*/15 * * * *` (every 15 minutes); keep `/api/cron/sync?purge=1` as its own daily run at
-      `30 9 * * *` (it only removes listings that left the feed); `/api/cron/alerts` to
+      `38 9 * * *` (it only removes listings that left the feed; minute 38 is clear of the
+      9:30 sync, which ends within 5 minutes, and of the 9:45 one. If they ever meet, the
+      purge waits for the sync, or fails visibly in _Dashboard → MLS feeds_); `/api/cron/alerts` to
       `5 * * * *` (hourly). Until then the schedules stay daily. If
       a daily sync ends "partial" in _Dashboard → MLS feeds_, run `npm run mls:sync` from a
       computer to catch up.

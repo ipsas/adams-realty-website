@@ -994,6 +994,65 @@ export const STATEWIDE_AREAS: SeedArea[] = [
   },
 ];
 
+/**
+ * Middle Georgia's two big lakes, so a lake search works statewide and not
+ * just in the firm's market. Seeded after STATEWIDE_AREAS (from the same
+ * PRNG, continuing), so adding them left every other statewide listing as it
+ * was. Pools are built by scripts/dev/gen-seed-sites.ts: waterfront on the
+ * mainland 30–140 m from the NHD shoreline, near 300 m–2.5 km from it; each
+ * row carries its own city and ZIP (the ZIP's mailing city), since each lake
+ * spans several towns and counties. `city`/`zip` below are only defaults.
+ * Price bands are for demo plausibility only, not market facts.
+ */
+export const STATEWIDE_LAKES: SeedArea[] = [
+  {
+    slug: "lake-sinclair",
+    name: "Lake Sinclair",
+    kind: "lake",
+    city: "Milledgeville",
+    zip: "31061",
+    center: [33.21, -83.28],
+    lakeBounds: { west: -83.433, south: 33.1388, east: -83.1017, north: 33.3511 },
+    areaCodes: MIDDLE,
+    ppsf: [170, 300],
+    sqft: [1300, 3600],
+    years: [1960, 2026],
+    lot: [18000, 60000],
+    acres: [0.5, 2.5],
+    perAcre: [60000, 160000],
+    mix: { single_family: 8, land: 2 },
+    waterfrontChance: 0.6,
+    basementChance: 0.2,
+    vibe: "with coves, marinas and good fishing all along the shore",
+    weight: 5,
+    ourWeight: 0,
+  },
+  {
+    slug: "lake-oconee",
+    name: "Lake Oconee",
+    kind: "lake",
+    city: "Greensboro",
+    zip: "30642",
+    center: [33.45, -83.3],
+    lakeBounds: { west: -83.3581, south: 33.3437, east: -83.1389, north: 33.6654 },
+    areaCodes: MIDDLE,
+    ppsf: [260, 460],
+    sqft: [1800, 5200],
+    years: [1980, 2026],
+    lot: [20000, 70000],
+    acres: [0.7, 3],
+    perAcre: [150000, 380000],
+    mix: { single_family: 8, land: 2 },
+    waterfrontChance: 0.6,
+    poolChance: 0.25,
+    basementChance: 0.4,
+    hoaChance: 0.6,
+    vibe: "with golf courses, marinas and quiet coves along the shore",
+    weight: 7,
+    ourWeight: 0,
+  },
+];
+
 /** Made-up street names. Residential, rural and commercial streets draw from these. */
 export const STREETS = [
   "Dogwood",
@@ -1377,7 +1436,9 @@ export const COMMUNITY = ["Clubhouse", "Pool", "Playground", "Sidewalks", "Stree
  * - Lake Hartwell: the lake's full name in WaterBodyName.
  * - Lake Lanier: only the guide's alias "Lanier" in WaterBodyName, so just the
  *   area-guide match finds it for "Lake Lanier" (no word "lake" anywhere).
- * - Lake Sinclair: no area guide, so just `location_vector` finds it.
+ * - Lake Sinclair: no area guide, so just `location_vector` finds it. It sits
+ *   on a Lake Sinclair waterfront site (STATEWIDE_LAKES), like the others on
+ *   their lakes'.
  * Prices are unique in the seed; e2e/statewide.spec.ts uses them.
  */
 export const LAKE_FIXTURES = [
@@ -1398,7 +1459,7 @@ export const LAKE_FIXTURES = [
     price: 734_567,
   },
   {
-    area: "milledgeville",
+    area: "lake-sinclair",
     query: "Lake Sinclair",
     street: "27 Twin Oaks Trail",
     neighborhood: "Twin Oaks",

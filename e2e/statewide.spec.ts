@@ -61,6 +61,16 @@ for (const f of [
   });
 }
 
+// STATEWIDE_LAKES in scripts/seed-data.ts: middle Georgia's lakes, with no area guide.
+for (const lake of ["Lake Oconee", "Lake Sinclair"]) {
+  test(`a ${lake} search finds homes on and around the lake`, async ({ page }) => {
+    await page.goto(`/homes?${new URLSearchParams({ q: lake })}`);
+    expect(await resultCount(page)).toBeGreaterThanOrEqual(3);
+    const addresses = await page.getByTestId("card-address").allTextContents();
+    for (const a of addresses) expect(a).toMatch(/, GA 3\d{4}$/);
+  });
+}
+
 test("the location box matches places, not words in descriptions", async ({ page }) => {
   // 64 seeded homes for sale have "quartz" in their description (it used to
   // match); no address, town, ZIP, subdivision or lake does. Keyword search

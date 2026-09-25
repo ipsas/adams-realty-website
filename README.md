@@ -49,7 +49,7 @@ in `src/config/site.ts` (firm name, office address and phone, Georgia MLS office
 | `npm run build`       | Production build (needs no database at build time)    |
 | `npm run lint`        | ESLint                                                |
 | `npm run typecheck`   | TypeScript                                            |
-| `npm test`            | Unit tests (Vitest)                                   |
+| `npm test`            | Unit and database tests (Vitest; needs Postgres)      |
 | `npm run test:e2e`    | End-to-end tests (Playwright; seeded DB + dev server) |
 | `npm run db:generate` | Create a migration from schema changes                |
 | `npm run db:migrate`  | Apply migrations                                      |
@@ -106,13 +106,19 @@ Georgia MLS.
    the next run continues from the same place.
 
    Other commands:
-   - `npm run mls:sync`: an incremental sync (changes since the last one). Records that
-     haven't changed are skipped.
+   - `npm run mls:sync`: an incremental sync (changes since the last one, re-reading the
+     half hour before it in case the feed published something late). Records that haven't
+     changed are skipped.
+   - `npm run mls:sync -- --full`: the whole feed, every record rewritten. Besides the first
+     load, this is how stored listings get repaired after a mapping fix or a new column.
    - `npm run mls:sync -- --purge`: only the purge: listings that left the feed are taken
      off the site. It compares the feed's live listings and the last year's sales (what the
      site shows), and it refuses to remove more than 5% of them at once, which usually
      means a feed problem rather than a real exodus. If you've checked that the feed really
      dropped them, add `--allow-large-purge` (the dashboard shows a warning when this happens).
+     A purge that finds a sync still running waits for it; if it still can't start, it is
+     recorded as failed (never skipped quietly), and the dashboard warns when no purge has
+     finished for a day and a half.
    - `-- --minutes 4`: stop between pages after about 4 minutes.
 
 5. Set each agent's MLS agent ID (_Dashboard → Agents_) so feed listings link to their
@@ -129,7 +135,7 @@ Vercel plus Neon (or Supabase) Postgres is the simplest setup:
 3. The crons in `vercel.json` run the MLS sync, the off-market purge (`?purge=1`, a separate
    purge-only run) and email alerts once a day, which is what Vercel's free (Hobby) plan
    allows; a sub-daily schedule fails the deployment there. On Vercel Pro, set the sync to
-   `*/15 * * * *` (keep the purge daily) and alerts to `5 * * * *` (hourly): see HANDOFF.md
-   section 6.
+   `*/15 * * * *` (keep the purge daily, at a minute no sync starts on) and alerts to
+   `5 * * * *` (hourly): see HANDOFF.md section 6.
 4. Cached listing data (home page numbers and featured homes, area guide stats) refreshes
    right after each cron sync, and within 15 minutes after a sync run from the command line.

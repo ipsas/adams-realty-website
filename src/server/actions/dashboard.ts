@@ -21,7 +21,7 @@ import { geocodeAddress } from "@/lib/geocode";
 import { LISTINGS_TAG } from "@/lib/listings/cache-tags";
 import { upsertListing } from "@/lib/listings/persist";
 import { refreshPlaces } from "@/lib/listings/places";
-import { syncSource } from "@/lib/mls/sync";
+import { SyncFailedError, syncSource } from "@/lib/mls/sync";
 import type { NormalizedListing, NormalizedMedia, NormalizedOpenHouse } from "@/lib/mls/types";
 import { audit } from "../audit";
 
@@ -645,6 +645,8 @@ export async function runSourceSync(sourceId: string) {
           : `Synced: ${result.upserted} updated, ${result.unchanged} unchanged.`;
     return { ok: result.status !== "skipped", message };
   } catch (e) {
+    // Pages written before the failure are live: refresh the caches for them.
+    if (e instanceof SyncFailedError && e.changed) updateTag(LISTINGS_TAG);
     revalidatePath("/dashboard/sources");
     return { ok: false as const, message: e instanceof Error ? e.message : "Sync failed." };
   }

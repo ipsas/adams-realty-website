@@ -9,17 +9,45 @@ import type { ListingProvider } from "./types";
 
 export type { SyncMode, SyncResult } from "./sync-engine";
 
-export type SyncOptions = Omit<RunSyncOptions, "now"> & {
+export type SyncOptions = Omit<RunSyncOptions, "now" | "sleep"> & {
   /** Injected in tests and benchmarks. */
   provider?: ListingProvider;
 };
 
-export function createProvider(source: typeof dataSources.$inferSelect): ListingProvider {
+/**
+ * How long past the run's `deadline` a feed request may still be in flight.
+ * The engine only checks the deadline between pages, so the feed client cuts
+ * off a request (or a retry wait) this long after it: the run then fails
+ * cleanly, cursor saved and caches refreshed, before the function's own limit
+ * (the cron's deadline is maxDuration − 45 s) kills it mid-write.
+ */
+export const FEED_GRACE_MS = 30_000;
+
+export function createProvider(
+  source: typeof dataSources.$inferSelect,
+  opts: { deadline?: number } = {},
+): ListingProvider {
   switch (source.kind) {
     case "reso_web_api":
-      return new ResoWebApiProvider(source.config);
+      return new ResoWebApiProvider(source.config, process.env, {
+        deadline: opts.deadline === undefined ? undefined : opts.deadline + FEED_GRACE_MS,
+      });
     case "manual":
       throw new Error("Manual sources are edited in the dashboard and have nothing to sync.");
+  }
+}
+
+/**
+ * A sync that failed (the message is the cause's). `changed`: it wrote or
+ * took down listings before failing, so caches still need refreshing.
+ */
+export class SyncFailedError extends Error {
+  constructor(
+    cause: unknown,
+    readonly changed: boolean,
+  ) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = "SyncFailedError";
   }
 }
 
@@ -29,32 +57,44 @@ export function createProvider(source: typeof dataSources.$inferSelect): Listing
  *     by page. Each page is written in one transaction together with the
  *     advanced cursor, so a run that stops (time budget, crash) resumes where
  *     it stopped. Unchanged records are skipped.
- *   - full: the same, ignoring the cursor (the first load; CLI only).
+ *   - full: the whole feed, ignoring the cursor, and every record rewritten
+ *     (the first load, or repairing rows after a mapper fix; CLI only).
  *   - purge: only removes listings that left the feed (IDX requires
  *     off-market listings to disappear promptly), within a removal cap.
- * Afterwards, if anything changed, the autocomplete places are rebuilt. The
- * caller revalidates the page caches (it may not be inside Next).
+ * Afterwards, if anything changed (even in a run that then failed), the
+ * autocomplete places are rebuilt. The caller revalidates the page caches (it
+ * may not be inside Next): on failure, a SyncFailedError says whether to.
  */
 export async function syncSource(sourceId: string, opts: SyncOptions = {}): Promise<SyncResult> {
   const [source] = await db.select().from(dataSources).where(eq(dataSources.id, sourceId));
   if (!source) throw new Error(`Data source ${sourceId} not found`);
   const { provider, ...runOpts } = opts;
-  const result = await runSync(
-    createSyncStore(source),
-    () => provider ?? createProvider(source),
-    runOpts,
-  );
-  if (result.changed) {
-    // Stale suggestions aren't worth failing a sync that already committed.
-    await refreshPlaces(db).catch((e) =>
-      console.error("Refreshing autocomplete places failed:", e),
+  const store = createSyncStore(source);
+  let result: SyncResult;
+  try {
+    result = await runSync(
+      store,
+      () => provider ?? createProvider(source, { deadline: runOpts.deadline }),
+      runOpts,
     );
+  } catch (e) {
+    const changed = store.changedListings();
+    if (changed) await refreshPlacesQuietly();
+    throw new SyncFailedError(e, changed);
   }
+  if (result.changed) await refreshPlacesQuietly();
   return result;
 }
 
+/** Stale suggestions aren't worth failing a sync that already committed. */
+async function refreshPlacesQuietly() {
+  await refreshPlaces(db).catch((e) => console.error("Refreshing autocomplete places failed:", e));
+}
+
 export type SourceSyncOutcome = { source: string } & (
-  { ok: true; result: SyncResult } | { ok: false; error: string }
+  | { ok: true; result: SyncResult }
+  /** `changed`: listings were written before it failed, so caches need refreshing too. */
+  | { ok: false; error: string; changed: boolean }
 );
 
 /** Syncs every active feed source. Failures in one source don't stop the others. */
@@ -74,6 +114,7 @@ export async function syncAllSources(
         source: s.slug,
         ok: false,
         error: e instanceof Error ? e.message : String(e),
+        changed: e instanceof SyncFailedError && e.changed,
       });
     }
   }

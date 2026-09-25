@@ -50,7 +50,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { AREAS, STATEWIDE_AREAS, type SeedArea } from "../seed-data";
+import { AREAS, STATEWIDE_AREAS, STATEWIDE_LAKES, type SeedArea } from "../seed-data";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SITES_FILE = join(HERE, "..", "seed-sites.json");
@@ -107,7 +107,57 @@ const STATEWIDE_SOURCES: Record<
 const LAKE_NAMES: Record<string, string> = {
   "lake-hartwell": "Hartwell Lake",
   "lake-lanier": "Lake Sidney Lanier",
+  "lake-sinclair": "Lake Sinclair",
+  "lake-oconee": "Lake Oconee",
 };
+
+/**
+ * A lake's NHD polygons: every feature with its name that overlaps the
+ * largest one. A name can repeat on a far-off pond (there is a small "Lake
+ * Oconee" near Watkinsville, 30 km north of the real one).
+ */
+function lakeShapes(c: Context, slug: string): Shape[] {
+  const named = c.water.filter((s) => s.attrs.GNIS_NAME === LAKE_NAMES[slug]);
+  if (!named.length) return [];
+  const size = (s: Shape) => (s.box[2] - s.box[0]) * (s.box[3] - s.box[1]);
+  const main = named.reduce((a, b) => (size(b) > size(a) ? b : a));
+  const pad = 1000;
+  return named.filter(
+    (s) =>
+      s.box[0] <= main.box[2] + pad &&
+      s.box[2] >= main.box[0] - pad &&
+      s.box[1] <= main.box[3] + pad &&
+      s.box[3] >= main.box[1] - pad,
+  );
+}
+
+/** Signed area of a ring (shoelace): negative for clockwise, ArcGIS's exterior rings. */
+function ringArea(ring: Pt[]): number {
+  let a = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    a += (ring[j][0] - ring[i][0]) * (ring[j][1] + ring[i][1]);
+  }
+  return -a / 2;
+}
+
+function inRing(ring: Pt[], p: Pt): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    if (yi > p[1] !== yj > p[1] && p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/** On an island: inside one of the lake's outer shorelines, yet not in its water. */
+function onIsland(lake: Shape[], p: Pt): boolean {
+  return lake.some(
+    (s) => inBox(s, p) && !contains(s, p) && s.rings.some((r) => ringArea(r) < 0 && inRing(r, p)),
+  );
+}
 
 export const RADIUS_M = { core: 1150, town: 7800, ruralMax: 14500 };
 const MIN_SPACING_M = 150;
@@ -377,6 +427,83 @@ function prng(seed: string) {
 
 const round5 = (n: number) => Math.round(n * 1e5) / 1e5;
 
+/** Statewide lakes: enough of each for every listing to be on (or near) the water. */
+export function lakePoolSizes(area: Pick<SeedArea, "weight">) {
+  return { waterfront: area.weight + 4, near: area.weight + 4 };
+}
+
+/**
+ * A statewide lake's pools. waterfront: mainland, 30–140 m from the lake's
+ * shore (drawn by stepping inland from a shoreline vertex); near: 300 m–2.5 km
+ * from it. Each row's city is its ZIP's mailing city, since a lake spans
+ * several towns and counties.
+ */
+async function generateLake(area: SeedArea): Promise<Record<string, Row[]>> {
+  if (!area.lakeBounds) throw new Error(`${area.slug}: a lake needs lakeBounds`);
+  const b = area.lakeBounds;
+  const center: [number, number] = [(b.south + b.north) / 2, (b.west + b.east) / 2];
+  const halfDiag = Math.hypot((b.north - b.south) * 110_574, (b.east - b.west) * 93_000) / 2;
+  const c = await loadContext(center, halfDiag + 4000);
+  const lake = lakeShapes(c, area.slug);
+  if (!lake.length) throw new Error(`${area.slug}: NHD has no ${LAKE_NAMES[area.slug]}`);
+  const shore = lake.flatMap((s) => s.rings.flat());
+  const sizes = lakePoolSizes(area);
+  const rand = prng(area.slug);
+  const taken: Pt[] = [];
+
+  const accept = async (p: Pt, kind: "waterfront" | "near"): Promise<Row | null> => {
+    if (taken.some((q) => Math.hypot(q[0] - p[0], q[1] - p[1]) < MIN_SPACING_M)) return null;
+    if (!onLand(c, p) || !clearOfLandUse(c, p) || onIsland(lake, p)) return null;
+    const d = nearest(lake, p, 3000);
+    if (kind === "waterfront" && (d < 30 || d > 140)) return null;
+    if (kind === "near" && (d < 300 || d > 2500)) return null;
+    const street = nearest(c.streets, p, 250);
+    if (street < 12 || street > 200) return null;
+    if (nearest(c.freeways, p, 60) < 60) return null;
+    const county = countyAt(c, p);
+    const zip = zipAt(c, p);
+    if (!county || !zip || MILITARY_ZIPS[zip]) return null;
+    const [city] = await citiesForZip(zip);
+    if (!city) return null;
+    const [lat, lng] = c.frame.toLatLng(p);
+    return [round5(lat), round5(lng), county, city, zip];
+  };
+
+  const fill = async (kind: "waterfront" | "near", want: number, sample: () => Pt) => {
+    const rows: Row[] = [];
+    for (let tries = 0; rows.length < want && tries < 20_000; tries++) {
+      const p = sample();
+      const row = await accept(p, kind);
+      if (row) {
+        rows.push(row);
+        taken.push(p);
+      }
+    }
+    if (rows.length < want) {
+      throw new Error(`${area.slug}: only ${rows.length}/${want} ${kind} sites; loosen or check`);
+    }
+    return rows;
+  };
+  // A shoreline vertex, stepped 40–130 m in a random direction: most steps
+  // land in the water or too close to it and are rejected.
+  const nearShore = (): Pt => {
+    const [x, y] = shore[Math.floor(rand() * shore.length)];
+    const r = 40 + rand() * 90;
+    const a = rand() * 2 * Math.PI;
+    return [x + r * Math.cos(a), y + r * Math.sin(a)];
+  };
+  const [x0, y0] = c.frame.toXY(b.south, b.west);
+  const [x1, y1] = c.frame.toXY(b.north, b.east);
+  const aroundLake = (): Pt => [
+    x0 - 2500 + rand() * (x1 - x0 + 5000),
+    y0 - 2500 + rand() * (y1 - y0 + 5000),
+  ];
+  return {
+    waterfront: await fill("waterfront", sizes.waterfront, nearShore),
+    near: await fill("near", sizes.near, aroundLake),
+  };
+}
+
 export function poolSizes(area: Pick<SeedArea, "weight" | "urban">) {
   const quota = area.weight;
   return {
@@ -526,7 +653,7 @@ async function checkArea(
 
   let lake: Shape[] = [];
   if (isLake) {
-    lake = c.water.filter((s) => s.attrs.GNIS_NAME === LAKE_NAMES[area.slug]);
+    lake = lakeShapes(c, area.slug);
     if (!lake.length) problems.push(`${area.slug}: NHD has no ${LAKE_NAMES[area.slug]}`);
     const [south, west] = c.frame.toLatLng([
       Math.min(...lake.map((s) => s.box[0])),
@@ -586,6 +713,7 @@ async function checkArea(
         if (other) fail(kind, row, `inside ${String(other.attrs.NAME)}`);
       }
       if (isLake && lake.length) {
+        if (onIsland(lake, p)) fail(kind, row, "on an island");
         const d = nearest(lake, p, 5000);
         if (kind === "waterfront" && d > 150) fail(kind, row, `${Math.round(d)} m from the lake`);
         if (kind === "near" && (d < 200 || d > 3000)) {
@@ -605,6 +733,7 @@ const ABOUT = [
   "Demo seed coordinates, one list per seed area (scripts/seed-data.ts).",
   "Northeast Georgia areas: every point was checked to be on land against USGS National Hydrography Dataset waterbodies and to fall inside the listed Georgia county (USGS National Map boundaries). core: near downtown; town: inside city limits; rural: 1-7 km outside town; waterfront: 25-100 m from the lake shore (mainland); near: 250 m-2.5 km from the lake. Row format: [lat, lng, county] or, for lakes, [lat, lng, county, city, zip].",
   "Statewide areas: generated by scripts/dev/gen-seed-sites.ts from Census TIGERweb (places, counties, 2020 ZCTAs, roads, military, prison, college and park land), USGS NHD water and marsh, and USGS GNIS centers. core: inside city limits within 1.2 km of the center; town: inside city limits (Virginia-Highland: the City of Atlanta neighborhood) within 8 km; rural: outside every incorporated place, 1-7 km from the city limits (consolidated city-counties: their own fringe, 8-14.5 km out). Every point is on land, near a street, 150 m from any other, and its ZIP (the ZCTA at the point) has the row's city as its mailing city. Row format: [lat, lng, county, city, zip].",
+  "Statewide lakes (Lake Sinclair, Lake Oconee): waterfront on the mainland 30-140 m from the NHD shoreline, near 300 m-2.5 km from it, near a street; each row's city is its ZIP's mailing city.",
   "Run `npx tsx scripts/dev/gen-seed-sites.ts --check` to re-verify every row.",
 ].join(" ");
 
@@ -630,7 +759,7 @@ async function main() {
     // The Northeast Georgia rows are frozen (the 180 listings built on them must
     // not move), so findings about individual rows there are reported, not fatal.
     const legacy: string[] = [];
-    for (const area of [...AREAS, ...STATEWIDE_AREAS]) {
+    for (const area of [...AREAS, ...STATEWIDE_AREAS, ...STATEWIDE_LAKES]) {
       const pools = file.areas[area.slug];
       if (!pools) {
         errors.push(`${area.slug}: no rows`);
@@ -657,10 +786,12 @@ async function main() {
   if (only && AREAS.some((a) => a.slug === only)) {
     throw new Error(`${only} is a Northeast Georgia area; its rows are never regenerated.`);
   }
-  for (const area of STATEWIDE_AREAS) {
+  for (const area of [...STATEWIDE_AREAS, ...STATEWIDE_LAKES]) {
     if (only ? area.slug !== only : file.areas[area.slug]) continue;
     console.info(`Generating ${area.slug}…`);
-    file.areas[area.slug] = (await generateArea(area)) as Record<string, (string | number)[][]>;
+    file.areas[area.slug] = (
+      area.kind === "lake" ? await generateLake(area) : await generateArea(area)
+    ) as Record<string, (string | number)[][]>;
     // Write after every area, so a network failure doesn't lose finished work.
     writeFileSync(SITES_FILE, serialize({ ...file, about: ABOUT }));
   }

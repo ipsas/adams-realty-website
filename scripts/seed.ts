@@ -1,13 +1,15 @@
 /**
  * Seeds a development database with a realistic sample market: Adams Realty's
  * real office and broker, a few sample agents, open houses, price history,
- * leads and demo logins, and about 409 FICTIONAL listings:
+ * leads and demo logins, and about 421 FICTIONAL listings:
  * - 180 in Northeast Georgia, the towns and lakes the firm serves: Adams
  *   Realty's own listings plus a demo MLS feed. Adams listings are only here.
  * - 226 statewide (Atlanta and its suburbs, the regional cities, the
  *   mountains and south Georgia), all from other (fictional) brokerages in
  *   the demo feed, generated after the Northeast Georgia block from their own
  *   PRNG seed so that block never changes.
+ * - 12 on Lake Sinclair and Lake Oconee (STATEWIDE_LAKES), generated after
+ *   those, so adding them moved none of the 226.
  * - 3 lake homes shaped like the real feed (LAKE_FIXTURES): the lake only in
  *   WaterBodyName, never in `neighborhood`, so lake searches stay tested.
  *
@@ -72,6 +74,7 @@ import {
   OTHER_BROKERAGES,
   RURAL_SUFFIXES,
   STATEWIDE_AREAS,
+  STATEWIDE_LAKES,
   STREETS,
   STYLES,
   SUFFIXES,
@@ -963,21 +966,13 @@ async function main() {
   // Fixtures the mobile work packages test against (Decatur, DeKalb County,
   // Virginia-Highland in buy mode): force the first few of each active.
   const forced = { decatur: 0, dekalb: 0, virginiaHighland: 0 };
-  for (let j = 0; j < statewideAreas.length; j++) {
-    const area = statewideAreas[j];
-    const key = total + j + 1;
+  /** One listing from another brokerage in the demo feed. */
+  async function addStatewide(area: SeedArea, key: number, activeIf?: GenerateOptions["activeIf"]) {
     const { listing, priceDropFrom } = generateListing(key, {
       area,
       // Derived from the key, so statewide MLS numbers are unique.
       mlsNumber: String(10_500_000 + key),
-      activeIf: ({ county, mode }) => {
-        if (mode !== "sale") return false;
-        let force = false;
-        if (area.slug === "decatur" && forced.decatur++ < 12) force = true;
-        if (county === "DeKalb" && forced.dekalb++ < 4) force = true;
-        if (area.slug === "virginia-highland" && forced.virginiaHighland++ < 2) force = true;
-        return force;
-      },
+      activeIf,
     });
     perArea.set(area.slug, (perArea.get(area.slug) ?? 0) + 1);
     // Other brokerages only: Adams Realty's own listings stay in Northeast Georgia.
@@ -995,14 +990,41 @@ async function main() {
     }
   }
 
+  for (let j = 0; j < statewideAreas.length; j++) {
+    const area = statewideAreas[j];
+    await addStatewide(area, total + j + 1, ({ county, mode }) => {
+      if (mode !== "sale") return false;
+      let force = false;
+      if (area.slug === "decatur" && forced.decatur++ < 12) force = true;
+      if (county === "DeKalb" && forced.dekalb++ < 4) force = true;
+      if (area.slug === "virginia-highland" && forced.virginiaHighland++ < 2) force = true;
+      return force;
+    });
+  }
+
+  // Lake Sinclair and Lake Oconee, after every other statewide listing (the
+  // PRNG carries on), so adding them moved none of those.
+  const lakeTotal = STATEWIDE_LAKES.reduce((s, a) => s + a.weight, 0);
+  const lakeAreas = allocateAreas(lakeTotal, (a) => a.weight, STATEWIDE_LAKES);
+  // A lake search must find something for sale on each: the first three of each are active.
+  const forcedOnLake = new Map<string, number>();
+  for (let j = 0; j < lakeAreas.length; j++) {
+    const area = lakeAreas[j];
+    await addStatewide(area, total + statewideAreas.length + j + 1, ({ mode }) => {
+      const n = forcedOnLake.get(area.slug) ?? 0;
+      forcedOnLake.set(area.slug, n + 1);
+      return mode === "sale" && n < 3;
+    });
+  }
+
   // Lake homes shaped like the real feed: the subdivision in `neighborhood`,
   // the lake only in WaterBodyName. The rest of the seed keeps the lake in
   // `neighborhood`, which the real feed never does, so without these a lake
   // search could break without any test noticing. Unique prices let tests
   // pick each one out.
   for (const [k, f] of LAKE_FIXTURES.entries()) {
-    const area = [...AREAS, ...STATEWIDE_AREAS].find((a) => a.slug === f.area)!;
-    const key = total + statewideAreas.length + k + 1;
+    const area = [...AREAS, ...STATEWIDE_AREAS, ...STATEWIDE_LAKES].find((a) => a.slug === f.area)!;
+    const key = total + statewideAreas.length + lakeAreas.length + k + 1;
     const { listing } = generateListing(key, {
       area,
       type: "single_family",
@@ -1040,7 +1062,9 @@ async function main() {
   console.info("By area: %s", AREAS.map((a) => `${a.slug} ${perArea.get(a.slug) ?? 0}`).join(", "));
   console.info(
     "Statewide: %s",
-    STATEWIDE_AREAS.map((a) => `${a.slug} ${perArea.get(a.slug) ?? 0}`).join(", "),
+    [...STATEWIDE_AREAS, ...STATEWIDE_LAKES]
+      .map((a) => `${a.slug} ${perArea.get(a.slug) ?? 0}`)
+      .join(", "),
   );
   console.info(
     "Adams listings by agent: %s\n",
@@ -1134,6 +1158,30 @@ async function assertStatewideFixtures() {
     `autocomplete "Decat" suggests Decatur with its ${decatur} live listings`,
     suggested.some((s) => s.kind === "city" && s.label === "Decatur" && s.count === decatur),
   ]);
+  for (const lake of STATEWIDE_LAKES) {
+    checks.push([`/homes?q=${lake.name} finds homes there`, (await buy({ q: lake.name })) >= 3]);
+  }
+  // Each lake fixture sits on its lake: pin within the lake's extent, description naming it.
+  for (const f of LAKE_FIXTURES) {
+    const lake = [...AREAS, ...STATEWIDE_LAKES].find((a) => a.slug === f.area)!;
+    const b = lake.lakeBounds!;
+    const [home] = await db
+      .execute<{ lat: number; lng: number; description: string }>(
+        sql`select latitude as lat, longitude as lng, description from listings
+            where address_line1 = ${f.street} and list_price = ${f.price}`,
+      )
+      .then((r) => r.rows);
+    const margin = 0.01; // about 1 km: waterfront sites are within 150 m of the shore
+    checks.push([
+      `${f.street} is on ${lake.name}: pin within its extent, description naming it`,
+      !!home &&
+        home.lat >= b.south - margin &&
+        home.lat <= b.north + margin &&
+        home.lng >= b.west - margin &&
+        home.lng <= b.east + margin &&
+        home.description.includes(`on ${lake.name}`),
+    ]);
+  }
   for (const f of LAKE_FIXTURES) {
     checks.push([
       `/homes?q=${f.query} finds ${f.street} (lake only in WaterBodyName "${f.waterBody}")`,

@@ -306,9 +306,25 @@ export async function getSources() {
     .where(isNull(listings.removedAt))
     .groupBy(listings.sourceId);
   const runs = await db.select().from(syncRuns).orderBy(desc(syncRuns.startedAt)).limit(20);
-  return sources.map((s) => ({
-    ...s,
-    listingCount: counts.find((c) => c.sourceId === s.id)?.count ?? 0,
-    runs: runs.filter((r) => r.sourceId === s.id).slice(0, 5),
-  }));
+  const history = await db
+    .select({
+      sourceId: syncRuns.sourceId,
+      firstRunAt: sql<Date | null>`min(${syncRuns.startedAt})`.mapWith(syncRuns.startedAt),
+      lastPurgeAt:
+        sql<Date | null>`max(${syncRuns.finishedAt}) filter (where ${syncRuns.mode} = 'purge' and ${syncRuns.status} = 'succeeded')`.mapWith(
+          syncRuns.finishedAt,
+        ),
+    })
+    .from(syncRuns)
+    .groupBy(syncRuns.sourceId);
+  return sources.map((s) => {
+    const h = history.find((x) => x.sourceId === s.id);
+    return {
+      ...s,
+      listingCount: counts.find((c) => c.sourceId === s.id)?.count ?? 0,
+      runs: runs.filter((r) => r.sourceId === s.id).slice(0, 5),
+      firstRunAt: h?.firstRunAt ?? null,
+      lastPurgeAt: h?.lastPurgeAt ?? null,
+    };
+  });
 }

@@ -80,6 +80,13 @@ export const dataSources = pgTable("data_sources", {
   disclaimer: text("disclaimer"),
   /** High-water mark of `ModificationTimestamp` seen so far (incremental sync). */
   syncCursor: timestamp("sync_cursor", { withTimezone: true }),
+  /**
+   * ListingKey of the last record written, while a run is partway through the
+   * feed: the next run continues right after (sync_cursor, key). Null once a
+   * run caught up; the next one then re-reads from a little before the cursor
+   * (UPDATE_LOOKBACK_MS in src/lib/mls/sync-engine.ts).
+   */
+  syncCursorKey: text("sync_cursor_key"),
   lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -270,6 +277,25 @@ export const listings = pgTable(
     index("listings_live_neighborhood_trgm_idx")
       .using("gin", sql`${t.neighborhood} gin_trgm_ops`)
       .where(LIVE),
+    // The location box by scope: every search mode's WHERE implies LIVE (buy,
+    // pending, rent) or SOLD, so each branch of its OR has an index over just
+    // that scope. Without them the matches of every status are collected and
+    // then ANDed with a status bitmap of 50k–160k rows: sold q=Atlanta counted
+    // in 45 ms instead of 30 (`npm run perf:measure`).
+    index("listings_live_location_idx").using("gin", t.locationVector).where(LIVE),
+    index("listings_live_address_trgm_idx")
+      .using("gin", sql`${t.addressLine1} gin_trgm_ops`)
+      .where(LIVE),
+    index("listings_sold_location_idx").using("gin", t.locationVector).where(SOLD),
+    index("listings_sold_city_trgm_idx")
+      .using("gin", sql`${t.city} gin_trgm_ops`)
+      .where(SOLD),
+    index("listings_sold_neighborhood_trgm_idx")
+      .using("gin", sql`${t.neighborhood} gin_trgm_ops`)
+      .where(SOLD),
+    index("listings_sold_address_trgm_idx")
+      .using("gin", sql`${t.addressLine1} gin_trgm_ops`)
+      .where(SOLD),
     // Area-guide matching: the exact expression `normalizedSql` in
     // src/lib/areas/match.ts renders, so a guide name in the location box
     // ("Lake Hartwell") and the guide pages can use an index.

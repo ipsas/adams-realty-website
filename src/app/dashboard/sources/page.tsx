@@ -6,6 +6,7 @@ import { requirePermission } from "@/lib/auth/session";
 import { cn } from "@/lib/cn";
 import { getSources } from "@/lib/dashboard/queries";
 import { formatNumber, formatRelative } from "@/lib/format";
+import { purgeOverdue } from "@/lib/mls/purge";
 import { PURGE_CAP_PREFIX } from "@/lib/mls/sync-engine";
 
 export const metadata = { title: "MLS feeds" };
@@ -13,6 +14,7 @@ export const metadata = { title: "MLS feeds" };
 export default async function SourcesPage() {
   await requirePermission("/dashboard/sources", can.manageDataSources);
   const sources = await getSources();
+  const now = new Date();
   return (
     <>
       <PageHeader
@@ -54,6 +56,17 @@ export default async function SourcesPage() {
                 <code>npm run mls:sync -- --purge --allow-large-purge</code>.
               </p>
             )}
+            {s.kind === "reso_web_api" && s.isActive && purgeOverdue(s, now) && (
+              <p
+                role="alert"
+                className="mt-4 rounded-2xl border border-clay-600/30 bg-clay-600/5 px-4 py-3 text-sm leading-relaxed text-clay-600"
+              >
+                No purge has finished{" "}
+                {s.lastPurgeAt ? `since ${formatRelative(s.lastPurgeAt)}` : "yet"}, so listings that
+                went off market may still be showing. Check the purge runs below, or run{" "}
+                <code>npm run mls:sync -- --purge</code>.
+              </p>
+            )}
             {s.runs.length > 0 && (
               <ul className="mt-4 divide-y divide-line rounded-2xl border border-line text-sm">
                 {s.runs.map((r) => (
@@ -68,7 +81,9 @@ export default async function SourcesPage() {
                           ? "text-clay-600"
                           : r.status === "running" || r.status === "partial"
                             ? "text-brass-700"
-                            : "text-brand-700",
+                            : r.status === "skipped"
+                              ? "text-muted"
+                              : "text-brand-700",
                       )}
                     >
                       {r.status}

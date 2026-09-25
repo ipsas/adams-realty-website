@@ -1,11 +1,12 @@
 import { purgeCap, purgeScope, MAX_PURGE_FRACTION } from "./purge";
-import type { ListingProvider, MapResult, MapSkipReason, PurgeScope } from "./types";
+import type { FeedPosition, ListingProvider, MapResult, MapSkipReason, PurgeScope } from "./types";
 
 /**
  * The sync's control flow — time budget, resume, purge rules — with no
  * database in it. `syncSource` (./sync.ts) runs it against Postgres through
  * `createSyncStore` (./sync-store.ts); unit tests run it against an in-memory
- * store and a fake feed (sync-engine.test.ts).
+ * store and a fake feed (sync-engine.test.ts), and sync.db.test.ts runs it
+ * against Postgres.
  */
 
 export type SyncMode = "incremental" | "full" | "purge";
@@ -28,11 +29,24 @@ export type PageOutcome = {
   mediaRowsWritten: number;
 };
 
+/**
+ * Where the incremental sync is: the last record written, in the feed's
+ * (ModificationTimestamp, ListingKey) order. `key` is null once a run has
+ * caught up (see RunOutcome.caughtUp).
+ */
+export type SyncCursor = FeedPosition;
+
 export type RunOutcome = {
   status: "succeeded" | "partial" | "failed";
   counts: SyncCounts;
   /** The source's cursor as the run ends. */
   cursor: Date | null;
+  /**
+   * The run read the feed to its end. The next run starts afresh,
+   * UPDATE_LOOKBACK_MS before the cursor; until then, a run continues exactly
+   * after the cursor's record.
+   */
+  caughtUp: boolean;
   error?: string;
 };
 
@@ -47,22 +61,41 @@ export interface SyncStore {
     mode: SyncMode,
     staleBefore: Date,
   ): Promise<{ runId: string | null; staleFailed: number }>;
+  /**
+   * Records a run that didn't start because another run of this source was
+   * still alive: `skipped`, or `failed` when that matters (a purge).
+   */
+  recordSkipped(mode: SyncMode, status: "skipped" | "failed", message: string): Promise<void>;
   /** The saved incremental cursor. */
-  savedCursor(): Promise<Date | null>;
-  /** Writes one page and saves `cursor`, atomically. */
-  writePage(page: MapResult[], cursor: Date | null): Promise<PageOutcome>;
+  savedCursor(): Promise<SyncCursor | null>;
+  /**
+   * Writes one page and saves `cursor`, atomically. With `skipUnchanged`, a
+   * record whose ModificationTimestamp matches the stored row isn't rewritten.
+   */
+  writePage(
+    page: MapResult[],
+    cursor: SyncCursor | null,
+    opts: { skipUnchanged: boolean },
+  ): Promise<PageOutcome>;
   /** Progress plus heartbeat, after every page. */
   heartbeat(runId: string, counts: SyncCounts): Promise<void>;
   /** In-scope listings, and how many of them are missing from `feedKeys`. */
   countPurge(feedKeys: string[], scope: PurgeScope): Promise<{ inScope: number; missing: number }>;
   /** Soft-removes the in-scope listings missing from `feedKeys`; returns how many. */
   purge(feedKeys: string[], scope: PurgeScope): Promise<number>;
-  /** Records the outcome; a run that didn't fail also stamps the source's last sync. */
+  /**
+   * Records the outcome; a run that didn't fail also stamps the source's last
+   * sync, and one that caught up clears the cursor's key.
+   */
   finishRun(runId: string, outcome: RunOutcome): Promise<void>;
 }
 
 export type RunSyncOptions = {
-  /** Default "incremental". "full" ignores the cursor; "purge" only removes listings that left the feed. */
+  /**
+   * Default "incremental". "full" ignores the cursor and rewrites every record
+   * (after a mapper fix or a new column); "purge" only removes listings that
+   * left the feed.
+   */
   mode?: SyncMode;
   /**
    * Epoch ms. The run stops between pages when the next page (judged by the
@@ -74,14 +107,15 @@ export type RunSyncOptions = {
   allowLargePurge?: boolean;
   /** A `running` run with no heartbeat for this long was cut off. Default: the cron's maxDuration. */
   staleAfterMs?: number;
-  /** Injected clock (tests). */
+  /** Injected clock and sleep (tests). */
   now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
 };
 
 export type SyncResult = SyncCounts & {
   runId: string | null;
   mode: SyncMode;
-  /** `skipped`: another run of this source is still going; nothing was done. */
+  /** `skipped`: another run of this source was still going; nothing was done (recorded as such). */
   status: "succeeded" | "partial" | "skipped";
   skipped: Partial<Record<MapSkipReason, number>>;
   cursor: Date | null;
@@ -98,7 +132,27 @@ const PAGE_TIME_SLACK = 1.5;
 /** Vercel's maxDuration for the cron route; a run silent for longer is dead. */
 export const STALE_RUN_MS = 300_000;
 
+/**
+ * A fresh incremental run re-reads this much of the feed before its cursor.
+ * An MLS can make a record visible after we've read past its timestamp
+ * (replication lag, a long transaction on their side); without the overlap
+ * that update would be missed until the listing changed again. Re-reading an
+ * unchanged record costs one read and no write.
+ */
+export const UPDATE_LOOKBACK_MS = 30 * 60_000;
+
+/**
+ * A purge that finds another run of its source alive waits for it (skipping
+ * would leave off-market listings up), polling this often, for at most
+ * PURGE_MAX_WAIT_MS, and never so long that less than PURGE_RESERVE_MS of its
+ * time budget is left for the key download itself.
+ */
+export const PURGE_WAIT_POLL_MS = 5_000;
+export const PURGE_MAX_WAIT_MS = STALE_RUN_MS;
+export const PURGE_RESERVE_MS = 120_000;
+
 export const PURGE_CAP_PREFIX = "Purge cap:";
+export const PURGE_SKIPPED_PREFIX = "Purge skipped:";
 
 export class PurgeCapError extends Error {
   constructor(
@@ -121,11 +175,26 @@ export async function runSync(
   opts: RunSyncOptions = {},
 ): Promise<SyncResult> {
   const clock = opts.now ?? Date.now;
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const mode = opts.mode ?? "incremental";
-  const { runId, staleFailed } = await store.beginRun(
-    mode,
-    new Date(clock() - (opts.staleAfterMs ?? STALE_RUN_MS)),
-  );
+  const staleBefore = () => new Date(clock() - (opts.staleAfterMs ?? STALE_RUN_MS));
+
+  let { runId, staleFailed } = await store.beginRun(mode, staleBefore());
+  if (!runId && mode === "purge") {
+    // IDX rules want off-market listings down promptly, so a purge doesn't
+    // give way to a sync that happens to be running: it waits for it.
+    const waitUntil = Math.min(
+      clock() + PURGE_MAX_WAIT_MS,
+      opts.deadline === undefined ? Infinity : opts.deadline - PURGE_RESERVE_MS,
+    );
+    while (!runId && clock() + PURGE_WAIT_POLL_MS <= waitUntil) {
+      await sleep(PURGE_WAIT_POLL_MS);
+      const next = await store.beginRun(mode, staleBefore());
+      runId = next.runId;
+      staleFailed += next.staleFailed;
+    }
+  }
+
   const counts: SyncCounts = { fetched: 0, upserted: 0, unchanged: 0, removed: 0 };
   const result: SyncResult = {
     ...counts,
@@ -138,7 +207,23 @@ export async function runSync(
     staleRunsFailed: staleFailed,
     changed: false,
   };
-  if (!runId) return result;
+  if (!runId) {
+    // Recorded either way, so a skipped run shows in the dashboard's run list.
+    if (mode === "purge") {
+      const error =
+        `${PURGE_SKIPPED_PREFIX} another sync of this feed was still running, so nothing was ` +
+        "removed. Off-market listings stay up until a purge runs: run " +
+        "`npm run mls:sync -- --purge`, and check that the purge's cron doesn't overlap a sync.";
+      await store.recordSkipped(mode, "failed", error);
+      throw new Error(error);
+    }
+    await store.recordSkipped(
+      mode,
+      "skipped",
+      "Skipped: another sync of this feed was still running. The next run carries on.",
+    );
+    return result;
+  }
 
   // Stop between pages once the next page could end past the deadline: judged
   // by the slowest page so far, with half again as slack (page times vary).
@@ -151,8 +236,9 @@ export async function runSync(
     return opts.deadline !== undefined && t + slowest * PAGE_TIME_SLACK > opts.deadline;
   };
 
-  let cursor: Date | null = null;
+  let cursor: SyncCursor | null = null;
   let status: "succeeded" | "partial" = "succeeded";
+  const cursorDate = () => cursor?.modifiedAt ?? null;
   try {
     const feed = typeof provider === "function" ? provider() : provider;
     cursor = await store.savedCursor();
@@ -188,18 +274,28 @@ export async function runSync(
       if (missing > cap && !opts.allowLargePurge) throw new PurgeCapError(missing, inScope, cap);
       counts.removed = missing > 0 ? await store.purge(feedKeys, scope) : 0;
     } else {
-      if (mode === "full") cursor = null;
-      for await (const page of feed.fetchUpdates(cursor)) {
-        counts.fetched += page.length;
-        for (const item of page) {
-          if (!item.ok) {
-            result.skipped[item.reason] = (result.skipped[item.reason] ?? 0) + 1;
-            continue;
-          }
-          const modified = item.listing.sourceModifiedAt;
-          if (modified && (!cursor || modified > cursor)) cursor = modified;
+      // A run that stopped partway continues right after its last record; one
+      // that caught up starts again a little before it (UPDATE_LOOKBACK_MS).
+      let from: FeedPosition | null = cursor;
+      if (mode === "full") {
+        from = null;
+        cursor = null;
+      } else if (cursor && cursor.key === null) {
+        from = {
+          modifiedAt: new Date(cursor.modifiedAt.getTime() - UPDATE_LOOKBACK_MS),
+          key: null,
+        };
+      }
+      for await (const page of feed.fetchUpdates(from)) {
+        counts.fetched += page.items.length;
+        for (const item of page.items) {
+          if (!item.ok) result.skipped[item.reason] = (result.skipped[item.reason] ?? 0) + 1;
         }
-        const outcome = await store.writePage(page, cursor);
+        if (page.last) cursor = page.last;
+        const outcome = await store.writePage(page.items, cursor, {
+          // A full run exists to repair stored rows, so it rewrites every one.
+          skipUnchanged: mode !== "full",
+        });
         counts.upserted += outcome.upserted;
         counts.unchanged += outcome.unchanged;
         counts.removed += outcome.removed;
@@ -212,10 +308,15 @@ export async function runSync(
       }
     }
 
-    await store.finishRun(runId, { status, counts, cursor });
+    await store.finishRun(runId, {
+      status,
+      counts,
+      cursor: cursorDate(),
+      caughtUp: mode !== "purge" && status === "succeeded",
+    });
     Object.assign(result, counts, {
       status,
-      cursor,
+      cursor: cursorDate(),
       changed: counts.upserted > 0 || counts.removed > 0,
     });
     return result;
@@ -223,7 +324,8 @@ export async function runSync(
     await store.finishRun(runId, {
       status: "failed",
       counts,
-      cursor,
+      cursor: cursorDate(),
+      caughtUp: false,
       error: error instanceof Error ? error.message : String(error),
     });
     throw error;

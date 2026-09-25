@@ -20,9 +20,12 @@ const BUDGET_MS = (maxDuration - 45) * 1000;
  *   It aborts if it would remove more than 5% of the listings; add
  *   `&allowLargePurge=1` once you've checked the feed really dropped them.
  *
- * After any change, the cached listing data (home page stats, area guides…)
- * is revalidated. 200 when every source succeeded or stopped partway; 500 if
- * any failed.
+ * After any change (even by a run that then failed), the cached listing data
+ * (home page stats, area guides…) is revalidated. 200 when every source
+ * succeeded, stopped partway, or skipped an incremental sync because another
+ * run was still going (recorded in sync_runs); 500 if any failed. A purge
+ * that can't start because a sync holds the source waits for it, and fails
+ * (500, recorded) if it still can't: it must never go missing quietly.
  */
 export async function GET(request: NextRequest) {
   if (!isCronAuthorized(request)) {
@@ -34,7 +37,9 @@ export async function GET(request: NextRequest) {
     allowLargePurge: params.get("allowLargePurge") === "1",
     deadline: Date.now() + BUDGET_MS,
   });
-  if (results.some((r) => r.ok && r.result.changed)) revalidateTag(LISTINGS_TAG, "max");
+  if (results.some((r) => (r.ok ? r.result.changed : r.changed))) {
+    revalidateTag(LISTINGS_TAG, "max");
+  }
   const failed = results.some((r) => !r.ok);
   return NextResponse.json({ results }, { status: failed ? 500 : 200 });
 }

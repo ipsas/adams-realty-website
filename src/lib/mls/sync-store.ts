@@ -11,8 +11,13 @@ export const STALE_RUN_ERROR =
   "Cut off: no progress within the function time limit (a timeout or crash). " +
   "Pages already written are kept; the next run resumes from the saved cursor.";
 
+export type PostgresSyncStore = SyncStore & {
+  /** Whether this store wrote or took down any listing, even in a run that then failed. */
+  changedListings(): boolean;
+};
+
 /** The Postgres side of a sync, for one data source. */
-export function createSyncStore(source: SourceRow): SyncStore {
+export function createSyncStore(source: SourceRow): PostgresSyncStore {
   const persistSource: PersistSource = {
     id: source.id,
     slug: source.slug,
@@ -20,8 +25,11 @@ export function createSyncStore(source: SourceRow): SyncStore {
     config: source.config,
   };
   let agentIdsByMlsId: Map<string, string> | null = null;
+  let changed = false;
 
   return {
+    changedListings: () => changed,
+
     async beginRun(mode, staleBefore) {
       return db.transaction(async (tx) => {
         // Serializes run starts for this source across processes (cron, CLI, dashboard).
@@ -53,15 +61,28 @@ export function createSyncStore(source: SourceRow): SyncStore {
       });
     },
 
-    async savedCursor() {
-      const [row] = await db
-        .select({ cursor: dataSources.syncCursor })
-        .from(dataSources)
-        .where(eq(dataSources.id, source.id));
-      return row?.cursor ?? null;
+    async recordSkipped(mode, status, message) {
+      const now = new Date();
+      await db.insert(syncRuns).values({
+        sourceId: source.id,
+        mode,
+        status,
+        startedAt: now,
+        heartbeatAt: now,
+        finishedAt: now,
+        error: message,
+      });
     },
 
-    async writePage(page, cursor) {
+    async savedCursor() {
+      const [row] = await db
+        .select({ cursor: dataSources.syncCursor, key: dataSources.syncCursorKey })
+        .from(dataSources)
+        .where(eq(dataSources.id, source.id));
+      return row?.cursor ? { modifiedAt: row.cursor, key: row.key } : null;
+    },
+
+    async writePage(page, cursor, { skipUnchanged }) {
       agentIdsByMlsId ??= new Map(
         (
           await db
@@ -77,7 +98,7 @@ export function createSyncStore(source: SourceRow): SyncStore {
           tx,
           persistSource,
           page.flatMap((item) => (item.ok ? [item.listing] : [])),
-          { agentIdsByMlsId: agentMap, skipUnchanged: true, now },
+          { agentIdsByMlsId: agentMap, skipUnchanged, now },
         );
         const written = new Set(results.filter((r) => r.written).map((r) => r.id));
         const untouched = new Set(results.filter((r) => !r.written).map((r) => r.id));
@@ -104,8 +125,9 @@ export function createSyncStore(source: SourceRow): SyncStore {
 
         await tx
           .update(dataSources)
-          .set({ syncCursor: cursor })
+          .set({ syncCursor: cursor?.modifiedAt ?? null, syncCursorKey: cursor?.key ?? null })
           .where(eq(dataSources.id, source.id));
+        if (written.size || removed) changed = true;
         return {
           upserted: written.size,
           unchanged: untouched.size,
@@ -136,6 +158,7 @@ export function createSyncStore(source: SourceRow): SyncStore {
         .update(listings)
         .set({ removedAt: now, updatedAt: now })
         .where(purgeWhere(source.id, feedKeys, scope));
+      if (result.rowCount) changed = true;
       return result.rowCount ?? 0;
     },
 
@@ -155,7 +178,10 @@ export function createSyncStore(source: SourceRow): SyncStore {
       if (outcome.status !== "failed") {
         await db
           .update(dataSources)
-          .set({ lastSyncedAt: now })
+          // Caught up: the next run starts afresh, with the lookback.
+          .set(
+            outcome.caughtUp ? { lastSyncedAt: now, syncCursorKey: null } : { lastSyncedAt: now },
+          )
           .where(eq(dataSources.id, source.id));
       }
     },

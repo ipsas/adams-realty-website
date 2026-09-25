@@ -29,6 +29,21 @@ export const MAX_PURGE_FRACTION = 0.05;
 /** …but never fewer than this many, so a small feed's normal churn doesn't trip it. */
 export const MIN_PURGE_CAP = 25;
 
+/**
+ * The purge runs daily. With no successful purge for this long (counted from
+ * the source's first run while it has never purged), off-market listings may
+ * be showing, which IDX rules forbid: the dashboard says so.
+ */
+export const PURGE_OVERDUE_MS = 36 * 3_600_000;
+
+export function purgeOverdue(
+  runs: { firstRunAt: Date | null; lastPurgeAt: Date | null },
+  now: Date,
+): boolean {
+  const since = runs.lastPurgeAt ?? runs.firstRunAt;
+  return since !== null && now.getTime() - since.getTime() > PURGE_OVERDUE_MS;
+}
+
 /** The scope for a purge run at `now` (dates in UTC, like sold mode's window). */
 export function purgeScope(now: Date): PurgeScope {
   const since = new Date(now.getTime() - PURGE_SOLD_DAYS * 86_400_000);

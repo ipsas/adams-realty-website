@@ -10,6 +10,8 @@ Website for Adams Realty, Inc., 69 Mill Street, Royston, GA: a brokerage serving
   Tailwind CSS 4 (tokens in `src/app/globals.css`), Drizzle ORM + Postgres, Better Auth, MapLibre GL 6.
 - Checks before committing: `npm run lint && npm run typecheck && npm test`; UI flows: `npm run test:e2e`
   (needs `npm run db:reset` and a dev server; set `PLAYWRIGHT_CHROMIUM_PATH` if browsers aren't installed).
+  `npm test` includes the `*.db.test.ts` files, which run against a throwaway `<your db>_test` database
+  on the local Postgres (created and dropped by vitest.config.mts), so Postgres must be running.
 - Authorization lives in `src/lib/auth/permissions.ts` (pure, unit-tested). Every server action and
   staff page must call it; hiding UI is not enforcement.
 - All listings (MLS sync, seed, dashboard) are written through `upsertListing` in

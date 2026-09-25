@@ -64,30 +64,47 @@ after creation, so shared links don't break.
 fake feed; the Postgres side in `sync-store.ts`):
 
 1. A run first marks this source's `running` runs with no heartbeat for 300 s (the cron's
-   `maxDuration`) as failed: they were cut off. If another run is still alive, it does nothing.
-2. **Incremental** (default): fetch records with `ModificationTimestamp ≥ cursor`, oldest first,
+   `maxDuration`) as failed: they were cut off. If another run is still alive (an advisory
+   lock serializes the check), an incremental or full run does nothing and is recorded
+   `skipped`; a purge waits for it, and if it still can't start it is recorded `failed` and
+   the cron answers 500. The dashboard warns when no purge has succeeded for 36 hours.
+2. **Incremental** (default): fetch records in (`ModificationTimestamp`, `ListingKey`) order,
    200 per page (Media and OpenHouse expanded), and map each (`reso/mapper.ts`, pure and
    unit-tested). Records the seller opted out of (`InternetEntireListingDisplayYN = false`)
-   are taken down.
+   are taken down. Pages are fetched by **keyset** (each asks for the records after the last
+   one received), never by following `@odata.nextLink`, which servers build from `$skip`: a
+   record changing mid-run would shift the pages and hide another. A run that caught up
+   leaves a cursor (the newest timestamp), and the next starts 30 minutes before it
+   (`UPDATE_LOOKBACK_MS`), so a record the MLS published late is still picked up. A run that
+   stopped partway also saves the last key (`data_sources.sync_cursor_key`), and the next
+   continues exactly after it, however many records share one timestamp.
 3. Each page is written in one transaction together with the advanced cursor, about ten
    statements per page. A record whose `ModificationTimestamp` matches the stored row is
-   skipped (no writes at all).
+   skipped (no writes at all), unless it was taken down or its agent link changed on our
+   side. A `full` run rewrites every record (the first load, or repairing rows after a
+   mapper fix).
 4. **Time budget:** given a deadline (the cron passes `maxDuration − 45 s`), the run stops
    between pages when the next page could end past it, and ends `partial`. The cursor is
    saved, so the next run resumes there. The first statewide load (`--full`) runs from the
-   CLI, which has no budget.
+   CLI, which has no budget. The feed client bounds every wait (`reso/client.ts`): a 60 s
+   request timeout, Retry-After capped at 30 s, 120 s per page with its retries, and nothing
+   past the deadline plus 30 s. A hung feed fails the run cleanly (logged, cursor saved,
+   caches refreshed for the pages written) instead of the function being killed mid-run.
 5. **Purge** (`?purge=1` / `--purge`, daily, purge-only): fetch the feed's keys for what the
    site shows (live statuses plus sales closed in the last year) and soft-remove the
    listings in that same scope whose key is gone. The keys travel as one array parameter,
    anti-joined through `unnest`, so a statewide feed's 200k+ keys fit (one parameter per key
-   overflows Postgres's 65,535). A key list cut short by the budget, or an empty one, removes
-   nothing. More than 5% to remove aborts the run (`PurgeCapError`, shown as a warning in
+   overflows Postgres's 65,535). The keys are paged by keyset too (`ListingKey gt 'last'`), so
+   a listing leaving the feed mid-download can't make the purge miss (and remove) another. A
+   key list cut short by the budget, or an empty one, removes nothing. More than 5% to remove aborts the run (`PurgeCapError`, shown as a warning in
    the dashboard) unless `--allow-large-purge` / `&allowLargePurge=1`.
-6. After a run that changed anything: the `places` autocomplete view is rebuilt, and the cron
-   route revalidates the `listings` cache tag. Every run is logged in `sync_runs` (mode,
+6. After a run that changed anything (even one that then failed): the `places` autocomplete
+   view is rebuilt, and the cron route revalidates the `listings` cache tag. Every run is logged in `sync_runs` (mode,
    status, counts, heartbeat, cursor) and shown in _Dashboard → MLS feeds_.
 
-`npm run perf:sync-bench` checks all of this against `adams_perf` (about 220k listings): 300
+`src/lib/mls/sync.db.test.ts` runs the sync end to end against Postgres in `npm test`
+(skip-unchanged, agent relinks, restores, takedowns, full rewrites, cursor and resume, stale
+and concurrent runs). `npm run perf:sync-bench` checks the numbers against `adams_perf` (about 220k listings): 300
 changed records in about 0.8 s at 0.11 statements per listing, unchanged records cost no
 writes, a 206k-key purge in 2–4 s.
 
@@ -109,11 +126,16 @@ Adding a non-RESO feed means implementing `ListingProvider` (`src/lib/mls/types.
   therefore linkable, works with back/forward, and is stored verbatim as a saved
   search.
 - **SQL** (`buildConditions` / `buildOrderBy`, unit-tested by rendering SQL):
-  - **Location:** ZIP match, or full-text search on `location_vector` (address, city, ZIP, neighborhood, lake from RESO WaterBodyName, MLS number; never the description), plus prefix and trigram matching for half-typed names and addresses. A guide name or alias ("Lake Hartwell", "Lanier") also matches the way its guide does (`areaCondition`, inside the guide's counties). `search_vector` (descriptions included) stays for keyword search.
+  - **Location:** ZIP match, or full-text search on `location_vector` (address, city, ZIP, neighborhood, lake from RESO WaterBodyName, MLS number; never the description), plus prefix and trigram matching for half-typed names and addresses. A guide name or alias ("Lake Hartwell", "Lanier") also matches the way its guide does (`areaCondition`, inside the guide's counties). Each branch has a GIN index per scope (live listings, sold homes), so the matches of other statuses are never read. `search_vector` (descriptions included) stays for keyword search.
   - **Map area:** `longitude BETWEEN … AND latitude BETWEEN …`, backed by a partial (latitude, longitude) btree. No PostGIS needed.
   - **Order:** one partial btree per sort order and mode (for sale, `pending=1`, rent, sold), each matching `buildOrderBy` exactly, so a page reads straight off an index. `src/lib/search/indexes.test.ts` checks the migrations against `buildOrderBy`/`buildConditions`.
   - **Filters:** ordinary indexed columns.
-- **Map pins** are a separate lightweight query over all matches, capped at 750.
+- **Map pins** are a separate lightweight query over all matches, capped at 750 (the first 750
+  in the search's order). Walking the order index reads 750 ÷ (share of rows matching) rows;
+  for a location search Postgres can't judge that share and walked 20k rows for sold homes in
+  Savannah (70–130 ms). So a location search picks the way itself (`walkPins`, from Postgres's
+  row estimates): walk when matches are common along the order, else collect every match
+  through the location indexes and keep the first 750 (`locationPins`, about 15 ms there).
   MapLibre clusters them and draws collision-aware price pills with dots underneath.
   The map loads its self-hosted web worker from `/vendor/maplibre/<version>/`.
 - **Scaling path.** Postgres handles a statewide MLS comfortably: `npm run perf:seed` builds

@@ -35,7 +35,17 @@ vi.mock("@/db", () => ({
 }));
 vi.mock("@/lib/auth/session", () => ({ getActor: async () => h.state.actor }));
 vi.mock("@/lib/geocode", () => ({ geocodeAddress: async () => null }));
-vi.mock("@/lib/mls/sync", () => ({ syncSource: vi.fn() }));
+vi.mock("@/lib/mls/sync", () => ({
+  syncSource: vi.fn(),
+  SyncFailedError: class SyncFailedError extends Error {
+    constructor(
+      message: string,
+      readonly changed: boolean,
+    ) {
+      super(message);
+    }
+  },
+}));
 vi.mock("@/lib/listings/persist", () => ({
   upsertListing: async (_tx: unknown, _source: unknown, n: NormalizedListing) => {
     h.state.upserts.push(n);
@@ -58,7 +68,9 @@ vi.mock("next/navigation", () => ({
   },
 }));
 
-const { saveListing } = await import("./dashboard");
+const { runSourceSync, saveListing } = await import("./dashboard");
+const sync = await import("@/lib/mls/sync");
+const syncSource = vi.mocked(sync.syncSource);
 
 const LISTING_ID = "3c35a2fa-1318-4963-bb42-42923d5e6a96";
 const SOURCE_ID = "b35e5476-2b15-4c16-908b-020063e6a746";
@@ -318,5 +330,45 @@ describe("saveListing", () => {
     );
     expect(h.state.upserts[0].openHouses).toEqual([]);
     expect(h.state.upserts[0].listingKey).toMatch(/^ADAMS-/);
+  });
+});
+
+describe("runSourceSync (dashboard Sync now)", () => {
+  const admin: Actor = { userId: "u-andrea", role: "admin", agentId: null };
+  const synced = (over: Record<string, unknown>) =>
+    ({ status: "succeeded", upserted: 0, unchanged: 0, changed: false, ...over }) as Awaited<
+      ReturnType<typeof sync.syncSource>
+    >;
+
+  beforeEach(() => {
+    h.state.actor = admin;
+    h.state.selects = [[{ id: SOURCE_ID }]];
+    syncSource.mockReset();
+  });
+
+  it("expires the cached listing data when the sync changed listings", async () => {
+    syncSource.mockResolvedValue(synced({ upserted: 4, changed: true }));
+    const res = await runSourceSync(SOURCE_ID);
+    expect(res).toMatchObject({ ok: true, message: "Synced: 4 updated, 0 unchanged." });
+    expect(h.state.tags).toEqual(["listings"]);
+  });
+
+  it("leaves the caches alone when nothing changed", async () => {
+    syncSource.mockResolvedValue(synced({ unchanged: 9 }));
+    await runSourceSync(SOURCE_ID);
+    expect(h.state.tags).toEqual([]);
+  });
+
+  it("still expires them when the sync failed after writing pages", async () => {
+    syncSource.mockRejectedValue(new sync.SyncFailedError("RESO request failed (503)", true));
+    const res = await runSourceSync(SOURCE_ID);
+    expect(res).toEqual({ ok: false, message: "RESO request failed (503)" });
+    expect(h.state.tags).toEqual(["listings"]);
+  });
+
+  it("is for admins only", async () => {
+    h.state.actor = daniel;
+    await expect(runSourceSync(SOURCE_ID)).rejects.toThrow();
+    expect(syncSource).not.toHaveBeenCalled();
   });
 });
