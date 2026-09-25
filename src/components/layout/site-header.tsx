@@ -8,6 +8,8 @@ import { nav } from "@/config/site";
 import { authClient } from "@/lib/auth/client";
 import { cn } from "@/lib/cn";
 import { initials } from "@/lib/format";
+import { AppearanceControl } from "../theme/appearance-control";
+import { ThemeMenuButton } from "../theme/theme-menu-button";
 import { Popover } from "../ui/popover";
 import { Logo } from "./logo";
 
@@ -81,6 +83,9 @@ export function SiteHeader({ user }: { user: HeaderUser }) {
         </nav>
 
         <div className="ml-auto flex shrink-0 items-center gap-2">
+          {/* Wide screens only (the shell's `wide`, not md:): a phone in landscape is
+              past md but gets the menu's segmented control instead. */}
+          <ThemeMenuButton transparent={transparent} className="hidden wide:block" />
           {pathname !== "/homes" && (
             <Link
               href="/homes"
@@ -123,7 +128,8 @@ export function SiteHeader({ user }: { user: HeaderUser }) {
           <button
             type="button"
             className={cn(
-              "flex size-10 items-center justify-center rounded-full md:hidden",
+              // `phone:flex`: a phone in landscape is past md but still needs the menu.
+              "flex size-10 items-center justify-center rounded-full md:hidden phone:flex",
               transparent ? "text-white hover:bg-white/10" : "text-ink hover:bg-sunken",
             )}
             aria-label={mobileOpen ? "Close menu" : "Open menu"}
@@ -137,7 +143,7 @@ export function SiteHeader({ user }: { user: HeaderUser }) {
 
       {mobileOpen && (
         <nav
-          className="animate-rise border-t border-line bg-canvas px-4 pt-2 pb-6 md:hidden"
+          className="max-h-[calc(100dvh-var(--header-h))] animate-rise overflow-y-auto overscroll-contain border-t border-line bg-canvas px-4 pt-2 pb-6 md:hidden phone:block"
           aria-label="Mobile"
         >
           {[...nav, { label: "Saved homes", href: "/saved" }].map((item) => (
@@ -149,6 +155,8 @@ export function SiteHeader({ user }: { user: HeaderUser }) {
               {item.label}
             </Link>
           ))}
+          <div className="mx-3 mt-3 mb-4 h-px bg-line" />
+          <AppearanceControl variant="segmented" className="px-3" />
         </nav>
       )}
     </header>

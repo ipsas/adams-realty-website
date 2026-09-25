@@ -13,7 +13,8 @@
  * - Inquiries: src/server/actions/inquiries.ts — stores contact details,
  *   message, referer and user agent; IP used only for the in-memory rate limit.
  * - Email: Resend (src/lib/email.ts); alerts have one-click unsubscribe.
- * - Map tiles: OpenFreeMap unless NEXT_PUBLIC_MAP_STYLE_URL points elsewhere.
+ * - Map tiles: OpenFreeMap unless NEXT_PUBLIC_MAP_STYLE_URL (or, for dark mode,
+ *   NEXT_PUBLIC_MAP_STYLE_DARK_URL) points elsewhere.
  * - No analytics, advertising cookies or trackers. If any are added, update
  *   the Cookies and sharing sections (and LAST_UPDATED) first.
  *

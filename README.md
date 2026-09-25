@@ -111,3 +111,7 @@ Vercel plus Neon (or Supabase) Postgres is the simplest setup:
    day, which is what Vercel's free (Hobby) plan allows. On Vercel Pro you can run them more
    often: set the sync to `*/15 * * * *` and alerts to `5 * * * *` (hourly), so "as soon as
    homes are listed" alerts go out within the hour.
+4. Maps use OpenFreeMap (no API key): its positron style in light mode and its dark style in
+   dark mode. To use another MapLibre style, set `NEXT_PUBLIC_MAP_STYLE_URL` (light) and
+   optionally `NEXT_PUBLIC_MAP_STYLE_DARK_URL`; with only the light one set, dark mode uses it
+   too. Update the privacy page if the provider changes.

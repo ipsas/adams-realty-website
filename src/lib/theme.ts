@@ -39,6 +39,20 @@ export function readThemePref(storage: KeyValueStorage | null = browserStorage()
   return parseThemePref(readJSON<unknown>(STORE_KEYS.theme, null, storage));
 }
 
+/**
+ * The theme showing right now, read synchronously from storage and the OS (never null,
+ * unlike useResolvedTheme during hydration). Browser only. The map uses it at creation so
+ * it never starts on the wrong style.
+ */
+export function readResolvedTheme(
+  storage: KeyValueStorage | null = browserStorage(),
+  win: Pick<Window, "matchMedia"> | undefined = typeof window === "undefined" ? undefined : window,
+): ResolvedTheme {
+  const systemDark =
+    typeof win?.matchMedia === "function" && win.matchMedia(SYSTEM_DARK_QUERY).matches;
+  return resolveTheme(readThemePref(storage), systemDark);
+}
+
 /** Saves the choice and notifies subscribers (this tab now, other tabs via `storage`). */
 export function writeThemePref(
   pref: ThemePref,

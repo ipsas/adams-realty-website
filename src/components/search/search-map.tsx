@@ -1,11 +1,21 @@
 "use client";
 
 import * as maplibregl from "maplibre-gl";
-import type { GeoJSONSource, Map as MapLibreMap, SymbolLayerSpecification } from "maplibre-gl";
+import type {
+  FilterSpecification,
+  GeoJSONSource,
+  GeoJSONSourceSpecification,
+  LayerSpecification,
+  Map as MapLibreMap,
+  StyleSpecification,
+  SymbolLayerSpecification,
+} from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useRef } from "react";
 import { site } from "@/config/site";
-import { ensureMapLibre, MAP_STYLE_URL } from "./map-setup";
+import { ensureMapLibre, handleMissingImages, mapStyleUrl } from "./map-setup";
+import { useClientTheme } from "@/components/theme/use-theme";
+import { readResolvedTheme } from "@/lib/theme";
 import { formatBaths, formatNumber, formatPrice, formatPriceShort } from "@/lib/format";
 import type { Bounds } from "@/lib/search/params";
 import type { MapPin } from "@/lib/search/service";
@@ -70,6 +80,152 @@ function pillImage(fill: string, stroke: string | null) {
       stretchY: [[h / 2 - 1, h / 2 + 1]] as [number, number][],
       content: [r, 4, w - r, h - 4] as [number, number, number, number],
     },
+  };
+}
+
+const PILLS = {
+  pill: [C.pill, C.pillStroke],
+  "pill-active": [C.brand, null],
+} as const satisfies Record<string, readonly [string, string | null]>;
+type PillId = keyof typeof PILLS;
+const isPillId = (id: string): id is PillId => Object.hasOwn(PILLS, id);
+
+/** Adds a pill image unless the current style already has it. Images live outside the style JSON. */
+function addPill(map: MapLibreMap, id: PillId) {
+  if (map.hasImage(id)) return;
+  const [fill, stroke] = PILLS[id];
+  const { image, options } = pillImage(fill, stroke);
+  map.addImage(id, image, options);
+}
+
+const SOURCE_ID = "listings";
+
+function sourceSpec(data: GeoJSON.FeatureCollection): GeoJSONSourceSpecification {
+  return { type: "geojson", data, cluster: true, clusterMaxZoom: 11, clusterRadius: 46 };
+}
+
+const PIN_LAYOUT: SymbolLayerSpecification["layout"] = {
+  "text-field": ["get", "label"],
+  "text-font": FONT,
+  "text-size": 12,
+  "icon-text-fit": "both",
+  "icon-text-fit-padding": [2, 6, 2, 6],
+  "icon-allow-overlap": false,
+  "text-allow-overlap": false,
+  "symbol-sort-key": ["case", ["get", "featured"], 0, 1],
+};
+
+const highlightFilter = (id: string | null): FilterSpecification => ["==", ["get", "id"], id ?? ""];
+
+/** Our layers, drawn above whatever base style is showing, in this order. */
+const OVERLAY_LAYERS: LayerSpecification[] = [
+  {
+    id: "clusters",
+    type: "circle",
+    source: SOURCE_ID,
+    filter: ["has", "point_count"],
+    paint: {
+      "circle-color": C.brand,
+      "circle-opacity": 0.92,
+      "circle-radius": ["step", ["get", "point_count"], 15, 10, 19, 50, 25],
+      "circle-stroke-width": 3,
+      "circle-stroke-color": C.clusterStroke,
+    },
+  },
+  {
+    id: "cluster-count",
+    type: "symbol",
+    source: SOURCE_ID,
+    filter: ["has", "point_count"],
+    layout: {
+      "text-field": ["get", "point_count_abbreviated"],
+      "text-font": FONT,
+      "text-size": 12,
+    },
+    paint: { "text-color": C.onBrand },
+  },
+  // Every listing gets a dot; price pills are drawn on top where they fit
+  // without colliding (featured first), so dense areas stay readable.
+  {
+    id: "pin-dots",
+    type: "circle",
+    source: SOURCE_ID,
+    filter: ["!", ["has", "point_count"]],
+    paint: {
+      "circle-radius": 4.5,
+      "circle-color": C.brand,
+      "circle-stroke-width": 1.5,
+      "circle-stroke-color": C.dotStroke,
+    },
+  },
+  {
+    id: "pins",
+    type: "symbol",
+    source: SOURCE_ID,
+    filter: ["!", ["has", "point_count"]],
+    layout: { ...PIN_LAYOUT, "icon-image": "pill" },
+    paint: {
+      "text-color": [
+        "match",
+        ["get", "status"],
+        "closed",
+        C.price.closed,
+        ["pending", "active_under_contract"],
+        C.price.pending,
+        "coming_soon",
+        C.price.comingSoon,
+        C.price.active,
+      ],
+    },
+  },
+  // Highlight layer: redrawn on top for the hovered listing.
+  {
+    id: "pins-active",
+    type: "symbol",
+    source: SOURCE_ID,
+    filter: highlightFilter(null),
+    layout: {
+      ...PIN_LAYOUT,
+      "icon-image": "pill-active",
+      "text-size": 13,
+      "icon-allow-overlap": true,
+      "text-allow-overlap": true,
+    },
+    paint: { "text-color": C.onBrand },
+  },
+];
+const OVERLAY_IDS = new Set(OVERLAY_LAYERS.map((l) => l.id));
+
+/**
+ * Puts the pill images, the listings source and the overlay layers on the current style.
+ * Runs on every `style.load` (the first style and each theme swap) and adds only what is
+ * missing, so running it again is harmless.
+ */
+function installOverlays(
+  map: MapLibreMap,
+  data: GeoJSON.FeatureCollection,
+  highlightedId: string | null,
+) {
+  for (const id of Object.keys(PILLS) as PillId[]) addPill(map, id);
+  if (!map.getSource(SOURCE_ID)) map.addSource(SOURCE_ID, sourceSpec(data));
+  for (const layer of OVERLAY_LAYERS) if (!map.getLayer(layer.id)) map.addLayer(layer);
+  map.setFilter("pins-active", highlightFilter(highlightedId));
+}
+
+/**
+ * For a theme swap: the next base style plus our source and layers carried over from the
+ * current one, so the swap diffs only the base layers and the pins never leave the map.
+ */
+function carryOverlays(
+  previous: StyleSpecification | undefined,
+  next: StyleSpecification,
+): StyleSpecification {
+  const listings = previous?.sources[SOURCE_ID];
+  const overlays = previous?.layers.filter((l) => OVERLAY_IDS.has(l.id)) ?? [];
+  return {
+    ...next,
+    sources: { ...next.sources, ...(listings ? { [SOURCE_ID]: listings } : {}) },
+    layers: [...next.layers.filter((l) => !OVERLAY_IDS.has(l.id)), ...overlays],
   };
 }
 
@@ -148,13 +304,16 @@ export default function SearchMap({
   const programmatic = useRef(false);
   const lastFitKey = useRef<string | null>(null);
   const popup = useRef<maplibregl.Popup | null>(null);
+  // The style URL the map was last asked to show.
+  const styleUrl = useRef<string | null>(null);
   const data = useMemo(() => toGeoJSON(pins), [pins]);
   const pinsById = useMemo(() => new Map(pins.map((p) => [p.id, p])), [pins]);
+  const theme = useClientTheme();
 
   // Keep the latest callbacks/data without re-creating the map.
-  const latest = useRef({ onHover, onUserMove, pinsById, data });
+  const latest = useRef({ onHover, onUserMove, pinsById, data, highlightedId });
   useEffect(() => {
-    latest.current = { onHover, onUserMove, pinsById, data };
+    latest.current = { onHover, onUserMove, pinsById, data, highlightedId };
   });
 
   // Create the map once.
@@ -168,9 +327,12 @@ export default function SearchMap({
       : pinsBounds(pins);
 
     ensureMapLibre();
+    // Read synchronously (not from the hook's first value), so a dark page never starts on
+    // the light style and then swaps.
+    styleUrl.current = mapStyleUrl(readResolvedTheme());
     const map = new maplibregl.Map({
       container: container.current,
-      style: MAP_STYLE_URL,
+      style: styleUrl.current,
       center: [site.market.center.lng, site.market.center.lat],
       zoom: site.market.zoom,
       attributionControl: { compact: true },
@@ -181,152 +343,64 @@ export default function SearchMap({
         : {}),
     });
     mapRef.current = map;
+    if (process.env.NODE_ENV !== "production") {
+      // For e2e and debugging only: lets tests query layers and rendered pins.
+      (window as unknown as { __searchMap?: MapLibreMap }).__searchMap = map;
+    }
     map.touchZoomRotate.disableRotation();
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 
-    map.on("load", () => {
-      for (const [id, fill, stroke] of [
-        ["pill", C.pill, C.pillStroke],
-        ["pill-active", C.brand, null],
-      ] as const) {
-        const { image, options } = pillImage(fill, stroke);
-        map.addImage(id, image, options);
+    // Overlays go on every style: the first one and each theme swap.
+    map.on("style.load", () => {
+      installOverlays(map, latest.current.data, latest.current.highlightedId);
+      if (!loaded.current) {
+        loaded.current = true;
+        lastFitKey.current = fitKey;
       }
+    });
+    // Between a rebuilt style and its style.load, carried pin layers can ask for the pills
+    // before they are re-added; the resolver supplies them at once so the pills never blink.
+    handleMissingImages(map, (id) => {
+      if (!isPillId(id)) return false;
+      addPill(map, id);
+      return true;
+    });
 
-      map.addSource("listings", {
-        type: "geojson",
-        data: latest.current.data,
-        cluster: true,
-        clusterMaxZoom: 11,
-        clusterRadius: 46,
+    // Layer-scoped handlers belong to the map, not the style, so they survive style swaps.
+    for (const layer of ["pin-dots", "pins", "pins-active"]) {
+      map.on("mouseenter", layer, (e) => {
+        map.getCanvas().style.cursor = "pointer";
+        const id = e.features?.[0]?.properties?.id as string | undefined;
+        if (id) latest.current.onHover(id);
       });
-
-      map.addLayer({
-        id: "clusters",
-        type: "circle",
-        source: "listings",
-        filter: ["has", "point_count"],
-        paint: {
-          "circle-color": C.brand,
-          "circle-opacity": 0.92,
-          "circle-radius": ["step", ["get", "point_count"], 15, 10, 19, 50, 25],
-          "circle-stroke-width": 3,
-          "circle-stroke-color": C.clusterStroke,
-        },
+      map.on("mouseleave", layer, () => {
+        map.getCanvas().style.cursor = "";
+        latest.current.onHover(null);
       });
-      map.addLayer({
-        id: "cluster-count",
-        type: "symbol",
-        source: "listings",
-        filter: ["has", "point_count"],
-        layout: {
-          "text-field": ["get", "point_count_abbreviated"],
-          "text-font": FONT,
-          "text-size": 12,
-        },
-        paint: { "text-color": C.onBrand },
-      });
-
-      // Every listing gets a dot; price pills are drawn on top where they fit
-      // without colliding (featured first), so dense areas stay readable.
-      map.addLayer({
-        id: "pin-dots",
-        type: "circle",
-        source: "listings",
-        filter: ["!", ["has", "point_count"]],
-        paint: {
-          "circle-radius": 4.5,
-          "circle-color": C.brand,
-          "circle-stroke-width": 1.5,
-          "circle-stroke-color": C.dotStroke,
-        },
-      });
-
-      const pinLayout: SymbolLayerSpecification["layout"] = {
-        "text-field": ["get", "label"],
-        "text-font": FONT,
-        "text-size": 12,
-        "icon-text-fit": "both",
-        "icon-text-fit-padding": [2, 6, 2, 6],
-        "icon-allow-overlap": false,
-        "text-allow-overlap": false,
-        "symbol-sort-key": ["case", ["get", "featured"], 0, 1],
-      };
-
-      map.addLayer({
-        id: "pins",
-        type: "symbol",
-        source: "listings",
-        filter: ["!", ["has", "point_count"]],
-        layout: { ...pinLayout, "icon-image": "pill" },
-        paint: {
-          "text-color": [
-            "match",
-            ["get", "status"],
-            "closed",
-            C.price.closed,
-            ["pending", "active_under_contract"],
-            C.price.pending,
-            "coming_soon",
-            C.price.comingSoon,
-            C.price.active,
-          ],
-        },
-      });
-      // Highlight layer: redrawn on top for the hovered listing.
-      map.addLayer({
-        id: "pins-active",
-        type: "symbol",
-        source: "listings",
-        filter: ["==", ["get", "id"], ""],
-        layout: {
-          ...pinLayout,
-          "icon-image": "pill-active",
-          "text-size": 13,
-          "icon-allow-overlap": true,
-          "text-allow-overlap": true,
-        },
-        paint: { "text-color": C.onBrand },
-      });
-
-      for (const layer of ["pin-dots", "pins", "pins-active"]) {
-        map.on("mouseenter", layer, (e) => {
-          map.getCanvas().style.cursor = "pointer";
-          const id = e.features?.[0]?.properties?.id as string | undefined;
-          if (id) latest.current.onHover(id);
-        });
-        map.on("mouseleave", layer, () => {
-          map.getCanvas().style.cursor = "";
-          latest.current.onHover(null);
-        });
-        map.on("click", layer, (e) => {
-          const f = e.features?.[0];
-          const pin = f ? latest.current.pinsById.get(f.properties?.id as string) : undefined;
-          if (!pin) return;
-          popup.current?.remove();
-          popup.current = new maplibregl.Popup({
-            offset: 16,
-            closeButton: false,
-            maxWidth: "260px",
-          })
-            .setLngLat([pin.lng, pin.lat])
-            .setDOMContent(popupNode(pin))
-            .addTo(map);
-        });
-      }
-      map.on("mouseenter", "clusters", () => (map.getCanvas().style.cursor = "pointer"));
-      map.on("mouseleave", "clusters", () => (map.getCanvas().style.cursor = ""));
-      map.on("click", "clusters", async (e) => {
+      map.on("click", layer, (e) => {
         const f = e.features?.[0];
-        if (!f) return;
-        const zoom = await (map.getSource("listings") as GeoJSONSource).getClusterExpansionZoom(
-          f.properties?.cluster_id as number,
-        );
-        map.easeTo({ center: (f.geometry as GeoJSON.Point).coordinates as [number, number], zoom });
+        const pin = f ? latest.current.pinsById.get(f.properties?.id as string) : undefined;
+        if (!pin) return;
+        popup.current?.remove();
+        popup.current = new maplibregl.Popup({
+          offset: 16,
+          closeButton: false,
+          maxWidth: "260px",
+        })
+          .setLngLat([pin.lng, pin.lat])
+          .setDOMContent(popupNode(pin))
+          .addTo(map);
       });
-
-      loaded.current = true;
-      lastFitKey.current = fitKey;
+    }
+    map.on("mouseenter", "clusters", () => (map.getCanvas().style.cursor = "pointer"));
+    map.on("mouseleave", "clusters", () => (map.getCanvas().style.cursor = ""));
+    map.on("click", "clusters", async (e) => {
+      const f = e.features?.[0];
+      if (!f) return;
+      const zoom = await (map.getSource(SOURCE_ID) as GeoJSONSource).getClusterExpansionZoom(
+        f.properties?.cluster_id as number,
+      );
+      map.easeTo({ center: (f.geometry as GeoJSON.Point).coordinates as [number, number], zoom });
     });
 
     map.on("movestart", (e) => {
@@ -352,16 +426,28 @@ export default function SearchMap({
       map.remove();
       mapRef.current = null;
       loaded.current = false;
+      const w = window as unknown as { __searchMap?: MapLibreMap };
+      if (w.__searchMap === map) delete w.__searchMap;
     };
     // The map is created once; later prop changes are applied by the effects below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Theme changes swap the base style; the overlays are carried across (and re-installed on
+  // style.load if MapLibre has to rebuild the style from scratch).
+  useEffect(() => {
+    const map = mapRef.current;
+    const url = mapStyleUrl(theme);
+    if (!map || styleUrl.current === url) return;
+    styleUrl.current = url;
+    map.setStyle(url, { transformStyle: carryOverlays });
+  }, [theme]);
+
   // New results → update the source; new non-map criteria → fit to results.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded.current) return;
-    (map.getSource("listings") as GeoJSONSource | undefined)?.setData(data);
+    (map.getSource(SOURCE_ID) as GeoJSONSource | undefined)?.setData(data);
     if (!bounds && lastFitKey.current !== fitKey) {
       lastFitKey.current = fitKey;
       const b = pinsBounds(pins);
@@ -373,7 +459,7 @@ export default function SearchMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded.current || !map.getLayer("pins-active")) return;
-    map.setFilter("pins-active", ["==", ["get", "id"], highlightedId ?? ""]);
+    map.setFilter("pins-active", highlightFilter(highlightedId));
   }, [highlightedId]);
 
   return (

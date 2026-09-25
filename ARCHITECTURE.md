@@ -208,8 +208,8 @@ storage keys) and marks what is reserved for which work package.
 ## Themes
 
 Dark mode is being built in steps (docs/plans/dark-mode-and-georgia.md, "DM");
-DM1 (the mechanism) and DM2 (the class renames) are in place; the switch and
-the dark map style come next.
+DM1 (the mechanism), DM2 (the class renames), DM3 (the switch) and DM4 (the
+maps) are in place; DM5 (the full test matrix and hand-off docs) comes next.
 
 - **Three appearances.** Match my device (the default) is no `data-theme` on
   `<html>`; Light and Dark set `data-theme="light|dark"`. The choice is stored in
@@ -249,9 +249,29 @@ the dark map style come next.
     (`search-map.tsx`).
   - `fill-*` utilities have no per-utility namespace: an icon whose fill must
     match its text colour uses `fill-current`.
+- **The switch.** `<AppearanceControl>` (`src/components/theme/`) is a native
+  radio group in a fieldset ("Appearance"): `list` rows in the header's
+  `<ThemeMenuButton>` (a Popover, shown with `wide:`), `segmented` Auto / Light /
+  Dark in the phone menu (shown with `phone:`, so a phone in landscape gets the
+  menu, not the button). Each radio is stretched over its option, which is the
+  44px tap target on coarse pointers and carries the focus ring. Choosing calls
+  `writeThemePref` then `applyTheme`, which also updates the forced theme-color.
+  It announces nothing (no live region).
+- **Maps.** `mapStyleUrl(theme)` (`src/components/search/map-style.ts`):
+  `NEXT_PUBLIC_MAP_STYLE_URL` or OpenFreeMap positron for light;
+  `NEXT_PUBLIC_MAP_STYLE_DARK_URL`, else the custom light URL, else OpenFreeMap
+  dark for dark. Both maps read the theme synchronously when created
+  (`readResolvedTheme`), so they never start on the wrong style. The search map
+  swaps with `setStyle(url, { transformStyle: carryOverlays })`, which carries the
+  listings source and overlay layers across; `installOverlays` runs on every
+  `style.load` and adds only what is missing, and `handleMissingImages` (MapLibre's
+  missing-image resolver) supplies the pill images, and a blank pixel for icons a
+  base style names but lacks. Event handlers are registered once. The location map
+  is recreated on a theme change. `window.__searchMap` exists in dev only, for e2e.
 - **Client helpers** (`src/lib/theme.ts`, client components only):
-  `readThemePref`/`writeThemePref`, `applyTheme`, `setChromeColor` (for WP2's hero)
-  and `watchTheme`; hooks `useThemePref`/`useResolvedTheme` in
+  `readThemePref`/`writeThemePref`, `readResolvedTheme`, `applyTheme`,
+  `setChromeColor` (for WP2's hero) and `watchTheme`; hooks `useThemePref`,
+  `useResolvedTheme` and `useClientTheme` (client-only widgets: never null) in
   `src/components/theme/use-theme.ts`. Emails stay light by design.
 
 ## Testing

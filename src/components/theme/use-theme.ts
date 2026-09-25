@@ -5,6 +5,7 @@ import {
   type ThemePref,
   SYSTEM_DARK_QUERY,
   parseThemePref,
+  readResolvedTheme,
   resolveTheme,
 } from "@/lib/theme";
 import { useMediaQuery } from "@/lib/use-media-query";
@@ -26,4 +27,13 @@ export function useResolvedTheme(): ResolvedTheme | null {
   const pref = useThemePref();
   const systemDark = useMediaQuery(SYSTEM_DARK_QUERY, false);
   return hydrated ? resolveTheme(pref, systemDark) : null;
+}
+
+/**
+ * The resolved theme for client-only widgets (the maps, both `ssr:false`): the live value
+ * once hydrated, and before that the synchronous read, so the first render already has the
+ * right answer instead of null.
+ */
+export function useClientTheme(): ResolvedTheme {
+  return useResolvedTheme() ?? readResolvedTheme();
 }

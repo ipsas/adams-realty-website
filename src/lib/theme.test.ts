@@ -7,6 +7,7 @@ import {
   applyTheme,
   markSwitching,
   parseThemePref,
+  readResolvedTheme,
   readThemePref,
   resolveTheme,
   setChromeColor,
@@ -163,6 +164,27 @@ describe("resolveTheme", () => {
     ["dark", true, "dark"],
   ] as const)("%s with a dark OS=%s is %s", (pref, systemDark, expected) => {
     expect(resolveTheme(pref, systemDark)).toBe(expected);
+  });
+});
+
+describe("readResolvedTheme", () => {
+  const os = (dark: boolean) => ({
+    matchMedia: (q: string) =>
+      ({ matches: dark && q === "(prefers-color-scheme: dark)" }) as MediaQueryList,
+  });
+  it("combines the stored choice with the OS, synchronously", () => {
+    expect(readResolvedTheme(mapStorage().storage, os(true))).toBe("dark");
+    expect(readResolvedTheme(mapStorage().storage, os(false))).toBe("light");
+    expect(readResolvedTheme(mapStorage({ [STORE_KEYS.theme]: '"light"' }).storage, os(true))).toBe(
+      "light",
+    );
+    expect(readResolvedTheme(mapStorage({ [STORE_KEYS.theme]: '"dark"' }).storage, os(false))).toBe(
+      "dark",
+    );
+  });
+  it("falls back to light with no matchMedia and a throwing store", () => {
+    expect(readResolvedTheme(throwingStorage, {} as Pick<Window, "matchMedia">)).toBe("light");
+    expect(readResolvedTheme(throwingStorage, os(true))).toBe("dark");
   });
 });
 
