@@ -16,6 +16,8 @@ export const savedListings = pgTable(
       .references(() => listings.id, { onDelete: "cascade" }),
     note: text("note"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Last time this user was emailed about a change (price, status) to this home. */
+    lastNotifiedAt: timestamp("last_notified_at", { withTimezone: true }),
   },
   (t) => [
     primaryKey({ columns: [t.userId, t.listingId] }),
@@ -92,4 +94,19 @@ export const auditLogs = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("audit_logs_entity_idx").on(t.entityType, t.entityId)],
+);
+
+/** Private notes staff keep on a lead (calls, showings, next steps). */
+export const leadNotes = pgTable(
+  "lead_notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    inquiryId: uuid("inquiry_id")
+      .notNull()
+      .references(() => inquiries.id, { onDelete: "cascade" }),
+    authorId: text("author_id").references(() => users.id, { onDelete: "set null" }),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("lead_notes_inquiry_idx").on(t.inquiryId, t.createdAt)],
 );

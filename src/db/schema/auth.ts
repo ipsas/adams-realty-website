@@ -16,6 +16,8 @@ export const users = pgTable("users", {
   image: text("image"),
   role: userRole("role").notNull().default("user"),
   phone: text("phone"),
+  /** Email me when a saved home changes price or status. */
+  homeAlerts: boolean("home_alerts").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()

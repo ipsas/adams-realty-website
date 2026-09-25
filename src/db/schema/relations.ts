@@ -1,6 +1,6 @@
 import { relations } from "drizzle-orm";
 import { users } from "./auth";
-import { auditLogs, inquiries, savedListings, savedSearches } from "./engagement";
+import { auditLogs, inquiries, leadNotes, savedListings, savedSearches } from "./engagement";
 import {
   dataSources,
   listingEvents,
@@ -67,7 +67,13 @@ export const savedSearchesRelations = relations(savedSearches, ({ one }) => ({
   user: one(users, { fields: [savedSearches.userId], references: [users.id] }),
 }));
 
-export const inquiriesRelations = relations(inquiries, ({ one }) => ({
+export const leadNotesRelations = relations(leadNotes, ({ one }) => ({
+  inquiry: one(inquiries, { fields: [leadNotes.inquiryId], references: [inquiries.id] }),
+  author: one(users, { fields: [leadNotes.authorId], references: [users.id] }),
+}));
+
+export const inquiriesRelations = relations(inquiries, ({ one, many }) => ({
+  notes: many(leadNotes),
   listing: one(listings, { fields: [inquiries.listingId], references: [listings.id] }),
   agent: one(agents, { fields: [inquiries.agentId], references: [agents.id] }),
   user: one(users, { fields: [inquiries.userId], references: [users.id] }),
