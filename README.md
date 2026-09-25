@@ -23,7 +23,7 @@ See **[ARCHITECTURE.md](./ARCHITECTURE.md)** for how it fits together.
 npm install                  # also copies the MapLibre worker into public/vendor
 cp .env.example .env.local   # then set BETTER_AUTH_SECRET
 docker compose up -d         # local Postgres (or point DATABASE_URL at Neon/Supabase)
-npm run db:reset             # run migrations + seed demo data (fictional Northeast Georgia listings)
+npm run db:reset             # run migrations + seed demo data (fictional listings across Georgia)
 npm run dev                  # http://localhost:3000
 ```
 

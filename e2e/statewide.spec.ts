@@ -1,0 +1,40 @@
+import { expect, test, type Page } from "@playwright/test";
+
+/** The statewide demo feed (STATEWIDE_AREAS in scripts/seed-data.ts). */
+
+async function resultCount(page: Page): Promise<number> {
+  const live = page.locator("[aria-live=polite]");
+  await expect(live).toContainText(/\d+ results?/);
+  const text = (await live.textContent()) ?? "";
+  return Number(text.match(/([\d,]+) results?/)![1].replace(/,/g, ""));
+}
+
+test("a Decatur search fills a page with Decatur homes", async ({ page }) => {
+  await page.goto("/homes?q=Decatur");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(/Homes for sale in Decatur/);
+  expect(await resultCount(page)).toBeGreaterThanOrEqual(10);
+  const addresses = await page.getByTestId("card-address").allTextContents();
+  expect(addresses.length).toBeGreaterThanOrEqual(10);
+  for (const a of addresses) expect(a).toMatch(/Decatur, GA 30\d{3}$/);
+});
+
+test("Virginia-Highland listings are Atlanta homes in the neighborhood", async ({ page }) => {
+  await page.goto("/homes?q=Virginia-Highland");
+  expect(await resultCount(page)).toBeGreaterThanOrEqual(1);
+  const addresses = await page.getByTestId("card-address").allTextContents();
+  for (const a of addresses) expect(a).toMatch(/Atlanta, GA 30\d{3}$/);
+  await page.locator("article a").first().click();
+  await expect(page).toHaveURL(/\/homes\/[a-z0-9-]+$/);
+  await expect(page.getByRole("link", { name: "Virginia-Highland" }).first()).toBeVisible();
+});
+
+test("statewide listings belong to other brokerages, never Adams Realty", async ({ page }) => {
+  await page.goto("/homes?q=Savannah");
+  expect(await resultCount(page)).toBeGreaterThanOrEqual(1);
+  const offices = await page.getByText(/^Listing by /).allTextContents();
+  expect(offices.length).toBeGreaterThan(0);
+  for (const o of offices) expect(o).not.toContain("Adams Realty");
+
+  await page.goto("/homes?q=Savannah&ourListings=1");
+  expect(await resultCount(page)).toBe(0);
+});

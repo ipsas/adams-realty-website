@@ -143,6 +143,12 @@ export const listings = pgTable(
     postalCode: text("postal_code").notNull(),
     county: text("county"),
     neighborhood: text("neighborhood"),
+    /**
+     * RESO WaterBodyName: the lake or river a waterfront property is on.
+     * Feeds put the subdivision in `neighborhood`, so this is where a lake name
+     * like "Lake Hartwell" lives on real MLS data.
+     */
+    waterBodyName: text("water_body"),
     latitude: doublePrecision("latitude"),
     longitude: doublePrecision("longitude"),
     /** Some MLSs let sellers suppress the street address on IDX sites. */

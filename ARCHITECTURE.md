@@ -34,7 +34,7 @@ Browser ──► Next.js (App Router, React Server Components)
 | `src/server/actions/` | Server actions — every one authorizes via the policy                                                                                                                                                                    |
 | `src/config/site.ts`  | Brand, firm contact details, Georgia MLS office, market (Northeast Georgia), finance defaults, legal links                                                                                                              |
 | `docs/`               | `mobile-spec/` (the phone and PWA design, by work package) and `mobile-contracts.md` (what the built foundation guarantees)                                                                                             |
-| `scripts/`            | Seed data (Andrea Anderegg's real public profile plus fictional sample agents and Northeast Georgia listings), CLI sync, MapLibre worker copy                                                                           |
+| `scripts/`            | Seed data (Andrea Anderegg's real profile; fictional agents and listings: Adams in Northeast Georgia, others statewide; `dev/` pool generator), CLI sync, MapLibre worker copy                                          |
 
 ## Listing data
 

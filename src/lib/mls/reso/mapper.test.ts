@@ -146,6 +146,20 @@ describe("mapResoProperty", () => {
     );
   });
 
+  it("keeps the lake in waterBodyName, apart from the subdivision", () => {
+    const l = mapOk({
+      ...base,
+      SubdivisionName: "HARBOR POINTE",
+      WaterfrontYN: true,
+      WaterBodyName: "LAKE HARTWELL",
+    });
+    expect(l.neighborhood).toBe("Harbor Pointe");
+    expect(l.waterBodyName).toBe("Lake Hartwell");
+    expect(l.isWaterfront).toBe(true);
+    expect(mapOk(base).waterBodyName).toBeNull();
+    expect(mapOk({ ...base, WaterBodyName: "  " }).waterBodyName).toBeNull();
+  });
+
   it("nulls out impossible coordinates", () => {
     const l = mapOk({ ...base, Latitude: 0, Longitude: 0 });
     expect(l.latitude).toBeNull();
