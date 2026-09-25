@@ -18,8 +18,9 @@ type FocusTarget = { url: string; control: Control } | "add";
 
 const MAX_PHOTOS = 60;
 
+// Focus uses the site-wide :focus-visible outline, which keyboard reordering relies on.
 const iconButton =
-  "inline-flex size-10 shrink-0 items-center justify-center rounded-xl text-ink-soft transition-colors hover:bg-sunken hover:text-ink focus-visible:ring-3 focus-visible:ring-brand-100 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-35 [&_svg]:size-4";
+  "inline-flex size-10 shrink-0 items-center justify-center rounded-xl text-ink-soft transition-colors hover:bg-sunken hover:text-ink disabled:pointer-events-none disabled:opacity-35 [&_svg]:size-4";
 
 function isHttpsUrl(v: string) {
   try {
@@ -204,7 +205,8 @@ export function PhotoManager({
       </div>
 
       {error && (
-        <p className="text-sm text-clay-600" role="alert">
+        // Focusable so the listing form's jump-to-first-error lands here (it looks for data-invalid).
+        <p className="text-sm text-clay-600" role="alert" tabIndex={-1} data-invalid>
           {error}
         </p>
       )}
@@ -288,7 +290,8 @@ export function PhotoManager({
                     onClick={() => remove(i)}
                     aria-label={`Remove ${label(i)}`}
                     title="Remove photo"
-                    className="absolute top-1.5 right-1.5 inline-flex size-10 items-center justify-center rounded-full bg-white/90 text-ink-soft shadow-sm transition-colors hover:bg-white hover:text-clay-600 focus-visible:ring-3 focus-visible:ring-brand-100 focus-visible:outline-none"
+                    // The white ring fills the outline's offset so it reads on dark photos too.
+                    className="absolute top-1.5 right-1.5 inline-flex size-10 items-center justify-center rounded-full bg-white/90 text-ink-soft shadow-sm transition-colors hover:bg-white hover:text-clay-600 focus-visible:ring-2 focus-visible:ring-white"
                   >
                     <X className="size-4" />
                   </button>

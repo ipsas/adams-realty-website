@@ -150,7 +150,7 @@ export default async function LeadDetailPage(props: PageProps<"/dashboard/leads/
                 {lead.phone ? (
                   <p className="text-sm text-ink-soft tabular">{lead.phone}</p>
                 ) : (
-                  <p className="text-sm text-faint">No phone number given</p>
+                  <p className="text-sm text-muted">No phone number given</p>
                 )}
               </div>
             </div>
@@ -258,7 +258,7 @@ export default async function LeadDetailPage(props: PageProps<"/dashboard/leads/
                   {lead.message}
                 </p>
               ) : (
-                <p className="mt-1.5 text-sm text-faint">No message. They only sent the form.</p>
+                <p className="mt-1.5 text-sm text-muted">No message. They only sent the form.</p>
               )}
             </div>
 

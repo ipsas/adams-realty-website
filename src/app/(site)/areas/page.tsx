@@ -69,7 +69,7 @@ export default async function AreasPage(props: PageProps<"/areas">) {
                 </div>
               ))}
             </dl>
-            <p className="mt-3 text-xs text-faint">Live as of {formatAsOf(asOf)}</p>
+            <p className="mt-3 text-xs text-muted">Live as of {formatAsOf(asOf)}</p>
           </div>
         </Container>
       </header>
@@ -90,14 +90,17 @@ export default async function AreasPage(props: PageProps<"/areas">) {
               ))}
             </nav>
           ) : (
-            <p className="text-sm text-muted">
+            // An h2 (styled as a note) so the flat list's card h3s sit under a heading.
+            <h2 className="text-sm font-normal text-muted">
               {summaries.length} guides, sorted{" "}
               {sort === "homes"
                 ? "by homes for sale"
                 : sort === "name"
                   ? "A–Z"
-                  : "by median list price"}
-            </p>
+                  : sort === "price-low"
+                    ? "by median list price, lowest first"
+                    : "by median list price, highest first"}
+            </h2>
           )}
           <AreaSortNav current={sort} />
         </div>

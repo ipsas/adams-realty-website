@@ -6,6 +6,7 @@ import {
   formatAsOf,
   formatRatio,
   groupByRegion,
+  leadPhotoFallback,
   marketToday,
   metaDescription,
   mixSegments,
@@ -168,5 +169,25 @@ describe("titles and meta descriptions", () => {
       { forSale: 1, medianListPrice: 500_000 },
     );
     expect(d).toBe("X, GA: 1 home for sale, median list price $500K. Short.");
+  });
+});
+
+describe("leadPhotoFallback", () => {
+  it("never says nothing is for sale when homes are listed", () => {
+    expect(leadPhotoFallback(1, 0)).toEqual({
+      text: "1 home for sale, photos coming soon.",
+      target: "map",
+    });
+    expect(leadPhotoFallback(3, 5).text).toBe("3 homes for sale, photos coming soon.");
+  });
+
+  it("points down the page only when there are sales to point to", () => {
+    expect(leadPhotoFallback(0, 2)).toEqual({
+      text: "Nothing for sale right now. Recent sales are below.",
+      target: "sales",
+    });
+    const none = leadPhotoFallback(0, 0);
+    expect(none.target).toBe("map");
+    expect(none.text).not.toMatch(/sales are below/);
   });
 });

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Actor } from "@/lib/auth/permissions";
 import type { NormalizedListing } from "@/lib/mls/types";
 
@@ -187,8 +187,28 @@ describe("saveListing", () => {
       form({ photos: JSON.stringify([{ url: "http://cdn.example.com/a.jpg", caption: null }]) }),
     );
     expect(res.ok).toBe(false);
-    expect(res.errors?.photos).toBe("Photos must be https:// links.");
+    expect(res.errors?.photos).toBe("Photo 1: Use a secure https:// link.");
     expect(h.state.upserts).toHaveLength(0);
+  });
+
+  it("saves a photo list at the photo manager's limits", async () => {
+    queueUpdate();
+    // 60 photos, each with a 2,048-character link and a 200-character caption full of quotes.
+    const photos = Array.from({ length: 60 }, (_, i) => {
+      const prefix = `https://cdn.example.com/${i}/`;
+      return { url: prefix + "a".repeat(2_048 - prefix.length), caption: '"'.repeat(200) };
+    });
+    const res = await saveListing({ ok: false }, form({ photos: JSON.stringify(photos) }));
+    expect(res.errors).toBeUndefined();
+    expect(h.state.upserts[0].media).toHaveLength(60);
+  });
+
+  it("explains an oversized photo list in plain words", async () => {
+    queueUpdate();
+    const res = await saveListing({ ok: false }, form({ photos: "x".repeat(300_001) }));
+    expect(res.errors?.photos).toBe(
+      "The photo list is too long to save. Remove some photos and try again.",
+    );
   });
 
   it("edits feature groups and keeps the ones the form doesn't show", async () => {
@@ -220,6 +240,57 @@ describe("saveListing", () => {
     queueUpdate();
     await expect(saveListing({ ok: false }, form())).rejects.toThrow("permission");
     expect(h.state.upserts).toHaveLength(0);
+  });
+
+  describe("when the listing goes sold or off market", () => {
+    const past = {
+      ...openHouse,
+      startsAt: new Date("2026-09-19T17:00:00Z"),
+      endsAt: new Date("2026-09-19T19:00:00Z"),
+    };
+    // Running right now (Friday, Sep 25 2026, 1–3 PM Eastern).
+    const live = {
+      ...openHouse,
+      startsAt: new Date("2026-09-25T17:00:00Z"),
+      endsAt: new Date("2026-09-25T19:00:00Z"),
+    };
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-09-25T18:00:00Z"));
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("takes upcoming open houses off the site and keeps past ones", async () => {
+      queueUpdate({ opens: [past, live, openHouse] });
+      const res = await saveListing(
+        { ok: false },
+        form({ status: "closed", closePrice: "490000" }),
+      );
+      expect(h.state.upserts[0].openHouses).toEqual([past]);
+      expect(res.message).toBe(
+        "Listing saved. Its 2 upcoming open houses were taken off the site because the listing is sold.",
+      );
+    });
+
+    it.each(["withdrawn", "expired", "canceled"])("does the same for %s", async (status) => {
+      queueUpdate({ opens: [openHouse] });
+      const res = await saveListing({ ok: false }, form({ status }));
+      expect(h.state.upserts[0].openHouses).toEqual([]);
+      expect(res.message).toMatch(/Its upcoming open house was taken off the site .* off market\./);
+    });
+
+    it.each(["coming_soon", "active", "active_under_contract", "pending"])(
+      "keeps every open house while %s",
+      async (status) => {
+        queueUpdate({ opens: [past, live, openHouse] });
+        const res = await saveListing({ ok: false }, form({ status }));
+        expect(h.state.upserts[0].openHouses).toEqual([past, live, openHouse]);
+        expect(res.message).toBe("Listing saved.");
+      },
+    );
   });
 
   it("creates new listings with no open houses", async () => {

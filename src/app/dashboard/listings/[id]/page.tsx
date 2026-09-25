@@ -99,10 +99,14 @@ export default async function EditListingPage(props: PageProps<"/dashboard/listi
             canFeature={can.featureListing(actor)}
             canAssignAgent={actor.role === "admin"}
             canDelete={can.deleteListing(actor, subject)}
+            upcomingOpenHouses={upcoming.length}
           />
         </div>
         <aside className="min-w-0 min-[1360px]:sticky min-[1360px]:top-24 min-[1360px]:max-h-[calc(100dvh-7rem)] min-[1360px]:self-start min-[1360px]:overflow-y-auto">
           <OpenHouseManager
+            // A status change can cancel open houses on save; start fresh so an
+            // earlier "Open house added" message doesn't linger beside an empty list.
+            key={l.status}
             listingId={l.id}
             openHouses={[...upcoming, ...past]}
             // Default to the coming Saturday, the most common open house day.
@@ -114,6 +118,7 @@ export default async function EditListingPage(props: PageProps<"/dashboard/listi
                 ? "This listing is sold or off market, so new open houses can't be scheduled. Change its status and save to add one."
                 : null
             }
+            showsCardBadge={l.status === "active" && !l.removedAt}
           />
         </aside>
       </div>

@@ -14,6 +14,27 @@ const optional = z
   .optional()
   .transform((v) => (v ? v : undefined));
 
+/**
+ * On Vercel, fall back to the deployment's own URL so preview deployments work
+ * without configuring NEXT_PUBLIC_SITE_URL (production uses the project domain).
+ */
+export function vercelSiteUrl(
+  e: Record<string, string | undefined> = process.env,
+): string | undefined {
+  const host =
+    e.VERCEL_ENV === "production"
+      ? (e.VERCEL_PROJECT_PRODUCTION_URL ?? e.VERCEL_URL)
+      : (e.VERCEL_BRANCH_URL ?? e.VERCEL_URL);
+  return host ? `https://${host}` : undefined;
+}
+
+/** Every origin this deployment is reachable at, for auth origin checks. */
+export function vercelOrigins(e: Record<string, string | undefined> = process.env): string[] {
+  return [e.VERCEL_URL, e.VERCEL_BRANCH_URL, e.VERCEL_PROJECT_PRODUCTION_URL]
+    .filter((h): h is string => !!h)
+    .map((h) => `https://${h}`);
+}
+
 const makeSchema = (strict: boolean) =>
   z.object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -23,7 +44,10 @@ const makeSchema = (strict: boolean) =>
     BETTER_AUTH_SECRET: strict
       ? z.string().min(32, "BETTER_AUTH_SECRET must be at least 32 characters")
       : z.string().default("dev-only-secret-change-me-dev-only-secret"),
-    NEXT_PUBLIC_SITE_URL: z.string().url().default("http://localhost:3000"),
+    NEXT_PUBLIC_SITE_URL: z
+      .string()
+      .url()
+      .default(vercelSiteUrl() ?? "http://localhost:3000"),
     GOOGLE_CLIENT_ID: optional,
     GOOGLE_CLIENT_SECRET: optional,
     /** Bearer token Vercel Cron (or any scheduler) sends to /api/cron/*. */

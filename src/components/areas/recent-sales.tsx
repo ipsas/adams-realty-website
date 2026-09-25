@@ -4,7 +4,11 @@ import { formatBaths, formatDate, formatNumber, formatPrice, formatStreet } from
 import { formatRatio } from "@/lib/areas/stats";
 import type { CardRow } from "@/lib/listings/card";
 
-/** Compact rows of recent closed sales: what sold, for how much, and against the asking price. */
+/**
+ * Compact rows of recent closed sales: what sold, for how much, and against
+ * the asking price. Most are other brokerages' MLS listings, so each row
+ * credits the listing office, as ListingCard does (IDX rules).
+ */
 export function RecentSales({ sales }: { sales: CardRow[] }) {
   return (
     <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface">
@@ -35,9 +39,14 @@ export function RecentSales({ sales }: { sales: CardRow[] }) {
                     </>
                   )}
                 </p>
-                <p className="mt-0.5 text-xs text-faint sm:hidden">
+                <p className="mt-0.5 text-xs text-muted sm:hidden">
                   Sold {formatDate(s.closeDate)}
                 </p>
+                {s.listOfficeName && (
+                  <p className="mt-0.5 truncate text-[11px] text-muted">
+                    Listing by {s.listOfficeName}
+                  </p>
+                )}
               </div>
               <div className="shrink-0 text-right">
                 <p className="font-semibold text-ink tabular">{formatPrice(s.closePrice)}</p>

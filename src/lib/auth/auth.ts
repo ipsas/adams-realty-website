@@ -6,11 +6,13 @@ import { db } from "@/db";
 import { accounts, sessions, users, verifications } from "@/db/schema";
 import { sendEmail } from "@/lib/email";
 import { passwordResetEmail } from "@/lib/email-templates";
-import { env } from "@/lib/env";
+import { env, vercelOrigins } from "@/lib/env";
 
 export const auth = betterAuth({
   appName: site.name,
   baseURL: env.NEXT_PUBLIC_SITE_URL,
+  // A Vercel deployment answers on several hostnames (deployment, branch, production).
+  trustedOrigins: [env.NEXT_PUBLIC_SITE_URL, ...vercelOrigins()],
   secret: env.BETTER_AUTH_SECRET,
   database: drizzleAdapter(db, {
     provider: "pg",

@@ -45,6 +45,14 @@ export type ListingFormState = {
 /** Feature groups the editor exposes. Other groups in `features` (heating, flooring…) are kept as-is. */
 const EDITABLE_FEATURES = ["interior", "exterior", "appliances", "parking", "community"] as const;
 const MAX_PHOTOS = 60;
+/**
+ * Room for the photo manager's JSON at its limits (60 × a 2,048-character link
+ * and a 200-character caption), with headroom for keys and escaped characters.
+ */
+const MAX_PHOTOS_FIELD = 300_000;
+
+/** Sold and off-market listings can't be toured, so they keep no upcoming open houses. */
+const OFF_MARKET = new Set(["closed", "withdrawn", "expired", "canceled"]);
 
 const int = (min = 0, max = 1_000_000_000) =>
   z.preprocess(
@@ -100,12 +108,12 @@ const photoItems = z
       url: z
         .string()
         .trim()
-        .max(2_048, "Photo links must be under 2,048 characters.")
-        .refine(isHttpsUrl, "Photos must be https:// links."),
+        .max(2_048, "Keep the link under 2,048 characters.")
+        .refine(isHttpsUrl, "Use a secure https:// link."),
       caption: z
         .string()
         .trim()
-        .max(200, "Keep captions under 200 characters.")
+        .max(200, "Keep the caption under 200 characters.")
         .nullish()
         .transform((v) => v || null),
     }),
@@ -135,7 +143,15 @@ function parsePhotos(
       };
     }
     const parsed = photoItems.safeParse(json);
-    if (!parsed.success) return { ok: false, message: parsed.error.issues[0].message };
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      // Name the photo when the problem is with one of them ("Photo 3: …").
+      const index = issue.path[0];
+      return {
+        ok: false,
+        message: typeof index === "number" ? `Photo ${index + 1}: ${issue.message}` : issue.message,
+      };
+    }
     photos = parsed.data;
   } else {
     photos = value
@@ -213,7 +229,10 @@ const listingSchema = z.object({
     .url()
     .optional()
     .or(z.literal("").transform(() => undefined)),
-  photos: z.string().max(80_000).optional(),
+  photos: z
+    .string()
+    .max(MAX_PHOTOS_FIELD, "The photo list is too long to save. Remove some photos and try again.")
+    .optional(),
   features_interior: featureList,
   features_exterior: featureList,
   features_appliances: featureList,
@@ -383,6 +402,7 @@ export async function saveListing(
     sortOrder: i,
   }));
 
+  let droppedOpenHouses = 0;
   const saved = await db.transaction(async (tx) => {
     // upsertListing replaces a listing's media and open houses with what it's
     // given. The form edits photos only, so carry over everything else. The row
@@ -408,7 +428,7 @@ export async function saveListing(
         .where(and(eq(listingMedia.listingId, existing.id), ne(listingMedia.kind, "photo")))
         .orderBy(asc(listingMedia.sortOrder));
       keptMedia = otherMedia.map((m, i) => ({ ...m, sortOrder: photoMedia.length + i }));
-      keptOpenHouses = await tx
+      const opens = await tx
         .select({
           sourceKey: openHouses.sourceKey,
           type: openHouses.type,
@@ -419,6 +439,10 @@ export async function saveListing(
         .from(openHouses)
         .where(eq(openHouses.listingId, existing.id))
         .orderBy(asc(openHouses.startsAt));
+      // Going sold or off market cancels open houses that haven't ended; past ones stay as history.
+      const now = new Date();
+      keptOpenHouses = OFF_MARKET.has(d.status) ? opens.filter((o) => o.endsAt <= now) : opens;
+      droppedOpenHouses = opens.length - keptOpenHouses.length;
     }
 
     const result = await upsertListing(
@@ -432,7 +456,11 @@ export async function saveListing(
       action: existing ? "listing.update" : "listing.create",
       entityType: "listing",
       entityId: result.id,
-      changes: { status: d.status, listPrice: d.listPrice },
+      changes: {
+        status: d.status,
+        listPrice: d.listPrice,
+        ...(droppedOpenHouses > 0 && { openHousesRemoved: droppedOpenHouses }),
+      },
     });
     return result;
   });
@@ -442,7 +470,21 @@ export async function saveListing(
   if (!existing) redirect(`/dashboard/listings/${saved.id}?created=1`);
   revalidatePath(`/homes/${existing.slug}`);
   revalidatePath(`/dashboard/listings/${existing.id}`);
-  return { ok: true, message: `Listing saved.${geocodeNote}`, savedAt: Date.now() };
+  let openHouseNote = "";
+  if (droppedOpenHouses > 0) {
+    // The homepage counts this week's open houses.
+    revalidatePath("/");
+    openHouseNote = ` ${
+      droppedOpenHouses === 1
+        ? "Its upcoming open house was"
+        : `Its ${droppedOpenHouses} upcoming open houses were`
+    } taken off the site because the listing is ${d.status === "closed" ? "sold" : "off market"}.`;
+  }
+  return {
+    ok: true,
+    message: `Listing saved.${openHouseNote}${geocodeNote}`,
+    savedAt: Date.now(),
+  };
 }
 
 export async function deleteListing(id: string) {

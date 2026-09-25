@@ -40,7 +40,8 @@ type OptimisticChange = { add: LeadNoteItem } | { remove: string };
  * The notes timeline on a lead: newest first, with an add-note form. On submit
  * the box clears and the note appears at the top straight away; a deleted note
  * disappears at once; the server's revalidated list then replaces them. If a
- * save fails, the text goes back in the box. While the lead is still "new" the
+ * save fails for any reason (validation, a refusal, the network), the text goes
+ * back in the box. While the lead is still "new" the
  * form offers to mark it contacted (see `addLeadNote` in
  * src/server/actions/leads.ts).
  */
@@ -63,11 +64,11 @@ export function LeadNotes({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [state, dispatch, saving] = useActionState(
     async (prev: LeadNoteState, form: FormData): Promise<LeadNoteState> => {
-      const body = String(form.get("body") ?? "").trim();
+      const body = String(form.get("body") ?? "");
       applyOptimistic({
         add: {
           id: `pending-${Date.now()}`,
-          body,
+          body: body.trim(),
           authorName: viewerName,
           createdAt: new Date().toISOString(),
           relative: "Saving…",
@@ -76,7 +77,19 @@ export function LeadNotes({
           pending: true,
         },
       });
-      const result = await addLeadNote(prev, form);
+      let result: LeadNoteState;
+      try {
+        result = await addLeadNote(prev, form);
+      } catch {
+        // Offline, signed out (the sign-in redirect isn't an action response)
+        // or a server error. Caught so the note isn't lost to the error page.
+        result = {
+          ok: false,
+          error:
+            "The note couldn't be saved. Check your connection, or sign in again in another tab, then try again.",
+          body,
+        };
+      }
       // Put the text back so nothing is lost, unless they've started another note.
       const box = textareaRef.current;
       if (!result.ok && box && !box.value.trim()) box.value = result.body ?? body;
@@ -106,8 +119,12 @@ export function LeadNotes({
     setDeleteError(null);
     startDelete(async () => {
       applyOptimistic({ remove: note.id });
-      const res = await deleteLeadNote(note.id);
-      if (!res.ok) setDeleteError(res.message ?? "Couldn't delete that note.");
+      try {
+        const res = await deleteLeadNote(note.id, inquiryId);
+        if (!res.ok) setDeleteError(res.message ?? "Couldn't delete that note.");
+      } catch {
+        setDeleteError("Couldn't delete that note. Check your connection, or sign in again.");
+      }
     });
   }
 
@@ -158,7 +175,7 @@ export function LeadNotes({
             {offerMarkContacted ? (
               <Checkbox name="markContacted" defaultChecked label="Mark lead as contacted" />
             ) : (
-              <span className="hidden text-xs text-faint sm:block">⌘/Ctrl + Enter to save</span>
+              <span className="hidden text-xs text-muted sm:block">⌘/Ctrl + Enter to save</span>
             )}
             <Button type="submit" disabled={saving} className="ml-auto min-w-28">
               {saving ? "Saving…" : "Add note"}
@@ -226,7 +243,7 @@ export function LeadNotes({
                       onClick={() => remove(note)}
                       aria-label={`Delete note from ${note.relative}`}
                       title="Delete note"
-                      className="-mt-2 -mr-2 flex size-10 shrink-0 items-center justify-center rounded-full text-faint transition-colors hover:bg-clay-50 hover:text-clay-600"
+                      className="-mt-2 -mr-2 flex size-10 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-clay-50 hover:text-clay-600"
                     >
                       <Trash2 className="size-4" />
                     </button>

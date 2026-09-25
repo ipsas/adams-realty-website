@@ -20,7 +20,8 @@
     "postinstall": "node scripts/copy-maplibre-worker.mjs",
     "predev": "node scripts/copy-maplibre-worker.mjs",
     "prebuild": "node scripts/copy-maplibre-worker.mjs",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "vercel-build": "node scripts/copy-maplibre-worker.mjs && node scripts/vercel-build.mjs"
   },
   "dependencies": {
     "better-auth": "^1.7.6",

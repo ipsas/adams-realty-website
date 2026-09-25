@@ -1,6 +1,13 @@
 "use client";
 
-import { startTransition, useActionState, useEffect, useRef, type ReactNode } from "react";
+import {
+  startTransition,
+  useActionState,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, FormMessage, Input, Select, Textarea } from "@/components/ui/form";
 import type { ListingFeatures } from "@/db/schema";
@@ -59,6 +66,8 @@ const STATUSES = [
   ["expired", "Expired"],
   ["canceled", "Canceled"],
 ];
+/** Saving with one of these takes the listing's upcoming open houses off the site. */
+const OFF_MARKET = new Set(["closed", "withdrawn", "expired", "canceled"]);
 const TYPES = [
   ["single_family", "Single-family"],
   ["condo", "Condo"],
@@ -98,12 +107,15 @@ export function ListingForm({
   canFeature,
   canAssignAgent,
   canDelete,
+  upcomingOpenHouses = 0,
 }: {
   values: ListingFormValues;
   agents: { id: string; name: string }[];
   canFeature: boolean;
   canAssignAgent: boolean;
   canDelete: boolean;
+  /** Open houses that haven't ended yet, so the form can warn before a status change cancels them. */
+  upcomingOpenHouses?: number;
 }) {
   const [state, dispatch, pending] = useActionState<ListingFormState, FormData>(
     async (prev, data) => {
@@ -115,10 +127,13 @@ export function ListingForm({
   );
   const formRef = useRef<HTMLFormElement>(null);
 
-  // Take the user to the first field that needs fixing.
+  // Take the user to the first field that needs fixing. Composite controls
+  // (the photo manager) mark their focusable error message with data-invalid.
   useEffect(() => {
     if (!state.errors) return;
-    const first = formRef.current?.querySelector<HTMLElement>("[aria-invalid=true]");
+    const first = formRef.current?.querySelector<HTMLElement>(
+      "[aria-invalid=true], [data-invalid]",
+    );
     first?.focus();
     first?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [state]);
@@ -146,6 +161,7 @@ export function ListingForm({
         agents={agents}
         canFeature={canFeature}
         canAssignAgent={canAssignAgent}
+        upcomingOpenHouses={upcomingOpenHouses}
       />
 
       <div className="sticky bottom-0 z-10 -mx-4 flex flex-wrap items-center gap-3 border-t border-line bg-canvas/95 px-4 py-4 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-10 lg:px-10">
@@ -180,13 +196,17 @@ function ListingFields({
   agents,
   canFeature,
   canAssignAgent,
+  upcomingOpenHouses,
 }: {
   values: ListingFormValues;
   errors: Partial<Record<string, string>>;
   agents: { id: string; name: string }[];
   canFeature: boolean;
   canAssignAgent: boolean;
+  upcomingOpenHouses: number;
 }) {
+  const [status, setStatus] = useState(v.status);
+  const cancelsOpenHouses = upcomingOpenHouses > 0 && OFF_MARKET.has(status);
   const val = (n: number | null | undefined) => (n === null || n === undefined ? "" : String(n));
   const invalid = (name: string) => (e[name] ? true : undefined);
   const features = v.features ?? {};
@@ -197,8 +217,28 @@ function ListingFields({
   return (
     <>
       <Group title="Status & price">
-        <Field label="Status" htmlFor="status">
-          <Select id="status" name="status" defaultValue={v.status} className={control}>
+        <Field
+          label="Status"
+          htmlFor="status"
+          hint={
+            cancelsOpenHouses && (
+              <span className="font-medium text-clay-600">
+                Saving takes{" "}
+                {upcomingOpenHouses === 1
+                  ? "the upcoming open house"
+                  : `the ${upcomingOpenHouses} upcoming open houses`}{" "}
+                off the site.
+              </span>
+            )
+          }
+        >
+          <Select
+            id="status"
+            name="status"
+            defaultValue={v.status}
+            onChange={(e) => setStatus(e.target.value)}
+            className={control}
+          >
             {STATUSES.map(([value, label]) => (
               <option key={value} value={value}>
                 {label}

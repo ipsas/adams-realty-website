@@ -6,7 +6,7 @@ import { z } from "zod";
 import { canDeleteLeadNote, MAX_NOTE_LENGTH } from "@/app/dashboard/leads/[id]/note-policy";
 import { db } from "@/db";
 import { inquiries, leadNotes } from "@/db/schema";
-import { authorize, can, ForbiddenError, type Actor } from "@/lib/auth/permissions";
+import { can } from "@/lib/auth/permissions";
 import { getActor } from "@/lib/auth/session";
 import { audit } from "../audit";
 
@@ -18,6 +18,10 @@ import { audit } from "../audit";
 // contacted" (checked by default), because logging the first call or email is
 // usually the moment a lead stops being new. Unchecking it just saves the note.
 // A lead that has moved past "new" is never changed by adding a note.
+//
+// Refusals a user can hit while the page is open (the session ended, the lead
+// was reassigned) come back as results rather than thrown errors: a throw would
+// reach the error boundary and take the half-written note with it.
 
 export type LeadNoteState = {
   ok: boolean;
@@ -28,6 +32,8 @@ export type LeadNoteState = {
 };
 
 export type DeleteLeadNoteResult = { ok: boolean; message?: string };
+
+const SESSION_ENDED = "Your session ended. Sign in again in another tab, then save.";
 
 const noteSchema = z.object({
   inquiryId: z.string().uuid(),
@@ -47,13 +53,6 @@ const noteSchema = z.object({
   markContacted: z.preprocess((v) => v === "on" || v === "true", z.boolean()),
 });
 
-async function requireStaff(): Promise<Actor> {
-  const actor = await getActor();
-  if (!actor) throw new ForbiddenError("Please sign in.");
-  authorize(can.viewDashboard(actor));
-  return actor;
-}
-
 function revalidateLead(inquiryId: string) {
   revalidatePath(`/dashboard/leads/${inquiryId}`);
   // The list shows note counts; the overview shows statuses.
@@ -62,13 +61,16 @@ function revalidateLead(inquiryId: string) {
 }
 
 export async function addLeadNote(_prev: LeadNoteState, form: FormData): Promise<LeadNoteState> {
-  const actor = await requireStaff();
   const raw = {
     inquiryId: form.get("inquiryId"),
     body: form.get("body") ?? "",
     markContacted: form.get("markContacted") ?? undefined,
   };
   const body = typeof raw.body === "string" ? raw.body : "";
+  const actor = await getActor();
+  if (!actor) return { ok: false, error: `${SESSION_ENDED} Your note is still here.`, body };
+  if (!can.viewDashboard(actor))
+    return { ok: false, error: "Your account can't add notes to leads.", body };
   const parsed = noteSchema.safeParse(raw);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
@@ -83,7 +85,12 @@ export async function addLeadNote(_prev: LeadNoteState, form: FormData): Promise
     .where(eq(inquiries.id, d.inquiryId))
     .limit(1);
   if (!lead) return { ok: false, error: "Lead not found.", body };
-  authorize(can.updateInquiry(actor, lead));
+  if (!can.updateInquiry(actor, lead))
+    return {
+      ok: false,
+      error: "This lead is no longer assigned to you, so the note wasn't saved.",
+      body,
+    };
 
   const markedContacted = await db.transaction(async (tx) => {
     const [note] = await tx
@@ -118,10 +125,20 @@ export async function addLeadNote(_prev: LeadNoteState, form: FormData): Promise
   };
 }
 
-export async function deleteLeadNote(noteId: string): Promise<DeleteLeadNoteResult> {
-  const actor = await requireStaff();
-  if (!z.string().uuid().safeParse(noteId).success)
-    return { ok: false, message: "Note not found." };
+/**
+ * `inquiryId` is the lead the page shows. It's only used to refresh that page
+ * when the note is already gone (deleted in another tab or by an admin), so the
+ * stale copy disappears instead of lingering beside an error.
+ */
+export async function deleteLeadNote(
+  noteId: string,
+  inquiryId: string,
+): Promise<DeleteLeadNoteResult> {
+  const actor = await getActor();
+  if (!actor) return { ok: false, message: SESSION_ENDED };
+  if (!can.viewDashboard(actor)) return { ok: false, message: "You can't delete this note." };
+  const uuid = z.string().uuid();
+  if (!uuid.safeParse(noteId).success) return { ok: false, message: "Note not found." };
 
   const [row] = await db
     .select({
@@ -135,8 +152,13 @@ export async function deleteLeadNote(noteId: string): Promise<DeleteLeadNoteResu
     .innerJoin(inquiries, eq(leadNotes.inquiryId, inquiries.id))
     .where(eq(leadNotes.id, noteId))
     .limit(1);
-  if (!row) return { ok: false, message: "That note was already deleted." };
-  authorize(canDeleteLeadNote(actor, { agentId: row.agentId }, { authorId: row.authorId }));
+  if (!row) {
+    // Deleting is idempotent: the note is gone either way.
+    if (uuid.safeParse(inquiryId).success) revalidateLead(inquiryId);
+    return { ok: true, message: "That note was already deleted." };
+  }
+  if (!canDeleteLeadNote(actor, { agentId: row.agentId }, { authorId: row.authorId }))
+    return { ok: false, message: "You can't delete this note." };
 
   await db.transaction(async (tx) => {
     await tx.delete(leadNotes).where(eq(leadNotes.id, noteId));

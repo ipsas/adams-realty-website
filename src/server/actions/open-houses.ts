@@ -35,6 +35,14 @@ const MAX_DAYS_AHEAD = 366;
 /** Sold and off-market listings are hidden or final, so they can't be toured. */
 const UNSCHEDULABLE = new Set(["closed", "withdrawn", "expired", "canceled"]);
 
+const isSchedulable = (l: { status: string; removedAt: Date | null }) =>
+  !l.removedAt && !UNSCHEDULABLE.has(l.status);
+
+const OFF_MARKET_RESULT: OpenHouseResult = {
+  ok: false,
+  message: "This listing is sold or off market. Change its status before adding open houses.",
+};
+
 /** 24-hour HH:MM. */
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -104,11 +112,7 @@ export async function addOpenHouse(
     return { ok: false, message: "Listing not found." };
   const listing = await authorizeListing(actor, listingId);
   if (!listing) return { ok: false, message: "Listing not found." };
-  if (listing.removedAt || UNSCHEDULABLE.has(listing.status))
-    return {
-      ok: false,
-      message: "This listing is sold or off market. Change its status before adding open houses.",
-    };
+  if (!isSchedulable(listing)) return OFF_MARKET_RESULT;
 
   const parsed = inputSchema.safeParse(input);
   if (!parsed.success) {
@@ -135,12 +139,15 @@ export async function addOpenHouse(
     return { ok: false, errors: { date: "Schedule open houses up to a year ahead" } };
 
   const result = await db.transaction(async (tx): Promise<OpenHouseResult> => {
-    // Serializes with saveListing, which rewrites a listing's open houses under the same lock.
-    await tx
-      .select({ id: listings.id })
+    // Serializes with saveListing, which rewrites a listing's open houses under
+    // the same lock. Re-check the status too: a save may have just marked it sold.
+    const [locked] = await tx
+      .select({ status: listings.status, removedAt: listings.removedAt })
       .from(listings)
       .where(eq(listings.id, listingId))
       .for("update");
+    if (!locked) return { ok: false, message: "Listing not found." };
+    if (!isSchedulable(locked)) return OFF_MARKET_RESULT;
     const [overlap] = await tx
       .select({ startsAt: openHouses.startsAt, endsAt: openHouses.endsAt })
       .from(openHouses)

@@ -50,6 +50,7 @@ export function OpenHouseManager({
   minDate,
   timeZoneLabel,
   blockedReason,
+  showsCardBadge,
 }: {
   listingId: string;
   openHouses: OpenHouseRow[];
@@ -58,6 +59,8 @@ export function OpenHouseManager({
   timeZoneLabel: string;
   /** Why new open houses can't be scheduled (sold / off market), if they can't. */
   blockedReason: string | null;
+  /** Listing cards only show the open house badge on Active listings. */
+  showsCardBadge: boolean;
 }) {
   const [form, setForm] = useState<OpenHouseInput>({
     date: defaultDate,
@@ -148,7 +151,7 @@ export function OpenHouseManager({
             disabled={removingId !== null}
             aria-label={`Remove open house on ${o.label}`}
             title="Remove open house"
-            className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl text-muted transition-colors hover:bg-clay-50 hover:text-clay-600 focus-visible:ring-3 focus-visible:ring-brand-100 focus-visible:outline-none disabled:opacity-40"
+            className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl text-muted transition-colors hover:bg-clay-50 hover:text-clay-600 disabled:opacity-40"
           >
             <Trash2 className="size-4" />
           </button>
@@ -181,12 +184,25 @@ export function OpenHouseManager({
           ) : (
             <>
               {list(current)}
-              <p className="mt-1 text-xs text-muted">
-                Listing cards show the next one as{" "}
-                <span className="rounded-full bg-brass-100 px-2 py-0.5 font-medium whitespace-nowrap text-brass-700">
-                  {current[0].badge}
-                </span>
-              </p>
+              {blockedReason ? (
+                // Saving as sold/off market clears these; they can linger if the status changed elsewhere.
+                <p className="mt-1 rounded-xl bg-clay-50 px-3 py-2 text-xs text-clay-600">
+                  Scheduled before the status change. Remove any that won&apos;t happen so buyers
+                  don&apos;t plan a visit.
+                </p>
+              ) : showsCardBadge ? (
+                <p className="mt-1 text-xs text-muted">
+                  Listing cards show the next one as{" "}
+                  <span className="rounded-full bg-brass-100 px-2 py-0.5 font-medium whitespace-nowrap text-brass-700">
+                    {current[0].badge}
+                  </span>
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-muted">
+                  Shown on the property page. Listing cards add an open house badge only while the
+                  listing is Active.
+                </p>
+              )}
             </>
           )}
 
@@ -281,7 +297,8 @@ export function OpenHouseManager({
                     <label
                       key={value}
                       className={cn(
-                        "flex h-10 cursor-pointer items-center justify-center rounded-lg text-sm font-medium transition-colors has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-brand-100",
+                        // The radio is visually hidden, so its label carries the focus outline.
+                        "flex h-10 cursor-pointer items-center justify-center rounded-lg text-sm font-medium transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-brand-500",
                         form.type === value
                           ? "bg-surface text-ink shadow-sm"
                           : "text-ink-soft hover:text-ink",

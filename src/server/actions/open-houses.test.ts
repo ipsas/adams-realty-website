@@ -73,6 +73,9 @@ const listing = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+/** The row-locked re-read of the listing's status. */
+const locked = { status: "active", removedAt: null };
+
 const input = (over: Record<string, string> = {}) => ({
   date: "2026-10-03",
   startTime: "13:00",
@@ -102,7 +105,7 @@ afterEach(() => {
 
 describe("addOpenHouse", () => {
   it("stores Eastern wall-clock times as UTC instants", async () => {
-    h.state.selects = [[listing()], [], []];
+    h.state.selects = [[listing()], [locked], []];
     const res = await addOpenHouse(LISTING_ID, input({ remarks: "  Park   on the street " }));
     expect(res.ok).toBe(true);
     expect(h.state.inserted).toEqual([
@@ -118,7 +121,7 @@ describe("addOpenHouse", () => {
   });
 
   it("uses standard time after the DST change", async () => {
-    h.state.selects = [[listing()], [], []];
+    h.state.selects = [[listing()], [locked], []];
     await addOpenHouse(LISTING_ID, input({ date: "2026-12-05", type: "virtual" }));
     expect(h.state.inserted[0]).toMatchObject({
       type: "virtual",
@@ -128,7 +131,7 @@ describe("addOpenHouse", () => {
   });
 
   it("audits and revalidates the public pages", async () => {
-    h.state.selects = [[listing()], [], []];
+    h.state.selects = [[listing()], [locked], []];
     await addOpenHouse(LISTING_ID, input());
     expect(h.state.audits).toEqual([
       expect.objectContaining({
@@ -164,7 +167,7 @@ describe("addOpenHouse", () => {
     [{ type: "hybrid" }, "type", "Choose in person or virtual"],
     [{ remarks: "x".repeat(201) }, "remarks", "Keep remarks under 200 characters"],
   ])("rejects %j", async (over, field, message) => {
-    h.state.selects = [[listing()], [], []];
+    h.state.selects = [[listing()], [locked], []];
     const res = await addOpenHouse(LISTING_ID, input(over));
     expect(res.ok).toBe(false);
     expect(res.errors?.[field as keyof typeof res.errors]).toBe(message);
@@ -172,7 +175,7 @@ describe("addOpenHouse", () => {
   });
 
   it("allows an open house later today", async () => {
-    h.state.selects = [[listing()], [], []];
+    h.state.selects = [[listing()], [locked], []];
     const res = await addOpenHouse(LISTING_ID, input({ date: "2026-09-25", startTime: "09:00" }));
     expect(res.ok).toBe(true);
   });
@@ -180,7 +183,7 @@ describe("addOpenHouse", () => {
   it("refuses overlapping open houses", async () => {
     h.state.selects = [
       [listing()],
-      [],
+      [locked],
       [{ startsAt: new Date("2026-10-03T18:00:00Z"), endsAt: new Date("2026-10-03T20:00:00Z") }],
     ];
     const res = await addOpenHouse(LISTING_ID, input());
@@ -200,9 +203,18 @@ describe("addOpenHouse", () => {
     expect(h.state.inserted).toHaveLength(0);
   });
 
+  it("re-checks the status under the lock in case a save just marked it sold", async () => {
+    h.state.selects = [[listing()], [{ status: "closed", removedAt: null }]];
+    const res = await addOpenHouse(LISTING_ID, input());
+    expect(res.ok).toBe(false);
+    expect(res.message).toMatch(/sold or off market/);
+    expect(h.state.inserted).toHaveLength(0);
+    expect(h.state.revalidated).toHaveLength(0);
+  });
+
   it("lets admins schedule any manual listing", async () => {
     h.state.actor = admin;
-    h.state.selects = [[listing({ listAgentId: null })], [], []];
+    h.state.selects = [[listing({ listAgentId: null })], [locked], []];
     expect((await addOpenHouse(LISTING_ID, input())).ok).toBe(true);
   });
 

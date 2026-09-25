@@ -71,7 +71,7 @@ export default async function AgentPage(props: PageProps<"/agents/[slug]">) {
           </dl>
 
           {a.bio && (
-            <p className="mt-10 max-w-2xl text-lg leading-relaxed text-ink-soft">{a.bio}</p>
+            <p className="mt-10 max-w-2xl text-lg leading-relaxed whitespace-pre-line text-ink-soft">{a.bio}</p>
           )}
 
           <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-3">

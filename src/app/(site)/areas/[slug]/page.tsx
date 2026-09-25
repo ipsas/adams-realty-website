@@ -23,6 +23,7 @@ import {
   formatAsOf,
   metaDescription,
   placeName,
+  leadPhotoFallback,
   regionLabel,
   SOLD_WINDOW_DAYS,
 } from "@/lib/areas/stats";
@@ -131,7 +132,13 @@ export default async function AreaGuidePage(props: PageProps<"/areas/[slug]">) {
                 </LinkButton>
               </div>
             </div>
-            <FeaturedHome listing={featured} area={area} mapHref={mapHref} />
+            <FeaturedHome
+              listing={featured}
+              area={area}
+              mapHref={mapHref}
+              forSale={stats.forSale}
+              salesShown={sales.length}
+            />
           </div>
         </Container>
       </header>
@@ -266,7 +273,7 @@ export default async function AreaGuidePage(props: PageProps<"/areas/[slug]">) {
       {/* Recently sold + local agents */}
       <section className="pb-16 sm:pb-20">
         <Container className="grid grid-cols-1 gap-14 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] lg:gap-16">
-          <div className="min-w-0">
+          <div id="recently-sold" className="min-w-0 scroll-mt-24">
             <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
               <div>
                 <h2 className="font-display-tight text-3xl font-medium text-ink">Recently sold</h2>
@@ -314,7 +321,7 @@ export default async function AreaGuidePage(props: PageProps<"/areas/[slug]">) {
           <nav aria-labelledby="more-guides-heading">
             <h2
               id="more-guides-heading"
-              className="text-xs font-semibold tracking-widest text-faint uppercase"
+              className="text-xs font-semibold tracking-widest text-muted uppercase"
             >
               {siblings.length ? `More in ${regionLabel(area.region)}` : "More neighborhood guides"}
             </h2>
@@ -339,7 +346,7 @@ export default async function AreaGuidePage(props: PageProps<"/areas/[slug]">) {
               </li>
             </ul>
           </nav>
-          <div className="space-y-2 text-xs leading-relaxed text-faint">
+          <div className="space-y-2 text-xs leading-relaxed text-muted">
             <p>
               Market figures are calculated when this page loads, from listings on this site that
               match {area.name}. Asking-price, price-per-square-foot and days-on-market medians
@@ -359,19 +366,33 @@ export default async function AreaGuidePage(props: PageProps<"/areas/[slug]">) {
   );
 }
 
-/** The guide's lead photo: a real home for sale here (never stock), linked and attributed. */
+/**
+ * The guide's lead photo: a real home for sale here (never stock), linked and
+ * attributed. With no home to show, its note matches the rest of the page.
+ */
 function FeaturedHome({
   listing,
   area,
   mapHref,
+  forSale,
+  salesShown,
 }: {
   listing: CardRow | null;
   area: Area;
   mapHref: string;
+  forSale: number;
+  salesShown: number;
 }) {
+  const fallback = listing ? null : leadPhotoFallback(forSale, salesShown);
   return (
     <Link
-      href={listing ? `/homes/${listing.slug}` : mapHref}
+      href={
+        listing
+          ? `/homes/${listing.slug}`
+          : fallback?.target === "sales"
+            ? "#recently-sold"
+            : mapHref
+      }
       className="group relative isolate block aspect-[4/3] overflow-hidden rounded-[1.75rem] bg-brand-800 shadow-lift"
     >
       <Photo
@@ -390,7 +411,7 @@ function FeaturedHome({
             </p>
             <p className="truncate text-sm font-medium text-ink">{formatStreet(listing)}</p>
             {listing.listOfficeName && (
-              <p className="truncate text-[11px] text-faint">Listing by {listing.listOfficeName}</p>
+              <p className="truncate text-[11px] text-muted">Listing by {listing.listOfficeName}</p>
             )}
           </div>
           <p className="shrink-0 text-lg font-semibold text-ink tabular">
@@ -399,7 +420,7 @@ function FeaturedHome({
         </div>
       ) : (
         <div className="absolute inset-x-3 bottom-3 rounded-2xl bg-white/95 px-4 py-3 text-sm text-ink-soft shadow-pop sm:inset-x-4 sm:bottom-4">
-          Nothing for sale right now. Recent sales are below.
+          {fallback?.text}
         </div>
       )}
     </Link>

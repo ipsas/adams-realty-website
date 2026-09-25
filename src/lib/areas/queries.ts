@@ -200,7 +200,11 @@ export async function getAreaListings(area: Area, limit = 8) {
   return withPhotos(db, rows);
 }
 
-/** The home whose photo fronts the guide: featured first, else the priciest for sale. */
+/**
+ * The home that fronts the guide: one with a photo if any has one, featured
+ * first, else the priciest. Homes without photos still qualify (the card
+ * shows a placeholder), so there's a lead home whenever anything is for sale.
+ */
 export async function getAreaFeaturedListing(area: Area) {
   const [row] = await selectCards(db)
     .where(
@@ -208,11 +212,14 @@ export async function getAreaFeaturedListing(area: Area) {
         isNull(listings.removedAt),
         eq(listings.transactionType, "sale"),
         inArray(listings.status, [...LIVE_FOR_SALE]),
-        sql`${listings.primaryPhotoUrl} is not null`,
         areaCondition(area),
       ),
     )
-    .orderBy(desc(listings.isFeatured), desc(listings.listPrice))
+    .orderBy(
+      sql`${listings.primaryPhotoUrl} is null`,
+      desc(listings.isFeatured),
+      desc(listings.listPrice),
+    )
     .limit(1);
   return row ?? null;
 }

@@ -158,6 +158,27 @@ export function sampleLabel(n: number, noun: [singular: string, plural: string])
   return `${n} ${n === 1 ? noun[0] : noun[1]}`;
 }
 
+/**
+ * Copy for the guide's lead-photo card when there's no home to put in it,
+ * matched to what the rest of the page shows so the two never disagree.
+ * `target` is where the card links: the map, or the sales list below.
+ */
+export function leadPhotoFallback(
+  forSale: number,
+  recentSales: number,
+): { text: string; target: "map" | "sales" } {
+  if (forSale > 0) {
+    return {
+      text: `${sampleLabel(forSale, ["home", "homes"])} for sale, photos coming soon.`,
+      target: "map",
+    };
+  }
+  if (recentSales > 0) {
+    return { text: "Nothing for sale right now. Recent sales are below.", target: "sales" };
+  }
+  return { text: "Nothing for sale right now. Save a search to hear first.", target: "map" };
+}
+
 export type AreaSummary = { area: Area; stats: AreaStats };
 
 export const AREA_SORTS = ["region", "homes", "price-high", "price-low", "name"] as const;

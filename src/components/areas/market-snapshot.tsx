@@ -100,11 +100,11 @@ export function MarketSnapshot({ stats, rentalsHref }: { stats: AreaStats; renta
       <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line md:grid-cols-3">
         {tiles.map((t) => (
           <div key={t.label} className="flex flex-col bg-surface px-4 py-5 sm:px-6 sm:py-6">
-            <dt className="text-xs font-medium text-muted sm:text-sm">{t.label}</dt>
+            <dt className="text-xs font-medium text-ink-soft sm:text-sm">{t.label}</dt>
             <dd className="order-first mt-0 text-2xl font-semibold tracking-tight text-ink tabular sm:text-3xl">
               {t.value}
             </dd>
-            <dd className="mt-2 text-xs leading-snug text-faint">{t.note}</dd>
+            <dd className="mt-2 text-xs leading-snug text-muted">{t.note}</dd>
           </div>
         ))}
       </dl>
@@ -178,7 +178,7 @@ function TypeMix({ stats, rentalsHref }: { stats: AreaStats; rentalsHref: string
                 </span>
                 <span className="text-ink tabular">
                   {s.count}
-                  <span className="ml-2 inline-block w-10 text-right text-faint">{s.pct}%</span>
+                  <span className="ml-2 inline-block w-10 text-right text-muted">{s.pct}%</span>
                 </span>
               </li>
             ))}

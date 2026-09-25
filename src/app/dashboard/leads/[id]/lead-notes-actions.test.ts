@@ -180,19 +180,35 @@ describe("addLeadNote", () => {
     expect((await addLeadNote({ ok: true }, noteForm())).ok).toBe(true);
   });
 
-  it("refuses another agent's lead", async () => {
+  // Refusals come back as results (not throws) so the form keeps the text.
+  it("refuses another agent's lead, handing the text back", async () => {
     h.state.actor = priya;
     h.state.selects = [[{ agentId: DANIEL }]];
-    await expect(addLeadNote({ ok: true }, noteForm())).rejects.toThrow(/permission/);
+    const res = await addLeadNote({ ok: true }, noteForm());
+    expect(res).toEqual({
+      ok: false,
+      error: "This lead is no longer assigned to you, so the note wasn't saved.",
+      body: "Called, left a voicemail.",
+    });
     expect(h.state.inserted).toHaveLength(0);
+    expect(h.state.audits).toHaveLength(0);
   });
 
-  it("refuses shoppers and signed-out visitors", async () => {
+  it("refuses shoppers and signed-out visitors, handing the text back", async () => {
     h.state.actor = shopper;
-    await expect(addLeadNote({ ok: true }, noteForm())).rejects.toThrow();
+    expect(await addLeadNote({ ok: true }, noteForm())).toMatchObject({
+      ok: false,
+      error: "Your account can't add notes to leads.",
+      body: "Called, left a voicemail.",
+    });
     h.state.actor = null;
-    await expect(addLeadNote({ ok: true }, noteForm())).rejects.toThrow(/sign in/);
+    expect(await addLeadNote({ ok: true }, noteForm())).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/session ended.*still here/),
+      body: "Called, left a voicemail.",
+    });
     expect(h.state.inserted).toHaveLength(0);
+    expect(h.state.audits).toHaveLength(0);
   });
 });
 
@@ -208,7 +224,7 @@ describe("deleteLeadNote", () => {
 
   it("lets the author delete their note, keeping the text in the audit log", async () => {
     h.state.selects = [[note()]];
-    const res = await deleteLeadNote(NOTE_ID);
+    const res = await deleteLeadNote(NOTE_ID, LEAD_ID);
     expect(res).toEqual({ ok: true, message: "Note deleted." });
     expect(h.state.deleted).toBe(1);
     expect(h.state.audits).toEqual([
@@ -231,29 +247,54 @@ describe("deleteLeadNote", () => {
   it("lets admins delete anyone's note", async () => {
     h.state.actor = admin;
     h.state.selects = [[note()]];
-    expect((await deleteLeadNote(NOTE_ID)).ok).toBe(true);
+    expect((await deleteLeadNote(NOTE_ID, LEAD_ID)).ok).toBe(true);
   });
+
+  const refused = { ok: false, message: "You can't delete this note." };
 
   it("refuses someone else's note, even on the agent's own lead", async () => {
     h.state.selects = [[note({ authorId: "u-admin" })]];
-    await expect(deleteLeadNote(NOTE_ID)).rejects.toThrow(/permission/);
+    expect(await deleteLeadNote(NOTE_ID, LEAD_ID)).toEqual(refused);
     expect(h.state.deleted).toBe(0);
+    expect(h.state.audits).toHaveLength(0);
   });
 
   it("refuses an agent's old note once the lead is reassigned", async () => {
     h.state.selects = [[note({ agentId: "p" })]];
-    await expect(deleteLeadNote(NOTE_ID)).rejects.toThrow(/permission/);
+    expect(await deleteLeadNote(NOTE_ID, LEAD_ID)).toEqual(refused);
     expect(h.state.deleted).toBe(0);
   });
 
-  it("reports notes that are already gone", async () => {
-    expect(await deleteLeadNote("nope")).toEqual({ ok: false, message: "Note not found." });
-    h.state.selects = [[]];
-    expect(await deleteLeadNote(NOTE_ID)).toEqual({
+  it("refuses shoppers and signed-out visitors", async () => {
+    h.state.actor = shopper;
+    expect(await deleteLeadNote(NOTE_ID, LEAD_ID)).toEqual(refused);
+    h.state.actor = null;
+    expect(await deleteLeadNote(NOTE_ID, LEAD_ID)).toMatchObject({
       ok: false,
+      message: expect.stringMatching(/session ended/),
+    });
+    expect(h.state.deleted).toBe(0);
+  });
+
+  it("treats a note that's already gone as deleted and refreshes the lead", async () => {
+    expect(await deleteLeadNote("nope", LEAD_ID)).toEqual({
+      ok: false,
+      message: "Note not found.",
+    });
+    h.state.selects = [[]];
+    expect(await deleteLeadNote(NOTE_ID, LEAD_ID)).toEqual({
+      ok: true,
       message: "That note was already deleted.",
     });
     expect(h.state.deleted).toBe(0);
+    expect(h.state.audits).toHaveLength(0);
+    expect(h.state.revalidated).toContain(`/dashboard/leads/${LEAD_ID}`);
+  });
+
+  it("doesn't revalidate an arbitrary path for a gone note", async () => {
+    h.state.selects = [[]];
+    await deleteLeadNote(NOTE_ID, "../../admin");
+    expect(h.state.revalidated).toHaveLength(0);
   });
 });
 
