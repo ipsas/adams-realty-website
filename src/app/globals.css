@@ -1,0 +1,144 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens. Warm neutrals + evergreen: calm, premium, and deliberately
+ * unlike the blue utility look of the big portals.
+ */
+@theme {
+  --color-canvas: #fbfaf7;
+  --color-surface: #ffffff;
+  --color-sunken: #f4f2ec;
+  --color-ink: #15201c;
+  --color-ink-soft: #3b4843;
+  --color-muted: #66716c;
+  --color-faint: #98a19c;
+  --color-line: #e8e4db;
+  --color-line-strong: #d6d1c4;
+
+  --color-brand-50: #eef5f1;
+  --color-brand-100: #d6e8de;
+  --color-brand-200: #aed1bf;
+  --color-brand-300: #7db39a;
+  --color-brand-400: #4f9274;
+  --color-brand-500: #2f7558;
+  --color-brand-600: #1f5d45;
+  --color-brand-700: #1a4c39;
+  --color-brand-800: #163d2f;
+  --color-brand-900: #0f2a20;
+
+  --color-brass-100: #f5ecdc;
+  --color-brass-400: #c89b5a;
+  --color-brass-500: #b3843f;
+  --color-brass-700: #7d5a26;
+
+  --color-clay-50: #fbefe8;
+  --color-clay-500: #c2562a;
+  --color-clay-600: #a8461f;
+
+  --color-status-active: #2f9e62;
+  --color-status-soon: #7a5af5;
+  --color-status-pending: #d99a1e;
+  --color-status-sold: #b4532a;
+
+  --radius-card: 1.125rem;
+
+  --shadow-card: 0 1px 2px rgb(21 32 28 / 0.04), 0 4px 16px -4px rgb(21 32 28 / 0.08);
+  --shadow-lift: 0 2px 4px rgb(21 32 28 / 0.05), 0 18px 40px -12px rgb(21 32 28 / 0.22);
+  --shadow-pop: 0 10px 38px -10px rgb(21 32 28 / 0.35), 0 10px 20px -15px rgb(21 32 28 / 0.2);
+
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --animate-fade-in: fade-in 0.25s var(--ease-out-quint);
+  --animate-rise: rise 0.35s var(--ease-out-quint);
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+@theme inline {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-fraunces), ui-serif, Georgia, serif;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-canvas text-ink font-sans;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  ::selection {
+    @apply bg-brand-200 text-brand-900;
+  }
+
+  :focus-visible {
+    @apply outline-brand-500 outline-2 outline-offset-2;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  dialog::backdrop {
+    background: rgb(15 23 20 / 0.55);
+    backdrop-filter: blur(3px);
+  }
+}
+
+@utility font-display-tight {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+  font-variation-settings: "SOFT" 30, "opsz" 96;
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* MapLibre: keep attribution tidy and on-brand. */
+.maplibregl-ctrl-attrib {
+  font-size: 10px;
+}
+.maplibregl-popup-content {
+  padding: 0 !important;
+  border-radius: 14px !important;
+  overflow: hidden;
+  box-shadow: var(--shadow-pop) !important;
+}
+.maplibregl-popup-tip {
+  display: none;
+}
