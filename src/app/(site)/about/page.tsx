@@ -34,7 +34,7 @@ export const metadata: Metadata = {
 const COMMITMENTS = [
   {
     icon: EyeOff,
-    title: "No ads. Ever.",
+    title: "No ads.",
     body: "No sponsored listings, no pop-ups and no paid “premier agent” placements. You see homes, in the order you asked for.",
   },
   {

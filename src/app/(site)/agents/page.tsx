@@ -8,7 +8,7 @@ import { getAgents } from "@/lib/agents/queries";
 
 export const metadata: Metadata = {
   title: "Our agents",
-  description: `Meet the real estate agents at ${site.legalName} in ${site.address.city}, serving buyers and sellers across ${site.market.region}.`,
+  description: `Meet the real estate agents at ${site.legalName}, serving buyers and sellers across ${site.market.region}.`,
 };
 
 export default async function AgentsPage() {

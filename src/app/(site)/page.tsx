@@ -47,7 +47,7 @@ export default async function HomePage() {
         <Container className="pt-36 pb-10 sm:pb-14">
           <p className="mb-5 flex items-center gap-2 text-xs font-semibold tracking-[0.22em] text-white/75 uppercase">
             <span className="h-px w-8 bg-brass-400" />
-            {site.address.city} · {site.market.region}
+            {site.market.region}
           </p>
           <h1 className="max-w-3xl font-display-tight text-5xl leading-[1.02] font-normal text-white sm:text-7xl">
             Homes worth
@@ -166,7 +166,7 @@ export default async function HomePage() {
                 },
                 {
                   icon: EyeOff,
-                  title: "Zero ads. Ever.",
+                  title: "Zero ads.",
                   body: "No sponsored listings, no pop-ups, no “premier agent” placements. Just homes.",
                 },
               ].map((f) => (
