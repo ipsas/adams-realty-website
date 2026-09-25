@@ -48,3 +48,6 @@ next-env.d.ts
 
 # local map style used for offline UI testing
 /public/_test-style.json
+
+# scratch scripts from local tooling
+/.tmp*

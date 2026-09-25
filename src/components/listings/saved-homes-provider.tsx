@@ -35,6 +35,14 @@ export function SavedHomesProvider({
   children: ReactNode;
 }) {
   const [ids, setIds] = useState(() => new Set(initialIds));
+  // The root layout stays mounted across client navigations (e.g. signing in),
+  // so adopt fresh server IDs whenever they change instead of only on mount.
+  const serverKey = initialIds.join(",");
+  const [lastServerKey, setLastServerKey] = useState(serverKey);
+  if (serverKey !== lastServerKey) {
+    setLastServerKey(serverKey);
+    setIds(new Set(initialIds));
+  }
   const [pending, startTransition] = useTransition();
   const router = useRouter();
   const pathname = usePathname();
