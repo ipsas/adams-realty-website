@@ -55,8 +55,8 @@ export default async function HomePage() {
             <em className="font-light text-brass-100">coming home to.</em>
           </h1>
           <p className="mt-6 max-w-xl text-lg leading-relaxed text-white/80">
-            Homes, land, farms and lake property, updated directly from {site.mls.name}. Honest
-            monthly costs. Local agents who actually pick up the phone.
+            Homes, land, farms and lake property, updated directly from {site.mls.name}. Local
+            agents who actually pick up the phone.
           </p>
           <div className="mt-9">
             <HeroSearch />
@@ -161,8 +161,8 @@ export default async function HomePage() {
                 },
                 {
                   icon: BadgeDollarSign,
-                  title: "The real monthly cost",
-                  body: "Every estimate includes taxes, insurance, HOA and PMI — not just principal and interest.",
+                  title: "The true cost of owning",
+                  body: "Each home's payment estimate includes taxes, insurance, HOA and PMI — not just the loan.",
                 },
                 {
                   icon: EyeOff,

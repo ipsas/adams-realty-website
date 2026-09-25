@@ -13,7 +13,7 @@ export const site = {
   legalName: "Adams Realty, Inc.",
   tagline: "Homes worth coming home to.",
   description:
-    "Homes, land, farms, lake and commercial property for sale across Northeast Georgia, with Adams Realty, Inc. Listings from Georgia MLS, honest monthly costs, and no ads.",
+    "Homes, land, farms, lake and commercial property for sale across Northeast Georgia, with Adams Realty, Inc. Listings from Georgia MLS, the true cost of owning each home, and no ads.",
   phone: "(706) 246-0053",
   /** The firm's public inbox (Andrea's). Also the fallback address for leads when LEADS_INBOX is unset. */
   email: "contracts.adamsrealty@gmail.com",
