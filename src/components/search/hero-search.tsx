@@ -28,7 +28,7 @@ export function HeroSearch() {
             className={cn(
               "rounded-full px-4 py-1.5 text-sm font-semibold transition-colors",
               mode === m.value
-                ? "bg-white text-ink shadow-sm"
+                ? "bg-surface text-ink shadow-sm"
                 : "text-white/80 hover:bg-white/10 hover:text-white",
             )}
           >

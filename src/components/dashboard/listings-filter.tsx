@@ -115,14 +115,14 @@ export function ListingsFilter({
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   "inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-sm font-medium whitespace-nowrap transition-colors",
-                  active ? "bg-ink text-white" : "text-ink-soft hover:bg-sunken hover:text-ink",
+                  active ? "bg-ink text-on-ink" : "text-ink-soft hover:bg-sunken hover:text-ink",
                 )}
               >
                 {t.label}
                 <span
                   className={cn(
                     "min-w-6 rounded-full px-1.5 py-0.5 text-center text-xs tabular",
-                    active ? "bg-white/15 text-white" : "bg-sunken text-muted",
+                    active ? "bg-on-ink/15 text-on-ink" : "bg-sunken text-muted",
                   )}
                 >
                   {counts[t.key]}

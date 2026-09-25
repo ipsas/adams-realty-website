@@ -6,11 +6,11 @@ const base =
   "inline-flex items-center justify-center gap-2 whitespace-nowrap font-medium transition-[background-color,color,box-shadow,transform] duration-150 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0";
 
 const variants = {
-  primary: "bg-brand-700 text-white shadow-sm hover:bg-brand-800",
+  primary: "bg-primary text-white shadow-sm hover:bg-primary-hover",
   secondary: "bg-surface text-ink ring-1 ring-line-strong ring-inset hover:bg-sunken",
   ghost: "text-ink-soft hover:bg-sunken hover:text-ink",
   subtle: "bg-brand-50 text-brand-800 hover:bg-brand-100",
-  inverse: "bg-white text-ink shadow-sm hover:bg-white/90",
+  inverse: "bg-white text-shade shadow-sm hover:bg-white/90",
   danger: "bg-clay-600 text-white hover:bg-clay-500",
 } as const;
 

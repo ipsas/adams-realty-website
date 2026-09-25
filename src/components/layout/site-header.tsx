@@ -113,8 +113,8 @@ export function SiteHeader({ user }: { user: HeaderUser }) {
               className={cn(
                 "flex h-10 items-center rounded-full px-4 text-sm font-semibold transition-colors",
                 transparent
-                  ? "bg-white text-ink hover:bg-white/90"
-                  : "bg-ink text-white hover:bg-ink-soft",
+                  ? "bg-surface text-ink hover:bg-surface/90"
+                  : "bg-ink text-on-ink hover:bg-ink-soft",
               )}
             >
               Sign in
@@ -168,7 +168,7 @@ function UserMenu({ user, transparent }: { user: NonNullable<HeaderUser>; transp
         <span
           className={cn(
             "-mx-2 flex size-8 items-center justify-center rounded-full text-xs font-semibold",
-            transparent ? "bg-white/20 text-white" : "bg-brand-700 text-white",
+            transparent ? "bg-white/20 text-white" : "bg-primary text-white",
           )}
           aria-label="Account menu"
         >

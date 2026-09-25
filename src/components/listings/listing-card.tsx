@@ -66,13 +66,13 @@ export function ListingCard({
             {cardBadges(l).slice(0, 2)}
           </div>
           {l.isCompanyListing && !unavailable && (
-            <span className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-1.5 rounded-full bg-white/95 py-1 pr-2.5 pl-1 text-[11px] font-semibold text-ink shadow-sm">
+            <span className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-1.5 rounded-full bg-surface/95 py-1 pr-2.5 pl-1 text-[11px] font-semibold text-ink shadow-sm">
               <LogoMark className="size-4" />
               Adams listing
             </span>
           )}
           {l.hasVirtualTour && (
-            <span className="pointer-events-none absolute right-3 bottom-3 flex items-center gap-1 rounded-full bg-ink/70 px-2 py-1 text-[11px] font-medium text-white backdrop-blur">
+            <span className="pointer-events-none absolute right-3 bottom-3 flex items-center gap-1 rounded-full bg-shade/70 px-2 py-1 text-[11px] font-medium text-white backdrop-blur">
               <Rotate3d className="size-3.5" /> 3D
             </span>
           )}
@@ -140,12 +140,12 @@ function Badge({
   children: ReactNode;
 }) {
   const tones = {
-    brand: "bg-brand-700 text-white",
+    brand: "bg-primary text-white",
     violet: "bg-status-soon text-white",
     amber: "bg-status-pending text-white",
     clay: "bg-clay-500 text-white",
-    brass: "bg-white text-brass-700",
-    ink: "bg-ink/80 text-white",
+    brass: "bg-surface text-brass-700",
+    ink: "bg-shade/80 text-white",
   } as const;
   return (
     <span
@@ -306,7 +306,7 @@ function CarouselArrow({
       aria-hidden
       onClick={onClick}
       className={cn(
-        "absolute top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-ink opacity-0 shadow transition-opacity group-hover:opacity-100 hover:bg-white",
+        "absolute top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full bg-surface/90 text-ink opacity-0 shadow transition-opacity group-hover:opacity-100 hover:bg-surface",
         side === "left" ? "left-2.5" : "right-2.5",
         hidden && "invisible",
       )}

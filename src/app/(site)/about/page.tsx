@@ -258,7 +258,7 @@ export default async function AboutPage() {
               {ROUTING.map((r, i) => (
                 <li key={r.title} className="relative md:pr-6">
                   <div className="flex items-center gap-4">
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white tabular">
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-white tabular">
                       {i + 1}
                     </span>
                     {i < ROUTING.length - 1 && (

@@ -135,7 +135,7 @@ export function PrimitivesDemo({
         <div className="flex flex-wrap items-center gap-6">
           <div
             data-testid="save-overlay"
-            className="relative flex h-28 w-44 items-start justify-end rounded-2xl bg-linear-to-br from-brand-300 to-brand-700 p-2"
+            className="relative flex h-28 w-44 items-start justify-end rounded-2xl bg-linear-to-br from-brand-300 to-brand-700 p-2 dark:from-brand-400"
           >
             <SaveButton listingId={listingId} />
           </div>

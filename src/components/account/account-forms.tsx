@@ -177,7 +177,7 @@ export function HomeAlertsToggle({
           <span
             className={cn(
               "relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200",
-              enabled ? "bg-brand-700" : "bg-line-strong",
+              enabled ? "bg-primary" : "bg-line-strong",
             )}
           >
             <span

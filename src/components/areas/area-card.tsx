@@ -34,7 +34,7 @@ export function AreaCard({
           sizes="(min-width: 1280px) 18vw, (min-width: 1024px) 30vw, (min-width: 640px) 45vw, 92vw"
         />
         {showRegion && (
-          <span className="absolute top-3 left-3 rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-ink shadow-sm">
+          <span className="absolute top-3 left-3 rounded-full bg-surface/95 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-ink shadow-sm">
             {regionLabel(area.region)}
           </span>
         )}
@@ -118,7 +118,7 @@ function AreaPhoto({
         className="absolute inset-0 -z-20 size-full transition-transform duration-700 ease-out group-hover:scale-[1.04]"
         fallbackClassName="from-brand-600 via-brand-700 to-brand-900 text-brand-500"
       />
-      <div className="absolute inset-0 -z-10 bg-gradient-to-t from-ink/80 via-ink/15 to-transparent" />
+      <div className="absolute inset-0 -z-10 bg-gradient-to-t from-shade/80 via-shade/15 to-transparent" />
     </>
   );
 }

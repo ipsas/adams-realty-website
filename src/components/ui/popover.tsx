@@ -108,7 +108,7 @@ export function Popover({
           data-popover-scrim
           className={cn(
             "fixed inset-0 z-[45] touch-none lg:hidden",
-            open ? "animate-fade-in bg-ink/30" : "bg-transparent",
+            open ? "animate-fade-in bg-shade/30 dark:bg-shade/50" : "bg-transparent",
           )}
           onPointerDown={(e) => {
             e.preventDefault();

@@ -148,7 +148,7 @@ function TypeMix({ stats, rentalsHref }: { stats: AreaStats; rentalsHref: string
                 />
                 <span
                   className={cn(
-                    "pointer-events-none absolute bottom-full z-10 mb-1 rounded-lg bg-ink px-2.5 py-1.5 text-xs whitespace-nowrap text-white opacity-0 shadow-pop transition-opacity group-hover:opacity-100",
+                    "pointer-events-none absolute bottom-full z-10 mb-1 rounded-lg bg-ink px-2.5 py-1.5 text-xs whitespace-nowrap text-on-ink opacity-0 shadow-pop transition-opacity group-hover:opacity-100",
                     // Edge segments anchor to their edge so the tooltip never leaves the card.
                     i === 0
                       ? "left-0"
@@ -158,7 +158,7 @@ function TypeMix({ stats, rentalsHref }: { stats: AreaStats; rentalsHref: string
                   )}
                 >
                   <span className="font-semibold tabular">{s.count}</span>{" "}
-                  <span className="text-white/70">
+                  <span className="text-on-ink/70">
                     {s.label.toLowerCase()} · {s.pct}%
                   </span>
                 </span>

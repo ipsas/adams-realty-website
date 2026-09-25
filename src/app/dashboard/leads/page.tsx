@@ -75,7 +75,7 @@ export default async function LeadsPage(props: PageProps<"/dashboard/leads">) {
             aria-current={current === value ? "page" : undefined}
             className={cn(
               "flex min-h-10 items-center rounded-full px-3.5 text-sm font-medium",
-              current === value ? "bg-ink text-white" : "text-ink-soft hover:bg-sunken",
+              current === value ? "bg-ink text-on-ink" : "text-ink-soft hover:bg-sunken",
             )}
           >
             {label}

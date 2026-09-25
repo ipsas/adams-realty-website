@@ -11,7 +11,25 @@ import type { Bounds } from "@/lib/search/params";
 import type { MapPin } from "@/lib/search/service";
 
 const FONT = ["Noto Sans Bold"];
-const BRAND = "#1a4c39";
+/**
+ * Pins, clusters and price pills look the same in both themes (dark mode keeps them, like
+ * photos): they sit on the map canvas, never on a page surface, so they don't use theme tokens.
+ */
+const MAP_OVERLAY_COLORS = {
+  brand: "#1a4c39",
+  onBrand: "#ffffff",
+  pill: "#ffffff",
+  pillStroke: "#d6d1c4",
+  clusterStroke: "rgba(255,255,255,0.85)",
+  dotStroke: "#ffffff",
+  price: {
+    closed: "#a8461f",
+    pending: "#9a6b10",
+    comingSoon: "#5b3fd6",
+    active: "#15201c",
+  },
+} as const;
+const C = MAP_OVERLAY_COLORS;
 
 type Props = {
   pins: MapPin[];
@@ -168,8 +186,8 @@ export default function SearchMap({
 
     map.on("load", () => {
       for (const [id, fill, stroke] of [
-        ["pill", "#ffffff", "#d6d1c4"],
-        ["pill-active", BRAND, null],
+        ["pill", C.pill, C.pillStroke],
+        ["pill-active", C.brand, null],
       ] as const) {
         const { image, options } = pillImage(fill, stroke);
         map.addImage(id, image, options);
@@ -189,11 +207,11 @@ export default function SearchMap({
         source: "listings",
         filter: ["has", "point_count"],
         paint: {
-          "circle-color": BRAND,
+          "circle-color": C.brand,
           "circle-opacity": 0.92,
           "circle-radius": ["step", ["get", "point_count"], 15, 10, 19, 50, 25],
           "circle-stroke-width": 3,
-          "circle-stroke-color": "rgba(255,255,255,0.85)",
+          "circle-stroke-color": C.clusterStroke,
         },
       });
       map.addLayer({
@@ -206,7 +224,7 @@ export default function SearchMap({
           "text-font": FONT,
           "text-size": 12,
         },
-        paint: { "text-color": "#ffffff" },
+        paint: { "text-color": C.onBrand },
       });
 
       // Every listing gets a dot; price pills are drawn on top where they fit
@@ -218,9 +236,9 @@ export default function SearchMap({
         filter: ["!", ["has", "point_count"]],
         paint: {
           "circle-radius": 4.5,
-          "circle-color": BRAND,
+          "circle-color": C.brand,
           "circle-stroke-width": 1.5,
-          "circle-stroke-color": "#ffffff",
+          "circle-stroke-color": C.dotStroke,
         },
       });
 
@@ -246,12 +264,12 @@ export default function SearchMap({
             "match",
             ["get", "status"],
             "closed",
-            "#a8461f",
+            C.price.closed,
             ["pending", "active_under_contract"],
-            "#9a6b10",
+            C.price.pending,
             "coming_soon",
-            "#5b3fd6",
-            "#15201c",
+            C.price.comingSoon,
+            C.price.active,
           ],
         },
       });
@@ -268,7 +286,7 @@ export default function SearchMap({
           "icon-allow-overlap": true,
           "text-allow-overlap": true,
         },
-        paint: { "text-color": "#ffffff" },
+        paint: { "text-color": C.onBrand },
       });
 
       for (const layer of ["pin-dots", "pins", "pins-active"]) {
@@ -361,7 +379,7 @@ export default function SearchMap({
   return (
     <div
       ref={container}
-      className="size-full bg-[#eef0ec]"
+      className="size-full bg-map"
       aria-label="Map of search results"
       role="region"
     />

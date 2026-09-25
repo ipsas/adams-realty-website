@@ -404,7 +404,7 @@ function FeaturedHome({
         fallbackClassName="from-brand-600 via-brand-700 to-brand-900 text-brand-500"
       />
       {listing ? (
-        <div className="absolute inset-x-3 bottom-3 flex items-center justify-between gap-4 rounded-2xl bg-white/95 py-3 pr-4 pl-4 shadow-pop backdrop-blur sm:inset-x-4 sm:bottom-4">
+        <div className="absolute inset-x-3 bottom-3 flex items-center justify-between gap-4 rounded-2xl bg-surface/95 py-3 pr-4 pl-4 shadow-pop backdrop-blur sm:inset-x-4 sm:bottom-4">
           <div className="min-w-0">
             <p className="text-[11px] font-semibold tracking-wide text-brass-700 uppercase">
               {listing.isFeatured ? "Featured home" : "For sale"} in {area.name}
@@ -419,7 +419,7 @@ function FeaturedHome({
           </p>
         </div>
       ) : (
-        <div className="absolute inset-x-3 bottom-3 rounded-2xl bg-white/95 px-4 py-3 text-sm text-ink-soft shadow-pop sm:inset-x-4 sm:bottom-4">
+        <div className="absolute inset-x-3 bottom-3 rounded-2xl bg-surface/95 px-4 py-3 text-sm text-ink-soft shadow-pop sm:inset-x-4 sm:bottom-4">
           {fallback?.text}
         </div>
       )}

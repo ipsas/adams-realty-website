@@ -171,7 +171,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
               {canEdit && (
                 <Link
                   href={`/dashboard/listings/${l.id}`}
-                  className="inline-flex h-10 items-center rounded-full bg-ink px-4 text-sm font-medium text-white hover:bg-ink-soft"
+                  className="inline-flex h-10 items-center rounded-full bg-ink px-4 text-sm font-medium text-on-ink hover:bg-ink-soft"
                 >
                   Edit listing
                 </Link>
@@ -529,7 +529,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
             </div>
             <a
               href="#contact"
-              className="flex h-11 items-center rounded-xl bg-brand-700 px-5 text-sm font-semibold text-white"
+              className="flex h-11 items-center rounded-xl bg-primary px-5 text-sm font-semibold text-white"
             >
               {sold ? "Ask about this home" : "Request a tour"}
             </a>

@@ -66,13 +66,13 @@ export function PhotoGallery({ photos, alt }: { photos: GalleryPhoto[]; alt: str
               sizes={i === 0 ? "(min-width: 768px) 50vw, 100vw" : "25vw"}
               className="size-full transition-transform duration-500 group-hover:scale-[1.03]"
             />
-            <span className="absolute inset-0 bg-ink/0 transition-colors group-hover:bg-ink/10" />
+            <span className="absolute inset-0 bg-shade/0 transition-colors group-hover:bg-shade/10" />
           </button>
         ))}
         <button
           type="button"
           onClick={() => setOpen(0)}
-          className="absolute right-4 bottom-4 flex items-center gap-2 rounded-full bg-white/95 px-4 py-2 text-sm font-semibold text-ink shadow-card backdrop-blur hover:bg-white"
+          className="absolute right-4 bottom-4 flex items-center gap-2 rounded-full bg-surface/95 px-4 py-2 text-sm font-semibold text-ink shadow-card backdrop-blur hover:bg-surface"
         >
           <Grid2x2 className="size-4" />
           {photos.length} photos
@@ -82,7 +82,7 @@ export function PhotoGallery({ photos, alt }: { photos: GalleryPhoto[]; alt: str
       <dialog
         ref={dialog}
         onClose={() => setOpen(null)}
-        className="m-0 h-dvh max-h-none w-screen max-w-none bg-ink/95 p-0 text-white backdrop:bg-transparent"
+        className="m-0 h-dvh max-h-none w-screen max-w-none bg-shade/95 p-0 text-white backdrop:bg-transparent"
       >
         {open !== null && (
           <div

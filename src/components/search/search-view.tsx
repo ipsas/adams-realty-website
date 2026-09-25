@@ -212,7 +212,7 @@ export function SearchView({
             </div>
           </div>
           {pins.length >= maxPins && (
-            <p className="absolute bottom-8 left-1/2 -translate-x-1/2 rounded-full bg-ink/80 px-4 py-2 text-xs text-white shadow">
+            <p className="absolute bottom-8 left-1/2 -translate-x-1/2 rounded-full bg-shade/80 px-4 py-2 text-xs text-white shadow">
               Showing the first {maxPins} of {formatNumber(total)} — zoom in to see more
             </p>
           )}

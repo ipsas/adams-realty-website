@@ -208,7 +208,8 @@ storage keys) and marks what is reserved for which work package.
 ## Themes
 
 Dark mode is being built in steps (docs/plans/dark-mode-and-georgia.md, "DM");
-DM1, the mechanism, is in place.
+DM1 (the mechanism) and DM2 (the class renames) are in place; the switch and
+the dark map style come next.
 
 - **Three appearances.** Match my device (the default) is no `data-theme` on
   `<html>`; Light and Dark set `data-theme="light|dark"`. The choice is stored in
@@ -232,6 +233,22 @@ DM1, the mechanism, is in place.
   viewport's `themeColor` pair covers Match my device. `<ThemeSync>` re-applies the
   stored choice after hydration (React's dev remount clears the attribute), and
   follows other tabs and pages restored from the back/forward cache.
+- **Class rules** (enforced by `src/lib/theme-guard.test.ts`):
+  - Overlays on photos, maps and the lightbox use `shade` (`bg-shade/80`,
+    `from-shade/80`), never `ink`, which turns light in dark mode. A faint hover
+    tint such as `hover:bg-ink/5` follows the theme on purpose.
+  - Labels on a solid `bg-ink` use `text-on-ink`, not `text-white`.
+  - Chips and buttons that sit on photos use `bg-surface` (`/90`, `/95`), not
+    `bg-white`. White in both themes only where the guard allows it: the switch
+    knob, carousel dots and the inverse button (`bg-white text-shade`, for brand
+    panels).
+  - The primary fill is `bg-primary hover:bg-primary-hover`; brand-700/800 stay
+    for the fixed brand panels, photo frames and gradients.
+  - No hex colours in class names: add a token. Map pins, clusters and price
+    pills are the same in both themes and live in `MAP_OVERLAY_COLORS`
+    (`search-map.tsx`).
+  - `fill-*` utilities have no per-utility namespace: an icon whose fill must
+    match its text colour uses `fill-current`.
 - **Client helpers** (`src/lib/theme.ts`, client components only):
   `readThemePref`/`writeThemePref`, `applyTheme`, `setChromeColor` (for WP2's hero)
   and `watchTheme`; hooks `useThemePref`/`useResolvedTheme` in

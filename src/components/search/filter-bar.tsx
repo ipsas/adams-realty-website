@@ -146,7 +146,7 @@ export function FilterBar({
             <SlidersHorizontal className="size-4" />
             More
             {extra > 0 && (
-              <span className="flex size-5 items-center justify-center rounded-full bg-brand-700 text-[11px] text-white">
+              <span className="flex size-5 items-center justify-center rounded-full bg-primary text-[11px] text-white">
                 {extra}
               </span>
             )}
@@ -184,7 +184,7 @@ function ModeToggle({ mode, onChange }: { mode: SearchMode; onChange: (m: Search
           onClick={() => mode !== m.value && onChange(m.value)}
           className={cn(
             "rounded-full px-3 text-sm font-medium whitespace-nowrap transition-colors",
-            mode === m.value ? "bg-ink text-white" : "text-ink-soft hover:text-ink",
+            mode === m.value ? "bg-ink text-on-ink" : "text-ink-soft hover:text-ink",
           )}
         >
           {m.label}
@@ -274,7 +274,7 @@ function ChipGroup<T extends number | undefined>({
             onClick={() => onChange(o)}
             className={cn(
               "h-10 min-w-12 flex-1 border-l border-line-strong px-2 text-sm font-medium first:border-l-0",
-              value === o ? "bg-ink text-white" : "text-ink-soft hover:bg-sunken",
+              value === o ? "bg-ink text-on-ink" : "text-ink-soft hover:bg-sunken",
             )}
           >
             {format(o)}

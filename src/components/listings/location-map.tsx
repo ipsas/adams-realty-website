@@ -31,12 +31,12 @@ export default function LocationMap({
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     const el = document.createElement("div");
     el.className =
-      "flex size-11 items-center justify-center rounded-full bg-brand-700 text-white shadow-lift ring-4 ring-white";
+      "flex size-11 items-center justify-center rounded-full bg-primary text-white shadow-lift ring-4 ring-white";
     el.setAttribute("aria-label", label);
     el.innerHTML =
       '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>';
     new maplibregl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map);
     return () => map.remove();
   }, [lat, lng, label]);
-  return <div ref={ref} className="size-full bg-[#eef0ec]" />;
+  return <div ref={ref} className="size-full bg-map" />;
 }

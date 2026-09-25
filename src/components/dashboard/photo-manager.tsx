@@ -279,7 +279,7 @@ export function PhotoManager({
                   <span
                     className={cn(
                       "absolute top-2 left-2 rounded-full px-2.5 py-1 text-xs font-semibold shadow-sm",
-                      i === 0 ? "bg-brand-700 text-white" : "bg-white/90 text-ink tabular",
+                      i === 0 ? "bg-primary text-white" : "bg-surface/90 text-ink tabular",
                     )}
                   >
                     {i === 0 ? "Cover" : i + 1}
@@ -291,7 +291,7 @@ export function PhotoManager({
                     aria-label={`Remove ${label(i)}`}
                     title="Remove photo"
                     // The white ring fills the outline's offset so it reads on dark photos too.
-                    className="absolute top-1.5 right-1.5 inline-flex size-10 items-center justify-center rounded-full bg-white/90 text-ink-soft shadow-sm transition-colors hover:bg-white hover:text-clay-600 focus-visible:ring-2 focus-visible:ring-white"
+                    className="absolute top-1.5 right-1.5 inline-flex size-10 items-center justify-center rounded-full bg-surface/90 text-ink-soft shadow-sm transition-colors hover:bg-surface hover:text-clay-600 focus-visible:ring-2 focus-visible:ring-white"
                   >
                     <X className="size-4" />
                   </button>

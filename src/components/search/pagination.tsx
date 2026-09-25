@@ -49,7 +49,7 @@ export function Pagination({
             type="button"
             aria-current={p === page ? "page" : undefined}
             onClick={() => onPage(p)}
-            className={cn(btn, p === page ? "bg-ink text-white" : "text-ink-soft hover:bg-sunken")}
+            className={cn(btn, p === page ? "bg-ink text-on-ink" : "text-ink-soft hover:bg-sunken")}
           >
             {p}
           </button>

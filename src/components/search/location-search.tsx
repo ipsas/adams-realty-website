@@ -154,7 +154,7 @@ export function LocationSearch({
         <button
           type="submit"
           className={cn(
-            "flex shrink-0 items-center justify-center gap-2 rounded-xl bg-brand-700 font-semibold text-white transition-colors hover:bg-brand-800",
+            "flex shrink-0 items-center justify-center gap-2 rounded-xl bg-primary font-semibold text-white transition-colors hover:bg-primary-hover",
             lg ? "h-12 px-6 text-base" : "size-8 rounded-full",
           )}
           aria-label="Search"

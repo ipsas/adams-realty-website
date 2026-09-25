@@ -481,7 +481,7 @@ function AgentFields({
                 className="size-full text-5xl"
               />
               {admin && !isActive && (
-                <span className="absolute top-3 left-3 rounded-full bg-ink/80 px-2.5 py-1 text-xs font-medium text-white">
+                <span className="absolute top-3 left-3 rounded-full bg-shade/80 px-2.5 py-1 text-xs font-medium text-white">
                   Hidden
                 </span>
               )}

@@ -41,9 +41,9 @@ export default async function HomePage() {
           priority
           sizes="100vw"
           className="absolute inset-0 -z-20 size-full"
-          fallbackClassName="from-brand-800 via-brand-900 to-ink [&>svg]:hidden"
+          fallbackClassName="from-brand-800 via-brand-900 to-shade [&>svg]:hidden"
         />
-        <div className="absolute inset-0 -z-10 bg-gradient-to-t from-ink/85 via-ink/35 to-ink/40" />
+        <div className="absolute inset-0 -z-10 bg-gradient-to-t from-shade/85 via-shade/35 to-shade/40" />
         <Container className="pt-36 pb-10 sm:pb-14">
           <p className="mb-5 flex items-center gap-2 text-xs font-semibold tracking-[0.22em] text-white/75 uppercase">
             <span className="h-px w-8 bg-brass-400" />
@@ -96,7 +96,7 @@ export default async function HomePage() {
               <Link
                 key={s.label}
                 href={s.href}
-                className="group bg-ink/25 px-5 py-4 transition-colors hover:bg-ink/40"
+                className="group bg-shade/25 px-5 py-4 transition-colors hover:bg-shade/40"
               >
                 <dt className="text-xs text-white/65">{s.label}</dt>
                 <dd className="mt-1 flex items-center gap-2 text-2xl font-semibold text-white tabular">
@@ -205,7 +205,7 @@ export default async function HomePage() {
                   className="absolute inset-0 -z-20 size-full transition-transform duration-700 group-hover:scale-105"
                   fallbackClassName="from-brand-600 via-brand-700 to-brand-900 text-brand-500"
                 />
-                <div className="absolute inset-0 -z-10 bg-gradient-to-t from-ink/80 via-ink/10 to-transparent" />
+                <div className="absolute inset-0 -z-10 bg-gradient-to-t from-shade/80 via-shade/10 to-transparent" />
                 <div className="absolute inset-x-0 bottom-0 p-5 text-white">
                   <p
                     className={`font-display-tight font-medium ${i === 0 ? "text-3xl" : "text-xl"}`}

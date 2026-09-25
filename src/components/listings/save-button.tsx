@@ -45,7 +45,7 @@ export function SaveButton({
       className={cn(
         "group/save inline-flex items-center justify-center gap-2 transition-all active:scale-90",
         variant === "overlay" &&
-          "size-10 rounded-full bg-white/90 text-ink shadow-sm backdrop-blur hover:scale-105 hover:bg-white pointer-coarse:size-11",
+          "size-10 rounded-full bg-surface/90 text-ink shadow-sm backdrop-blur hover:scale-105 hover:bg-surface pointer-coarse:size-11",
         variant === "outline" &&
           "h-10 rounded-full border border-line-strong bg-surface px-4 text-sm font-medium text-ink hover:bg-sunken pointer-coarse:h-11",
         variant === "plain" &&
@@ -57,7 +57,7 @@ export function SaveButton({
         className={cn(
           "transition-colors",
           variant === "plain" ? "size-5" : "size-[18px]",
-          saved ? "fill-clay-500 text-clay-500" : "text-ink group-hover/save:text-clay-500",
+          saved ? "fill-current text-clay-500" : "text-ink group-hover/save:text-clay-500",
         )}
         strokeWidth={2}
       />

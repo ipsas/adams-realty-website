@@ -30,7 +30,7 @@ export function AuthShell({
           className="absolute inset-0 size-full"
           fallbackClassName="from-brand-700 via-brand-800 to-brand-900 [&>svg]:hidden"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-ink/70 via-transparent to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-shade/70 via-transparent to-transparent" />
         <blockquote className="absolute inset-x-10 bottom-10 text-white">
           <p className="font-display-tight text-3xl leading-snug font-light">
             “Save homes, get an email when something new fits, and keep every favorite in one

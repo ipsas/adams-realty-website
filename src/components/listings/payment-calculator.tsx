@@ -7,7 +7,7 @@ import { formatPrice } from "@/lib/format";
 import { estimateMonthlyCost } from "@/lib/mortgage";
 
 const SEGMENTS = [
-  { key: "principalAndInterest", label: "Principal & interest", color: "bg-brand-700" },
+  { key: "principalAndInterest", label: "Principal & interest", color: "bg-primary" },
   { key: "taxes", label: "Property taxes", color: "bg-brand-400" },
   { key: "insurance", label: "Home insurance", color: "bg-brass-400" },
   { key: "hoa", label: "HOA dues", color: "bg-clay-500" },

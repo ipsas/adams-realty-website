@@ -182,7 +182,7 @@ function ToastCard({ item }: { item: ToastItem }) {
       onBlur={toastStore.resume}
       className={cn(
         "pointer-events-auto flex min-h-12 w-full max-w-md animate-rise items-center gap-2 rounded-2xl py-1 pr-1 pl-4 text-sm font-medium text-white shadow-pop",
-        item.tone === "error" ? "bg-clay-600" : "bg-ink",
+        item.tone === "error" ? "bg-clay-600" : "bg-shade dark:ring-1 dark:ring-white/10",
       )}
     >
       <p className="min-w-0 flex-1 py-2">{item.message}</p>
