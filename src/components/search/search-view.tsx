@@ -96,7 +96,7 @@ export function SearchView({
               <div>
                 <h1 className="font-display-tight text-2xl font-medium text-ink">
                   {noun.charAt(0).toUpperCase() + noun.slice(1)} in{" "}
-                  {criteria.q ?? (criteria.bounds ? "this area" : site.market.region)}
+                  {criteria.q ?? (criteria.bounds ? "this area" : site.coverage.name)}
                 </h1>
                 <p className="mt-0.5 text-sm text-muted" aria-live="polite">
                   {formatNumber(total)} {total === 1 ? "result" : "results"}

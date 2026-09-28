@@ -2,7 +2,8 @@
 
 This document explains how the Adams Realty site is put together and why. Read
 it before changing listing data, search, accounts or permissions. The firm is in
-Royston and serves Northeast Georgia; its listings feed comes from Georgia MLS.
+Royston and serves Northeast Georgia; its listings come from Georgia MLS and cover all
+of Georgia (see "Coverage and the firm's area").
 
 ```
 Browser ──► Next.js (App Router, React Server Components)
@@ -32,7 +33,7 @@ Browser ──► Next.js (App Router, React Server Components)
 | `src/lib/pwa/`        | Service worker protocol and per-user cache purge (shared by the page and the future worker)                                                                                                                                                         |
 | `src/lib/auth/`       | Better Auth config, session helpers, **permissions policy**                                                                                                                                                                                         |
 | `src/server/actions/` | Server actions — every one authorizes via the policy                                                                                                                                                                                                |
-| `src/config/site.ts`  | Brand, firm contact details, Georgia MLS office, market (Northeast Georgia), finance defaults, legal links                                                                                                                                          |
+| `src/config/site.ts`  | Brand, firm contact details, Georgia MLS office, listing `coverage` (Georgia) and the firm's `market` (Northeast Georgia), finance defaults with regional overrides, legal links                                                                    |
 | `docs/`               | `mobile-spec/` (the phone and PWA design, by work package) and `mobile-contracts.md` (what the built foundation guarantees)                                                                                                                         |
 | `scripts/`            | Seed data (Andrea Anderegg's real profile; fictional agents and listings: Adams in Northeast Georgia, others statewide; `dev/` pool generator), CLI sync, `perf/` scale harness (`adams_perf`, search timings and sync bench), MapLibre worker copy |
 
@@ -148,6 +149,45 @@ Adding a non-RESO feed means implementing `ListingProvider` (`src/lib/mls/types.
   about 0.1 ms, its count about 5 ms). The rest of the app depends only on `searchListings` and
   `searchMapPins`, so swapping in Typesense or OpenSearch later is contained.
 
+## Coverage and the firm's area
+
+Listings cover all of Georgia; statements about the firm stay true to Northeast Georgia.
+`src/config/site.ts` keeps the two apart:
+
+- **`site.coverage`** (name "Georgia", the state's bounds) is what the listings cover. Search
+  titles and headings ("Homes for sale in Georgia"), the root title, SEO copy about listings
+  and the search map's first view use it.
+- **`site.market`** (region "Northeast Georgia", the seven counties, their bounds, the time
+  zone) is the firm. About, sell, agents, contact, the area guides and every "our agents"
+  sentence use it, never `coverage`.
+- **The firm's area** is `isFirmArea` (`src/lib/areas/firm-area.ts`, SQL twin
+  `firmAreaCondition`): the listing's county is one of `site.market.counties`, or the
+  listing belongs to an area guide inside that guide's counties (Lake Lanier homes in
+  Forsyth, Braselton in Barrow). County-scoped, never by name alone, and false without a
+  county. `offersTours` adds the firm's own listings anywhere.
+  - Listing pages outside it offer "Ask a question" only (no tour tab, no in-person option,
+    the phone CTA says the same) and say Adams Realty works mainly in Northeast Georgia.
+    `createInquiry` turns a tour request for such a home into a question (`withoutTour`),
+    it goes to the office inbox, and the reply names the office, not a local agent.
+  - The home page's "Handpicked by our agents" takes only the firm's listings and firm-area
+    homes, and is hidden when fewer than 4 qualify (`FEATURED_MIN`).
+- **Towns are data, never a list in code.** The home page's town chips (up to 12, one
+  swipeable row on phones) and the footer's Places column (6) are `getTopCities`, the
+  cities with the most homes for sale; "See all towns" opens `/places`, every city with
+  homes for sale grouped by county (`getPlacesIndex`, shaped by `placesIndexView`), the
+  firm's counties marked. The seed checks that each chip's search finds its homes.
+- **Map default view:** the search's bounds, else its pins, else `site.coverage.bounds`,
+  always as a fit (no fixed center or zoom). On phones the map starts hidden (0×0), so a fit
+  asked for then waits until the map is first shown (`pendingFit` in `search-map.tsx`).
+- **Saved searches from the regional era:** `drizzle/0009` pins every saved search with no
+  location (or just "Georgia"/"GA") to `site.market.bounds`, so its alerts don't widen to the
+  whole state. It runs once, at the deploy that ships it (HANDOFF.md section 6, cutover order).
+- **Payment estimates** use `financeFor(county)` (`src/lib/mortgage.ts`): the statewide
+  defaults plus `site.finance.regions` (coastal insurance for Chatham, Glynn, Camden,
+  Liberty, Bryan and McIntosh; a higher property-tax fallback for the metro and city-county
+  governments). The home page never mentions monthly costs (owner decision); listing pages
+  keep their estimate.
+
 ## Accounts and permissions
 
 - **Better Auth** handles sessions (httpOnly cookies, 5-minute signed cookie cache), email/password with reset, and optional Google sign-in. `role` is an additional user field that cannot be set at sign-up (`input: false`).
@@ -170,8 +210,9 @@ Adding a non-RESO feed means implementing `ListingProvider` (`src/lib/mls/types.
 Tour requests, questions and valuations go through one server action
 (`createInquiry`). It validates with zod, has a honeypot field and a per-IP rate
 limit, and routes to the listing agent, the chosen agent, or the brokerage inbox
-(unassigned, for an admin to route). The lead is saved first; the email
-notification is best-effort. Leads are never shared outside the company.
+(unassigned, for an admin to route). Homes outside the firm's area take questions only,
+answered by the office (see "Coverage and the firm's area"). The lead is saved first; the
+email notification is best-effort. Leads are never shared outside the company.
 
 ## Frontend
 
@@ -181,15 +222,15 @@ notification is best-effort. Leads are never shared outside the company.
 - **SEO:**
   - Metadata per page.
   - `RealEstateListing` JSON-LD on property pages.
-  - Sitemaps: `sitemap.xml` (pages, agents), `areas/sitemap.xml`, and the listings in 12 fixed
+  - Sitemaps: `sitemap.xml` (pages including `/places`, agents), `areas/sitemap.xml`, and the listings in 12 fixed
     chunks of up to 10,000 URLs at `/homes/sitemap/<id>.xml` (120k capacity; Georgia MLS has
     about 53k live). The chunk count is a constant, so `robots.txt` lists every chunk and no
     build needs a database (`sitemap-build.test.ts` fails if a sitemap or robots imports it).
   - Canonical URLs for searches.
   - `noindex` on map-bounded and paginated search variants.
 - **Caching:** listing-derived data that only changes with the listings (home page stats,
-  popular towns and featured homes, area guide stats, and GA-A's top cities and places
-  index) goes through `src/lib/listings/cached.ts`: `unstable_cache` with the `listings`
+  popular towns and featured homes, area guide stats, the top cities behind the home page
+  chips and footer, and the `/places` index) goes through `src/lib/listings/cached.ts`: `unstable_cache` with the `listings`
   tag and a 15-minute backstop (the project doesn't use Cache Components). The cron sync
   revalidates the tag; dashboard listing and open-house actions `updateTag` it. Skipped
   outside production, so `npm run db:reset` under a dev server shows the new data at once.
@@ -379,7 +420,9 @@ must keep.
   scheduling.
 - **End-to-end (Playwright, `e2e/`):** public pages (desktop and mobile),
   accounts, saving, tour requests, dashboard permissions, admin listing
-  creation. Runs against a seeded database.
+  creation, the statewide feed (`statewide.spec.ts`), and GA-A's coverage copy, towns,
+  places index, out-of-area questions and map view (`georgia.spec.ts`,
+  `mobile/georgia-map.spec.ts`). Runs against a seeded database.
 - **Phones (`e2e/mobile/`):** the `pixel7` and `iphone13` projects run every
   spec there; `iphone13-landscape` and `ipad-mini` run `sweep` and
   `*landscape*` specs plus tests tagged `@landscape`. The `desktop` project

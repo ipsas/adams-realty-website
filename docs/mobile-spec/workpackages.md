@@ -5,6 +5,14 @@ Dark mode landed before the packages (docs/plans/dark-mode-and-georgia.md, "DM")
 - New UI follows the theme contract in docs/mobile-contracts.md ("Themes"): theme tokens, `shade` for overlays on photos and maps, `bg-surface` for chips on photos, `text-on-ink` on a solid `bg-ink`, `bg-primary` for the primary fill, no hex colours in class names. `src/lib/theme-guard.test.ts` stays green.
 - Every page a package adds or redesigns joins the dark axe matrix in `e2e/theme-suite.ts` (`DARK_AXE_PAGES` and `DARK_AXE_PHONE_PAGES`, with the role that sees it): with Dark forced, `expectNoSeriousAxe` reports 0 color-contrast violations (never allowlisted) and no un-allowlisted serious or critical finding, on desktop, pixel7 and iphone13.
 - A package's own axe checks (the sweeps below) run in light and again with Dark forced.
+
+## Every package: all of Georgia
+
+GA-A (docs/plans/dark-mode-and-georgia.md; ARCHITECTURE.md "Coverage and the firm's area") also landed first. Listings cover all of Georgia; the firm is Northeast Georgia. Every package keeps these:
+
+- Copy about listings uses `site.coverage`; copy about the firm (our agents, tours, the office) uses `site.market`. No town list in code: towns come from `getCachedTopCities` / `getCachedPlacesIndex`.
+- Tours, "see it with a local expert" and "our agents know this home" appear only where `offersTours(listing)` is true (the firm's own listings and `isFirmArea`, county-scoped). Elsewhere a listing offers "Ask a question", answered by the office. The home page never says "monthly cost(s)" (owner decision); listing pages keep their estimate.
+- `e2e/georgia.spec.ts` and `e2e/mobile/georgia-map.spec.ts` pass.
 - `e2e/theme.spec.ts`, `e2e/mobile/theme.spec.ts` and `e2e/theme-light-regression.spec.ts` pass. A package that changes a light page on purpose updates that page's baseline in the same commit and says so.
 
 ## WP1 Installable app and saved homes that work offline (PWA shell, SW, install coach, /saved redesign, notes)
@@ -120,6 +128,10 @@ DARK MODE (hand-off from DM):
 - Decide `appleWebApp.statusBarStyle` here (today `"default"` in layout.tsx, so an installed iOS app draws a light status bar even in dark mode). `black-translucent` plus the safe-area padding the header already has is the likely answer; test it under both schemes in standalone mode.
 - Manifest icons are unaffected. /saved and /offline join the dark axe matrix.
 
+ALL OF GEORGIA (hand-off from GA-A):
+
+- WP1 owns `src/lib/listings/queries.ts`: keep `getFeaturedListings`' firm filter (`firmAreaCondition` or company listing), `FEATURED_MIN`, `getTopCities` and `getPlacesIndex` as they are (the seed and `featured.db.test.ts` check them).
+
 ## WP2 App shell: tab bar, mobile header and menu, save-through-sign-in, auth polish, home page and owned-page sweep
 
 features: ['F06', 'F07', 'F08', 'F09', 'F10', 'F49', 'F40', 'F47', 'F34', 'F36']
@@ -172,7 +184,7 @@ STEPS:
 - src/app/(site)/page.tsx (P1):
 - In the phone variant, shorten the hero (min-h-[78svh] sm:min-h-[92svh]) and make the Popular chips h-11.
 - Put <ReturningVisitor /> right after the hero: a 'Continue your search' card from lastSearch, and a 'Recently viewed' SnapRow of snapshot tiles. Tiles are not article elements and each shows 'Listing by <office>'. Render nothing when there is no local data.
-- snap-row.tsx: below sm, 'flex snap-x snap-mandatory overflow-x-auto overscroll-x-contain scrollbar-none -mx-4 px-4 gap-4 [&>*]:w-[82%] [&>*]:shrink-0 [&>*]:snap-start'; the existing grid from sm up. Use it for Featured, New on the market, Neighborhoods and Agents.
+- snap-row.tsx: below sm, 'flex snap-x snap-mandatory overflow-x-auto overscroll-x-contain scrollbar-none -mx-4 px-4 gap-4 [&>_]:w-[82%] [&>_]:shrink-0 [&>*]:snap-start'; the existing grid from sm up. Use it for Featured, New on the market, Neighborhoods and Agents.
 - Hide marketing-only paragraphs below sm.
 - theme-color-sync.tsx (F49).
 - Keep the h1 text and the ListingCard articles. Never add transform, filter or will-change to the hero; the foundation neutralizes isolate during full-screen search.
@@ -232,6 +244,14 @@ DARK MODE (hand-off from DM):
 - F49's `theme-color-sync.tsx` calls `setChromeColor("#0f2a20")` while the hero is in view and `setChromeColor(null)` afterwards and on unmount; it never writes meta tags itself. The F49 acceptance below reads "the resolved canvas colour" (#fbfaf7 in light, #0f1412 in dark), tested under both colour schemes.
 - Keep the `on-ink`, `surface` and `shade` classes the dark-mode renames put in the header, home page, auth shell, area pages and cards.
 - The owned-page sweep (content.spec) and home.spec run axe with Dark forced too.
+
+ALL OF GEORGIA (hand-off from GA-A):
+
+- Home page (`(site)/page.tsx`): the hero label is "All of Georgia"; the town chips are `getCachedTopCities(12)` in one swipeable row on phones (`[data-top-cities]`), ending with "See all towns" → `/places`. A redesign (snap-row) keeps them data-driven and keeps the link.
+- "Handpicked by our agents" renders only with `FEATURED_MIN` (4) or more homes and shows only what `getCachedFeaturedListings` returns. No "monthly cost" wording anywhere on the home page, including returning-visitor rows.
+- Footer (`site-footer.tsx`, an async server component): the Places column is `getCachedTopCities(6)` plus "All towns" and "Area guides"; its blurb keeps "across Georgia, with agents serving Northeast Georgia" and the no-ads/never-sell sentence word for word. The light regression masks its town links (`[data-footer-column='Places']`).
+- `/places` (the statewide places index, `src/app/(site)/places/page.tsx`) joins WP2's owned-page sweep; it is already in the dark axe matrix.
+- Contact and about copy: the office "assigns one of our agents"; NEXT_STEPS never claims local knowledge statewide.
 
 ## WP3 Search map and results sheet: detents, pin strip, restoration, relaunch, map fixes, cards with all-in monthly, freshness footer
 
@@ -332,6 +352,12 @@ DARK MODE (hand-off from DM):
 - The results sheet, pin strip and cards follow the tokens; the sheet's handle and scrim use `shade`.
 - /homes stays in the dark axe matrix; the theme map tests (pins drawn after each swap, no light style requested on a dark page, no console warnings) pass.
 
+ALL OF GEORGIA (hand-off from GA-A):
+
+- search-map.tsx: the first view is `initialView(bounds, pins)`: the search's bounds, else its pins, else `site.coverage.bounds` (padding 24), always a fit. Keep `pendingFit`: a fit asked for while the map is hidden (0×0 behind the list on phones) runs when it is first shown. The sheet's detents change when the map is visible; `e2e/mobile/georgia-map.spec.ts` must keep passing (the map opens snug on the search).
+- search-view.tsx: the heading falls back to `site.coverage.name` ("Homes for sale in Georgia"). homes/page.tsx: titles per mode say Georgia ("Recently sold homes in Georgia" for sold), and the description never says "local agents".
+- Cards with an all-in monthly (F13): use `financeFor(county)` so coastal insurance and the metro tax fallback match the listing page (`quickMonthlyCost` takes a model built from it).
+
 ## WP4 Search input and filters: compact bar, full-screen search, filters sheet with live count, near me, keywords and wider autocomplete
 
 features: ['F18', 'F19', 'F20', 'F21', 'F43', 'F34', 'F36']
@@ -347,7 +373,7 @@ STEPS:
 - fullscreenOnMobile (default true): in the phone variant, onFocus sets the data-search-fullscreen attribute on the <form>, with classes 'fixed inset-0 z-[60] bg-canvas pt-safe pl-safe-4 pr-safe-4 flex flex-col'. The same <input> stays mounted.
 - A 44px Cancel button.
 - The listbox is static, fills the rest of the panel and uses overscroll-contain.
-- With an empty term, render <SearchSuggestionsPanel>: optional mode chips, 'Use my location' via NearMeButton, readRecentSearches() and site.featuredAreas.
+- With an empty term, render <SearchSuggestionsPanel>: optional mode chips, 'Use my location' via NearMeButton, readRecentSearches() and the busiest towns (getCachedTopCities, passed down from the server; site.featuredAreas no longer exists).
 - Escape or Cancel exits.
 - Keep role=combobox and the label 'Search by location'.
 - Never put transform, filter or will-change on the form's own wrappers.
@@ -435,6 +461,11 @@ ACCEPTANCE:
 DARK MODE (hand-off from DM):
 
 - The compact bar, full-screen search and the filters sheet follow the tokens; the full-screen panel and its suggestions use `bg-canvas`/`bg-surface`, never `bg-white`. The rules in "Every package: dark mode" apply.
+
+ALL OF GEORGIA (hand-off from GA-A):
+
+- Saved searches: `drizzle/0009` pinned pre-cutover searches with no location to `site.market.bounds`. A bare "Georgia"/"GA" still means no location in the parser; don't make it mean the firm's area.
+- `inGeorgia` may prefilter with `site.coverage.bounds`.
 
 ## WP5 Listing page, photo viewer, action bar, tour sheet, lazy map and listing context
 
@@ -559,6 +590,11 @@ DARK MODE (hand-off from DM):
 
 - location-map.tsx and location-map-lazy.tsx (WP5, not WP3): keep the map theme (`useMapTheme()`: the resolved theme, light while printing) in the map effect's dependencies and call `markDrawnStyle` on each new map (print CSS keys off it), so a theme change rebuilds the map on `mapStyleUrl(theme)`, and create it on the current theme. The lazy wrapper's placeholder uses `bg-map`, and mounting it must not request the light style on a dark page (e2e/theme.spec.ts checks the listing's map).
 - The photo viewer, action bar and tour sheet use `shade` for photo overlays and the tokens elsewhere. The listing page stays in the dark axe matrix, with the tour sheet open too.
+
+ALL OF GEORGIA (hand-off from GA-A):
+
+- The tour sheet exists only where `offersTours(listing)` is true (the firm's own listings, or `isFirmArea`). Elsewhere the action bar's primary action and the contact choice sheet say "Ask a question", the page keeps the "works mainly in Northeast Georgia" note, and there is no in-person option. `createInquiry` already turns a stray tour request into a question (`withoutTour`) and the reply names the office (`inquiryReply`).
+- payment-calculator.tsx takes `insuranceRatePct` and `taxRatePct` from `financeFor(l.county)`; keep passing them (coastal insurance, metro tax fallback) and keep its note that flood cover isn't included.
 
 ## WP6 Staff on phones: lead cards and reliable lead controls (P0), dashboard shell and #10 staff pages (P1)
 

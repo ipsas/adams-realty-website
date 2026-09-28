@@ -82,6 +82,47 @@ export type FinanceDefaults = {
   propertyTaxRatePct: number;
 };
 
+const countyKey = (county: string) =>
+  county
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/ county$/, "");
+
+/**
+ * The finance defaults for a listing's county: the statewide defaults with
+ * `site.finance.regions`' insurance and tax fallbacks applied (a Savannah home
+ * gets coastal insurance, an Atlanta home the metro tax fallback). Unknown or
+ * missing counties get the statewide defaults. "Chatham County" and "CHATHAM"
+ * both match "Chatham".
+ */
+export function financeFor(
+  county: string | null | undefined,
+  finance: FinanceDefaults & {
+    regions: readonly {
+      counties: readonly string[];
+      insuranceRatePct?: number;
+      propertyTaxRatePct?: number;
+    }[];
+  } = site.finance,
+): FinanceDefaults {
+  const out: FinanceDefaults = {
+    interestRate: finance.interestRate,
+    downPaymentPct: finance.downPaymentPct,
+    loanTermYears: finance.loanTermYears,
+    insuranceRatePct: finance.insuranceRatePct,
+    propertyTaxRatePct: finance.propertyTaxRatePct,
+  };
+  if (!county) return out;
+  const key = countyKey(county);
+  for (const r of finance.regions) {
+    if (!r.counties.some((c) => countyKey(c) === key)) continue;
+    if (r.insuranceRatePct !== undefined) out.insuranceRatePct = r.insuranceRatePct;
+    if (r.propertyTaxRatePct !== undefined) out.propertyTaxRatePct = r.propertyTaxRatePct;
+  }
+  return out;
+}
+
 /**
  * Linear coefficients of the all-in monthly cost, per dollar of price, under
  * fixed finance defaults. Monthly cost = price × (piPerDollar +

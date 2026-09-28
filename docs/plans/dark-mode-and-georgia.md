@@ -484,6 +484,18 @@ Measured on 65,000 synthetic statewide listings (Postgres 16, local, warm cache)
 
 ### GA-A — Config, copy, map default view
 
+**As built (2026-09-28).** The owner decisions and review corrections above replaced parts of the steps below:
+
+- No `featuredAreas`. The hero chips are `getCachedTopCities(12)` (one swipeable row on phones) plus "See all towns" → `/places`, the statewide index by county (`getCachedPlacesIndex`, `placesIndexView`). The footer's column is "Places": the top 6 cities, "All towns" and "Area guides". The seed asserts more than 5 chips and that each chip's search finds its homes.
+- Copy: the hero lead is "Homes, land, farms and lake property across Georgia, updated directly from Georgia MLS. Agents who actually pick up the phone." (no "Honest monthly costs"; the home page never says monthly cost). `site.description` keeps "the true cost of owning each home, and no ads." The /homes description is "Browse {title} from Georgia MLS, with the true cost of owning each home and no ads." The Difference card says "One inquiry reaches one Adams Realty agent"; "We never sell your details." is unchanged.
+- `site.market` also carries `bounds` (the seven counties' extent, Census TIGERweb) for the saved-search cutover.
+- Firm truth: `isFirmArea` is county-scoped and false without a county; `offersTours` = the firm's own listing or `isFirmArea`. Outside it the sidebar heading is "Ask a question" with "Adams Realty is based in Royston and works mainly in Northeast Georgia. Send us your question about this home and our office will get back to you.", the form has no tour tab, the phone CTA says "Ask a question", `createInquiry` turns a tour request into a question (`withoutTour`), and the reply is "Thanks, {name}! Your question went to the Adams Realty office, and we'll get back to you soon." Inside, replies say "An Adams agent" (no "local"). Contact NEXT_STEPS: "Someone suited to what you need."
+- Featured: `getFeaturedListings` keeps company or firm-area listings (`firmAreaCondition`); the section is hidden below `FEATURED_MIN` (4).
+- Saved searches: `drizzle/0009_saved_search_cutover.sql` pins saved searches with no location (or a bare "Georgia"/"GA") to `site.market.bounds`; `saved-search-cutover.db.test.ts`.
+- Payment defaults: `site.finance.regions` + `financeFor(county)`: coastal insurance 1.2% (Chatham, Glynn, Camden, Liberty, Bryan, McIntosh), metro and city-county tax fallback 1.1% (Fulton, DeKalb, Clayton, Cobb, Henry, Douglas, Rockdale, Richmond, Bibb, Muscogee, Chatham, Clarke, Dougherty); the firm's counties keep 0.6% / 0.9%.
+- Map: `initialView` (bounds, else pins, else `site.coverage.bounds` with padding 24), and `pendingFit` so the phone map, created hidden, fits when first shown.
+- Tests: `e2e/georgia.spec.ts`, `e2e/mobile/georgia-map.spec.ts`, `/places` in the dark axe matrix, and unit/db tests for firm-area, places-index, inquiry-reply, mortgage regions, featured and the cutover. The seed-sites radius test (`coverage.test.ts`) landed with GA-B.
+
 1. **`src/config/site.ts`:**
    - Add `coverage: { name: "Georgia", bounds: { west: -85.61, south: 30.35, east: -80.75, north: 35.01 } }`, documented as "What the listings cover: Georgia MLS IDX, statewide."
    - Keep `market` for the firm: `region: "Northeast Georgia"`, plus state, stateName, timeZone and counties, documented as "Copy about the firm uses this, never coverage."
@@ -539,7 +551,7 @@ Measured on 65,000 synthetic statewide listings (Postgres 16, local, warm cache)
   - `mobile-menu.tsx` renders `<AppearanceControl variant="segmented">`.
   - F49's `theme-color-sync.tsx` must use `setChromeColor("#0f2a20")` while the hero is in view and `setChromeColor(null)` afterwards. Change the F49 acceptance from "#fbfaf7" to "the resolved canvas colour", tested under both color schemes.
   - Keep the `on-ink`/`surface`/`shade` classes.
-  - The home hero chips come from `site.featuredAreas`.
+  - The home hero chips come from `getCachedTopCities` (`site.featuredAreas` is gone), with "See all towns" → `/places`; see workpackages.md "Every package: all of Georgia".
 - **WP3:**
   - Keep `installOverlays` on `style.load` and the theme `setStyle`, and keep "pins, else `site.coverage.bounds`" for the first fit.
   - Replace the capped 750 RSC pins with a cacheable map endpoint: grid clusters below about zoom 11 (measured 24 ms and 3 KB statewide) and pins when zoomed in.
@@ -550,7 +562,7 @@ Measured on 65,000 synthetic statewide listings (Postgres 16, local, warm cache)
   - Cap pagination at 40 pages, and evaluate `nextOpenHouse` after the limit.
   - Move suggestions onto a `places` materialized view refreshed after each sync (about 70 ms → under 1 ms per keystroke). _Done in GA-C2:_ `getLocationSuggestions` reads `places` (drizzle/0006), rebuilt by `refreshPlaces` after syncs, seeds and dashboard listing changes; WP4 keeps that contract.
   - `inGeorgia` may prefilter with `site.coverage.bounds`.
-- **WP5:** the tour sheet reuses `isFirmArea` and the out-of-area copy.
+- **WP5:** the tour sheet exists only where `offersTours` is true, and reuses the out-of-area copy, `withoutTour` and `inquiryReply`. The payment calculator keeps `financeFor(county)`'s rates.
 - **WP1:**
   - The manifest's `theme_color` and `background_color` stay #fbfaf7, because the manifest can't vary by scheme.
   - Decide `appleWebApp.statusBarStyle` there.

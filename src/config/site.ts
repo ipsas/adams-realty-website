@@ -13,7 +13,7 @@ export const site = {
   legalName: "Adams Realty, Inc.",
   tagline: "Homes worth coming home to.",
   description:
-    "Homes, land, farms, lake and commercial property for sale across Northeast Georgia, with Adams Realty, Inc. Listings from Georgia MLS, the true cost of owning each home, and no ads.",
+    "Homes, land, farms, lake and commercial property for sale across Georgia, with Adams Realty, Inc. in Royston. Listings from Georgia MLS, the true cost of owning each home, and no ads.",
   phone: "(706) 246-0053",
   /** The firm's public inbox (Andrea's). Also the fallback address for leads when LEADS_INBOX is unset. */
   email: "contracts.adamsrealty@gmail.com",
@@ -34,32 +34,89 @@ export const site = {
    * listings, and `officeId` marks the firm's own listings in that feed.
    */
   mls: { name: "Georgia MLS", officeId: "ADAM01" },
-  /** Default map view and the phrases used in copy ("Homes for sale in Northeast Georgia"). */
+  /**
+   * What the listings cover: Georgia MLS IDX, statewide. Search headings, the
+   * search map's first view and SEO copy about listings use this. Bounds are
+   * the state's extent (Census TIGERweb).
+   */
+  coverage: {
+    name: "Georgia",
+    bounds: { west: -85.61, south: 30.35, east: -80.75, north: 35.01 },
+  },
+  /**
+   * The firm: where Adams Realty works. Copy about the firm (who we are, where
+   * our agents tour homes) uses this, never `coverage`.
+   */
   market: {
-    name: "Northeast Georgia",
     region: "Northeast Georgia",
     state: "GA",
     stateName: "Georgia",
     timeZone: "America/New_York",
-    /** Counties the firm serves, in the order copy lists them. */
+    /**
+     * Counties the firm serves, in the order copy lists them. A listing in one
+     * of these (or in an area guide's county) is in the firm's area: see
+     * src/lib/areas/firm-area.ts.
+     */
     counties: ["Franklin", "Hart", "Madison", "Stephens", "Jackson", "Hall", "Gwinnett"],
-    // Near Commerce: the whole service area, from Gwinnett to Lake Hartwell, fits at this zoom.
-    center: { lng: -83.45, lat: 34.22 },
-    zoom: 8.3,
+    /**
+     * The seven counties' combined extent (Census TIGERweb, rounded outward).
+     * Saved searches with no location made while the site was regional were
+     * pinned to it at the statewide cutover (drizzle/0009).
+     */
+    bounds: { west: -84.28, south: 33.75, east: -82.77, north: 34.69 },
   },
   /** Defaults for the payment calculator. */
   finance: {
     interestRate: 6.25,
     downPaymentPct: 20,
     loanTermYears: 30,
-    /** Annual homeowners insurance as a % of price. */
+    /** Annual homeowners insurance as a % of price (inland Georgia). */
     insuranceRatePct: 0.6,
     /**
      * Fallback property-tax rate when a listing has no tax figure: a rough
-     * middle for the rural and small-town counties the firm serves. Listings
-     * from the MLS usually carry the actual tax amount, which is used instead.
+     * middle for Georgia's small-town and rural counties, the firm's included.
+     * Listings from the MLS usually carry the actual tax amount, which is used
+     * instead.
      */
     propertyTaxRatePct: 0.9,
+    /**
+     * Regional overrides of the two rates above, by county (`financeFor` in
+     * src/lib/mortgage.ts). Rough statewide patterns, not quotes: coastal
+     * homes pay more for wind and storm cover (flood insurance is extra and
+     * not included), and the big metro and city-county governments levy more
+     * than rural counties. A county in several lists takes each list's rate.
+     */
+    regions: [
+      {
+        name: "Coastal Georgia",
+        counties: ["Chatham", "Glynn", "Camden", "Liberty", "Bryan", "McIntosh"],
+        insuranceRatePct: 1.2,
+      },
+      {
+        name: "Metro and city-county property tax",
+        counties: [
+          "Fulton",
+          "DeKalb",
+          "Clayton",
+          "Cobb",
+          "Henry",
+          "Douglas",
+          "Rockdale",
+          "Richmond",
+          "Bibb",
+          "Muscogee",
+          "Chatham",
+          "Clarke",
+          "Dougherty",
+        ],
+        propertyTaxRatePct: 1.1,
+      },
+    ] as {
+      name: string;
+      counties: string[];
+      insuranceRatePct?: number;
+      propertyTaxRatePct?: number;
+    }[],
   },
   social: {
     instagram: "https://instagram.com/",
@@ -68,11 +125,6 @@ export const site = {
   },
   /** Extra consumer-notice links for the footer (some states require them; Georgia doesn't). */
   legalLinks: [] as { label: string; href: string }[],
-  /**
-   * Towns linked from the homepage hero and footer. Each must match seeded or
-   * MLS listings' city or neighborhood so the search link finds homes.
-   */
-  featuredAreas: ["Royston", "Lavonia", "Hartwell", "Commerce", "Toccoa"],
 } as const;
 
 /** The service area as a phrase for copy: "Franklin, Hart, … Hall and Gwinnett counties". */

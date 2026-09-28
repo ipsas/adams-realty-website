@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { cache } from "react";
 import { db } from "@/db";
 import {
@@ -11,6 +11,7 @@ import {
   places,
   savedListings,
 } from "@/db/schema";
+import { firmAreaCondition } from "@/lib/areas/firm-area";
 import { cardColumns, selectCards, withPhotos } from "./card";
 
 const LIVE_STATUSES = ["active", "coming_soon", "active_under_contract", "pending"] as const;
@@ -70,7 +71,16 @@ export const getListingBySlug = cache(async (slug: string) => {
 
 export type ListingDetail = NonNullable<Awaited<ReturnType<typeof getListingBySlug>>>;
 
-/** Homepage row: featured company listings, topped up with the newest ones. */
+/** The home page shows "Handpicked by our agents" only with at least this many homes. */
+export const FEATURED_MIN = 4;
+
+/**
+ * Home page "Handpicked by our agents": featured and company listings first,
+ * topped up with the newest homes. Only the firm's own listings and homes in
+ * its area qualify (`firmAreaCondition`), so a statewide feed never puts
+ * another brokerage's Savannah home under our agents' name. The home page
+ * hides the section when fewer than FEATURED_MIN qualify.
+ */
 export async function getFeaturedListings(limit = 8) {
   const rows = await selectCards(db)
     .where(
@@ -78,6 +88,7 @@ export async function getFeaturedListings(limit = 8) {
         isNull(listings.removedAt),
         eq(listings.status, "active"),
         eq(listings.transactionType, "sale"),
+        or(eq(listings.isCompanyListing, true), firmAreaCondition()),
       ),
     )
     .orderBy(

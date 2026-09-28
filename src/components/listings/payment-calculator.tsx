@@ -16,16 +16,23 @@ const SEGMENTS = [
 
 /**
  * The full monthly cost — portals often show principal & interest only.
- * Taxes come from the listing when available, else the market's typical rate.
+ * Taxes come from the listing when available, else a typical rate for its
+ * county; insurance uses its county's typical rate (`financeFor`).
  */
 export function PaymentCalculator({
   price,
   annualTax,
   monthlyHoa,
+  insuranceRatePct = site.finance.insuranceRatePct,
+  taxRatePct = site.finance.propertyTaxRatePct,
 }: {
   price: number;
   annualTax: number | null;
   monthlyHoa: number;
+  /** Annual insurance as a % of price, for this home's county. */
+  insuranceRatePct?: number;
+  /** Fallback annual tax as a % of price when the listing has no tax figure. */
+  taxRatePct?: number;
 }) {
   const f = site.finance;
   const [homePrice, setHomePrice] = useState(price);
@@ -41,23 +48,11 @@ export function PaymentCalculator({
         interestRatePct: rate,
         loanTermYears: term,
         // Scale the listed tax with the price the user is exploring.
-        annualTax: annualTax
-          ? annualTax * (homePrice / price)
-          : (homePrice * f.propertyTaxRatePct) / 100,
-        annualInsurance: (homePrice * f.insuranceRatePct) / 100,
+        annualTax: annualTax ? annualTax * (homePrice / price) : (homePrice * taxRatePct) / 100,
+        annualInsurance: (homePrice * insuranceRatePct) / 100,
         monthlyHoa,
       }),
-    [
-      homePrice,
-      downPct,
-      rate,
-      term,
-      annualTax,
-      price,
-      monthlyHoa,
-      f.propertyTaxRatePct,
-      f.insuranceRatePct,
-    ],
+    [homePrice, downPct, rate, term, annualTax, price, monthlyHoa, taxRatePct, insuranceRatePct],
   );
 
   const segments = SEGMENTS.filter((s) => cost[s.key] > 0);
@@ -141,9 +136,10 @@ export function PaymentCalculator({
           </select>
         </label>
         <p className="text-xs leading-relaxed text-faint sm:col-span-2 lg:col-span-1 xl:col-span-2">
-          Estimate only. Taxes use the listing&apos;s most recent figure where available; insurance
-          assumes {f.insuranceRatePct}% of price per year. Mortgage insurance applies below 20%
-          down.
+          Estimate only. Taxes use the listing&apos;s most recent figure where available
+          {annualTax ? "" : ` (none listed, so ${taxRatePct}% of price, typical for the area)`};
+          insurance assumes {insuranceRatePct}% of price per year, typical for the area, not
+          including flood cover. Mortgage insurance applies below 20% down.
         </p>
       </div>
     </div>

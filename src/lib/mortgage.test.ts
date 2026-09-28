@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { site } from "@/config/site";
 import {
   estimateMonthlyCost,
+  financeFor,
   type FinanceDefaults,
   monthlyCostModel,
   monthlyHoaAmount,
@@ -71,5 +72,56 @@ describe("monthlyCostModel", () => {
     const a = quickMonthlyCost({ price: 300_000 })!;
     const b = quickMonthlyCost({ price: 600_000 })!;
     expect(b).toBeCloseTo(a * 2, 6);
+  });
+});
+
+describe("financeFor (regional insurance and tax fallbacks)", () => {
+  const royston = financeFor("Franklin");
+  const savannah = financeFor("Chatham");
+  const atlanta = financeFor("Fulton");
+  const brunswick = financeFor("Glynn County");
+
+  it("keeps the statewide defaults in the firm's counties", () => {
+    for (const county of site.market.counties) {
+      const f = financeFor(county);
+      expect(f.insuranceRatePct, county).toBe(site.finance.insuranceRatePct);
+      expect(f.propertyTaxRatePct, county).toBe(site.finance.propertyTaxRatePct);
+    }
+    expect(royston).toEqual({
+      interestRate: site.finance.interestRate,
+      downPaymentPct: site.finance.downPaymentPct,
+      loanTermYears: site.finance.loanTermYears,
+      insuranceRatePct: 0.6,
+      propertyTaxRatePct: 0.9,
+    });
+  });
+
+  it("charges coastal insurance in Savannah and Brunswick, not Royston", () => {
+    expect(savannah.insuranceRatePct).toBe(1.2);
+    expect(brunswick.insuranceRatePct).toBe(1.2);
+    expect(atlanta.insuranceRatePct).toBe(royston.insuranceRatePct);
+  });
+
+  it("uses the metro tax fallback in Atlanta and Savannah, not Royston or Brunswick", () => {
+    expect(atlanta.propertyTaxRatePct).toBe(1.1);
+    expect(savannah.propertyTaxRatePct).toBe(1.1);
+    expect(brunswick.propertyTaxRatePct).toBe(royston.propertyTaxRatePct);
+  });
+
+  it("makes the same untaxed home cost more a month in Savannah than in Royston", () => {
+    const home = { price: 350_000, annualTax: null, hoaFee: null, hoaFrequency: null };
+    expect(fullEstimate(home, savannah)).toBeGreaterThan(fullEstimate(home, royston) + 150);
+  });
+
+  it("matches county names regardless of case and a 'County' suffix", () => {
+    expect(financeFor("CHATHAM")).toEqual(savannah);
+    expect(financeFor("chatham county")).toEqual(savannah);
+    expect(financeFor("DeKalb County").propertyTaxRatePct).toBe(1.1);
+  });
+
+  it("falls back to the statewide defaults for unknown or missing counties", () => {
+    expect(financeFor(null)).toEqual(royston);
+    expect(financeFor(undefined)).toEqual(royston);
+    expect(financeFor("Atlantis")).toEqual(royston);
   });
 });

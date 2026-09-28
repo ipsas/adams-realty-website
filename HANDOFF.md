@@ -5,14 +5,14 @@ Status as of the end of the cloud session. Everything is on GitHub, on branch
 
 ## 1. Where things stand
 
-| Area                     | Status                                                                                                                                                                                                                                                                                                                                                 |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Desktop site**         | ✅ Done. The branch includes: search with map; property pages; saved homes and searches; email alerts; accounts; broker/agent dashboard (listings, open houses, photos, leads with notes and CSV export, agent profiles, users and roles, MLS feed health); about, contact, privacy, terms, accessibility and fair-housing pages; neighborhood guides. |
-| **Real company details** | ✅ Adams Realty, Inc., 69 Mill Street, Royston, GA 30662, (706) 246-0053, contracts.adamsrealty@gmail.com, Georgia MLS office `ADAM01`.                                                                                                                                                                                                                |
-| **Andrea Anderegg**      | ✅ Broker profile with her headshot (`public/team/andrea-anderegg.webp`), email, direct line (850) 572-3287, and MLS agent ID `ANDEREGGAA`. Her bio is a neutral placeholder until she provides one.                                                                                                                                                   |
-| **Sample market**        | ✅ Fictional listings across Northeast Georgia (Franklin, Hart, Madison, Stephens, Jackson, Hall and Gwinnett counties): homes, Lake Hartwell property, farms and land, and a new **Commercial** type. Every listing, and every agent other than Andrea, is fake, and the footer says so.                                                              |
-| **Checks on the branch** | ✅ Lint, typecheck, 298 unit tests, 22 end-to-end tests and the production build all pass.                                                                                                                                                                                                                                                             |
-| **Mobile app (PWA)**     | 🟡 Designed and started, not finished. See section 4.                                                                                                                                                                                                                                                                                                  |
+| Area                     | Status                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Desktop site**         | ✅ Done. The branch includes: search with map; property pages; saved homes and searches; email alerts; accounts; broker/agent dashboard (listings, open houses, photos, leads with notes and CSV export, agent profiles, users and roles, MLS feed health); about, contact, privacy, terms, accessibility and fair-housing pages; neighborhood guides.                                        |
+| **Real company details** | ✅ Adams Realty, Inc., 69 Mill Street, Royston, GA 30662, (706) 246-0053, contracts.adamsrealty@gmail.com, Georgia MLS office `ADAM01`.                                                                                                                                                                                                                                                       |
+| **Andrea Anderegg**      | ✅ Broker profile with her headshot (`public/team/andrea-anderegg.webp`), email, direct line (850) 572-3287, and MLS agent ID `ANDEREGGAA`. Her bio is a neutral placeholder until she provides one.                                                                                                                                                                                          |
+| **Sample market**        | ✅ Fictional listings across Georgia: Adams Realty's own in Northeast Georgia (Franklin, Hart, Madison, Stephens, Jackson, Hall and Gwinnett counties: homes, Lake Hartwell property, farms and land, and a **Commercial** type), other brokerages' statewide (Atlanta, Savannah, Athens, Macon and more). Every listing, and every agent other than Andrea, is fake, and the footer says so. |
+| **Checks on the branch** | ✅ Lint, typecheck, 298 unit tests, 22 end-to-end tests and the production build all pass.                                                                                                                                                                                                                                                                                                    |
+| **Mobile app (PWA)**     | 🟡 Designed and started, not finished. See section 4.                                                                                                                                                                                                                                                                                                                                         |
 
 ## 2. Run it on your computer
 
@@ -27,7 +27,7 @@ git checkout claude/stoic-gates-vjolq3
 npm install
 cp .env.example .env.local        # open it and set BETTER_AUTH_SECRET to any 32+ random characters
 docker compose up -d              # local Postgres (skip if you set DATABASE_URL to Neon)
-npm run db:reset                  # creates tables + loads the sample Northeast Georgia listings
+npm run db:reset                  # creates tables + loads the sample listings (statewide; Adams's own in Northeast Georgia)
 npm run dev                       # open http://localhost:3000
 ```
 
@@ -145,6 +145,11 @@ Use your model table: Opus High for the work packages, and Xhigh if one gets stu
       its hour, so a purge in the next hour could still meet a sync that started at 9:59. If
       a daily sync ends "partial" in _Dashboard → MLS feeds_, run `npm run mls:sync` from a
       computer to catch up.
+- [ ] **Statewide cutover order.** Deploy the migrations (including `drizzle/0009`, which pins
+      saved searches with no location to Northeast Georgia so their alerts don't widen), run the
+      first statewide load below, then widen the feed's filter to statewide. The "all of Georgia"
+      copy should go live only once statewide listings are live, and only after Georgia MLS
+      confirms the IDX license allows statewide display.
 - [ ] **First statewide MLS load.** Run `npm run mls:sync -- --full` from a computer against the
       production database (20–60 minutes; it can't run on Vercel), before the cron takes over.
       See README → "Connecting your MLS".

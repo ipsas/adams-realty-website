@@ -104,7 +104,7 @@ const ROUTING = [
   },
   {
     title: "It goes to one person",
-    body: "Our agent who listed the home, the agent you picked, or our office, which assigns a local agent.",
+    body: "Our agent who listed the home, the agent you picked, or our office, which assigns one of our agents.",
   },
   {
     title: "That agent replies directly",

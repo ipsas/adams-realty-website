@@ -3,7 +3,8 @@
 The website for **Adams Realty, Inc.**, a real estate brokerage at 69 Mill Street in
 Royston, Georgia, serving Northeast Georgia (Franklin, Hart, Madison, Stephens, Jackson,
 Hall and Gwinnett counties): houses, land, lake property, hunting land, farms and
-commercial property. Home search that's faster, cleaner and more honest than the big
+commercial property. Its search covers listings across all of Georgia from Georgia MLS;
+outside Northeast Georgia a listing takes questions for the office instead of tour requests. Home search that's faster, cleaner and more honest than the big
 portals: it has no ads, never sells leads, and every listing shows its true monthly cost.
 
 - **Search:** URL-driven filters, full-text and map search, clustered price-pin map, saved searches with alerts

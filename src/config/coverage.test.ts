@@ -8,6 +8,7 @@ import {
 } from "../../scripts/seed-data";
 import SITES from "../../scripts/seed-sites.json";
 import { areas as guides } from "./areas";
+import { site } from "./site";
 
 /**
  * The demo seed's coordinate pools (scripts/seed-sites.json) against the
@@ -20,8 +21,8 @@ type Row = [number, number, string, string?, string?];
 const sites = SITES.areas as unknown as Record<string, Record<string, Row[]>>;
 const ALL = [...AREAS, ...STATEWIDE_AREAS, ...STATEWIDE_LAKES];
 
-/** Georgia, as the statewide listing coverage (GA-A moves this to site.coverage.bounds). */
-const GEORGIA = { west: -85.61, south: 30.35, east: -80.75, north: 35.01 };
+/** Georgia, the statewide listing coverage. */
+const GEORGIA = site.coverage.bounds;
 
 /** Maximum distance of each pool from its area's center, km. Lakes use their bounds instead. */
 const RADIUS_KM = { core: 1.2, town: 8, rural: 15 } as const;
@@ -42,8 +43,10 @@ function grow(b: NonNullable<SeedArea["lakeBounds"]>, marginKm: number) {
   return { west: b.west - dLng, south: b.south - dLat, east: b.east + dLng, north: b.north + dLat };
 }
 
-const inside = (b: typeof GEORGIA, [lat, lng]: [number, number]) =>
-  lat >= b.south && lat <= b.north && lng >= b.west && lng <= b.east;
+const inside = (
+  b: { west: number; south: number; east: number; north: number },
+  [lat, lng]: [number, number],
+) => lat >= b.south && lat <= b.north && lng >= b.west && lng <= b.east;
 
 /** Farthest distance (km) of any row in `kind` from the area's center. */
 const farthest = (a: SeedArea, kind: string) =>

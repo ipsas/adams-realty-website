@@ -10,13 +10,16 @@ export async function generateMetadata(props: PageProps<"/homes">): Promise<Meta
   const title = c.q
     ? describeCriteria(c)
     : c.mode === "rent"
-      ? `Homes for rent in ${site.market.name}`
-      : `Homes for sale in ${site.market.name}`;
+      ? `Homes for rent in ${site.coverage.name}`
+      : c.mode === "sold"
+        ? `Recently sold homes in ${site.coverage.name}`
+        : `Homes for sale in ${site.coverage.name}`;
   // Only the location/mode version of a search is canonical; filter permutations aren't indexed separately.
   const canonical = serializeCriteria({ mode: c.mode, q: c.q });
   return {
     title,
-    description: `Browse ${title.toLowerCase()} with listings from ${site.mls.name}, honest monthly cost estimates and local agents.`,
+    // Only the first letter is lowercased, so place names keep their capitals.
+    description: `Browse ${title.charAt(0).toLowerCase()}${title.slice(1)} from ${site.mls.name}, with the true cost of owning each home and no ads.`,
     alternates: { canonical: canonical.size ? `/homes?${canonical}` : "/homes" },
     robots: c.bounds || c.page > 1 ? { index: false, follow: true } : undefined,
   };

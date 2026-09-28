@@ -3,7 +3,8 @@
 # Adams Realty — project notes
 
 Website for Adams Realty, Inc., 69 Mill Street, Royston, GA: a brokerage serving Northeast Georgia
-(homes, land, farms, lake and commercial property). See README.md for setup and ARCHITECTURE.md for design.
+(homes, land, farms, lake and commercial property). Its listings (Georgia MLS IDX) cover all of Georgia;
+statements about the firm stay Northeast Georgia. See README.md for setup and ARCHITECTURE.md for design.
 
 - Stack: Next.js 16 App Router (read `node_modules/next/dist/docs/` — APIs differ from older versions:
   async `params`/`searchParams`, `proxy.ts` instead of middleware, `PageProps<"/route">` helpers),
@@ -19,8 +20,12 @@ Website for Adams Realty, Inc., 69 Mill Street, Royston, GA: a brokerage serving
   MLS-sourced listings are read-only in the app. After a listing write outside the sync, call
   `updateTag(LISTINGS_TAG)` and `refreshPlaces` (see `listingsChanged` in server/actions/dashboard.ts).
 - Search is URL-driven: `src/lib/search/params.ts` parses/serializes criteria; `query.ts` builds SQL.
-- Market/brand settings live in `src/config/site.ts` (Northeast Georgia, America/New_York; Georgia MLS
-  office `ADAM01`). Placeholders there (email, GREC license, hours) are unknown — never invent them.
+- Market/brand settings live in `src/config/site.ts`: `coverage` (Georgia) is what the listings cover,
+  `market` (Northeast Georgia, America/New_York) is the firm; Georgia MLS office `ADAM01`. Firm copy
+  uses `market`, never `coverage`. Never hard-code a town list: towns come from the listings
+  (`getTopCities`, `/places`). Tours and "our agents" claims only in the firm's area
+  (`isFirmArea`/`offersTours`). No "monthly cost" wording on the home page.
+  Placeholders there (email, GREC license, hours) are unknown — never invent them.
 - Andrea Anderegg (broker) is a real person: her profile holds only facts from her public profiles.
   Never invent her bio, experience, stats or photo. Other seeded agents and all listings are fictional.
 - Drizzle renders column refs unqualified inside `select({...})` fields — use explicit

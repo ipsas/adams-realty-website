@@ -252,6 +252,40 @@ function toGeoJSON(pins: MapPin[]): GeoJSON.FeatureCollection<GeoJSON.Point> {
   };
 }
 
+function hasSize(el: HTMLElement): boolean {
+  return el.clientWidth > 0 && el.clientHeight > 0;
+}
+
+/**
+ * Where the map starts: the search's own bounds when it has them, else its
+ * pins, else all of Georgia (`site.coverage.bounds`). Always a fit, never a
+ * fixed center and zoom, so the view suits any screen from a phone up.
+ */
+function initialView(
+  bounds: Bounds | undefined,
+  pins: MapPin[],
+): { bounds: maplibregl.LngLatBoundsLike; options: maplibregl.FitBoundsOptions } {
+  if (bounds) {
+    return {
+      bounds: [
+        [bounds.west, bounds.south],
+        [bounds.east, bounds.north],
+      ],
+      options: { padding: 56, maxZoom: 14 },
+    };
+  }
+  const fromPins = pinsBounds(pins);
+  if (fromPins) return { bounds: fromPins, options: { padding: 56, maxZoom: 14 } };
+  const c = site.coverage.bounds;
+  return {
+    bounds: [
+      [c.west, c.south],
+      [c.east, c.north],
+    ],
+    options: { padding: 24 },
+  };
+}
+
 function pinsBounds(pins: MapPin[]): maplibregl.LngLatBoundsLike | null {
   if (!pins.length) return null;
   let [w, s, e, n] = [180, 90, -180, -90];
@@ -318,20 +352,18 @@ export default function SearchMap({
   const theme = useMapTheme();
 
   // Keep the latest callbacks/data without re-creating the map.
-  const latest = useRef({ onHover, onUserMove, pinsById, data, highlightedId });
+  const latest = useRef({ onHover, onUserMove, pinsById, data, highlightedId, bounds, pins });
   useEffect(() => {
-    latest.current = { onHover, onUserMove, pinsById, data, highlightedId };
+    latest.current = { onHover, onUserMove, pinsById, data, highlightedId, bounds, pins };
   });
+  // A fit asked for while the map had no size (hidden behind the list on phones), to run
+  // as soon as it has one.
+  const pendingFit = useRef(false);
 
   // Create the map once.
   useEffect(() => {
     if (!container.current) return;
-    const initialBounds = bounds
-      ? ([
-          [bounds.west, bounds.south],
-          [bounds.east, bounds.north],
-        ] as maplibregl.LngLatBoundsLike)
-      : pinsBounds(pins);
+    const initial = initialView(bounds, pins);
 
     ensureMapLibre();
     // Read synchronously (not from the hook's first value), so a dark page never starts on
@@ -340,14 +372,11 @@ export default function SearchMap({
     const map = new maplibregl.Map({
       container: container.current,
       style: styleUrl.current,
-      center: [site.market.center.lng, site.market.center.lat],
-      zoom: site.market.zoom,
+      bounds: initial.bounds,
+      fitBoundsOptions: initial.options,
       attributionControl: { compact: true },
       dragRotate: false,
       pitchWithRotate: false,
-      ...(initialBounds
-        ? { bounds: initialBounds, fitBoundsOptions: { padding: 56, maxZoom: 14 } }
-        : {}),
     });
     mapRef.current = map;
     const initialUrl = styleUrl.current;
@@ -357,6 +386,18 @@ export default function SearchMap({
       (window as unknown as { __searchMap?: MapLibreMap }).__searchMap = map;
     }
     map.touchZoomRotate.disableRotation();
+
+    // On phones the map starts hidden behind the list (0×0), where no fit means anything:
+    // it fits when it is first shown instead (see pendingFit).
+    pendingFit.current = !hasSize(container.current);
+    map.on("resize", () => {
+      const el = container.current;
+      if (!pendingFit.current || !el || !hasSize(el)) return;
+      pendingFit.current = false;
+      const view = initialView(latest.current.bounds, latest.current.pins);
+      // Programmatic: `movestart` sees no originalEvent, so this won't trigger a bounds search.
+      map.fitBounds(view.bounds, { ...view.options, duration: 0 });
+    });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 
     // Overlays go on every style: the first one and each theme swap.
@@ -462,8 +503,11 @@ export default function SearchMap({
     if (!bounds && lastFitKey.current !== fitKey) {
       lastFitKey.current = fitKey;
       const b = pinsBounds(pins);
+      const el = container.current;
+      // Hidden (phones, list view): fit when the map is next shown.
+      if (b && el && !hasSize(el)) pendingFit.current = true;
       // Programmatic: `movestart` sees no originalEvent, so this won't trigger a bounds search.
-      if (b) map.fitBounds(b, { padding: 56, maxZoom: 14, duration: 600 });
+      else if (b) map.fitBounds(b, { padding: 56, maxZoom: 14, duration: 600 });
     }
   }, [data, pins, bounds, fitKey]);
 

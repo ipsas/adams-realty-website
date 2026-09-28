@@ -29,7 +29,7 @@ const SHORTCUTS = [
   {
     icon: Search,
     title: "Search homes",
-    body: `Homes, land and farms for sale across ${site.market.region}.`,
+    body: `Homes, land and farms for sale across ${site.coverage.name}.`,
     href: "/homes",
   },
 ];
@@ -37,7 +37,7 @@ const SHORTCUTS = [
 /* Mirrors createInquiry: contact-page messages have no agent, so they land in the brokerage inbox for routing. */
 const NEXT_STEPS = [
   { title: "It reaches our office", body: "Your message goes to our team, not a call center." },
-  { title: "We find the right agent", body: "Someone who knows the area and what you need." },
+  { title: "We find the right agent", body: "Someone suited to what you need." },
   { title: "They reply directly", body: `Your details stay with ${site.name} — never sold.` },
 ];
 

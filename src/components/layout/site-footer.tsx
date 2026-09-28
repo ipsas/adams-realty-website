@@ -4,13 +4,18 @@ import { addressLines, telHref } from "@/components/content/contact";
 import { EqualHousingLogo } from "@/components/content/equal-housing-logo";
 import { site } from "@/config/site";
 import { cn } from "@/lib/cn";
+import { getCachedTopCities } from "@/lib/listings/cached";
+import { searchHref } from "@/lib/search/params";
 import { Logo } from "./logo";
 
 type FooterLink = { label: string; href: string; emphasis?: boolean };
 
 const contactLink = "inline-flex min-h-10 items-center hover:text-ink sm:min-h-0";
 
-const columns: { title: string; links: FooterLink[] }[] = [
+/** Towns in the footer's Places column: the busiest cities, like the home page chips. */
+const FOOTER_CITIES = 6;
+
+const columns = (cities: string[]): { title: string; links: FooterLink[] }[] => [
   {
     title: "Find a home",
     links: [
@@ -31,9 +36,10 @@ const columns: { title: string; links: FooterLink[] }[] = [
     ],
   },
   {
-    title: "Towns",
+    title: "Places",
     links: [
-      ...site.featuredAreas.map((a) => ({ label: a, href: `/homes?q=${encodeURIComponent(a)}` })),
+      ...cities.map((city) => ({ label: city, href: searchHref({ q: city }) })),
+      { label: "All towns", href: "/places", emphasis: true },
       { label: "Area guides", href: "/areas", emphasis: true },
     ],
   },
@@ -68,7 +74,8 @@ function ArrowLabel({ label }: { label: string }) {
   );
 }
 
-export function SiteFooter({ disclaimer }: { disclaimer?: string | null }) {
+export async function SiteFooter({ disclaimer }: { disclaimer?: string | null }) {
+  const cities = (await getCachedTopCities(FOOTER_CITIES)).map((c) => c.city);
   return (
     <footer className="mt-24 border-t border-line bg-sunken/60">
       <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
@@ -76,8 +83,9 @@ export function SiteFooter({ disclaimer }: { disclaimer?: string | null }) {
           <div className="col-span-2 max-w-sm sm:col-span-4 lg:col-span-1 lg:pr-4">
             <Logo className="min-h-10 w-fit sm:min-h-0" />
             <p className="mt-4 text-sm leading-relaxed text-muted">
-              Homes, land, farms and lake property across {site.market.region}, from our office in{" "}
-              {site.address.city}. No ads, and we never sell your information.
+              Homes, land, farms and lake property across {site.coverage.name}, with agents serving{" "}
+              {site.market.region} from our office in {site.address.city}. No ads, and we never sell
+              your information.
             </p>
             {/* Each line is 40px tall on phones (tap targets, even rhythm); plain text lines from sm up. */}
             <div className="mt-3.5 text-sm text-ink-soft sm:mt-6">
@@ -97,8 +105,8 @@ export function SiteFooter({ disclaimer }: { disclaimer?: string | null }) {
               </p>
             </div>
           </div>
-          {columns.map((col) => (
-            <div key={col.title} className="min-w-0">
+          {columns(cities).map((col) => (
+            <div key={col.title} className="min-w-0" data-footer-column={col.title}>
               <h2 className="text-xs font-semibold tracking-widest text-muted uppercase">
                 {col.title}
               </h2>

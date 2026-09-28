@@ -13,22 +13,27 @@ import {
   getCachedFeaturedListings,
   getCachedMarketStats,
   getCachedPopularAreas,
+  getCachedTopCities,
 } from "@/lib/listings/cached";
-import { getNewestListings } from "@/lib/listings/queries";
+import { FEATURED_MIN, getNewestListings } from "@/lib/listings/queries";
 import { searchHref } from "@/lib/search/params";
 
 const HERO_IMAGE =
   "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=2000&q=80";
+/** Town chips under the hero search: the cities with the most homes for sale. */
+const TOP_CITIES = 12;
+
 const SELL_IMAGE =
   "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1600&q=80";
 
 export default async function HomePage() {
-  const [featured, newest, areas, stats, agents] = await Promise.all([
+  const [featured, newest, areas, stats, agents, topCities] = await Promise.all([
     getCachedFeaturedListings(8),
     getNewestListings(4),
     getCachedPopularAreas(9),
     getCachedMarketStats(),
     getAgents(),
+    getCachedTopCities(TOP_CITIES),
   ]);
 
   return (
@@ -47,7 +52,7 @@ export default async function HomePage() {
         <Container className="pt-36 pb-10 sm:pb-14">
           <p className="mb-5 flex items-center gap-2 text-xs font-semibold tracking-[0.22em] text-white/75 uppercase">
             <span className="h-px w-8 bg-brass-400" />
-            {site.market.region}
+            All of {site.coverage.name}
           </p>
           <h1 className="max-w-3xl font-display-tight text-5xl leading-[1.02] font-normal text-white sm:text-7xl">
             Homes worth
@@ -55,24 +60,37 @@ export default async function HomePage() {
             <em className="font-light text-brass-100">coming home to.</em>
           </h1>
           <p className="mt-6 max-w-xl text-lg leading-relaxed text-white/80">
-            Homes, land, farms and lake property, updated directly from {site.mls.name}. Local
-            agents who actually pick up the phone.
+            Homes, land, farms and lake property across {site.coverage.name}, updated directly from{" "}
+            {site.mls.name}. Agents who actually pick up the phone.
           </p>
           <div className="mt-9">
             <HeroSearch />
           </div>
-          <div className="mt-5 flex flex-wrap items-center gap-2 text-sm">
-            <span className="text-white/60">Popular:</span>
-            {site.featuredAreas.map((q) => (
+          {topCities.length > 0 && (
+            // One swipeable row on phones; wraps from sm up.
+            <nav
+              aria-label="Popular towns"
+              data-top-cities
+              className="-mx-4 mt-5 scrollbar-none flex items-center gap-2 overflow-x-auto px-4 text-sm sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0"
+            >
+              <span className="shrink-0 text-white/60">Popular:</span>
+              {topCities.map(({ city }) => (
+                <Link
+                  key={city}
+                  href={searchHref({ q: city })}
+                  className="flex h-9 shrink-0 items-center rounded-full border border-white/25 px-3 whitespace-nowrap text-white/90 backdrop-blur-sm transition-colors hover:bg-white/15"
+                >
+                  {city}
+                </Link>
+              ))}
               <Link
-                key={q}
-                href={searchHref({ q })}
-                className="rounded-full border border-white/25 px-3 py-1 text-white/90 backdrop-blur-sm transition-colors hover:bg-white/15"
+                href="/places"
+                className="flex h-9 shrink-0 items-center gap-1 rounded-full px-2 font-medium whitespace-nowrap text-white underline-offset-4 hover:underline"
               >
-                {q}
+                See all towns <ArrowRight className="size-3.5" />
               </Link>
-            ))}
-          </div>
+            </nav>
+          )}
 
           <dl className="mt-14 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/15 bg-white/15 backdrop-blur-md sm:grid-cols-4">
             {[
@@ -109,26 +127,28 @@ export default async function HomePage() {
         </Container>
       </section>
 
-      {/* Featured */}
-      <section className="py-20 sm:py-24">
-        <Container>
-          <SectionHeading
-            eyebrow="Featured"
-            title="Handpicked by our agents"
-            description="Homes our team knows inside and out — ask us anything about them."
-            action={
-              <LinkButton href="/homes?ourListings=1" variant="secondary">
-                All Adams listings <ArrowRight />
-              </LinkButton>
-            }
-          />
-          <div className="grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
-            {featured.map((l, i) => (
-              <ListingCard key={l.id} listing={l} priority={i < 4} />
-            ))}
-          </div>
-        </Container>
-      </section>
+      {/* Featured: only the firm's listings and homes in its area, and only with enough of them. */}
+      {featured.length >= FEATURED_MIN && (
+        <section className="py-20 sm:py-24" data-featured>
+          <Container>
+            <SectionHeading
+              eyebrow="Featured"
+              title="Handpicked by our agents"
+              description="Homes our team knows inside and out — ask us anything about them."
+              action={
+                <LinkButton href="/homes?ourListings=1" variant="secondary">
+                  All Adams listings <ArrowRight />
+                </LinkButton>
+              }
+            />
+            <div className="grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
+              {featured.map((l, i) => (
+                <ListingCard key={l.id} listing={l} priority={i < 4} />
+              ))}
+            </div>
+          </Container>
+        </section>
+      )}
 
       {/* Difference */}
       <section className="bg-brand-900 py-20 text-white sm:py-24">
@@ -157,7 +177,7 @@ export default async function HomePage() {
                 {
                   icon: ShieldCheck,
                   title: "Your info stays with us",
-                  body: "We never sell your details. One inquiry reaches one local agent — not a bidding war of strangers.",
+                  body: "We never sell your details. One inquiry reaches one Adams Realty agent — not a bidding war of strangers.",
                 },
                 {
                   icon: BadgeDollarSign,
@@ -186,8 +206,13 @@ export default async function HomePage() {
         <Container>
           <SectionHeading
             eyebrow="Explore"
-            title={`Towns across ${site.market.region}`}
-            description="From small-town main streets to Lake Hartwell and open farmland."
+            title={`Towns and cities across ${site.coverage.name}`}
+            description="From city neighborhoods and small-town main streets to the mountains, the lakes and the coast."
+            action={
+              <LinkButton href="/places" variant="secondary">
+                See all towns <ArrowRight />
+              </LinkButton>
+            }
           />
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             {areas.map((a, i) => (

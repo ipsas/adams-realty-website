@@ -204,6 +204,7 @@ const PAGES = {
   contact: { name: "/contact", path: "/contact", ready: "#c-name" },
   sell: { name: "/sell", path: "/sell", ready: "main h1" },
   areas: { name: "/areas", path: "/areas", ready: "main h1" },
+  places: { name: "/places", path: "/places", ready: "main h1" },
   guide: { name: "an area guide", path: firstGuidePath, ready: "main h1" },
   fairHousing: { name: "/fair-housing", path: "/fair-housing", ready: "main h1" },
   saved: { name: "/saved", path: "/saved", ready: "main h1", role: "buyer" },

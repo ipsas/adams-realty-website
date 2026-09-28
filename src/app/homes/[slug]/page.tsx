@@ -32,6 +32,7 @@ import { Expandable } from "@/components/ui/expandable";
 import { Container } from "@/components/ui/section";
 import { site } from "@/config/site";
 import type { ListingFeatures } from "@/db/schema";
+import { offersTours } from "@/lib/areas/firm-area";
 import { getActor, getSession } from "@/lib/auth/session";
 import { can } from "@/lib/auth/permissions";
 import { cn } from "@/lib/cn";
@@ -51,7 +52,7 @@ import {
   statusLabel,
 } from "@/lib/format";
 import { getListingBySlug, getSimilarListings, type ListingDetail } from "@/lib/listings/queries";
-import { estimateMonthlyCost, monthlyHoaAmount } from "@/lib/mortgage";
+import { estimateMonthlyCost, financeFor, monthlyHoaAmount } from "@/lib/mortgage";
 import { searchHref } from "@/lib/search/params";
 
 export async function generateMetadata(props: PageProps<"/homes/[slug]">): Promise<Metadata> {
@@ -105,15 +106,19 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
       ? l.originalListPrice - l.listPrice
       : 0;
   const monthlyHoa = monthlyHoaAmount(l.hoaFee, l.hoaFrequency);
+  // Insurance and the tax fallback follow the county (coastal and metro rates differ).
+  const finance = financeFor(l.county);
   const estimate = estimateMonthlyCost({
     price: l.listPrice,
-    downPaymentPct: site.finance.downPaymentPct,
-    interestRatePct: site.finance.interestRate,
-    loanTermYears: site.finance.loanTermYears,
-    annualTax: l.taxAnnualAmount ?? (l.listPrice * site.finance.propertyTaxRatePct) / 100,
-    annualInsurance: (l.listPrice * site.finance.insuranceRatePct) / 100,
+    downPaymentPct: finance.downPaymentPct,
+    interestRatePct: finance.interestRate,
+    loanTermYears: finance.loanTermYears,
+    annualTax: l.taxAnnualAmount || (l.listPrice * finance.propertyTaxRatePct) / 100,
+    annualInsurance: (l.listPrice * finance.insuranceRatePct) / 100,
     monthlyHoa,
   });
+  // Tours only where our agents work (or on our own listings); elsewhere, a question to the office.
+  const tours = offersTours(l);
   const dom = daysSince(l.listDate);
   const street = formatStreet(l);
   const canEdit = can.editListing(actor, { sourceKind: source.kind, listAgentId: l.listAgentId });
@@ -328,6 +333,8 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                     price={l.listPrice}
                     annualTax={l.taxAnnualAmount}
                     monthlyHoa={monthlyHoa}
+                    insuranceRatePct={finance.insuranceRatePct}
+                    taxRatePct={finance.propertyTaxRatePct}
                   />
                 </Section>
               )}
@@ -464,7 +471,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                       <p className="text-sm text-muted">{agent.phone}</p>
                     </div>
                   </Link>
-                ) : (
+                ) : tours ? (
                   <div className="mb-5">
                     <p className="font-display-tight text-xl text-ink">
                       See it with a local expert
@@ -472,6 +479,15 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                     <p className="mt-1 text-sm text-muted">
                       An {site.name} agent can tour this home with you — often same day — and tell
                       you what the listing doesn&apos;t.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mb-5" data-out-of-area>
+                    <h2 className="font-display-tight text-xl text-ink">Ask a question</h2>
+                    <p className="mt-1 text-sm text-muted">
+                      {site.name} is based in {site.address.city} and works mainly in{" "}
+                      {site.market.region}. Send us your question about this home and our office
+                      will get back to you.
                     </p>
                   </div>
                 )}
@@ -484,7 +500,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                     listingId={l.id}
                     source="listing"
                     compact
-                    allowTour={!sold}
+                    allowTour={!sold && tours}
                     defaultMessage={`I'm interested in ${street}.`}
                     user={
                       session
@@ -531,7 +547,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
               href="#contact"
               className="flex h-11 items-center rounded-xl bg-primary px-5 text-sm font-semibold text-white"
             >
-              {sold ? "Ask about this home" : "Request a tour"}
+              {!tours ? "Ask a question" : sold ? "Ask about this home" : "Request a tour"}
             </a>
           </div>
         )}

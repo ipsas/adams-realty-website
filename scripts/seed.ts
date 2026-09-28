@@ -39,11 +39,16 @@ import {
 } from "@/db/schema";
 import { upsertListing, type PersistSource } from "@/lib/listings/persist";
 import { refreshPlaces } from "@/lib/listings/places";
-import { getLocationSuggestions, getPlacesIndex, getTopCities } from "@/lib/listings/queries";
+import {
+  FEATURED_MIN,
+  getFeaturedListings,
+  getLocationSuggestions,
+  getPlacesIndex,
+  getTopCities,
+} from "@/lib/listings/queries";
 import { slugify } from "@/lib/listings/slug";
 import { DEFAULT_CRITERIA, type SearchCriteria } from "@/lib/search/params";
 import { searchListings } from "@/lib/search/service";
-import { site } from "@/config/site";
 import type { NormalizedListing, NormalizedMedia } from "@/lib/mls/types";
 import {
   AGENTS,
@@ -1122,10 +1127,7 @@ async function assertStatewideFixtures() {
       )) === 0,
     ],
   ];
-  for (const area of site.featuredAreas) {
-    checks.push([`featured area "${area}" has a result`, (await buy({ q: area })) >= 1]);
-  }
-  // The data-driven town lists (home page chips, "See all towns") against a direct count.
+  // The data-driven town lists (home page chips, footer, "See all towns") against a direct count.
   const forSale = sql`transaction_type = 'sale' and status in ('active', 'coming_soon')`;
   const byCity = await db
     .execute<{ city: string; n: number }>(
@@ -1136,7 +1138,19 @@ async function assertStatewideFixtures() {
   const top = await getTopCities(12);
   const places = await getPlacesIndex();
   const placeCities = new Set(places.flatMap((p) => p.cities.map((c) => c.city)));
+  // Each town chip links to /homes?q=<city>, which must find at least the homes it counted.
+  for (const c of top) {
+    checks.push([
+      `town chip "${c.city}" (${c.count} for sale) finds its homes`,
+      (await buy({ q: c.city })) >= c.count,
+    ]);
+  }
   checks.push(
+    ["the home page has more than 5 town chips", top.length > 5],
+    [
+      "at least 4 active Adams or firm-area homes for the featured block",
+      (await getFeaturedListings(8)).length >= FEATURED_MIN,
+    ],
     [
       "getTopCities(12) is the 12 busiest cities, busiest first",
       JSON.stringify(top.map((c) => [c.city, c.count])) ===

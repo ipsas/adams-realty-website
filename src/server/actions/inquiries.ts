@@ -7,6 +7,8 @@ import { site } from "@/config/site";
 import { db } from "@/db";
 import { agents, inquiries, listings } from "@/db/schema";
 import { toEmailListing } from "@/lib/alerts/present";
+import { offersTours } from "@/lib/areas/firm-area";
+import { inquiryReply, withoutTour } from "@/lib/inquiry-reply";
 import { getSession } from "@/lib/auth/session";
 import { sendEmail } from "@/lib/email";
 import { leadNotificationEmail } from "@/lib/email-templates";
@@ -58,7 +60,9 @@ const schema = z.object({
 /**
  * Public lead form handler (tour requests, questions, valuations). Leads are
  * routed to the listing agent, the chosen agent, or the brokerage inbox — and
- * never shared outside the company.
+ * never shared outside the company. A home outside the firm's area (and not
+ * its own listing) takes questions only, answered by the office: a tour
+ * request for one is saved as a question, with no tour time.
  */
 export async function createInquiry(_prev: InquiryState, form: FormData): Promise<InquiryState> {
   const raw = Object.fromEntries(
@@ -86,10 +90,13 @@ export async function createInquiry(_prev: InquiryState, form: FormData): Promis
 
   let agentId = d.agentId ?? null;
   let listing: typeof listings.$inferSelect | undefined;
+  let outOfArea = false;
   if (d.listingId) {
     [listing] = await db.select().from(listings).where(eq(listings.id, d.listingId)).limit(1);
     if (!listing) return { ok: false, message: "That home is no longer available." };
     agentId ??= listing.listAgentId;
+    outOfArea = !offersTours(listing);
+    Object.assign(d, withoutTour(d, !outOfArea));
   }
   const [agent] = agentId
     ? await db.select().from(agents).where(eq(agents.id, agentId)).limit(1)
@@ -171,12 +178,5 @@ export async function createInquiry(_prev: InquiryState, form: FormData): Promis
     html: email.html,
   }).catch((e) => console.error("[inquiry] notification failed", e));
 
-  const firstName = agent?.name.split(" ")[0];
-  return {
-    ok: true,
-    message:
-      d.type === "tour"
-        ? `Request sent! ${firstName ?? "An Adams agent"} will confirm your tour shortly.`
-        : `Thanks, ${d.name.split(" ")[0]}! ${firstName ?? "A local Adams agent"} will be in touch soon.`,
-  };
+  return { ok: true, message: inquiryReply(d, agent?.name ?? null, outOfArea) };
 }

@@ -8,8 +8,10 @@ import { type Page, expect, test } from "@playwright/test";
  *
  * Only pages whose content doesn't depend on the clock or on data other e2e suites write:
  * listing pages show "Updated 3 hours ago" and the home page's newest listings move as tests
- * add some. Photos are masked (they load lazily), and the one element dark mode added to a
- * light page, the header's Appearance button, is taken out before the capture.
+ * add some. Photos are masked (they load lazily), and so are the footer's town links, which
+ * are the busiest towns in the listings (GA-A) and shift as tests add homes. The one element
+ * dark mode added to a light page, the header's Appearance button, is taken out before the
+ * capture.
  *
  * A change that is meant to alter light mode updates the baselines in the same commit:
  * `npx playwright test e2e/theme-light-regression.spec.ts --project=desktop --update-snapshots`.
@@ -40,7 +42,10 @@ for (const path of PAGES) {
     await withoutThemeButton(page);
     await expect(page).toHaveScreenshot(`${path.slice(1).replaceAll("/", "-")}.png`, {
       fullPage: true,
-      mask: [page.locator("img, picture, canvas, video")],
+      mask: [
+        page.locator("img, picture, canvas, video"),
+        page.locator("footer [data-footer-column='Places'] a[href^='/homes?q=']"),
+      ],
       animations: "disabled",
       caret: "hide",
       // Exact: the default per-pixel threshold (0.2) would let a small colour change through.
