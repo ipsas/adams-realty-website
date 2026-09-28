@@ -54,9 +54,10 @@ exceptions:
 - the bars themselves, at `bottom-0`;
 - the popover's bottom card (below `lg`), which is modal over its scrim at z-45,
   covers the bars on purpose and uses only the safe inset (`bottom-safe-3`);
-- two bars older than the markers: the /homes List/Map toggle (`bottom-6`) and
-  the listing's call-to-action bar, which pads `<main>` itself (`pb-24`) until
-  WP5 replaces it.
+- two bars older than the markers: the /homes List/Map toggle (`bottom-6`; the
+  results list pads its own bottom, `max-lg:pb-24`, so the Georgia MLS notice
+  at the end of the list is never under it) and the listing's call-to-action
+  bar, which pads `<main>` itself (`pb-24`) until WP5 replaces it.
 
 ## Stacking
 

@@ -1067,13 +1067,20 @@ async function main() {
       mlsNumber: f.mlsNumber,
     });
     const sold = f.status === "closed";
+    // Dates in order whatever generateListing drew: listed 60 days ago, and the status
+    // (sold, withdrawn, …) changed 12 days ago; Coming Soon lists a week from now.
+    const listDate = f.status === "coming_soon" ? daysAgo(-7) : daysAgo(60);
+    const changed = f.status === "active" ? listDate : daysAgo(12);
     Object.assign(listing, {
       status: f.status,
       transactionType: "sale",
       listPrice: f.price,
       originalListPrice: f.price,
       closePrice: sold ? f.price - 1_000 : null,
-      closeDate: sold ? isoDate(daysAgo(12)) : null,
+      listDate: isoDate(listDate),
+      closeDate: sold ? isoDate(changed) : null,
+      statusChangedAt: f.status === "coming_soon" ? daysAgo(2) : changed,
+      sourceModifiedAt: f.status === "coming_soon" ? daysAgo(2) : changed,
       addressLine1: f.street,
       unitNumber: null,
       ...("attribution" in f ? f.attribution : {}),
@@ -1167,6 +1174,19 @@ async function assertStatewideFixtures() {
       (await buy({ q: "10599006" })) === 1,
     ],
     ["no more than 750 live listings (the map's pin cap)", (await live(sql`true`)) <= 750],
+    [
+      "no listing sold before it was listed, and no history event before its listing",
+      (await db
+        .execute<{ n: number }>(
+          sql`select count(*)::int as n from listings l
+               where l.close_date < l.list_date
+                  or exists (select 1 from listing_events e
+                              where e.listing_id = l.id and e.type <> 'listed'
+                                and e.occurred_at < (select min(occurred_at) from listing_events f
+                                                      where f.listing_id = l.id and f.type = 'listed'))`,
+        )
+        .then((r) => r.rows[0].n)) === 0,
+    ],
     [
       "no Adams Realty listing outside the Northeast Georgia areas' counties",
       (await live(

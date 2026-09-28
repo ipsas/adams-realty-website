@@ -259,9 +259,9 @@ export default async function HomePage() {
                 Find out what your property is really worth.
               </h2>
               <p className="mt-5 max-w-md text-lg leading-relaxed text-ink-soft">
-                Algorithms guess. A local agent looks at your home or land and what has actually
-                sold nearby — in town, on the lake or by the acre. Get a free, no-obligation
-                valuation.
+                Algorithms guess. One of our {site.market.region} agents looks at your home or land
+                and what has actually sold nearby — in town, on the lake or by the acre. Get a free,
+                no-obligation valuation.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <LinkButton href="/sell#valuation" size="lg">
@@ -288,7 +288,7 @@ export default async function HomePage() {
       <section className="py-20 sm:py-24">
         <Container>
           <SectionHeading
-            eyebrow="Our team"
+            eyebrow={`Our team in ${site.market.region}`}
             title="Local agents, not call centers"
             action={
               <LinkButton href="/agents" variant="secondary">

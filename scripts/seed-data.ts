@@ -1150,7 +1150,7 @@ export const INTERIORS: Array<{ url: string; caption: string }> = [
   ["photo-1600210492486-724fe5c67fb0", "Living room"],
   ["photo-1600566753086-00f18fb6b3ea", "Kitchen"],
   ["photo-1600585154526-990dced4db0d", "Dining"],
-  ["photo-1600607687644-c7171b42498b", "Kitchen"],
+  ["photo-1556912173-3bb406ef7e77", "Kitchen"],
   ["photo-1600566752355-35792bedcfea", "Primary bath"],
   ["photo-1484154218962-a197022b5858", "Kitchen"],
   ["photo-1556909114-f6e7ad7d3136", "Kitchen"],

@@ -84,11 +84,13 @@ export function SearchView({
       <FilterBar criteria={criteria} update={update} signedIn={signedIn} />
 
       <div className="relative flex min-h-0 flex-1">
-        {/* Results list */}
+        {/* Results list. Below lg, the bottom padding clears the floating List/Map toggle
+            (bottom-6, 44px tall on touch) so the Georgia MLS notice at the end stays readable. */}
         <div
           ref={listRef}
+          data-results-list
           className={cn(
-            "w-full overflow-y-auto lg:w-[56%] xl:w-[52%] 2xl:w-[48%]",
+            "w-full overflow-y-auto max-lg:pb-24 lg:w-[56%] xl:w-[52%] 2xl:w-[48%]",
             mobileView === "map" && "max-lg:hidden",
           )}
         >
@@ -172,7 +174,7 @@ export function SearchView({
             />
             <div className="space-y-2 px-4 pb-6 text-xs text-muted">
               <MlsAttribution className="justify-center" />
-              <p className="text-center">
+              <p className="text-center" data-mls-disclaimer>
                 Listing data comes from {site.mls.name} and is refreshed regularly. Information
                 deemed reliable but not guaranteed.
               </p>

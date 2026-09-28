@@ -104,7 +104,58 @@ test.describe("a sold Georgia MLS listing", () => {
     await expect(card).toContainText("305 Sycamore Place");
     await expect(card.locator("img")).toHaveCount(1);
   });
+
+  test("sold after it was listed, in its price and status history", async ({ page }) => {
+    const { slug } = await slugOf(SOLD);
+    await page.goto(`/homes/${slug}`);
+    const history = page.locator("section", {
+      has: page.getByRole("heading", { name: "Price & status history" }),
+    });
+    const rows = await history
+      .locator("tbody tr")
+      .evaluateAll((trs) =>
+        trs.map((tr) => [...tr.querySelectorAll("td")].map((td) => td.textContent!.trim())),
+      );
+    const dateOf = (event: string) => {
+      const row = rows.find((r) => r[1] === event);
+      expect(row, event).toBeDefined();
+      return Date.parse(row![0]);
+    };
+    const listed = dateOf("Listed for sale");
+    const sold = dateOf("Sold");
+    expect(sold).toBeGreaterThan(listed);
+    // Newest first: the sale is the top row.
+    expect(rows[0][1]).toBe("Sold");
+  });
 });
+
+/**
+ * The Georgia MLS mark reads in both themes: the official logo files once `site.mls.logo` is
+ * set (the standard one in light, the "reverse" one in dark, each loaded), else the name as a
+ * text wordmark.
+ */
+async function expectMlsMark(page: Page, mark: Locator) {
+  const logo = site.mls.logo;
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    if (!logo) {
+      await expect(mark).toHaveAttribute("data-mls-mark", "text");
+      await expect(mark).toHaveText(site.mls.name);
+      await expect(mark).toBeVisible();
+      continue;
+    }
+    await expect(mark).toHaveAttribute("data-mls-mark", "logo");
+    const shown = mark.locator(`img[src="${colorScheme === "light" ? logo.light : logo.dark}"]`);
+    const other = mark.locator(`img[src="${colorScheme === "light" ? logo.dark : logo.light}"]`);
+    await expect(shown).toBeVisible();
+    await expect(shown).toHaveAttribute("alt", site.mls.name);
+    await expect(other).toBeHidden();
+    await expect
+      .poll(() => shown.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth))
+      .toBeGreaterThan(0);
+  }
+  await page.emulateMedia({ colorScheme: null });
+}
 
 test.describe("attribution and required fields", () => {
   test("the listing page names the firm prominently and shows Exhibit C's fields", async ({
@@ -172,11 +223,12 @@ test.describe("attribution and required fields", () => {
     await page.goto("/homes");
     const onSearch = page.locator("[data-mls-attribution]");
     await expect(onSearch).toContainText(`© ${year} Georgia MLS`);
-    await expect(onSearch.locator("[data-mls-mark]")).toHaveText(site.mls.name);
+    await expectMlsMark(page, onSearch.locator("[data-mls-mark]"));
 
     await page.goto("/");
     const footer = page.locator("footer [data-mls-attribution]");
     await expect(footer).toContainText(`Listing information © ${year} Georgia MLS.`);
+    await expectMlsMark(page, footer.locator("[data-mls-mark]"));
   });
 });
 

@@ -54,6 +54,13 @@ test.describe("listing coverage copy says Georgia", () => {
     await page.goto("/about");
     await expect(page.locator("main")).toContainText("Northeast Georgia");
     await page.goto("/");
+    // The home page sells all of Georgia; its firm lines say where the agents are.
+    const main = page.locator("main");
+    await expect(main).toContainText(
+      "Algorithms guess. One of our Northeast Georgia agents looks at your home or land",
+    );
+    await expect(main).not.toContainText("A local agent looks at your home");
+    await expect(main.getByText("Our team in Northeast Georgia", { exact: true })).toBeVisible();
     const footer = page.locator("footer");
     await expect(footer).toContainText(
       "Homes, land, farms and lake property across Georgia, with agents serving Northeast Georgia from our office in Royston.",
@@ -84,6 +91,34 @@ test.describe("towns come from the listings", () => {
       await page.goto(href);
       expect(await resultCount(page), href).toBeGreaterThanOrEqual(1);
     }
+  });
+
+  test("the town chips are the busiest towns, most homes for sale first", async ({ page }) => {
+    // Every town's homes for sale (what /homes shows by default), counted in the database.
+    const busiest = await withDb((db) =>
+      db
+        .query<{ city: string; n: number }>(
+          `select city, count(*)::int as n from listings
+            where removed_at is null and not idx_hidden and transaction_type = 'sale'
+              and status in ('active', 'coming_soon')
+            group by city order by n desc, city`,
+        )
+        .then((r) => r.rows),
+    );
+    await page.goto("/");
+    const chips = await page.locator("[data-top-cities] a[href^='/homes?q=']").allTextContents();
+    expect(chips.length).toBeGreaterThan(5);
+    const counts = chips.map((city) => busiest.find((b) => b.city === city)?.n ?? 0);
+    // Busiest first: counts never go up along the chips...
+    for (let i = 1; i < counts.length; i++) {
+      expect(counts[i], `${chips[i]} after ${chips[i - 1]}`).toBeLessThanOrEqual(counts[i - 1]);
+    }
+    // ...and no town left out has more homes than the last chip.
+    const outside = busiest.filter((b) => !chips.includes(b.city));
+    expect(Math.max(0, ...outside.map((b) => b.n))).toBeLessThanOrEqual(counts.at(-1)!);
+    // The seed makes the ranking matter: A–Z would put a smaller town first.
+    expect(chips[0]).toBe(busiest[0].city);
+    expect(chips).not.toEqual([...chips].sort((a, b) => a.localeCompare(b)));
   });
 
   test("the footer lists the busiest towns, the same as the home page chips", async ({ page }) => {
