@@ -7,7 +7,6 @@ import { LinkButton } from "@/components/ui/button";
 import { Container } from "@/components/ui/section";
 import { areas } from "@/config/areas";
 import { site } from "@/config/site";
-import { getAreaSummaries } from "@/lib/areas/queries";
 import {
   formatAsOf,
   groupByRegion,
@@ -17,6 +16,7 @@ import {
   type AreaSummary,
 } from "@/lib/areas/stats";
 import { formatNumber } from "@/lib/format";
+import { getCachedAreaSummaries } from "@/lib/listings/cached";
 
 export const metadata: Metadata = {
   title: "Area guides",
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 
 export default async function AreasPage(props: PageProps<"/areas">) {
   const sort = parseAreaSort((await props.searchParams).sort);
-  const summaries = await getAreaSummaries();
+  const summaries = await getCachedAreaSummaries();
   const asOf = new Date();
   const totals = summaries.reduce(
     (t, s) => ({ forSale: t.forSale + s.stats.forSale, sold: t.sold + s.stats.recentSales }),

@@ -49,6 +49,7 @@ vi.mock("@/db", () => ({
 vi.mock("@/lib/auth/session", () => ({ getActor: async () => h.state.actor }));
 vi.mock("next/cache", () => ({
   revalidatePath: (p: string) => h.state.revalidated.push(p),
+  updateTag: (tag: string) => h.state.revalidated.push(`tag:${tag}`),
 }));
 vi.mock("@/server/audit", () => ({
   audit: async (_tx: unknown, entry: Record<string, unknown>) => h.state.audits.push(entry),
@@ -146,6 +147,8 @@ describe("addOpenHouse", () => {
         "/homes/12-oak-st-decatur-ga-30030-abc",
         "/homes",
         `/dashboard/listings/${LISTING_ID}`,
+        // The cached home page stats count this week's open houses.
+        "tag:listings",
       ]),
     );
   });
@@ -259,6 +262,7 @@ describe("deleteOpenHouse", () => {
     expect(h.state.deleted).toBe(1);
     expect(h.state.audits[0]).toMatchObject({ action: "listing.open_house.delete" });
     expect(h.state.revalidated).toContain("/homes/12-oak-st-decatur-ga-30030-abc");
+    expect(h.state.revalidated).toContain("tag:listings");
   });
 
   it("explains a stale id", async () => {

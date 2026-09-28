@@ -9,6 +9,8 @@ const h = vi.hoisted(() => {
     actor: null as Actor | null,
     selects: [] as unknown[][],
     upserts: [] as NormalizedListing[],
+    tags: [] as string[],
+    placesRefreshed: 0,
   };
   function chain(result: unknown) {
     const proxy: object = new Proxy(
@@ -33,7 +35,17 @@ vi.mock("@/db", () => ({
 }));
 vi.mock("@/lib/auth/session", () => ({ getActor: async () => h.state.actor }));
 vi.mock("@/lib/geocode", () => ({ geocodeAddress: async () => null }));
-vi.mock("@/lib/mls/sync", () => ({ syncSource: vi.fn() }));
+vi.mock("@/lib/mls/sync", () => ({
+  syncSource: vi.fn(),
+  SyncFailedError: class SyncFailedError extends Error {
+    constructor(
+      message: string,
+      readonly changed: boolean,
+    ) {
+      super(message);
+    }
+  },
+}));
 vi.mock("@/lib/listings/persist", () => ({
   upsertListing: async (_tx: unknown, _source: unknown, n: NormalizedListing) => {
     h.state.upserts.push(n);
@@ -41,14 +53,24 @@ vi.mock("@/lib/listings/persist", () => ({
   },
 }));
 vi.mock("@/server/audit", () => ({ audit: async () => {} }));
-vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+vi.mock("next/cache", () => ({
+  revalidatePath: () => {},
+  updateTag: (tag: string) => h.state.tags.push(tag),
+}));
+vi.mock("@/lib/listings/places", () => ({
+  refreshPlaces: async () => {
+    h.state.placesRefreshed++;
+  },
+}));
 vi.mock("next/navigation", () => ({
   redirect: (url: string) => {
     throw new Error(`NEXT_REDIRECT ${url}`);
   },
 }));
 
-const { saveListing } = await import("./dashboard");
+const { runSourceSync, saveListing } = await import("./dashboard");
+const sync = await import("@/lib/mls/sync");
+const syncSource = vi.mocked(sync.syncSource);
 
 const LISTING_ID = "3c35a2fa-1318-4963-bb42-42923d5e6a96";
 const SOURCE_ID = "b35e5476-2b15-4c16-908b-020063e6a746";
@@ -130,10 +152,18 @@ function queueUpdate(opts: { opens?: unknown[]; otherMedia?: unknown[] } = {}) {
 }
 
 beforeEach(() => {
-  Object.assign(h.state, { actor: daniel, selects: [], upserts: [] });
+  Object.assign(h.state, { actor: daniel, selects: [], upserts: [], tags: [], placesRefreshed: 0 });
 });
 
 describe("saveListing", () => {
+  it("expires the cached listing data and rebuilds autocomplete places", async () => {
+    queueUpdate();
+    const res = await saveListing({ ok: false }, form());
+    expect(res.ok).toBe(true);
+    expect(h.state.tags).toEqual(["listings"]);
+    expect(h.state.placesRefreshed).toBe(1);
+  });
+
   it("keeps the listing's open houses (upsertListing replaces them)", async () => {
     queueUpdate({ opens: [openHouse] });
     const res = await saveListing({ ok: false }, form());
@@ -300,5 +330,45 @@ describe("saveListing", () => {
     );
     expect(h.state.upserts[0].openHouses).toEqual([]);
     expect(h.state.upserts[0].listingKey).toMatch(/^ADAMS-/);
+  });
+});
+
+describe("runSourceSync (dashboard Sync now)", () => {
+  const admin: Actor = { userId: "u-andrea", role: "admin", agentId: null };
+  const synced = (over: Record<string, unknown>) =>
+    ({ status: "succeeded", upserted: 0, unchanged: 0, changed: false, ...over }) as Awaited<
+      ReturnType<typeof sync.syncSource>
+    >;
+
+  beforeEach(() => {
+    h.state.actor = admin;
+    h.state.selects = [[{ id: SOURCE_ID }]];
+    syncSource.mockReset();
+  });
+
+  it("expires the cached listing data when the sync changed listings", async () => {
+    syncSource.mockResolvedValue(synced({ upserted: 4, changed: true }));
+    const res = await runSourceSync(SOURCE_ID);
+    expect(res).toMatchObject({ ok: true, message: "Synced: 4 updated, 0 unchanged." });
+    expect(h.state.tags).toEqual(["listings"]);
+  });
+
+  it("leaves the caches alone when nothing changed", async () => {
+    syncSource.mockResolvedValue(synced({ unchanged: 9 }));
+    await runSourceSync(SOURCE_ID);
+    expect(h.state.tags).toEqual([]);
+  });
+
+  it("still expires them when the sync failed after writing pages", async () => {
+    syncSource.mockRejectedValue(new sync.SyncFailedError("RESO request failed (503)", true));
+    const res = await runSourceSync(SOURCE_ID);
+    expect(res).toEqual({ ok: false, message: "RESO request failed (503)" });
+    expect(h.state.tags).toEqual(["listings"]);
+  });
+
+  it("is for admins only", async () => {
+    h.state.actor = daniel;
+    await expect(runSourceSync(SOURCE_ID)).rejects.toThrow();
+    expect(syncSource).not.toHaveBeenCalled();
   });
 });

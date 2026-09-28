@@ -1,6 +1,7 @@
 import {
   and,
   asc,
+  between,
   desc,
   eq,
   gte,
@@ -12,8 +13,10 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
+import { findArea } from "@/config/areas";
 import { site } from "@/config/site";
 import { listings, openHouses } from "@/db/schema";
+import { areaCondition } from "@/lib/areas/match";
 import type { SearchCriteria } from "./params";
 
 type Status = (typeof listings.status.enumValues)[number];
@@ -22,29 +25,56 @@ const BUY_STATUSES: Status[] = ["active", "coming_soon"];
 const PENDING_STATUSES: Status[] = ["active_under_contract", "pending"];
 const DEFAULT_SOLD_WINDOW_DAYS = 365;
 
-const STATE_SUFFIX = new RegExp(`,?\\s+(${site.market.state}|${site.market.stateName})\\b`, "gi");
+const STATE = `(?:${site.market.state}|${site.market.stateName})`;
+const COUNTRY_SUFFIX = /,?\s*(?:USA|U\.S\.A\.|US|United States)\s*$/i;
+/** The state alone ("Georgia", "GA"): every listing is in the state, so no location. */
+const STATE_ONLY = new RegExp(`^${STATE}$`, "i");
+/** The state at the end, optionally before a ZIP: "Royston, GA" / "Royston, GA 30662". */
+const STATE_SUFFIX = new RegExp(`,?\\s+${STATE}(?=\\s*(?:\\d{5})?\\s*$)`, "i");
 
 /**
- * "Royston, GA" / "Royston Georgia 30662" → "Royston" / "Royston 30662". The
- * state isn't part of the search vector, and every listing is in-market anyway.
+ * "Royston, GA" / "Royston Georgia 30662" → "Royston" / "Royston 30662", and a
+ * bare "Georgia", "GA" or "Georgia, USA" → "" (no location). The state isn't
+ * part of the location vector. Only a trailing state is dropped, so "The
+ * Georgia Club" stays a place name.
  */
 export function normalizeLocationQuery(q: string): string {
-  return q.replace(STATE_SUFFIX, "").replace(/,/g, " ").replace(/\s+/g, " ").trim();
+  const trimmed = q.trim().replace(COUNTRY_SUFFIX, "").trim();
+  if (STATE_ONLY.test(trimmed)) return "";
+  return trimmed.replace(STATE_SUFFIX, "").replace(/,/g, " ").replace(/\s+/g, " ").trim();
 }
 
+/** Whether the criteria search a place (a `q` that is more than just the state). */
+export function hasLocation(c: Pick<SearchCriteria, "q">): boolean {
+  return !!c.q && normalizeLocationQuery(c.q) !== "";
+}
+
+/**
+ * The location box. It matches where a listing is (address, city, ZIP,
+ * neighborhood, lake, MLS number) through `location_vector`, never the
+ * description, so "Atlanta" means homes in Atlanta, not every listing
+ * "minutes from Atlanta". Each branch has an index (GIN, trigram, btree, or
+ * the area-guide expression indexes), so the OR stays a bitmap scan.
+ */
 function locationCondition(rawQ: string): SQL | undefined {
   const q = normalizeLocationQuery(rawQ);
   if (!q) return undefined;
   if (/^\d{5}$/.test(q)) return eq(listings.postalCode, q);
   const like = q.replace(/[%_\\]/g, "\\$&");
+  // A guide name or alias ("Lake Hartwell", "Hartwell Lake", "Lanier") also
+  // matches the way its guide does: the exact neighborhood or lake name, or
+  // the town, inside the guide's counties. Real feeds often name the lake
+  // only in WaterBodyName, sometimes by an alias whose words `q` lacks.
+  const area = findArea(q);
   return or(
-    sql`${listings.searchVector} @@ websearch_to_tsquery('english', ${q})`,
+    sql`${listings.locationVector} @@ websearch_to_tsquery('simple', ${q})`,
     // Prefix matches so a half-typed "flowery" still finds Flowery Branch.
     sql`${listings.city} ilike ${like + "%"}`,
     sql`${listings.neighborhood} ilike ${like + "%"}`,
     // Partial street addresses; served by the trigram index.
     sql`${listings.addressLine1} ilike ${"%" + like + "%"}`,
     eq(listings.mlsNumber, q),
+    area ? areaCondition(area) : undefined,
   );
 }
 
@@ -111,10 +141,11 @@ export function buildConditions(c: SearchCriteria, now: Date = new Date()): SQL[
 
   if (c.bounds) {
     const { west, south, east, north } = c.bounds;
-    // Matches the GiST expression index `listings_geo_idx`.
-    conds.push(
-      sql`point(${listings.longitude}, ${listings.latitude}) <@ box(point(${west}, ${south}), point(${east}, ${north}))`,
-    );
+    // Plain ranges, not a GiST point-in-box: the planner estimates ranges from
+    // column statistics (a box gets a fixed guess of a few dozen rows, so a
+    // statewide viewport was planned like a tiny one), and the partial
+    // (latitude, longitude) btree serves small boxes.
+    conds.push(between(listings.longitude, west, east), between(listings.latitude, south, north));
   }
 
   return conds.filter((x): x is SQL => x !== undefined);

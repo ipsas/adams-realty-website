@@ -29,6 +29,41 @@
       "when": 1790314167075,
       "tag": "0003_commercial_property_type",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790357042483,
+      "tag": "0004_water_body",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790363237547,
+      "tag": "0005_statewide_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790364261084,
+      "tag": "0006_sync_budget_and_places",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790370590239,
+      "tag": "0007_review_round1",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790375111895,
+      "tag": "0008_review_round2",
+      "breakpoints": true
     }
   ]
 }

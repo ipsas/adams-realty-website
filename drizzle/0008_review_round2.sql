@@ -1,0 +1,9 @@
+DROP INDEX "listings_status_price_idx";--> statement-breakpoint
+CREATE INDEX "listings_live_neighborhood_norm_idx" ON "listings" USING btree (btrim(regexp_replace(lower("neighborhood"), '[^a-z0-9]+', ' ', 'g'))) WHERE "removed_at" is null and "status" in ('active', 'coming_soon', 'active_under_contract', 'pending');--> statement-breakpoint
+CREATE INDEX "listings_live_water_body_norm_idx" ON "listings" USING btree (btrim(regexp_replace(lower("water_body"), '[^a-z0-9]+', ' ', 'g'))) WHERE "removed_at" is null and "status" in ('active', 'coming_soon', 'active_under_contract', 'pending');--> statement-breakpoint
+CREATE INDEX "listings_sold_neighborhood_norm_idx" ON "listings" USING btree (btrim(regexp_replace(lower("neighborhood"), '[^a-z0-9]+', ' ', 'g'))) WHERE "removed_at" is null and "transaction_type" = 'sale' and "status" = 'closed';--> statement-breakpoint
+CREATE INDEX "listings_sold_water_body_norm_idx" ON "listings" USING btree (btrim(regexp_replace(lower("water_body"), '[^a-z0-9]+', ' ', 'g'))) WHERE "removed_at" is null and "transaction_type" = 'sale' and "status" = 'closed';--> statement-breakpoint
+CREATE INDEX "listings_sold_price_idx" ON "listings" USING btree ("list_price","id") WHERE "removed_at" is null and "transaction_type" = 'sale' and "status" = 'closed';--> statement-breakpoint
+CREATE INDEX "listings_sold_price_desc_idx" ON "listings" USING btree ("list_price" DESC NULLS FIRST,"id") WHERE "removed_at" is null and "transaction_type" = 'sale' and "status" = 'closed';--> statement-breakpoint
+CREATE INDEX "listings_sold_sqft_idx" ON "listings" USING btree ("living_area_sqft" DESC NULLS LAST,"id") WHERE "removed_at" is null and "transaction_type" = 'sale' and "status" = 'closed';--> statement-breakpoint
+CREATE INDEX "listings_sold_ppsf_idx" ON "listings" USING btree (("list_price"::float / nullif("living_area_sqft", 0)) asc nulls last,"id") WHERE "removed_at" is null and "transaction_type" = 'sale' and "status" = 'closed';

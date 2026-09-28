@@ -1,13 +1,14 @@
 "use server";
 
 import { and, eq, gt, lt } from "drizzle-orm";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
 import { dataSources, listings, openHouses } from "@/db/schema";
 import { authorize, can, ForbiddenError, type Actor } from "@/lib/auth/permissions";
 import { getActor } from "@/lib/auth/session";
 import { formatOpenHouse } from "@/lib/format";
+import { LISTINGS_TAG } from "@/lib/listings/cache-tags";
 import { zonedDateTime } from "@/lib/time";
 import { audit } from "../audit";
 
@@ -96,6 +97,8 @@ async function authorizeListing(actor: Actor, listingId: string) {
 }
 
 function revalidateListing(listingId: string, slug: string) {
+  // Cached home page stats count this week's open houses; featured cards show the next one.
+  updateTag(LISTINGS_TAG);
   revalidatePath(`/homes/${slug}`);
   revalidatePath("/homes");
   // The homepage counts this week's open houses.

@@ -57,9 +57,43 @@ export type MapSkipReason =
   /** Seller opted out of internet display (IDX `InternetEntireListingDisplayYN = false`). */
   | "not_displayable";
 
+/**
+ * What a purge compares: the listings the site keeps showing. Live statuses
+ * (active, coming soon, under contract, pending), plus closed sales since
+ * `closedSince`, which sold mode and the area guides still show.
+ */
+export type PurgeScope = {
+  /** YYYY-MM-DD: closed listings count only when they closed on or after this date. */
+  closedSince: string;
+};
+
+/**
+ * A place in the feed's update order (ModificationTimestamp, then
+ * ListingKey). With a `key`, "just after this record"; with `key: null`,
+ * "every record modified at or after `modifiedAt`".
+ */
+export type FeedPosition = { modifiedAt: Date; key: string | null };
+
+/** One page of updates, and the position of its last record (to resume after it). */
+export type UpdatesPage = {
+  items: MapResult[];
+  /** Null only when no record on the page had a timestamp and key. */
+  last: { modifiedAt: Date; key: string } | null;
+};
+
 export interface ListingProvider {
-  /** Yields pages of records modified at or after `since` (all records when null), oldest first. */
-  fetchUpdates(since: Date | null): AsyncIterable<MapResult[]>;
-  /** Every listing key currently in the feed. Keys we hold that are missing get removed. */
-  fetchActiveKeys(): Promise<Set<string>>;
+  /**
+   * Pages of records in (ModificationTimestamp, ListingKey) order, starting at
+   * `from` (every record when null). Pages are fetched by keyset (each one
+   * asks for the records after the previous page's last), never by offset, so
+   * a record changing mid-run can't shift the pages and hide another.
+   */
+  fetchUpdates(from: FeedPosition | null): AsyncIterable<UpdatesPage>;
+  /**
+   * Pages of the listing keys the feed still has within `scope`, in key
+   * order and fetched by keyset, like fetchUpdates. The purge soft-removes
+   * listings we hold in that scope whose key is missing, and only after the
+   * last page arrives: a partial key list is never used.
+   */
+  fetchActiveKeys(scope: PurgeScope): AsyncIterable<string[]>;
 }

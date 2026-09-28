@@ -1,7 +1,7 @@
 "use server";
 
 import { and, asc, eq, ne } from "drizzle-orm";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/db";
@@ -18,8 +18,10 @@ import {
 import { authorize, can, ForbiddenError, type Actor } from "@/lib/auth/permissions";
 import { getActor } from "@/lib/auth/session";
 import { geocodeAddress } from "@/lib/geocode";
+import { LISTINGS_TAG } from "@/lib/listings/cache-tags";
 import { upsertListing } from "@/lib/listings/persist";
-import { syncSource } from "@/lib/mls/sync";
+import { refreshPlaces } from "@/lib/listings/places";
+import { SyncFailedError, syncSource } from "@/lib/mls/sync";
 import type { NormalizedListing, NormalizedMedia, NormalizedOpenHouse } from "@/lib/mls/types";
 import { audit } from "../audit";
 
@@ -465,6 +467,7 @@ export async function saveListing(
     return result;
   });
 
+  await listingsChanged();
   revalidatePath("/dashboard/listings");
   revalidatePath("/homes");
   if (!existing) redirect(`/dashboard/listings/${saved.id}?created=1`);
@@ -506,8 +509,19 @@ export async function deleteListing(id: string) {
       entityId: id,
     });
   });
+  await listingsChanged();
   revalidatePath("/dashboard/listings");
   redirect("/dashboard/listings");
+}
+
+/**
+ * After a listing write: expire the cached listing data (home page stats,
+ * featured homes, area guides) so the next request reads fresh rows, and
+ * rebuild the autocomplete places.
+ */
+async function listingsChanged() {
+  updateTag(LISTINGS_TAG);
+  await refreshPlaces(db).catch((e) => console.error("Refreshing autocomplete places failed:", e));
 }
 
 // ---------------------------------------------------------------------------
@@ -619,10 +633,20 @@ export async function runSourceSync(sourceId: string) {
     .limit(1);
   if (!source) return { ok: false as const, message: "Only MLS feeds can be synced." };
   try {
-    const result = await syncSource(source.id);
+    // Same budget as the cron (this action runs in a function with a time limit too).
+    const result = await syncSource(source.id, { deadline: Date.now() + 240_000 });
+    if (result.changed) updateTag(LISTINGS_TAG);
     revalidatePath("/dashboard/sources");
-    return { ok: true as const, message: `Synced ${result.upserted} listings.` };
+    const message =
+      result.status === "skipped"
+        ? "A sync of this feed is already running."
+        : result.status === "partial"
+          ? `Updated ${result.upserted} listings before the time limit; the next sync continues from there.`
+          : `Synced: ${result.upserted} updated, ${result.unchanged} unchanged.`;
+    return { ok: result.status !== "skipped", message };
   } catch (e) {
+    // Pages written before the failure are live: refresh the caches for them.
+    if (e instanceof SyncFailedError && e.changed) updateTag(LISTINGS_TAG);
     revalidatePath("/dashboard/sources");
     return { ok: false as const, message: e instanceof Error ? e.message : "Sync failed." };
   }

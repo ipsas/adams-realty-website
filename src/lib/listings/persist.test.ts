@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { NormalizedListing } from "@/lib/mls/types";
-import { diffEvents } from "./persist";
+import { diffEvents, mediaSignature, openHouseSignature } from "./persist";
 import { listingSlug, shortHash } from "./slug";
 
 const now = new Date("2026-09-25T12:00:00Z");
@@ -118,5 +118,49 @@ describe("listingSlug", () => {
       listingKey: "abc",
     });
     expect(slug.startsWith("austin-tx-78704-")).toBe(true);
+  });
+});
+
+describe("mediaSignature / openHouseSignature", () => {
+  const photo = (i: number, over = {}) => ({
+    sourceKey: `m${i}`,
+    url: `https://cdn.example.com/${i}.jpg`,
+    kind: "photo" as const,
+    caption: null,
+    width: 1024,
+    height: 768,
+    sortOrder: i,
+    ...over,
+  });
+
+  it("matches stored rows (any row order) against the same feed list", () => {
+    const feed = [photo(0), photo(1), photo(2)];
+    const stored = [photo(2), photo(0), photo(1)];
+    expect(mediaSignature(stored)).toBe(mediaSignature(feed));
+  });
+
+  it("changes when a photo, its order or its caption changes", () => {
+    const base = mediaSignature([photo(0), photo(1)]);
+    expect(
+      mediaSignature([photo(0), photo(1, { url: "https://cdn.example.com/new.jpg" })]),
+    ).not.toBe(base);
+    expect(mediaSignature([photo(0, { sortOrder: 1 }), photo(1, { sortOrder: 0 })])).not.toBe(base);
+    expect(mediaSignature([photo(0), photo(1, { caption: "Kitchen" })])).not.toBe(base);
+    expect(mediaSignature([photo(0)])).not.toBe(base);
+  });
+
+  it("compares open houses by content, in any order", () => {
+    const a = {
+      sourceKey: "oh1",
+      type: "in_person" as const,
+      startsAt: new Date("2026-10-03T17:00:00Z"),
+      endsAt: new Date("2026-10-03T19:00:00Z"),
+      remarks: null,
+    };
+    const b = { ...a, sourceKey: "oh2", startsAt: new Date("2026-10-04T17:00:00Z") };
+    expect(openHouseSignature([b, a])).toBe(openHouseSignature([a, b]));
+    expect(openHouseSignature([a, { ...b, endsAt: new Date("2026-10-04T20:00:00Z") }])).not.toBe(
+      openHouseSignature([a, b]),
+    );
   });
 });

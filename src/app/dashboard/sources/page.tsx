@@ -6,17 +6,20 @@ import { requirePermission } from "@/lib/auth/session";
 import { cn } from "@/lib/cn";
 import { getSources } from "@/lib/dashboard/queries";
 import { formatNumber, formatRelative } from "@/lib/format";
+import { purgeOverdue } from "@/lib/mls/purge";
+import { PURGE_CAP_PREFIX } from "@/lib/mls/sync-engine";
 
 export const metadata = { title: "MLS feeds" };
 
 export default async function SourcesPage() {
   await requirePermission("/dashboard/sources", can.manageDataSources);
   const sources = await getSources();
+  const now = new Date();
   return (
     <>
       <PageHeader
         title="MLS feeds"
-        description="Listing sources and sync health. Feeds sync on the schedule in vercel.json (daily on Vercel's free plan); off-market listings are purged daily."
+        description="Listing sources and sync health. Feeds sync on the schedule in vercel.json (daily on Vercel's free plan); off-market listings are purged daily. A run that reaches its time limit stops as “partial” and the next one continues where it left off."
       />
       <div className="space-y-4">
         {sources.map((s) => (
@@ -43,6 +46,27 @@ export default async function SourcesPage() {
                 <SyncButton sourceId={s.id} disabled={!s.isActive || !s.config.baseUrl} />
               )}
             </div>
+            {s.runs[0]?.status === "failed" && s.runs[0].error?.startsWith(PURGE_CAP_PREFIX) && (
+              <p
+                role="alert"
+                className="mt-4 rounded-2xl border border-clay-600/30 bg-clay-50 px-4 py-3 text-sm leading-relaxed text-clay-600"
+              >
+                The last purge stopped itself: it would have taken down more listings than usual.
+                Nothing was removed. If the feed really dropped them, run{" "}
+                <code>npm run mls:sync -- --purge --allow-large-purge</code>.
+              </p>
+            )}
+            {s.kind === "reso_web_api" && s.isActive && purgeOverdue(s, now) && (
+              <p
+                role="alert"
+                className="mt-4 rounded-2xl border border-clay-600/30 bg-clay-50 px-4 py-3 text-sm leading-relaxed text-clay-600"
+              >
+                No purge has finished{" "}
+                {s.lastPurgeAt ? `since ${formatRelative(s.lastPurgeAt)}` : "yet"}, so listings that
+                went off market may still be showing. Check the purge runs below, or run{" "}
+                <code>npm run mls:sync -- --purge</code>.
+              </p>
+            )}
             {s.runs.length > 0 && (
               <ul className="mt-4 divide-y divide-line rounded-2xl border border-line text-sm">
                 {s.runs.map((r) => (
@@ -55,16 +79,21 @@ export default async function SourcesPage() {
                         "font-medium",
                         r.status === "failed"
                           ? "text-clay-600"
-                          : r.status === "running"
+                          : r.status === "running" || r.status === "partial"
                             ? "text-brass-700"
-                            : "text-brand-700",
+                            : r.status === "skipped"
+                              ? "text-muted"
+                              : "text-brand-700",
                       )}
                     >
                       {r.status}
                     </span>
-                    <span className="text-muted">{formatRelative(r.startedAt)}</span>
+                    <span className="text-muted">
+                      {r.mode === "incremental" ? "sync" : r.mode} · {formatRelative(r.startedAt)}
+                    </span>
                     <span className="text-ink-soft">
-                      {r.fetched} fetched · {r.upserted} updated · {r.removed} removed
+                      {r.fetched} fetched · {r.upserted} updated · {r.unchanged} unchanged ·{" "}
+                      {r.removed} removed
                     </span>
                     {r.error && (
                       <span className="w-full truncate text-xs text-clay-600">{r.error}</span>

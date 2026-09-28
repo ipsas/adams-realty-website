@@ -352,6 +352,7 @@ export function mapResoProperty(p: ResoProperty): MapResult {
     postalCode,
     county: str(p.CountyOrParish),
     neighborhood: str(p.SubdivisionName) ? titleCaseIfShouting(str(p.SubdivisionName)!) : null,
+    waterBodyName: str(p.WaterBodyName) ? titleCaseIfShouting(str(p.WaterBodyName)!) : null,
     latitude: validCoords ? lat : null,
     longitude: validCoords ? lng : null,
     hideAddress: bool(p.InternetAddressDisplayYN) === false,

@@ -51,7 +51,22 @@ export const openHouseType = pgEnum("open_house_type", ["in_person", "virtual"])
 
 export const dataSourceKind = pgEnum("data_source_kind", ["manual", "reso_web_api"]);
 
-export const syncStatus = pgEnum("sync_status", ["running", "succeeded", "failed"]);
+/**
+ * `partial`: the run stopped at its time budget between pages. The cursor is
+ * saved, so the next run carries on from there. `skipped`: another run of the
+ * source was still going, so this one did nothing (a purge in that case is
+ * recorded `failed` instead: it must not go missing quietly).
+ */
+export const syncStatus = pgEnum("sync_status", [
+  "running",
+  "succeeded",
+  "failed",
+  "partial",
+  "skipped",
+]);
+
+/** `incremental` follows the cursor, `full` ignores it, `purge` only removes listings that left the feed. */
+export const syncMode = pgEnum("sync_mode", ["incremental", "full", "purge"]);
 
 export const inquiryType = pgEnum("inquiry_type", [
   "question",

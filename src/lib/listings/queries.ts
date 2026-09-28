@@ -8,6 +8,7 @@ import {
   listingMedia,
   listings,
   openHouses,
+  places,
   savedListings,
 } from "@/db/schema";
 import { cardColumns, selectCards, withPhotos } from "./card";
@@ -162,30 +163,29 @@ export type Suggestion = {
   sublabel?: string;
   /** Value for the search `q` param, or a slug for addresses. */
   value: string;
+  /** Live listings in the place (not for addresses). */
+  count?: number;
 };
 
-/** Location autocomplete: areas first, then matching addresses. */
+/**
+ * Location autocomplete: areas first, then matching addresses. Area names and
+ * counts come from the `places` materialized view (rebuilt after each sync,
+ * seed and dashboard listing change; see refreshPlaces), so a keystroke reads
+ * a few index entries instead of every live listing sharing the prefix.
+ */
 export async function getLocationSuggestions(term: string): Promise<Suggestion[]> {
   const t = term.trim();
   if (t.length < 2) return [];
-  const prefix = `${t.replace(/[%_\\]/g, "\\$&")}%`;
+  const escaped = t.replace(/[%_\\]/g, "\\$&");
   const live = and(isNull(listings.removedAt), inArray(listings.status, [...LIVE_STATUSES]));
 
   const [areas, addresses] = await Promise.all([
-    db.execute<{
-      kind: "city" | "neighborhood" | "zip";
-      label: string;
-      sublabel: string | null;
-      n: number;
-    }>(sql`
-      select kind, label, sublabel, count(*)::int as n from (
-        select 'neighborhood' as kind, ${listings.neighborhood} as label, ${listings.city} as sublabel
-          from ${listings} where ${live} and ${listings.neighborhood} ilike ${prefix}
-        union all
-        select 'city', ${listings.city}, ${listings.state} from ${listings} where ${live} and ${listings.city} ilike ${prefix}
-        union all
-        select 'zip', ${listings.postalCode}, ${listings.city} from ${listings} where ${live} and ${listings.postalCode} like ${prefix}
-      ) s group by kind, label, sublabel order by n desc limit 6`),
+    db
+      .select({ kind: places.kind, label: places.label, sublabel: places.sublabel, n: places.n })
+      .from(places)
+      .where(sql`lower(${places.label}) like ${`${escaped.toLowerCase()}%`}`)
+      .orderBy(desc(places.n), asc(places.label))
+      .limit(6),
     /^\d*\s*[a-z]/i.test(t) && t.length >= 3
       ? db
           .select({
@@ -200,7 +200,7 @@ export async function getLocationSuggestions(term: string): Promise<Suggestion[]
             and(
               live,
               eq(listings.hideAddress, false),
-              sql`${listings.addressLine1} ilike ${"%" + t.replace(/[%_\\]/g, "\\$&") + "%"}`,
+              sql`${listings.addressLine1} ilike ${"%" + escaped + "%"}`,
             ),
           )
           .orderBy(sql`similarity(${listings.addressLine1}, ${t}) desc`)
@@ -209,7 +209,7 @@ export async function getLocationSuggestions(term: string): Promise<Suggestion[]
   ]);
 
   return [
-    ...areas.rows.map((a) => ({
+    ...areas.map((a) => ({
       kind: a.kind,
       label: a.label,
       sublabel:
@@ -219,6 +219,7 @@ export async function getLocationSuggestions(term: string): Promise<Suggestion[]
             ? `Neighborhood in ${a.sublabel}`
             : (a.sublabel ?? undefined),
       value: a.label,
+      count: a.n,
     })),
     ...addresses.map((a) => ({
       kind: "address" as const,
@@ -269,4 +270,61 @@ export async function getMarketStats() {
     .from(listings)
     .where(isNull(listings.removedAt));
   return row;
+}
+
+/** The for-sale set the default /homes search shows (and `listings_buy_*` indexes cover). */
+const forSaleNow = () =>
+  and(
+    isNull(listings.removedAt),
+    eq(listings.transactionType, "sale"),
+    inArray(listings.status, ["active", "coming_soon"]),
+  );
+
+export type CityCount = { city: string; count: number };
+
+/**
+ * The cities with the most homes for sale, busiest first: the home page's
+ * town chips, computed from the feed rather than a hard-coded list. Each
+ * links to `/homes?q=<city>`. Changes only when the feed does, so callers
+ * cache it with the other home-page stats.
+ */
+export async function getTopCities(limit = 12): Promise<CityCount[]> {
+  return db
+    .select({ city: listings.city, count: sql<number>`count(*)::int` })
+    .from(listings)
+    .where(forSaleNow())
+    .groupBy(listings.city)
+    .orderBy(sql`count(*) desc`, listings.city)
+    .limit(limit);
+}
+
+export type PlacesIndexCounty = {
+  /** County name as the feed spells it; null collects listings with no county. */
+  county: string | null;
+  cities: CityCount[];
+};
+
+/**
+ * Every city with homes for sale, grouped by county (A–Z, no-county last) and
+ * alphabetical within it: the statewide "See all towns" index. A city that
+ * spans counties appears under each, with that county's count.
+ */
+export async function getPlacesIndex(): Promise<PlacesIndexCounty[]> {
+  const rows = await db
+    .select({
+      county: listings.county,
+      city: listings.city,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(listings)
+    .where(forSaleNow())
+    .groupBy(listings.county, listings.city)
+    .orderBy(sql`${listings.county} asc nulls last`, listings.city);
+  const out: PlacesIndexCounty[] = [];
+  for (const r of rows) {
+    const last = out.at(-1);
+    if (last && last.county === r.county) last.cities.push({ city: r.city, count: r.count });
+    else out.push({ county: r.county, cities: [{ city: r.city, count: r.count }] });
+  }
+  return out;
 }

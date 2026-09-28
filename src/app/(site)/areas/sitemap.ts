@@ -1,17 +1,18 @@
 import type { MetadataRoute } from "next";
 import { areas } from "@/config/areas";
-import { getAreaSummaries } from "@/lib/areas/queries";
 import { env } from "@/lib/env";
 
 // Served at /areas/sitemap.xml (robots.ts lists it). Rendered per request so
-// builds never need a database.
+// builds never need a database (and the data layer is imported lazily, so
+// loading this module doesn't either).
 export const dynamic = "force-dynamic";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = env.NEXT_PUBLIC_SITE_URL;
   // The guides themselves are config, so the sitemap still lists them if the
   // database is unreachable; only the freshness dates depend on it.
-  const summaries = await getAreaSummaries().catch(() =>
+  const { getCachedAreaSummaries } = await import("@/lib/listings/cached");
+  const summaries = await getCachedAreaSummaries().catch(() =>
     areas.map((area) => ({ area, stats: { lastUpdated: null as Date | null } })),
   );
   const latest = summaries.reduce<Date | null>(

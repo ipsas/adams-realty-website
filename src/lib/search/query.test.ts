@@ -1,7 +1,7 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import { parseSearchParams } from "./params";
-import { buildOrderBy, buildWhere, normalizeLocationQuery } from "./query";
+import { buildOrderBy, buildWhere, hasLocation, normalizeLocationQuery } from "./query";
 
 const dialect = new PgDialect();
 const now = new Date("2026-09-25T12:00:00Z");
@@ -36,17 +36,52 @@ describe("buildWhere", () => {
     expect(params).toEqual(["closed", "sale", "2026-06-27"]);
   });
 
-  it("matches ZIP codes exactly and other text with full-text search", () => {
-    expect(render({ q: "78704" }).sql).toContain(`"listings"."postal_code" = $`);
-    const text = render({ q: "Lake Hartwell, GA" });
-    expect(text.sql).toContain("websearch_to_tsquery('english',");
-    expect(text.params).toContain("Lake Hartwell");
+  it("matches ZIP codes exactly", () => {
+    const { sql, params } = render({ q: "30662" });
+    expect(sql).toContain(`"listings"."postal_code" = $`);
+    expect(sql).not.toContain("location_vector");
+    expect(params).toContain("30662");
   });
 
-  it("uses the GiST-indexed point-in-box expression for map bounds", () => {
+  it("matches a place against the location vector, never the description", () => {
+    const { sql, params } = render({ q: "Atlanta" });
+    expect(sql).toContain(`"listings"."location_vector" @@ websearch_to_tsquery('simple', $`);
+    expect(sql).not.toContain("search_vector");
+    expect(sql).not.toContain("description");
+    expect(params).toContain("Atlanta");
+    // No area guide is named Atlanta, so no guide branch.
+    expect(sql).not.toContain("water_body");
+  });
+
+  // Real feeds put the subdivision in `neighborhood` and the lake only in
+  // WaterBodyName, sometimes by an alias ("Lanier"): a lake that names a guide
+  // also matches the guide's names on `water_body`, inside its counties.
+  it("resolves a lake guide's name to the guide's names on neighborhood and water_body", () => {
+    const { sql, params } = render({ q: "Lake Hartwell, GA" });
+    expect(params).toContain("Lake Hartwell");
+    expect(sql).toContain(`"listings"."location_vector" @@ websearch_to_tsquery('simple', $`);
+    expect(sql).toContain(
+      `btrim(regexp_replace(lower("listings"."water_body"), '[^a-z0-9]+', ' ', 'g')) = any(array[`,
+    );
+    expect(sql).toContain(`"listings"."county" is null or regexp_replace(`);
+    expect(params).toEqual(expect.arrayContaining(["lake hartwell", "hartwell lake"]));
+    expect(params).toEqual(expect.arrayContaining(["hart", "franklin", "stephens"]));
+  });
+
+  it("resolves an alias to its guide: 'Lanier' finds Lake Lanier's water_body keys", () => {
+    const { sql, params } = render({ q: "Lanier" });
+    expect(sql).toContain(`lower("listings"."water_body")`);
+    expect(params).toEqual(
+      expect.arrayContaining(["lake lanier", "lanier", "lake sidney lanier", "hall", "forsyth"]),
+    );
+  });
+
+  it("uses plain ranges for map bounds (not a GiST box, which the planner misestimates)", () => {
     const { sql, params } = render({ bounds: "-97.8,30.2,-97.7,30.3" });
-    expect(sql).toContain(`point("listings"."longitude", "listings"."latitude") <@ box(point(`);
-    expect(params.slice(-4)).toEqual([-97.8, 30.2, -97.7, 30.3]);
+    expect(sql).toContain(`"listings"."longitude" between $`);
+    expect(sql).toContain(`"listings"."latitude" between $`);
+    expect(sql).not.toContain("point(");
+    expect(params.slice(-4)).toEqual([-97.8, -97.7, 30.2, 30.3]);
   });
 
   it("translates feature flags and ranges", () => {
@@ -83,9 +118,34 @@ describe("buildOrderBy", () => {
 });
 
 describe("normalizeLocationQuery", () => {
-  it("strips the state", () => {
+  it("strips a trailing state, before an optional ZIP", () => {
     expect(normalizeLocationQuery("Royston, GA")).toBe("Royston");
+    expect(normalizeLocationQuery("Royston, GA 30662")).toBe("Royston 30662");
     expect(normalizeLocationQuery("Flowery Branch, Georgia 30542")).toBe("Flowery Branch 30542");
+    expect(normalizeLocationQuery("Savannah, GA, USA")).toBe("Savannah");
     expect(normalizeLocationQuery("Gainesville")).toBe("Gainesville");
+  });
+
+  it("treats the state alone as no location", () => {
+    expect(normalizeLocationQuery("Georgia")).toBe("");
+    expect(normalizeLocationQuery("GA")).toBe("");
+    expect(normalizeLocationQuery(" georgia ")).toBe("");
+    expect(normalizeLocationQuery("Georgia, USA")).toBe("");
+    expect(render({ q: "Georgia" }).sql).not.toContain("location_vector");
+  });
+
+  it("keeps a state name that is part of a place name", () => {
+    expect(normalizeLocationQuery("The Georgia Club")).toBe("The Georgia Club");
+    expect(normalizeLocationQuery("Georgia Ave, Macon")).toBe("Georgia Ave Macon");
+    expect(normalizeLocationQuery("Gaines Road")).toBe("Gaines Road");
+  });
+});
+
+describe("hasLocation", () => {
+  it("is true for a place and false for no q or the state alone", () => {
+    expect(hasLocation({ q: "Savannah, GA" })).toBe(true);
+    expect(hasLocation({ q: "30662" })).toBe(true);
+    expect(hasLocation({ q: undefined })).toBe(false);
+    expect(hasLocation({ q: "Georgia, USA" })).toBe(false);
   });
 });

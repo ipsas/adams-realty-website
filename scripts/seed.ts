@@ -1,8 +1,17 @@
 /**
- * Seeds a development database with a realistic Northeast Georgia market:
- * Adams Realty's real office and broker, a few sample agents, ~180 FICTIONAL
- * listings (ours plus a demo MLS feed) across the towns and lakes the firm
- * serves, open houses, price history, leads and demo logins.
+ * Seeds a development database with a realistic sample market: Adams Realty's
+ * real office and broker, a few sample agents, open houses, price history,
+ * leads and demo logins, and about 421 FICTIONAL listings:
+ * - 180 in Northeast Georgia, the towns and lakes the firm serves: Adams
+ *   Realty's own listings plus a demo MLS feed. Adams listings are only here.
+ * - 226 statewide (Atlanta and its suburbs, the regional cities, the
+ *   mountains and south Georgia), all from other (fictional) brokerages in
+ *   the demo feed, generated after the Northeast Georgia block from their own
+ *   PRNG seed so that block never changes.
+ * - 12 on Lake Sinclair and Lake Oconee (STATEWIDE_LAKES), generated after
+ *   those, so adding them moved none of the 226.
+ * - 3 lake homes shaped like the real feed (LAKE_FIXTURES): the lake only in
+ *   WaterBodyName, never in `neighborhood`, so lake searches stay tested.
  *
  *   npm run db:seed
  *
@@ -29,7 +38,12 @@ import {
   users,
 } from "@/db/schema";
 import { upsertListing, type PersistSource } from "@/lib/listings/persist";
+import { refreshPlaces } from "@/lib/listings/places";
+import { getLocationSuggestions, getPlacesIndex, getTopCities } from "@/lib/listings/queries";
 import { slugify } from "@/lib/listings/slug";
+import { DEFAULT_CRITERIA, type SearchCriteria } from "@/lib/search/params";
+import { searchListings } from "@/lib/search/service";
+import { site } from "@/config/site";
 import type { NormalizedListing, NormalizedMedia } from "@/lib/mls/types";
 import {
   AGENTS,
@@ -50,6 +64,7 @@ import {
   INTERIOR_FEATURES,
   INTERIORS,
   LAKE_HIGHLIGHTS,
+  LAKE_FIXTURES,
   LAKE_LOT_DETAILS,
   LAKE_PHOTOS,
   LAKE_SUFFIXES,
@@ -58,6 +73,8 @@ import {
   OPENERS,
   OTHER_BROKERAGES,
   RURAL_SUFFIXES,
+  STATEWIDE_AREAS,
+  STATEWIDE_LAKES,
   STREETS,
   STYLES,
   SUFFIXES,
@@ -208,9 +225,13 @@ type Generated = { listing: NormalizedListing; area: SeedArea; priceDropFrom?: n
  * rather than weighted draws, so every town reliably gets enough listings for
  * its guide's stats.
  */
-function allocateAreas(n: number, weightOf: (a: SeedArea) => number): SeedArea[] {
-  const total = AREAS.reduce((s, a) => s + weightOf(a), 0);
-  const shares = AREAS.map((a) => {
+function allocateAreas(
+  n: number,
+  weightOf: (a: SeedArea) => number,
+  areas: SeedArea[] = AREAS,
+): SeedArea[] {
+  const total = areas.reduce((s, a) => s + weightOf(a), 0);
+  const shares = areas.map((a) => {
     const exact = (n * weightOf(a)) / total;
     return { area: a, count: Math.floor(exact), rest: exact - Math.floor(exact) };
   });
@@ -225,6 +246,12 @@ function allocateAreas(n: number, weightOf: (a: SeedArea) => number): SeedArea[]
 
 function siteKindFor(area: SeedArea, type: SeedPropertyType, onWater: boolean): SiteKind {
   if (area.kind === "lake") return onWater ? "waterfront" : "near";
+  const kind = townSiteKindFor(type);
+  // A city with no countryside of its own puts its land in town.
+  return area.urban && kind === "rural" ? "town" : kind;
+}
+
+function townSiteKindFor(type: SeedPropertyType): SiteKind {
   switch (type) {
     case "commercial":
       return chance(0.65) ? "core" : "town";
@@ -247,10 +274,17 @@ const COMMERCIAL_TYPES = {
   town: ["Office", "Retail", "Warehouse", "Industrial"],
 };
 
-function generateListing(
-  i: number,
-  opts: { area: SeedArea; type?: SeedPropertyType; onWater?: boolean },
-): Generated {
+type GenerateOptions = {
+  area: SeedArea;
+  type?: SeedPropertyType;
+  onWater?: boolean;
+  /** MLS number; by default a random one (Northeast Georgia block). */
+  mlsNumber?: string;
+  /** Forces status "active" when it returns true (after the status roll is drawn). */
+  activeIf?: (l: { county: string; mode: "sale" | "rent" }) => boolean;
+};
+
+function generateListing(i: number, opts: GenerateOptions): Generated {
   const { area } = opts;
   const type = opts.type ?? weighted(area.mix);
   const isLake = area.kind === "lake";
@@ -366,8 +400,9 @@ function generateListing(
         : Math.round((salePrice * between(0.0055, 0.0075)) / 25) * 25;
 
   const statusRoll = rand();
-  const status: NormalizedListing["status"] =
-    mode === "rent"
+  const status: NormalizedListing["status"] = opts.activeIf?.({ county: site.county, mode })
+    ? "active"
+    : mode === "rent"
       ? statusRoll < 0.9
         ? "active"
         : "pending"
@@ -406,7 +441,11 @@ function generateListing(
   const garage = hasHome && !isCondo ? (chance(0.8) ? intBetween(1, 3) : null) : null;
   const pool = hasHome && !isCondo && chance(area.poolChance ?? 0.05);
   const lakeView = isLake && hasHome && !onWater && chance(0.35);
-  const view = onWater || lakeView || (area.slug === "toccoa" && chance(0.2)) || chance(0.04);
+  const view =
+    onWater ||
+    lakeView ||
+    (area.mountainViewChance !== undefined && chance(area.mountainViewChance)) ||
+    chance(0.04);
   const basement = hasHome && !isCondo && chance(area.basementChance ?? 0.12);
   const newConstruction = hasHome && !!year && year >= NOW.getUTCFullYear() - 1 && mode === "sale";
   const hoa = isCondo
@@ -454,7 +493,7 @@ function generateListing(
 
   const listing: NormalizedListing = {
     listingKey: `DEMO-${String(i).padStart(5, "0")}`,
-    mlsNumber: String(10_300_000 + intBetween(0, 199_999)),
+    mlsNumber: opts.mlsNumber ?? String(10_300_000 + intBetween(0, 199_999)),
     status,
     transactionType: mode,
     propertyType: type,
@@ -496,7 +535,9 @@ function generateListing(
     county: site.county,
     // Lakes are the "neighborhood" MLS feeds use; small-town and rural
     // listings usually have no subdivision, and guides match them by city.
-    neighborhood: isLake ? area.name : null,
+    neighborhood: isLake || area.kind === "neighborhood" ? area.name : null,
+    // RESO WaterBodyName: the lake a waterfront property is on.
+    waterBodyName: onWater ? area.name : null,
     latitude: site.lat,
     longitude: site.lng,
     hideAddress: false,
@@ -550,7 +591,7 @@ function generateListing(
                 ? sample(COMMUNITY, intBetween(1, 3))
                 : [],
             view: view
-              ? [isLake ? "Lake" : area.slug === "toccoa" ? "Mountain(s)" : "Trees/Woods"]
+              ? [isLake ? "Lake" : area.mountainViewChance ? "Mountain(s)" : "Trees/Woods"]
               : [],
             lot: isFarm
               ? ["Pasture", "Barn", "Fenced"]
@@ -581,7 +622,8 @@ function generateListing(
     videoUrl: null,
     listAgentMlsId: null,
     listAgentName: `${pick(["Chris", "Jordan", "Taylor", "Morgan", "Alex", "Casey", "Jamie", "Riley"])} ${pick(["Nguyen", "Smith", "Garcia", "Johnson", "Patel", "Brown", "Lee", "Wilson"])}`,
-    listAgentPhone: `(${pick(["706", "762", "470"])}) 555-${String(intBetween(1000, 9999))}`,
+    // 555-0100…0199 are the numbers set aside for fiction; one draw, as before.
+    listAgentPhone: `(${pick(area.areaCodes ?? ["706", "762", "470"])}) 555-01${String(intBetween(0, 99)).padStart(2, "0")}`,
     listAgentEmail: null,
     listOfficeName: pick(OTHER_BROKERAGES),
     listOfficeMlsId: null,
@@ -626,7 +668,14 @@ function describe(c: {
     .replace("{style}", pick(STYLES))
     .replace("{in}", c.inPlace)
     .replace("{lotAdj}", c.lot > 43_560 ? "sprawling" : c.lot > 15_000 ? "generous" : "sunny")
-    .replace("{view}", c.onWater || c.area.kind === "lake" ? "lake views" : "wooded views")
+    .replace(
+      "{view}",
+      c.onWater || c.area.kind === "lake"
+        ? "lake views"
+        : c.area.urban
+          ? "city views"
+          : "wooded views",
+    )
     .replace("{beds}", String(c.beds))
     .replace("{acres}", (c.acres ?? c.lot / 43_560).toFixed(c.acres && c.acres >= 10 ? 0 : 1))
     .replace("{sqft}", c.sqft.toLocaleString("en-US"))
@@ -876,7 +925,7 @@ async function main() {
         agentId: type === "valuation" ? null : l.agentId,
         name,
         email: `${name.split(" ")[0].toLowerCase()}@example.com`,
-        phone: `(706) 555-${String(2000 + i * 37)}`,
+        phone: `(706) 555-01${String(20 + i * 7)}`,
         message:
           type === "tour"
             ? "We'd love to see this one this weekend if possible."
@@ -907,6 +956,103 @@ async function main() {
     alertFrequency: "daily",
   });
 
+  // Everything above is the Northeast Georgia demo, unchanged by this block.
+  // The statewide feed starts from its own PRNG seed, so adding or tuning
+  // statewide areas never reshuffles a Northeast Georgia listing.
+  console.info("Generating statewide listings…");
+  state = 20260926;
+  const statewideTotal = STATEWIDE_AREAS.reduce((s, a) => s + a.weight, 0);
+  const statewideAreas = allocateAreas(statewideTotal, (a) => a.weight, STATEWIDE_AREAS);
+  // Fixtures the mobile work packages test against (Decatur, DeKalb County,
+  // Virginia-Highland in buy mode): force the first few of each active.
+  const forced = { decatur: 0, dekalb: 0, virginiaHighland: 0 };
+  /** One listing from another brokerage in the demo feed. */
+  async function addStatewide(area: SeedArea, key: number, activeIf?: GenerateOptions["activeIf"]) {
+    const { listing, priceDropFrom } = generateListing(key, {
+      area,
+      // Derived from the key, so statewide MLS numbers are unique.
+      mlsNumber: String(10_500_000 + key),
+      activeIf,
+    });
+    perArea.set(area.slug, (perArea.get(area.slug) ?? 0) + 1);
+    // Other brokerages only: Adams Realty's own listings stay in Northeast Georgia.
+    const { id } = await db.transaction((tx) =>
+      upsertListing(tx, toSource(demoSource), listing, { agentIdsByMlsId, isFeatured: false }),
+    );
+    if (priceDropFrom) {
+      await db.insert(listingEvents).values({
+        listingId: id,
+        type: "price_change",
+        occurredAt: daysAgo(intBetween(3, 15)),
+        price: listing.listPrice,
+        previousPrice: priceDropFrom,
+      });
+    }
+  }
+
+  for (let j = 0; j < statewideAreas.length; j++) {
+    const area = statewideAreas[j];
+    await addStatewide(area, total + j + 1, ({ county, mode }) => {
+      if (mode !== "sale") return false;
+      let force = false;
+      if (area.slug === "decatur" && forced.decatur++ < 12) force = true;
+      if (county === "DeKalb" && forced.dekalb++ < 4) force = true;
+      if (area.slug === "virginia-highland" && forced.virginiaHighland++ < 2) force = true;
+      return force;
+    });
+  }
+
+  // Lake Sinclair and Lake Oconee, after every other statewide listing (the
+  // PRNG carries on), so adding them moved none of those.
+  const lakeTotal = STATEWIDE_LAKES.reduce((s, a) => s + a.weight, 0);
+  const lakeAreas = allocateAreas(lakeTotal, (a) => a.weight, STATEWIDE_LAKES);
+  // A lake search must find something for sale on each: the first three of each are active.
+  const forcedOnLake = new Map<string, number>();
+  for (let j = 0; j < lakeAreas.length; j++) {
+    const area = lakeAreas[j];
+    await addStatewide(area, total + statewideAreas.length + j + 1, ({ mode }) => {
+      const n = forcedOnLake.get(area.slug) ?? 0;
+      forcedOnLake.set(area.slug, n + 1);
+      return mode === "sale" && n < 3;
+    });
+  }
+
+  // Lake homes shaped like the real feed: the subdivision in `neighborhood`,
+  // the lake only in WaterBodyName. The rest of the seed keeps the lake in
+  // `neighborhood`, which the real feed never does, so without these a lake
+  // search could break without any test noticing. Unique prices let tests
+  // pick each one out.
+  for (const [k, f] of LAKE_FIXTURES.entries()) {
+    const area = [...AREAS, ...STATEWIDE_AREAS, ...STATEWIDE_LAKES].find((a) => a.slug === f.area)!;
+    const key = total + statewideAreas.length + lakeAreas.length + k + 1;
+    const { listing } = generateListing(key, {
+      area,
+      type: "single_family",
+      onWater: true,
+      mlsNumber: String(10_500_000 + key),
+    });
+    Object.assign(listing, {
+      status: "active",
+      transactionType: "sale",
+      listPrice: f.price,
+      originalListPrice: f.price,
+      closePrice: null,
+      closeDate: null,
+      addressLine1: f.street,
+      unitNumber: null,
+      neighborhood: f.neighborhood,
+      waterBodyName: f.waterBody,
+      isWaterfront: true,
+    } satisfies Partial<typeof listing>);
+    perArea.set(area.slug, (perArea.get(area.slug) ?? 0) + 1);
+    await db.transaction((tx) =>
+      upsertListing(tx, toSource(demoSource), listing, { agentIdsByMlsId, isFeatured: false }),
+    );
+  }
+  // Autocomplete reads the `places` view; a sync, a seed or a dashboard edit rebuilds it.
+  await refreshPlaces(db);
+  await assertStatewideFixtures();
+
   const [{ count }] = await db
     .execute<{ count: string }>(sql`select count(*)::text as count from listings`)
     .then((r) => r.rows);
@@ -914,6 +1060,12 @@ async function main() {
   for (const l of ourListings) perAgent.set(l.agentId, (perAgent.get(l.agentId) ?? 0) + 1);
   console.info(`\nSeeded ${count} listings, ${agentRows.length} agents.`);
   console.info("By area: %s", AREAS.map((a) => `${a.slug} ${perArea.get(a.slug) ?? 0}`).join(", "));
+  console.info(
+    "Statewide: %s",
+    [...STATEWIDE_AREAS, ...STATEWIDE_LAKES]
+      .map((a) => `${a.slug} ${perArea.get(a.slug) ?? 0}`)
+      .join(", "),
+  );
   console.info(
     "Adams listings by agent: %s\n",
     agentRows.map((a) => `${a.name} ${perAgent.get(a.id) ?? 0}`).join(", "),
@@ -923,6 +1075,121 @@ async function main() {
   console.info("  agent   daniel@adamsrealty.example  (sample agent)");
   console.info("  agent   priya@adamsrealty.example   (sample agent)");
   console.info("  buyer   buyer@example.com\n");
+}
+
+/** Every county a Northeast Georgia area's sites fall in. */
+function northeastCounties(): string[] {
+  const counties = new Set<string>();
+  for (const a of AREAS) {
+    for (const rows of Object.values(siteRows[a.slug] ?? {})) {
+      for (const row of rows ?? []) counties.add(String(row[2]));
+    }
+  }
+  return [...counties];
+}
+
+/**
+ * Seed-time checks for data other code relies on. A PRNG or pool change that
+ * breaks one fails the seed loudly instead of breaking a test later.
+ */
+async function assertStatewideFixtures() {
+  const buy = (c: Partial<SearchCriteria>) =>
+    searchListings({ ...DEFAULT_CRITERIA, ...c }).then((r) => r.total);
+  const live = async (where: ReturnType<typeof sql>) => {
+    const [{ n }] = await db
+      .execute<{ n: number }>(
+        sql`select count(*)::int as n from listings where removed_at is null and ${where}`,
+      )
+      .then((r) => r.rows);
+    return n;
+  };
+  const checks: Array<[string, boolean]> = [
+    ["/homes?q=Decatur has at least 10 results", (await buy({ q: "Decatur" })) >= 10],
+    ["/homes?q=Decatur&beds=3 has a result", (await buy({ q: "Decatur", beds: 3 })) >= 1],
+    [
+      "an active DeKalb County home for sale",
+      (await live(sql`county = 'DeKalb' and status = 'active' and transaction_type = 'sale'`)) >= 1,
+    ],
+    ["/homes?q=Virginia-Highland has a result", (await buy({ q: "Virginia-Highland" })) >= 1],
+    ["no more than 750 live listings (the map's pin cap)", (await live(sql`true`)) <= 750],
+    [
+      "no Adams Realty listing outside the Northeast Georgia areas' counties",
+      (await live(
+        sql`is_company_listing and county not in (${sql.join(
+          northeastCounties().map((c) => sql`${c}`),
+          sql`, `,
+        )})`,
+      )) === 0,
+    ],
+  ];
+  for (const area of site.featuredAreas) {
+    checks.push([`featured area "${area}" has a result`, (await buy({ q: area })) >= 1]);
+  }
+  // The data-driven town lists (home page chips, "See all towns") against a direct count.
+  const forSale = sql`transaction_type = 'sale' and status in ('active', 'coming_soon')`;
+  const byCity = await db
+    .execute<{ city: string; n: number }>(
+      sql`select city, count(*)::int as n from listings where removed_at is null and ${forSale}
+          group by city order by n desc, city`,
+    )
+    .then((r) => r.rows);
+  const top = await getTopCities(12);
+  const places = await getPlacesIndex();
+  const placeCities = new Set(places.flatMap((p) => p.cities.map((c) => c.city)));
+  checks.push(
+    [
+      "getTopCities(12) is the 12 busiest cities, busiest first",
+      JSON.stringify(top.map((c) => [c.city, c.count])) ===
+        JSON.stringify(byCity.slice(0, 12).map((c) => [c.city, c.n])),
+    ],
+    [
+      "getPlacesIndex lists every city with homes for sale, and every home once",
+      byCity.every((c) => placeCities.has(c.city)) &&
+        places.flatMap((p) => p.cities).reduce((s, c) => s + c.count, 0) ===
+          byCity.reduce((s, c) => s + c.n, 0),
+    ],
+  );
+  // Autocomplete (the `places` view) counts the same live listings as a direct query.
+  const decatur = await live(
+    sql`city = 'Decatur' and status in ('active', 'coming_soon', 'active_under_contract', 'pending')`,
+  );
+  const suggested = await getLocationSuggestions("Decat");
+  checks.push([
+    `autocomplete "Decat" suggests Decatur with its ${decatur} live listings`,
+    suggested.some((s) => s.kind === "city" && s.label === "Decatur" && s.count === decatur),
+  ]);
+  for (const lake of STATEWIDE_LAKES) {
+    checks.push([`/homes?q=${lake.name} finds homes there`, (await buy({ q: lake.name })) >= 3]);
+  }
+  // Each lake fixture sits on its lake: pin within the lake's extent, description naming it.
+  for (const f of LAKE_FIXTURES) {
+    const lake = [...AREAS, ...STATEWIDE_LAKES].find((a) => a.slug === f.area)!;
+    const b = lake.lakeBounds!;
+    const [home] = await db
+      .execute<{ lat: number; lng: number; description: string }>(
+        sql`select latitude as lat, longitude as lng, description from listings
+            where address_line1 = ${f.street} and list_price = ${f.price}`,
+      )
+      .then((r) => r.rows);
+    const margin = 0.01; // about 1 km: waterfront sites are within 150 m of the shore
+    checks.push([
+      `${f.street} is on ${lake.name}: pin within its extent, description naming it`,
+      !!home &&
+        home.lat >= b.south - margin &&
+        home.lat <= b.north + margin &&
+        home.lng >= b.west - margin &&
+        home.lng <= b.east + margin &&
+        home.description.includes(`on ${lake.name}`),
+    ]);
+  }
+  for (const f of LAKE_FIXTURES) {
+    checks.push([
+      `/homes?q=${f.query} finds ${f.street} (lake only in WaterBodyName "${f.waterBody}")`,
+      (await buy({ q: f.query, minPrice: f.price, maxPrice: f.price })) === 1,
+    ]);
+  }
+  const failed = checks.filter(([, ok]) => !ok).map(([label]) => label);
+  if (failed.length) throw new Error(`Seed fixtures missing:\n- ${failed.join("\n- ")}`);
 }
 
 main()

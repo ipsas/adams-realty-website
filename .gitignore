@@ -52,3 +52,6 @@ next-env.d.ts
 
 # scratch scripts from local tooling
 /.tmp*
+
+# perf harness output (npm run perf:measure)
+/scripts/perf/out/
