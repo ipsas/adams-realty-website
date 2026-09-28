@@ -61,7 +61,11 @@ test("property page has price, costs, attribution and structured data", async ({
   await page.locator("article a").first().click();
   await expect(page).toHaveURL(/\/homes\/[a-z0-9-]+$/);
   await expect(page.locator("main p.tabular").first()).toContainText("$");
-  await expect(page.getByText(/^Listed by /)).toBeVisible();
+  // IDX attribution: the listing firm under the address, and the listing information block.
+  await expect(page.getByTestId("listing-office")).toContainText("Listing by Adams Realty, Inc.");
+  await expect(page.getByTestId("listing-info")).toContainText(
+    "Listing office: Adams Realty, Inc.",
+  );
   const jsonLd = await page.locator('script[type="application/ld+json"]').textContent();
   expect(JSON.parse(jsonLd!)["@type"]).toBe("RealEstateListing");
 });

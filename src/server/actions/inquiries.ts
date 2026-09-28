@@ -14,8 +14,12 @@ import { sendEmail } from "@/lib/email";
 import { leadNotificationEmail } from "@/lib/email-templates";
 import { env } from "@/lib/env";
 import { formatCityLine, formatFullAddress, formatStreet } from "@/lib/format";
+import { canShowDetails } from "@/lib/listings/visibility";
 import { rateLimit } from "@/lib/rate-limit";
 import { zonedDateTime } from "@/lib/time";
+
+/** The thank-you for a listing problem report. */
+const REPORT_REPLY = `Thanks — your report went to the ${site.name} office. We correct or remove wrong listing information within one business day.`;
 
 export type InquiryState = {
   ok: boolean;
@@ -33,7 +37,7 @@ const optionalText = (max: number) =>
 
 const schema = z.object({
   type: z.enum(["question", "tour", "offer", "valuation", "general"]),
-  source: z.enum(["listing", "sell", "agent", "contact"]),
+  source: z.enum(["listing", "sell", "agent", "contact", "report"]),
   listingId: z
     .string()
     .uuid()
@@ -88,15 +92,23 @@ export async function createInquiry(_prev: InquiryState, form: FormData): Promis
     };
   }
 
+  // A listing problem report (/listing-corrections) goes to the office's
+  // corrections contact, never to an agent, and is never a tour.
+  const report = d.source === "report";
+  if (report) Object.assign(d, { type: "question" as const, agentId: undefined });
   let agentId = d.agentId ?? null;
   let listing: typeof listings.$inferSelect | undefined;
   let outOfArea = false;
   if (d.listingId) {
     [listing] = await db.select().from(listings).where(eq(listings.id, d.listingId)).limit(1);
     if (!listing) return { ok: false, message: "That home is no longer available." };
-    agentId ??= listing.listAgentId;
+    // Georgia MLS rules keep hidden feed listings off the site, so no leads on them either
+    // (a problem report about one still reaches the office).
+    if (!report && !canShowDetails(listing))
+      return { ok: false, message: "That home is no longer available." };
+    if (!report) agentId ??= listing.listAgentId;
     outOfArea = !offersTours(listing);
-    Object.assign(d, withoutTour(d, !outOfArea));
+    Object.assign(d, withoutTour(d, !outOfArea && !report));
   }
   const [agent] = agentId
     ? await db.select().from(agents).where(eq(agents.id, agentId)).limit(1)
@@ -132,9 +144,10 @@ export async function createInquiry(_prev: InquiryState, form: FormData): Promis
     .returning({ id: inquiries.id });
 
   // Notify without failing the request if email is down — the lead is already saved.
-  const to = agent?.email ?? env.LEADS_INBOX ?? site.email;
-  const subject =
-    d.type === "tour"
+  const to = report ? site.mls.corrections.email : (agent?.email ?? env.LEADS_INBOX ?? site.email);
+  const subject = report
+    ? `Listing problem report: ${listing ? formatFullAddress(listing) : "a listing"}`
+    : d.type === "tour"
       ? `Tour request: ${listing ? formatFullAddress(listing) : "a home"}`
       : d.type === "valuation"
         ? "New home valuation request"
@@ -178,5 +191,8 @@ export async function createInquiry(_prev: InquiryState, form: FormData): Promis
     html: email.html,
   }).catch((e) => console.error("[inquiry] notification failed", e));
 
-  return { ok: true, message: inquiryReply(d, agent?.name ?? null, outOfArea) };
+  return {
+    ok: true,
+    message: report ? REPORT_REPLY : inquiryReply(d, agent?.name ?? null, outOfArea),
+  };
 }

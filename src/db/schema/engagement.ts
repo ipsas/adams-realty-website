@@ -1,4 +1,14 @@
-import { index, jsonb, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import {
+  date,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uuid,
+} from "drizzle-orm/pg-core";
 import type { SearchCriteria } from "@/lib/search/params";
 import { users } from "./auth";
 import { alertFrequency, inquiryStatus, inquiryType, tourType } from "./enums";
@@ -110,3 +120,33 @@ export const leadNotes = pgTable(
   },
   (t) => [index("lead_notes_inquiry_idx").on(t.inquiryId, t.createdAt)],
 );
+
+/**
+ * Listing page views per day, so traffic statistics can be shared with Georgia
+ * MLS (IDX agreement, Exhibit A §9). One row per listing and market-calendar
+ * day, incremented by `recordListingView` (src/lib/listings/views.ts) when a
+ * listing page is shown; admins export it as CSV from /dashboard/traffic.
+ */
+export const listingViews = pgTable(
+  "listing_views",
+  {
+    listingId: uuid("listing_id")
+      .notNull()
+      .references(() => listings.id, { onDelete: "cascade" }),
+    day: date("day", { mode: "string" }).notNull(),
+    views: integer("views").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.listingId, t.day] }), index("listing_views_day_idx").on(t.day)],
+);
+
+/**
+ * Fixed-window request counters for the anti-scraping limiter
+ * (src/lib/rate-limit-db.ts). Shared by every serverless instance, unlike an
+ * in-memory map. `key` is bucket + window length + client IP; rows whose
+ * window ended long ago are pruned by `pruneRateLimits`.
+ */
+export const rateLimits = pgTable("rate_limits", {
+  key: text("key").primaryKey(),
+  windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+  count: integer("count").notNull().default(0),
+});

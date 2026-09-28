@@ -1,6 +1,7 @@
 import { inArray, lt, sql } from "drizzle-orm";
 import type { Executor } from "@/db";
 import { listingMedia, listings, openHouses } from "@/db/schema";
+import { allowedPhotos } from "./visibility";
 
 /**
  * Columns needed to render a listing card. One definition shared by search,
@@ -42,6 +43,9 @@ export const cardColumns = {
   hoaFrequency: listings.hoaFrequency,
   hasVirtualTour: sql<boolean>`"listings"."virtual_tour_url" is not null`,
   removedAt: listings.removedAt,
+  // Georgia MLS display rules (./visibility.ts).
+  fromFeed: listings.fromFeed,
+  idxHidden: listings.idxHidden,
   // Written with explicit aliases: Drizzle renders column references inside
   // select fields unqualified, which would make `listing_id = id` self-referential.
   nextOpenHouse: sql<Date | null>`(
@@ -61,7 +65,12 @@ export type ListingCardData = CardRow & { photos: string[] };
 
 const CARD_PHOTOS = 5;
 
-/** Attaches the first few photo URLs to each card (for the swipeable card carousel). */
+/**
+ * Attaches the first few photo URLs to each card (for the swipeable card
+ * carousel): none for a feed listing the rules keep off the site (a saved home
+ * that since went off market), the primary one only for sold and off-market
+ * feed listings (`allowedPhotos`).
+ */
 export async function withPhotos(db: Executor, rows: CardRow[]): Promise<ListingCardData[]> {
   if (!rows.length) return [];
   const media = await db
@@ -82,6 +91,6 @@ export async function withPhotos(db: Executor, rows: CardRow[]): Promise<Listing
   }
   return rows.map((r) => ({
     ...r,
-    photos: byListing.get(r.id) ?? (r.primaryPhotoUrl ? [r.primaryPhotoUrl] : []),
+    photos: allowedPhotos(r, byListing.get(r.id) ?? (r.primaryPhotoUrl ? [r.primaryPhotoUrl] : [])),
   }));
 }

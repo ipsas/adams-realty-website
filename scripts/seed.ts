@@ -1,7 +1,7 @@
 /**
  * Seeds a development database with a realistic sample market: Adams Realty's
  * real office and broker, a few sample agents, open houses, price history,
- * leads and demo logins, and about 421 FICTIONAL listings:
+ * leads and demo logins, and about 427 FICTIONAL listings:
  * - 180 in Northeast Georgia, the towns and lakes the firm serves: Adams
  *   Realty's own listings plus a demo MLS feed. Adams listings are only here.
  * - 226 statewide (Atlanta and its suburbs, the regional cities, the
@@ -12,6 +12,7 @@
  *   those, so adding them moved none of the 226.
  * - 3 lake homes shaped like the real feed (LAKE_FIXTURES): the lake only in
  *   WaterBodyName, never in `neighborhood`, so lake searches stay tested.
+ * - 6 Decatur listings for the Georgia MLS display rules (IDX_FIXTURES).
  *
  *   npm run db:seed
  *
@@ -69,6 +70,7 @@ import {
   INTERIOR_FEATURES,
   INTERIORS,
   LAKE_HIGHLIGHTS,
+  IDX_FIXTURES,
   LAKE_FIXTURES,
   LAKE_LOT_DETAILS,
   LAKE_PHOTOS,
@@ -1054,6 +1056,40 @@ async function main() {
       upsertListing(tx, toSource(demoSource), listing, { agentIdsByMlsId, isFeatured: false }),
     );
   }
+  // Georgia MLS IDX rule fixtures (IDX_FIXTURES): demo-feed rows in each hidden
+  // status, a sold one with several photos, and one with the attribution fields.
+  const decatur = STATEWIDE_AREAS.find((a) => a.slug === "decatur")!;
+  for (const [k, f] of IDX_FIXTURES.entries()) {
+    const key = total + statewideAreas.length + lakeAreas.length + LAKE_FIXTURES.length + k + 1;
+    const { listing } = generateListing(key, {
+      area: decatur,
+      type: "single_family",
+      mlsNumber: f.mlsNumber,
+    });
+    const sold = f.status === "closed";
+    Object.assign(listing, {
+      status: f.status,
+      transactionType: "sale",
+      listPrice: f.price,
+      originalListPrice: f.price,
+      closePrice: sold ? f.price - 1_000 : null,
+      closeDate: sold ? isoDate(daysAgo(12)) : null,
+      addressLine1: f.street,
+      unitNumber: null,
+      ...("attribution" in f ? f.attribution : {}),
+    } satisfies Partial<typeof listing>);
+    if (listing.media.filter((m) => m.kind === "photo").length < 3) {
+      throw new Error(
+        `IDX fixture ${f.mlsNumber} needs several photos to test the primary-only rule`,
+      );
+    }
+    const { id } = await db.transaction((tx) =>
+      upsertListing(tx, toSource(demoSource), listing, { agentIdsByMlsId, isFeatured: false }),
+    );
+    if (f.status === "withdrawn") {
+      await db.insert(savedListings).values({ userId: buyerId, listingId: id });
+    }
+  }
   // Autocomplete reads the `places` view; a sync, a seed or a dashboard edit rebuilds it.
   await refreshPlaces(db);
   await assertStatewideFixtures();
@@ -1103,7 +1139,7 @@ async function assertStatewideFixtures() {
   const live = async (where: ReturnType<typeof sql>) => {
     const [{ n }] = await db
       .execute<{ n: number }>(
-        sql`select count(*)::int as n from listings where removed_at is null and ${where}`,
+        sql`select count(*)::int as n from listings where removed_at is null and not idx_hidden and ${where}`,
       )
       .then((r) => r.rows);
     return n;
@@ -1116,6 +1152,20 @@ async function assertStatewideFixtures() {
       (await live(sql`county = 'DeKalb' and status = 'active' and transaction_type = 'sale'`)) >= 1,
     ],
     ["/homes?q=Virginia-Highland has a result", (await buy({ q: "Virginia-Highland" })) >= 1],
+    // Georgia MLS IDX rules: the hidden-status fixtures are nowhere in search.
+    ...(await Promise.all(
+      IDX_FIXTURES.filter((f) => f.status !== "active" && f.status !== "closed").map(
+        async (f): Promise<[string, boolean]> => [
+          `the ${f.status} feed fixture ${f.mlsNumber} is hidden from search`,
+          (await buy({ q: f.mlsNumber, pending: true })) === 0 &&
+            (await buy({ q: f.mlsNumber, mode: "sold" })) === 0,
+        ],
+      ),
+    )),
+    [
+      "the active feed fixture 10599006 is found by its MLS number",
+      (await buy({ q: "10599006" })) === 1,
+    ],
     ["no more than 750 live listings (the map's pin cap)", (await live(sql`true`)) <= 750],
     [
       "no Adams Realty listing outside the Northeast Georgia areas' counties",
@@ -1131,7 +1181,7 @@ async function assertStatewideFixtures() {
   const forSale = sql`transaction_type = 'sale' and status in ('active', 'coming_soon')`;
   const byCity = await db
     .execute<{ city: string; n: number }>(
-      sql`select city, count(*)::int as n from listings where removed_at is null and ${forSale}
+      sql`select city, count(*)::int as n from listings where removed_at is null and not idx_hidden and ${forSale}
           group by city order by n desc, city`,
     )
     .then((r) => r.rows);

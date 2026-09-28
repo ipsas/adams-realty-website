@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { db } from "@/db";
 import { runAlerts } from "@/lib/alerts/run";
 import { isCronAuthorized } from "@/lib/cron-auth";
+import { pruneRateLimits } from "@/lib/rate-limit-db";
 
 export const maxDuration = 300;
 
@@ -15,6 +17,8 @@ export async function GET(request: NextRequest) {
   if (!isCronAuthorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  // Housekeeping on the same schedule: anti-scraping counters older than two days.
+  await pruneRateLimits(db).catch((e) => console.error("[cron] rate limit prune failed", e));
   const result = await runAlerts({ deadline: Date.now() + 240_000 });
   return NextResponse.json(result, { status: result.ok ? 200 : 500 });
 }

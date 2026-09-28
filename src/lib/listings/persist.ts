@@ -9,6 +9,7 @@ import {
 } from "@/db/schema";
 import type { NormalizedListing, NormalizedMedia, NormalizedOpenHouse } from "@/lib/mls/types";
 import { listingSlug } from "./slug";
+import { isIdxHidden } from "./visibility";
 
 export type PersistSource = {
   id: string;
@@ -94,6 +95,7 @@ export async function upsertListings(
       sourceModifiedAt: listings.sourceModifiedAt,
       listAgentId: listings.listAgentId,
       isCompanyListing: listings.isCompanyListing,
+      publicSince: listings.publicSince,
     })
     .from(listings)
     .where(and(eq(listings.sourceId, source.id), inArray(listings.listingKey, keys)));
@@ -113,6 +115,7 @@ export async function upsertListings(
         : listAgentMlsId
           ? (opts.agentIdsByMlsId?.get(listAgentMlsId) ?? null)
           : null;
+    const fromFeed = source.kind !== "manual";
     const isCompanyListing =
       source.kind === "manual" ||
       (!!n.listOfficeMlsId && (source.config.companyOfficeIds ?? []).includes(n.listOfficeMlsId));
@@ -142,6 +145,11 @@ export async function upsertListings(
         ...fields,
         listAgentId,
         isCompanyListing,
+        fromFeed,
+        // First time the public could see it (a feed listing entering as
+        // Coming Soon becomes public when it goes active).
+        publicSince:
+          previous?.publicSince ?? (isIdxHidden({ fromFeed, status: fields.status }) ? null : now),
         isFeatured: opts.isFeatured ?? previous?.isFeatured ?? false,
         primaryPhotoUrl: photos[0]?.url ?? null,
         photoCount: photos.length,

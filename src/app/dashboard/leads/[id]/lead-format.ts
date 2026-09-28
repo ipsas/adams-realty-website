@@ -17,6 +17,7 @@ export const LEAD_SOURCE_LABELS: Record<string, string> = {
   sell: "Sell / home value page",
   agent: "Agent profile",
   contact: "Contact page",
+  report: "Listing problem report",
 };
 
 export const TOUR_TYPE_LABELS: Record<string, string> = {

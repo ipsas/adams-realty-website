@@ -9,6 +9,7 @@ import { Checkbox, Select } from "@/components/ui/form";
 import { cn } from "@/lib/cn";
 import { formatNumber } from "@/lib/format";
 import type { ListingCardData } from "@/lib/listings/card";
+import { MlsAttribution } from "@/components/content/mls-attribution";
 import { site } from "@/config/site";
 import {
   countActiveFilters,
@@ -169,10 +170,13 @@ export function SearchView({
                 listRef.current?.scrollTo({ top: 0, behavior: "smooth" });
               }}
             />
-            <p className="pb-6 text-center text-xs text-faint">
-              Listing data comes from {site.mls.name} and is refreshed regularly. Information deemed
-              reliable but not guaranteed.
-            </p>
+            <div className="space-y-2 px-4 pb-6 text-xs text-muted">
+              <MlsAttribution className="justify-center" />
+              <p className="text-center">
+                Listing data comes from {site.mls.name} and is refreshed regularly. Information
+                deemed reliable but not guaranteed.
+              </p>
+            </div>
           </div>
         </div>
 

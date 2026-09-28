@@ -53,7 +53,10 @@ export function PhotoGallery({ photos, alt }: { photos: GalleryPhoto[]; alt: str
             onClick={() => setOpen(i)}
             className={cn(
               "group relative overflow-hidden bg-sunken",
-              i === 0 ? "col-span-4 row-span-2 md:col-span-2" : "hidden md:block",
+              // A single photo (a sold Georgia MLS listing shows only its primary one) fills the hero.
+              i === 0
+                ? cn("col-span-4 row-span-2", tiles.length > 1 && "md:col-span-2")
+                : "hidden md:block",
               tiles.length === 2 && i === 1 && "md:col-span-2 md:row-span-2",
               tiles.length === 3 && i > 0 && "md:col-span-2",
             )}
@@ -75,7 +78,7 @@ export function PhotoGallery({ photos, alt }: { photos: GalleryPhoto[]; alt: str
           className="absolute right-4 bottom-4 flex items-center gap-2 rounded-full bg-surface/95 px-4 py-2 text-sm font-semibold text-ink shadow-card backdrop-blur hover:bg-surface"
         >
           <Grid2x2 className="size-4" />
-          {photos.length} photos
+          {photos.length} photo{photos.length === 1 ? "" : "s"}
         </button>
       </div>
 

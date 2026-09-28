@@ -1,6 +1,7 @@
 import { and, asc, eq, gt, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import type { Executor } from "@/db";
 import { listingEvents, listings, savedListings, users } from "@/db/schema";
+import { publicListing } from "@/lib/listings/visibility";
 import { alertListingColumns } from "./queries";
 import type { HomeEvent } from "./present";
 import { alertWindows, CLAIM_LEASE_MS, EVENT_SETTLE_MS, inWindow, MAX_WINDOW_MS } from "./schedule";
@@ -34,7 +35,7 @@ export async function findHomeCandidates(db: Executor, now: Date) {
     .where(
       and(
         eq(users.homeAlerts, true),
-        isNull(listings.removedAt),
+        publicListing(),
         or(isNull(savedListings.lastNotifiedAt), lt(savedListings.lastNotifiedAt, lease)),
         sql`exists (
           select 1 from ${listingEvents}
@@ -114,7 +115,7 @@ export async function loadHomeChanges(db: Executor, claimed: ClaimedHome[], now:
     db
       .select(alertListingColumns)
       .from(listings)
-      .where(and(inArray(listings.id, ids), isNull(listings.removedAt))),
+      .where(and(inArray(listings.id, ids), publicListing())),
     db
       .select({
         listingId: listingEvents.listingId,

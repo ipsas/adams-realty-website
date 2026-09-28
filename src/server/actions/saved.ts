@@ -7,6 +7,7 @@ import { db } from "@/db";
 import { listings, savedListings, savedSearches } from "@/db/schema";
 import { can } from "@/lib/auth/permissions";
 import { getActor } from "@/lib/auth/session";
+import { canShowDetails } from "@/lib/listings/visibility";
 import { describeCriteria, parseSearchParams } from "@/lib/search/params";
 
 const uuid = z.string().uuid();
@@ -29,11 +30,12 @@ export async function toggleSavedListing(listingId: string): Promise<ToggleSaved
   }
 
   const [exists] = await db
-    .select({ id: listings.id })
+    .select({ fromFeed: listings.fromFeed, status: listings.status, removedAt: listings.removedAt })
     .from(listings)
     .where(eq(listings.id, listingId))
     .limit(1);
-  if (!exists) return { ok: false, error: "invalid" };
+  // A feed listing Georgia MLS rules keep off the site can be unsaved, not saved.
+  if (!exists || !canShowDetails(exists)) return { ok: false, error: "invalid" };
   await db.insert(savedListings).values({ userId: actor.userId, listingId }).onConflictDoNothing();
   revalidatePath("/saved");
   return { ok: true, saved: true };

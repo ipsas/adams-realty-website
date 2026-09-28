@@ -150,6 +150,21 @@ Use your model table: Opus High for the work packages, and Xhigh if one gets stu
       first statewide load below, then widen the feed's filter to statewide. The "all of Georgia"
       copy should go live only once statewide listings are live, and only after Georgia MLS
       confirms the IDX license allows statewide display.
+- [ ] **Georgia MLS logo.** Download the official logo files from gamls.com/logos (the
+      standard SVG and the "reverse" SVG for dark backgrounds), save them in `public/brand/`
+      and set `site.mls.logo` in `src/config/site.ts`. Until then the site shows the name
+      "Georgia MLS" as a text wordmark.
+- [ ] **Corrections contact for Georgia MLS.** `/listing-corrections` publishes
+      (706) 246-0053 and contracts.adamsrealty@gmail.com (`site.mls.corrections`). The IDX
+      agreement asks for a _dedicated_ email: create one (e.g. listings@ your domain) if you
+      prefer, and give Georgia MLS the page's address. Fix or remove a reported listing within
+      one business day.
+- [ ] **DMCA agent.** Register Adams Realty, Inc.'s DMCA agent at copyright.gov/dmca-directory
+      (IDX agreement §11).
+- [ ] **Check the feed's field names.** When feed access arrives, confirm the attribution
+      contact phone/email, Variable Compensation and compensation fields match
+      `attribution()` and `compensation()` in `src/lib/mls/reso/mapper.ts`, and that the feed
+      sends `OriginalEntryTimestamp` (the list date).
 - [ ] **First statewide MLS load.** Run `npm run mls:sync -- --full` from a computer against the
       production database (20–60 minutes; it can't run on Vercel), before the cron takes over.
       See README → "Connecting your MLS".

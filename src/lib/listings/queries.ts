@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, ne, or, sql } from "drizzle-orm";
 import { cache } from "react";
 import { db } from "@/db";
 import {
@@ -13,10 +13,16 @@ import {
 } from "@/db/schema";
 import { firmAreaCondition } from "@/lib/areas/firm-area";
 import { cardColumns, selectCards, withPhotos } from "./card";
+import { canShowDetails, primaryPhotoOnly, publicListing } from "./visibility";
 
 const LIVE_STATUSES = ["active", "coming_soon", "active_under_contract", "pending"] as const;
 
-/** Full property page payload. `cache` dedupes the call between generateMetadata and the page. */
+/**
+ * Full property page payload. `cache` dedupes the call between generateMetadata and the page.
+ * Null for a feed listing Georgia MLS rules keep off the site (a hidden status,
+ * or gone from the feed), and a sold or off-market feed listing carries its
+ * primary photo only (src/lib/listings/visibility.ts).
+ */
 export const getListingBySlug = cache(async (slug: string) => {
   const [row] = await db
     .select({ listing: listings, source: dataSources })
@@ -26,6 +32,7 @@ export const getListingBySlug = cache(async (slug: string) => {
     .limit(1);
   if (!row) return null;
   const { listing, source } = row;
+  if (!canShowDetails(listing)) return null;
 
   const [media, opens, events, agent] = await Promise.all([
     db
@@ -55,6 +62,7 @@ export const getListingBySlug = cache(async (slug: string) => {
 
   return {
     listing,
+    media: primaryPhotoOnly(listing) ? media.filter((m) => m.kind === "photo").slice(0, 1) : media,
     source: {
       id: source.id,
       name: source.name,
@@ -62,7 +70,6 @@ export const getListingBySlug = cache(async (slug: string) => {
       disclaimer: source.disclaimer,
       lastSyncedAt: source.lastSyncedAt,
     },
-    media,
     openHouses: opens,
     events,
     agent,
@@ -85,7 +92,7 @@ export async function getFeaturedListings(limit = 8) {
   const rows = await selectCards(db)
     .where(
       and(
-        isNull(listings.removedAt),
+        publicListing(),
         eq(listings.status, "active"),
         eq(listings.transactionType, "sale"),
         or(eq(listings.isCompanyListing, true), firmAreaCondition()),
@@ -104,7 +111,7 @@ export async function getNewestListings(limit = 8) {
   const rows = await selectCards(db)
     .where(
       and(
-        isNull(listings.removedAt),
+        publicListing(),
         inArray(listings.status, ["active", "coming_soon"]),
         eq(listings.transactionType, "sale"),
       ),
@@ -119,7 +126,7 @@ export async function getSimilarListings(l: typeof listings.$inferSelect, limit 
   const rows = await selectCards(db)
     .where(
       and(
-        isNull(listings.removedAt),
+        publicListing(),
         ne(listings.id, l.id),
         eq(listings.transactionType, l.transactionType),
         inArray(listings.status, ["active", "coming_soon"]),
@@ -139,7 +146,7 @@ export async function getAgentListings(agentId: string, limit = 12) {
   const rows = await selectCards(db)
     .where(
       and(
-        isNull(listings.removedAt),
+        publicListing(),
         eq(listings.listAgentId, agentId),
         inArray(listings.status, [...LIVE_STATUSES, "closed"]),
       ),
@@ -188,7 +195,7 @@ export async function getLocationSuggestions(term: string): Promise<Suggestion[]
   const t = term.trim();
   if (t.length < 2) return [];
   const escaped = t.replace(/[%_\\]/g, "\\$&");
-  const live = and(isNull(listings.removedAt), inArray(listings.status, [...LIVE_STATUSES]));
+  const live = and(publicListing(), inArray(listings.status, [...LIVE_STATUSES]));
 
   const [areas, addresses] = await Promise.all([
     db
@@ -258,11 +265,7 @@ export async function getPopularAreas(limit = 8) {
     })
     .from(listings)
     .where(
-      and(
-        isNull(listings.removedAt),
-        eq(listings.status, "active"),
-        eq(listings.transactionType, "sale"),
-      ),
+      and(publicListing(), eq(listings.status, "active"), eq(listings.transactionType, "sale")),
     )
     .groupBy(listings.city)
     .orderBy(sql`count(*) desc`, listings.city)
@@ -279,14 +282,14 @@ export async function getMarketStats() {
       openHouses: sql<number>`(select count(distinct ${openHouses.listingId}) from ${openHouses} where ${openHouses.startsAt} > now() and ${openHouses.startsAt} < now() + interval '7 days')::int`,
     })
     .from(listings)
-    .where(isNull(listings.removedAt));
+    .where(publicListing());
   return row;
 }
 
 /** The for-sale set the default /homes search shows (and `listings_buy_*` indexes cover). */
 const forSaleNow = () =>
   and(
-    isNull(listings.removedAt),
+    publicListing(),
     eq(listings.transactionType, "sale"),
     inArray(listings.status, ["active", "coming_soon"]),
   );
@@ -338,4 +341,30 @@ export async function getPlacesIndex(): Promise<PlacesIndexCounty[]> {
     else out.push({ county: r.county, cities: [{ city: r.city, count: r.count }] });
   }
   return out;
+}
+
+/**
+ * The listing a problem report is about (/listing-corrections?listing=<slug>):
+ * just enough to name it. Null for unknown slugs and for feed listings the
+ * rules keep off the site (the report form still works without it).
+ */
+export async function getListingForReport(slug: string) {
+  const [row] = await db
+    .select({
+      id: listings.id,
+      mlsNumber: listings.mlsNumber,
+      addressLine1: listings.addressLine1,
+      unitNumber: listings.unitNumber,
+      city: listings.city,
+      state: listings.state,
+      postalCode: listings.postalCode,
+      hideAddress: listings.hideAddress,
+      fromFeed: listings.fromFeed,
+      status: listings.status,
+      removedAt: listings.removedAt,
+    })
+    .from(listings)
+    .where(eq(listings.slug, slug.slice(0, 200)))
+    .limit(1);
+  return row && canShowDetails(row) ? row : null;
 }

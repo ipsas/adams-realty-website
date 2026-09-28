@@ -2,6 +2,7 @@ import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { addressLines, telHref } from "@/components/content/contact";
 import { EqualHousingLogo } from "@/components/content/equal-housing-logo";
+import { MlsAttribution } from "@/components/content/mls-attribution";
 import { site } from "@/config/site";
 import { cn } from "@/lib/cn";
 import { getCachedTopCities } from "@/lib/listings/cached";
@@ -132,6 +133,7 @@ export async function SiteFooter({ disclaimer }: { disclaimer?: string | null })
         </div>
 
         <div className="mt-14 space-y-4 border-t border-line pt-8 text-xs leading-relaxed text-muted">
+          <MlsAttribution />
           {disclaimer && <p>{disclaimer}</p>}
           <p className="flex items-start gap-2">
             <EqualHousingLogo className="mt-0.5 size-5 shrink-0 text-ink-soft" />

@@ -1,8 +1,9 @@
-import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import type { Area } from "@/config/areas";
 import { db } from "@/db";
 import { agents, listings } from "@/db/schema";
 import { selectCards, withPhotos } from "@/lib/listings/card";
+import { publicListing } from "@/lib/listings/visibility";
 import {
   areaCondition,
   areaKeyRows,
@@ -100,7 +101,7 @@ export async function getAreaStats(
         ${normalizedSql(L.city)} as city,
         ${normalizedCountySql(L.county)} as county
       from ${L}
-      where ${L.removedAt} is null
+      where ${L.removedAt} is null and not ${L.idxHidden}
         and (lower(${L.neighborhood}) like any(${textArray(prefilterPatterns(neighborhoodKeys))})
           or lower(${L.waterBodyName}) like any(${textArray(prefilterPatterns(neighborhoodKeys))})
           or lower(${L.city}) like any(${textArray(prefilterPatterns(cityKeys))}))
@@ -180,7 +181,7 @@ export async function getAreaListings(area: Area, limit = 8) {
   const rows = await selectCards(db)
     .where(
       and(
-        isNull(listings.removedAt),
+        publicListing(),
         eq(listings.transactionType, "sale"),
         inArray(listings.status, [...LIVE_FOR_SALE]),
         areaCondition(area),
@@ -200,7 +201,7 @@ export async function getAreaFeaturedListing(area: Area) {
   const [row] = await selectCards(db)
     .where(
       and(
-        isNull(listings.removedAt),
+        publicListing(),
         eq(listings.transactionType, "sale"),
         inArray(listings.status, [...LIVE_FOR_SALE]),
         areaCondition(area),
@@ -221,7 +222,7 @@ export async function getAreaRecentSales(area: Area, limit = 4, now: Date = new 
   return selectCards(db)
     .where(
       and(
-        isNull(listings.removedAt),
+        publicListing(),
         eq(listings.transactionType, "sale"),
         eq(listings.status, "closed"),
         sql`${listings.closeDate} >= ${since}::date`,
@@ -247,7 +248,7 @@ export async function getAreaAgents(area: Area) {
       // want here: they resolve to the inner `listings`, and "agents"."id" to the outer row.
       listingsHere: sql<number>`(
         select count(*)::int from ${listings}
-        where ${listings.listAgentId} = "agents"."id" and ${listings.removedAt} is null
+        where ${listings.listAgentId} = "agents"."id" and ${listings.removedAt} is null and not ${listings.idxHidden}
           and ${listings.status} in ('active', 'coming_soon') and ${areaCondition(area)}
       )`,
     })

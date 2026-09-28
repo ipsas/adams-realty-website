@@ -26,6 +26,10 @@ statements about the firm stay Northeast Georgia. See README.md for setup and AR
   (`getTopCities`, `/places`). Tours and "our agents" claims only in the firm's area
   (`isFirmArea`/`offersTours`). No "monthly cost" wording on the home page.
   Placeholders there (email, GREC license, hours) are unknown — never invent them.
+- Georgia MLS IDX rules (ARCHITECTURE.md → "Georgia MLS display rules"): every public listing
+  query starts from `publicListing()`/`publicConditions()` (`src/lib/listings/visibility.ts`),
+  photos go through `allowedPhotos`, every listing display names the listing firm in `text-sm`,
+  and the mapper never reads `EXCLUDED_FIELDS`.
 - Andrea Anderegg (broker) is a real person: her profile holds only facts from her public profiles.
   Never invent her bio, experience, stats or photo. Other seeded agents and all listings are fictional.
 - Drizzle renders column refs unqualified inside `select({...})` fields — use explicit

@@ -190,6 +190,9 @@ async function firstLink(page: Page, from: string, selector: string, pattern: Re
 
 export const firstListingPath = (page: Page) =>
   firstLink(page, "/homes", "article a[href^='/homes/']", /^\/homes\/[a-z0-9-]+$/);
+/** The seed's Georgia MLS fixture with the Exhibit C attribution fields (IDX_FIXTURES). */
+const attributedListingPath = (page: Page) =>
+  firstLink(page, "/homes?q=10599006", "article a[href^='/homes/']", /^\/homes\/306-sycamore/);
 const firstGuidePath = (page: Page) =>
   firstLink(page, "/areas", "main a[href^='/areas/']", /^\/areas\/[a-z0-9-]+$/);
 
@@ -205,12 +208,25 @@ const PAGES = {
   sell: { name: "/sell", path: "/sell", ready: "main h1" },
   areas: { name: "/areas", path: "/areas", ready: "main h1" },
   places: { name: "/places", path: "/places", ready: "main h1" },
+  // Georgia MLS compliance: the listing information block, the corrections page, traffic stats.
+  attributedListing: {
+    name: "a Georgia MLS listing with its attribution fields",
+    path: attributedListingPath,
+    ready: "[data-testid=listing-info]",
+  },
+  corrections: { name: "/listing-corrections", path: "/listing-corrections", ready: "main h1" },
   guide: { name: "an area guide", path: firstGuidePath, ready: "main h1" },
   fairHousing: { name: "/fair-housing", path: "/fair-housing", ready: "main h1" },
   saved: { name: "/saved", path: "/saved", ready: "main h1", role: "buyer" },
   account: { name: "/account", path: "/account", ready: "main h1", role: "buyer" },
   dashboard: { name: "/dashboard", path: "/dashboard", ready: "main h1", role: "staff" },
   leads: { name: "/dashboard/leads", path: "/dashboard/leads", ready: "main h1", role: "staff" },
+  traffic: {
+    name: "/dashboard/traffic",
+    path: "/dashboard/traffic",
+    ready: "main h1",
+    role: "staff",
+  },
   listings: {
     name: "/dashboard/listings",
     path: "/dashboard/listings",

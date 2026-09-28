@@ -18,7 +18,9 @@ import {
   formatStreet,
   PROPERTY_TYPE_LABELS,
 } from "@/lib/format";
+import { site } from "@/config/site";
 import type { ListingCardData } from "@/lib/listings/card";
+import { canShowDetails, primaryPhotoOnly } from "@/lib/listings/visibility";
 import { SaveButton } from "./save-button";
 
 export function ListingCard({
@@ -35,7 +37,12 @@ export function ListingCard({
   sizes?: string;
 }) {
   const sold = l.status === "closed";
-  const unavailable = l.removedAt !== null;
+  // A saved feed listing Georgia MLS rules now keep off the site: only its
+  // address and listing firm, so the buyer knows which home it was.
+  const restricted = !canShowDetails(l);
+  const unavailable = l.removedAt !== null || restricted;
+  // IDX: every card names the listing firm, as large as the other listing text.
+  const office = l.listOfficeName ?? (l.isCompanyListing ? site.legalName : null);
   const price = sold && l.closePrice ? l.closePrice : l.listPrice;
   const rent = l.transactionType === "rent";
 
@@ -71,7 +78,7 @@ export function ListingCard({
               Adams listing
             </span>
           )}
-          {l.hasVirtualTour && (
+          {l.hasVirtualTour && !restricted && !primaryPhotoOnly(l) && (
             <span className="pointer-events-none absolute right-3 bottom-3 flex items-center gap-1 rounded-full bg-shade/70 px-2 py-1 text-[11px] font-medium text-white backdrop-blur">
               <Rotate3d className="size-3.5" /> 3D
             </span>
@@ -92,28 +99,30 @@ export function ListingCard({
               <p className="text-xs text-muted">Sold {formatDate(l.closeDate)}</p>
             )}
           </div>
-          <p className="mt-0.5 text-sm text-ink-soft">
-            {l.propertyType === "land" ? (
-              <>Land · {l.lotSizeSqft ? `${(l.lotSizeSqft / 43_560).toFixed(2)} acres` : "—"}</>
-            ) : (
-              <>
-                <Strong>{l.bedrooms ?? "—"}</Strong> bd <Dot />{" "}
-                <Strong>{formatBaths(l.bathrooms)}</Strong> ba <Dot />{" "}
-                <Strong>{formatNumber(l.livingAreaSqft)}</Strong> sqft
-                <span className="hidden text-muted sm:inline">
-                  {" "}
-                  <Dot />{" "}
-                  {PROPERTY_TYPE_LABELS[l.propertyType]?.replace("Single-family home", "House")}
-                </span>
-              </>
-            )}
-          </p>
+          {!restricted && (
+            <p className="mt-0.5 text-sm text-ink-soft">
+              {l.propertyType === "land" ? (
+                <>Land · {l.lotSizeSqft ? `${(l.lotSizeSqft / 43_560).toFixed(2)} acres` : "—"}</>
+              ) : (
+                <>
+                  <Strong>{l.bedrooms ?? "—"}</Strong> bd <Dot />{" "}
+                  <Strong>{formatBaths(l.bathrooms)}</Strong> ba <Dot />{" "}
+                  <Strong>{formatNumber(l.livingAreaSqft)}</Strong> sqft
+                  <span className="hidden text-muted sm:inline">
+                    {" "}
+                    <Dot />{" "}
+                    {PROPERTY_TYPE_LABELS[l.propertyType]?.replace("Single-family home", "House")}
+                  </span>
+                </>
+              )}
+            </p>
+          )}
           <p className="mt-0.5 truncate text-sm text-muted" data-testid="card-address">
             {formatStreet(l)}, {formatCityLine(l)}
           </p>
-          {l.listOfficeName && (
-            <p className="mt-1 truncate text-[11px] tracking-wide text-faint uppercase">
-              Listing by {l.listOfficeName}
+          {office && (
+            <p className="mt-0.5 truncate text-sm text-muted" data-testid="card-office">
+              Listing by {office}
             </p>
           )}
         </div>
@@ -161,7 +170,7 @@ function Badge({
 
 function cardBadges(l: ListingCardData): ReactNode[] {
   const out: ReactNode[] = [];
-  if (l.removedAt)
+  if (l.removedAt || !canShowDetails(l))
     return [
       <Badge key="off" tone="ink">
         Off market

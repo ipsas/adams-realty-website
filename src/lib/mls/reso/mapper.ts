@@ -46,6 +46,7 @@ const STATUS_MAP: Record<string, Status> = {
   closed: "closed",
   withdrawn: "withdrawn",
   hold: "withdrawn",
+  "on hold": "withdrawn",
   expired: "expired",
   canceled: "canceled",
   cancelled: "canceled",
@@ -265,6 +266,89 @@ function mapOpenHouses(rows: ResoOpenHouse[] | undefined): NormalizedOpenHouse[]
   return out;
 }
 
+/**
+ * Fields Georgia MLS forbids on public displays (IDX agreement, Exhibit C
+ * "Mandatory Exclusion"), by their RESO names. The mapper reads none of them,
+ * so they are never stored or rendered; mapper.test.ts proves it with a
+ * record that carries every one.
+ */
+export const EXCLUDED_FIELDS = [
+  "ListingAgreement",
+  "ListingContractDate",
+  "OnMarketDate",
+  "ExpirationDate",
+  "PrivateRemarks",
+  "ShowingContactName",
+  "ShowingContactPhone",
+  "PrivateOfficeRemarks",
+  "OfficeRemarks",
+  "ShowingRequirements",
+  "ShowingInstructions",
+] as const;
+
+/** The first non-empty value among keys ending in `suffix` (vendor prefixes vary: GAMLS_, BR_…). */
+function bySuffix(p: ResoProperty, suffix: string): string | null {
+  const exact = str(p[suffix]);
+  if (exact) return exact;
+  const lower = suffix.toLowerCase();
+  for (const [k, v] of Object.entries(p)) {
+    if (k.toLowerCase().endsWith(lower)) {
+      const s = str(v);
+      if (s) return s;
+    }
+  }
+  return null;
+}
+
+const EMAIL = /[^\s@,;<>()]+@[^\s@,;<>()]+\.[a-z]{2,}/i;
+const PHONE = /(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/;
+
+/**
+ * Georgia MLS's mandatory "Attribution Contact Phone" and "Attribution
+ * Contact Email". The field names on the RESO feed are not confirmed yet
+ * (docs/plans/gamls-compliance.md), so this takes separate fields ending in
+ * AttributionContactPhone / AttributionContactEmail, else picks them out of
+ * RESO's single free-text `AttributionContact`. Exported for tests.
+ */
+export function attribution(p: ResoProperty): {
+  attributionPhone: string | null;
+  attributionEmail: string | null;
+} {
+  const combined = str(p.AttributionContact) ?? "";
+  return {
+    attributionPhone:
+      bySuffix(p, "AttributionContactPhone") ?? PHONE.exec(combined)?.[0].trim() ?? null,
+    attributionEmail: bySuffix(p, "AttributionContactEmail") ?? EMAIL.exec(combined)?.[0] ?? null,
+  };
+}
+
+/**
+ * Variable Compensation is mandatory when the feed has it (RESO
+ * `DualVariableCompensationYN`). Buyer-agency compensation is optional, but
+ * wherever it is shown its comments must be shown with it: the comments are
+ * kept only alongside an amount, and the listing page renders the two as one
+ * block. Exported for tests.
+ */
+export function compensation(p: ResoProperty): {
+  variableCompensation: boolean | null;
+  buyerAgencyCompensation: string | null;
+  compensationComments: string | null;
+} {
+  const amount = str(p.BuyerAgencyCompensation);
+  const type = str(p.BuyerAgencyCompensationType);
+  return {
+    variableCompensation: bool(p.DualVariableCompensationYN),
+    buyerAgencyCompensation: amount
+      ? type && !amount.includes(type)
+        ? `${amount} ${type}`
+        : amount
+      : null,
+    compensationComments: amount
+      ? (str(p.CompensationComments) ?? str(p.BuyerAgencyCompensationComments))
+      : null,
+  };
+}
+
 export function mapResoProperty(p: ResoProperty): MapResult {
   const listingKey = str(p.ListingKey);
   if (!listingKey) return { ok: false, listingKey: null, reason: "missing_key" };
@@ -327,7 +411,9 @@ export function mapResoProperty(p: ResoProperty): MapResult {
     listPrice,
     originalListPrice: int(p.OriginalListPrice),
     closePrice: int(p.ClosePrice),
-    listDate: date(p.ListingContractDate) ?? date(p.OnMarketDate),
+    // Never ListingContractDate or OnMarketDate: Georgia MLS forbids showing
+    // them (Exhibit C), and the list date is shown and dated in the history.
+    listDate: date(p.OriginalEntryTimestamp),
     closeDate: date(p.CloseDate),
 
     bedrooms: int(p.BedroomsTotal),
@@ -396,6 +482,8 @@ export function mapResoProperty(p: ResoProperty): MapResult {
     listAgentEmail: str(p.ListAgentEmail),
     listOfficeName: str(p.ListOfficeName),
     listOfficeMlsId: str(p.ListOfficeMlsId),
+    ...attribution(p),
+    ...compensation(p),
 
     sourceModifiedAt: timestamp(p.ModificationTimestamp),
     statusChangedAt: timestamp(p.StatusChangeTimestamp),

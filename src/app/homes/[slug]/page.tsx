@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Clock,
   DollarSign,
+  Flag,
   Home,
   Hash,
   LandPlot,
@@ -18,8 +19,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
+import { MlsAttribution } from "@/components/content/mls-attribution";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { ContactForm } from "@/components/listings/contact-form";
+import { CountView } from "@/components/listings/count-view";
 import { ListingCard } from "@/components/listings/listing-card";
 import { LocationMapLazy } from "@/components/listings/location-map-lazy";
 import { PaymentCalculator } from "@/components/listings/payment-calculator";
@@ -122,11 +125,14 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
   const dom = daysSince(l.listDate);
   const street = formatStreet(l);
   const canEdit = can.editListing(actor, { sourceKind: source.kind, listAgentId: l.listAgentId });
+  // IDX: the listing firm, named prominently (the firm's own listings may carry no office name).
+  const office = l.listOfficeName ?? (l.isCompanyListing ? site.legalName : null);
 
   return (
     <>
       <main className="flex-1 pb-24 lg:pb-0">
         <JsonLd data={data} />
+        <CountView listingId={l.id} />
         <RecordView
           snapshot={{
             slug: l.slug,
@@ -235,6 +241,11 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
               <h1 className="mt-3 text-lg text-ink-soft">
                 <span className="font-semibold text-ink">{street}</span>, {formatCityLine(l)}
               </h1>
+              {office && (
+                <p className="mt-1 text-sm text-ink-soft" data-testid="listing-office">
+                  Listing by <span className="font-medium text-ink">{office}</span>
+                </p>
+              )}
 
               <dl className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-4">
                 {l.propertyType !== "land" && (
@@ -430,23 +441,63 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                 </Section>
               )}
 
-              {/* IDX attribution: listing brokerage, source, freshness, disclaimer. */}
-              <section className="mt-12 rounded-2xl bg-sunken/70 p-5 text-xs leading-relaxed text-muted">
-                <p>
-                  Listed by {l.listAgentName ?? "the listing agent"}
-                  {l.listOfficeName ? `, ${l.listOfficeName}` : ""}
-                  {l.listAgentPhone ? ` · ${l.listAgentPhone}` : ""}.
-                </p>
-                <p className="mt-1">
+              {/* IDX attribution: listing firm, Georgia MLS's required fields, source, copyright, disclaimer. */}
+              <section
+                className="mt-12 rounded-2xl bg-sunken/70 p-5 text-sm leading-relaxed text-ink-soft"
+                aria-labelledby="listing-info"
+                data-testid="listing-info"
+              >
+                <h2 id="listing-info" className="font-semibold text-ink">
+                  Listing information
+                </h2>
+                <dl className="mt-3 grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">
+                  <InfoRow label="Listing office" value={office ?? "Not provided"} />
+                  {l.listAgentName && <InfoRow label="Listing agent" value={l.listAgentName} />}
+                  <InfoRow label="Listing ID" value={l.mlsNumber ?? l.listingKey} />
+                  <InfoRow label="Status" value={statusLabel(l.status, l.transactionType)} />
+                  {l.attributionPhone && (
+                    <InfoRow label="Contact phone" value={l.attributionPhone} />
+                  )}
+                  {l.attributionEmail && (
+                    <InfoRow label="Contact email" value={l.attributionEmail} />
+                  )}
+                  {l.variableCompensation !== null && (
+                    <InfoRow
+                      label="Variable compensation"
+                      value={l.variableCompensation ? "Yes" : "No"}
+                    />
+                  )}
+                  {l.buyerAgencyCompensation && (
+                    <div className="space-y-2 sm:col-span-2" data-testid="buyer-compensation">
+                      <InfoRow
+                        label="Buyer agency compensation"
+                        value={l.buyerAgencyCompensation}
+                      />
+                      <InfoRow
+                        label="Compensation comments"
+                        value={l.compensationComments ?? "None"}
+                      />
+                    </div>
+                  )}
+                </dl>
+                <p className="mt-4">
                   Source: {source.name}
-                  {l.mlsNumber ? ` · MLS #${l.mlsNumber}` : ""}
                   {source.lastSyncedAt
                     ? ` · Updated ${formatRelative(source.lastSyncedAt)}`
                     : l.updatedAt
                       ? ` · Updated ${formatRelative(l.updatedAt)}`
                       : ""}
                 </p>
-                {source.disclaimer && <p className="mt-2">{source.disclaimer}</p>}
+                {l.fromFeed && <MlsAttribution className="mt-3" />}
+                {source.disclaimer && (
+                  <p className="mt-3 text-xs text-muted">{source.disclaimer}</p>
+                )}
+                <Link
+                  href={`/listing-corrections?listing=${encodeURIComponent(l.slug)}`}
+                  className="mt-4 inline-flex min-h-10 items-center gap-1.5 font-medium text-brand-700 hover:underline"
+                >
+                  <Flag className="size-4" /> Report a listing problem
+                </Link>
               </section>
             </div>
 
@@ -592,6 +643,14 @@ function Fact({ icon, label, value }: { icon: ReactNode; label: string; value: R
       {icon}
       <dt className="text-sm text-muted">{label}</dt>
       <dd className="ml-auto text-sm font-medium text-ink">{value}</dd>
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="flex flex-wrap gap-x-2">
+      <dt className="text-muted">{label}:</dt> <dd className="font-medium text-ink">{value}</dd>
     </div>
   );
 }

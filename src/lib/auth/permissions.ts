@@ -70,6 +70,8 @@ export const can = {
   manageAgents: (a: Actor | null) => isAdmin(a),
   editAgentProfile: (a: Actor | null, agentId: string) => isAdmin(a) || ownsAgentRecord(a, agentId),
   manageDataSources: (a: Actor | null) => isAdmin(a),
+  /** Listing page-view statistics (shared with Georgia MLS on request). */
+  viewTrafficStats: (a: Actor | null) => isAdmin(a),
 } as const;
 
 export type Permission = keyof typeof can;

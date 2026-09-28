@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ChartColumn,
   Building2,
   CircleUserRound,
   Contact,
@@ -50,6 +51,7 @@ export function DashboardNav({
           { href: "/dashboard/agents", label: "Agents", icon: Contact },
           { href: "/dashboard/users", label: "Users & roles", icon: Users },
           { href: "/dashboard/sources", label: "MLS feeds", icon: Database },
+          { href: "/dashboard/traffic", label: "Listing traffic", icon: ChartColumn },
         ]
       : []),
   ];

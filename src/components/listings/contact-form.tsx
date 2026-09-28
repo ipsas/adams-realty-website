@@ -38,7 +38,7 @@ export function ContactForm({
 }: {
   listingId?: string;
   agentId?: string;
-  source: "listing" | "agent" | "contact";
+  source: "listing" | "agent" | "contact" | "report";
   allowTour?: boolean;
   defaultMessage?: string;
   user?: { name: string; email: string; phone?: string | null } | null;

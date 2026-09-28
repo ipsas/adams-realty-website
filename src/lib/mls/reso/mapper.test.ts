@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  attribution,
+  compensation,
+  EXCLUDED_FIELDS,
   list,
   mapPropertyType,
   mapResoProperty,
@@ -222,7 +225,11 @@ describe("commercial property", () => {
 
   it("maps Commercial Lease to a rental priced per month", () => {
     const l = mapOk({ ...storefront, PropertyType: "Commercial Lease", ListPrice: 2800 });
-    expect(l).toMatchObject({ propertyType: "commercial", transactionType: "rent", listPrice: 2800 });
+    expect(l).toMatchObject({
+      propertyType: "commercial",
+      transactionType: "rent",
+      listPrice: 2800,
+    });
   });
 
   it("converts yearly and quarterly lease amounts to monthly rent", () => {
@@ -261,5 +268,91 @@ describe("lookups", () => {
   it("splits and humanizes list values", () => {
     expect(list(["CeilingFans", "Ceiling Fan(s)"])).toEqual(["Ceiling Fans", "Ceiling Fan(s)"]);
     expect(list(undefined)).toEqual([]);
+  });
+});
+
+// Georgia MLS IDX agreement, Exhibit C: fields that must never be displayed,
+// and the ones that must be when the feed has them.
+describe("Georgia MLS field rules", () => {
+  const SENTINEL = "EXCLUDED-7f3a";
+  const withExcluded: ResoProperty = {
+    ...base,
+    ListingAgreement: `Exclusive Right ${SENTINEL}`,
+    ListingContractDate: "2026-01-02",
+    OnMarketDate: "2026-01-03",
+    ExpirationDate: "2026-12-31",
+    PrivateRemarks: `Lockbox code 1234 ${SENTINEL}`,
+    ShowingContactName: `Pat Showings ${SENTINEL}`,
+    ShowingContactPhone: "(404) 555-0199",
+    PrivateOfficeRemarks: `office only ${SENTINEL}`,
+    OfficeRemarks: `office only ${SENTINEL}`,
+    ShowingRequirements: `Call first ${SENTINEL}`,
+    ShowingInstructions: `Call first ${SENTINEL}`,
+  };
+
+  it("never maps an excluded field, not even into another field", () => {
+    for (const f of EXCLUDED_FIELDS) expect(withExcluded).toHaveProperty(f);
+    const l = mapOk(withExcluded);
+    const json = JSON.stringify(l);
+    expect(json).not.toContain(SENTINEL);
+    expect(json).not.toContain("555-0199");
+    // The contract and on-market dates no longer feed the list date.
+    expect(json).not.toContain("2026-01-02");
+    expect(json).not.toContain("2026-01-03");
+    expect(json).not.toContain("2026-12-31");
+    expect(l.listDate).toBeNull();
+  });
+
+  it("dates the listing by OriginalEntryTimestamp", () => {
+    expect(
+      mapOk({ ...withExcluded, OriginalEntryTimestamp: "2026-02-10T14:00:00Z" }).listDate,
+    ).toBe("2026-02-10");
+  });
+
+  it("maps On Hold like Withdrawn", () => {
+    expect(mapStatus("On Hold")).toBe("withdrawn");
+    expect(mapStatus("Hold")).toBe("withdrawn");
+  });
+
+  it("reads the attribution contact from separate fields, with vendor prefixes", () => {
+    expect(
+      attribution({
+        GAMLS_AttributionContactPhone: "706-555-0100",
+        GAMLS_AttributionContactEmail: "office@example.com",
+      }),
+    ).toEqual({ attributionPhone: "706-555-0100", attributionEmail: "office@example.com" });
+    expect(mapOk({ ...base, AttributionContactPhone: "(706) 555-0101" }).attributionPhone).toBe(
+      "(706) 555-0101",
+    );
+  });
+
+  it("picks the phone and email out of RESO's free-text AttributionContact", () => {
+    expect(
+      attribution({ AttributionContact: "Jane Broker, (770) 555-0142, jane@brokerage.com" }),
+    ).toEqual({ attributionPhone: "(770) 555-0142", attributionEmail: "jane@brokerage.com" });
+    expect(attribution({})).toEqual({ attributionPhone: null, attributionEmail: null });
+  });
+
+  it("keeps Variable Compensation when the feed sends it, and only then", () => {
+    expect(compensation({ DualVariableCompensationYN: true }).variableCompensation).toBe(true);
+    expect(compensation({ DualVariableCompensationYN: "N" }).variableCompensation).toBe(false);
+    expect(compensation({}).variableCompensation).toBeNull();
+  });
+
+  it("keeps compensation comments only with a buyer-agency compensation", () => {
+    expect(
+      compensation({
+        BuyerAgencyCompensation: "2.5",
+        BuyerAgencyCompensationType: "%",
+        CompensationComments: "Less $500 admin fee",
+      }),
+    ).toMatchObject({
+      buyerAgencyCompensation: "2.5 %",
+      compensationComments: "Less $500 admin fee",
+    });
+    expect(compensation({ CompensationComments: "orphan comment" })).toMatchObject({
+      buyerAgencyCompensation: null,
+      compensationComments: null,
+    });
   });
 });

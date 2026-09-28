@@ -411,7 +411,7 @@ function FeaturedHome({
             </p>
             <p className="truncate text-sm font-medium text-ink">{formatStreet(listing)}</p>
             {listing.listOfficeName && (
-              <p className="truncate text-[11px] text-muted">Listing by {listing.listOfficeName}</p>
+              <p className="truncate text-sm text-muted">Listing by {listing.listOfficeName}</p>
             )}
           </div>
           <p className="shrink-0 text-lg font-semibold text-ink tabular">

@@ -197,8 +197,18 @@ describe("migration indexes vs buildOrderBy/buildConditions", () => {
         ix.where.every((w) => conds.has(w)),
     );
     expect(geo.map((i) => i.name)).toEqual(["listings_buy_geo_idx"]);
-    expect(geo[0].include).toEqual(["list_price"]);
+    // idx_hidden too: the Georgia MLS rule filter keeps viewport counts index-only.
+    expect(geo[0].include).toEqual(["list_price", "idx_hidden"]);
+    expect(conds.has("not idx_hidden")).toBe(true);
     expect(conds.has("longitude between -84.6 and -84.1")).toBe(true);
+  });
+
+  it("the sitemap's covering index carries the Georgia MLS rule column", () => {
+    expect(indexes.get("listings_live_id_idx")?.include).toEqual([
+      "slug",
+      "updated_at",
+      "idx_hidden",
+    ]);
   });
 
   it("every branch of the location box has an index", () => {

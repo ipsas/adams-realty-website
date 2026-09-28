@@ -33,8 +33,10 @@ export const alertListingColumns = {
 export const MAX_ROWS = 10;
 
 /**
- * A listing counts as "new" when we first recorded it inside the window *and*
- * it went on the market recently. The second rule keeps a first MLS import
+ * A listing counts as "new" when it first became public inside the window
+ * (`publicSince`: a Georgia MLS listing that entered as Coming Soon, hidden
+ * by the IDX rules, becomes public when it goes active) *and* it went on the
+ * market recently. The second rule keeps a first MLS import
  * (or a feed re-send) of months-old listings from emailing everyone.
  */
 const NEW_LISTING_MAX_AGE_DAYS = 7;
@@ -120,12 +122,12 @@ export async function findSearchMatches(
       .where(
         and(
           matches,
-          gt(listings.createdAt, win.listings.start),
-          lte(listings.createdAt, win.listings.end),
+          gt(listings.publicSince, win.listings.start),
+          lte(listings.publicSince, win.listings.end),
           or(isNull(listings.listDate), gte(listings.listDate, oldestListDate)),
         ),
       )
-      .orderBy(desc(listings.createdAt), asc(listings.id))
+      .orderBy(desc(listings.publicSince), asc(listings.id))
       .limit(MAX_ROWS),
     db
       .select({ ...alertListingColumns, wasPrice: cuts.wasPrice, total })
@@ -135,7 +137,7 @@ export async function findSearchMatches(
         and(
           matches,
           // Homes new in this window are already in the first list.
-          lte(listings.createdAt, win.listings.start),
+          lte(listings.publicSince, win.listings.start),
           sql`${cuts.wasPrice} > ${listings.listPrice}`,
         ),
       )

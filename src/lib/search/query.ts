@@ -17,6 +17,7 @@ import { findArea } from "@/config/areas";
 import { site } from "@/config/site";
 import { listings, openHouses } from "@/db/schema";
 import { areaCondition } from "@/lib/areas/match";
+import { publicConditions } from "@/lib/listings/visibility";
 import type { SearchCriteria } from "./params";
 
 type Status = (typeof listings.status.enumValues)[number];
@@ -86,7 +87,8 @@ const monthlyHoa = sql`(case ${listings.hoaFrequency}
 
 /** Translates search criteria into SQL conditions. Pure — exported for tests. */
 export function buildConditions(c: SearchCriteria, now: Date = new Date()): SQL[] {
-  const conds: (SQL | undefined)[] = [isNull(listings.removedAt)];
+  // Still listed, and not hidden by Georgia MLS rules (src/lib/listings/visibility.ts).
+  const conds: (SQL | undefined)[] = [...publicConditions()];
 
   if (c.mode === "sold") {
     const days = c.soldWithinDays ?? DEFAULT_SOLD_WINDOW_DAYS;

@@ -1,7 +1,8 @@
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { cache } from "react";
 import { db } from "@/db";
 import { agents, listings } from "@/db/schema";
+import { publicListing } from "@/lib/listings/visibility";
 
 export async function getAgents() {
   return db
@@ -19,7 +20,7 @@ export async function getAgents() {
       yearsExperience: agents.yearsExperience,
       activeListings: sql<number>`(
         select count(*)::int from ${listings}
-        where ${listings.listAgentId} = "agents"."id" and ${listings.removedAt} is null
+        where ${listings.listAgentId} = "agents"."id" and ${listings.removedAt} is null and not ${listings.idxHidden}
           and ${listings.status} in ('active', 'coming_soon')
       )`,
     })
@@ -41,6 +42,6 @@ export const getAgentBySlug = cache(async (slug: string) => {
       sold: sql<number>`count(*) filter (where ${listings.status} = 'closed')::int`,
     })
     .from(listings)
-    .where(and(eq(listings.listAgentId, agent.id), isNull(listings.removedAt)));
+    .where(and(eq(listings.listAgentId, agent.id), publicListing()));
   return { agent, stats };
 });

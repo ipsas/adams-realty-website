@@ -18,6 +18,8 @@ export type NormalizedListing = Omit<
   | "listAgentId"
   | "primaryPhotoUrl"
   | "photoCount"
+  | "fromFeed"
+  | "publicSince"
 > & {
   /** The listing agent's MLS ID, used to link to our agent profiles. */
   listAgentMlsId: string | null;

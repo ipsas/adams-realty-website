@@ -33,7 +33,29 @@ export const site = {
    * The MLS the firm belongs to. Its IDX feed supplies the other brokerages'
    * listings, and `officeId` marks the firm's own listings in that feed.
    */
-  mls: { name: "Georgia MLS", officeId: "ADAM01" },
+  mls: {
+    name: "Georgia MLS",
+    officeId: "ADAM01",
+    /**
+     * IDX agreement §10: the copyright notice names Georgia MLS as the holder
+     * of the listing content (the agreement's own name for it).
+     */
+    copyrightHolder: "Georgia MLS",
+    /**
+     * IDX agreement §7: the Georgia MLS name and logo on pages with its
+     * listings. Null shows the name as a text wordmark. The official files are
+     * at gamls.com/logos (standard, and "reverse" for dark backgrounds): save
+     * them under public/brand/ and set, e.g.,
+     * `{ light: "/brand/gamls-logo.svg", dark: "/brand/gamls-logo-reverse.svg", width: 150, height: 47 }`.
+     */
+    logo: null as { light: string; dark: string; width: number; height: number } | null,
+    /**
+     * IDX agreement Exhibit A §6: how Georgia MLS (or anyone) reports a listing
+     * with wrong information. Published on /listing-corrections and linked from
+     * every listing page; fixes or removals happen within one business day.
+     */
+    corrections: { email: "contracts.adamsrealty@gmail.com", phone: "(706) 246-0053" },
+  },
   /**
    * What the listings cover: Georgia MLS IDX, statewide. Search headings, the
    * search map's first view and SEO copy about listings use this. Bounds are

@@ -1,7 +1,8 @@
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { agents, listings } from "@/db/schema";
 import { LISTING_SITEMAP_CHUNK_SIZE } from "./sitemap-chunks";
+import { publicListing } from "./visibility";
 
 /**
  * One listing sitemap chunk: live listings in id order, rows
@@ -20,7 +21,7 @@ export async function getListingSitemapChunk(
     .from(listings)
     .where(
       and(
-        isNull(listings.removedAt),
+        publicListing(),
         inArray(listings.status, ["active", "coming_soon", "active_under_contract", "pending"]),
       ),
     )

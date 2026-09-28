@@ -188,6 +188,52 @@ Listings cover all of Georgia; statements about the firm stay true to Northeast 
   governments). The home page never mentions monthly costs (owner decision); listing pages
   keep their estimate.
 
+## Georgia MLS display rules
+
+The IDX/Vendor Data License Agreement (Aug 1 2023; summary in `docs/plans/gamls-compliance.md`)
+governs every listing that came from the feed. Adams Realty, Inc. is the licensee.
+
+- **Which rows:** `listings.from_feed` (set by `upsertListings` from the source's kind). The
+  firm's own manually entered listings aren't feed data and keep showing in any status.
+- **Hidden statuses (Exhibit A §17):** the generated column `idx_hidden` is true for feed rows
+  that are Coming Soon, Withdrawn (On Hold maps here), Expired or Canceled. Every public query
+  starts from `publicListing()` / `publicConditions()` (`src/lib/listings/visibility.ts`):
+  search and pins, cards, the sitemap, autocomplete (the `places` view), town chips, the
+  places index, home stats, area guides, agent pages and alerts. `getListingBySlug` returns
+  null for such a row, and for a feed row that left the feed (`removed_at`), so the page 404s.
+  A saved home in that state shows "No longer available" with its address and firm only; it
+  can be unsaved but not saved, and takes no inquiries.
+- **Primary photo only (§16, Exhibit C):** sold and off-market feed rows show one photo on the
+  page (gallery, lightbox, JSON-LD) and on cards (`allowedPhotos` in `withPhotos`). OG images
+  and map popups only ever use the primary photo.
+- **Attribution (§7, §10):** every card, map popup, area-guide tile and listing page names the
+  listing firm in `text-sm`, the size of the other listing text (`e2e/gamls.spec.ts` measures
+  it against the median). `MlsAttribution` (`src/components/content/mls-attribution.tsx`)
+  shows the Georgia MLS name and logo and "Listing information © <year> Georgia MLS" in the
+  footer, on the search page and in each feed listing's information block. The logo is a
+  text wordmark until the official files are added (`site.mls.logo`).
+- **Fields (Exhibit C):** the listing page's "Listing information" block shows Listing office,
+  Listing ID, Status, and when the feed sends them the attribution contact phone and email,
+  Variable Compensation, and buyer-agency compensation always together with its comments.
+  The RESO mapper reads none of `EXCLUDED_FIELDS` (listing agreement, contract, on-market and
+  expiration dates, private and office remarks, showing contact and requirements); the list
+  date comes from `OriginalEntryTimestamp`. Tests feed a record carrying all of them through
+  the mapper and into the database and look for them.
+- **Corrections (§6):** `/listing-corrections` publishes the phone and email
+  (`site.mls.corrections`) and a form (inquiry `source = 'report'`, emailed to the corrections
+  address, never to an agent). Every listing page links to it with `?listing=<slug>`.
+- **Traffic (§9):** `CountView` counts one view per listing page load (not crawlers) in
+  `listing_views` (listing × market day). Admins see and export it at `/dashboard/traffic`
+  (CSV, optionally Georgia MLS listings only).
+- **Unbiased sort (§12):** only the default "Recommended" order looks at `is_featured`; every
+  other sort ranks by the chosen field and id (`query.test.ts`, `idx-rules.db.test.ts`).
+- **Anti-scraping (§3):** `proxy.ts` guards `/homes`, `/homes/*` and `/api/locations/*`
+  (sitemaps excepted) with `src/lib/anti-scraping.ts`: self-declared HTTP libraries get a
+  403, and each client IP (Vercel's `x-forwarded-for`) is limited per minute, hour and day in
+  Postgres (`rate_limits`, `src/lib/rate-limit-db.ts`), with link prefetches and the API in
+  their own buckets. Requests without an IP (local dev) aren't limited; a database error lets
+  the request through. The alerts cron prunes old counters.
+
 ## Accounts and permissions
 
 - **Better Auth** handles sessions (httpOnly cookies, 5-minute signed cookie cache), email/password with reset, and optional Google sign-in. `role` is an additional user field that cannot be set at sign-up (`input: false`).
@@ -422,7 +468,8 @@ must keep.
   accounts, saving, tour requests, dashboard permissions, admin listing
   creation, the statewide feed (`statewide.spec.ts`), and GA-A's coverage copy, towns,
   places index, out-of-area questions and map view (`georgia.spec.ts`,
-  `mobile/georgia-map.spec.ts`). Runs against a seeded database.
+  `mobile/georgia-map.spec.ts`), and the Georgia MLS display rules against the seed's
+  `IDX_FIXTURES` (`gamls.spec.ts`). Runs against a seeded database.
 - **Phones (`e2e/mobile/`):** the `pixel7` and `iphone13` projects run every
   spec there; `iphone13-landscape` and `ipad-mini` run `sweep` and
   `*landscape*` specs plus tests tagged `@landscape`. The `desktop` project

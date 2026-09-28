@@ -12,6 +12,10 @@
  *   signed cookie cache.
  * - Inquiries: src/server/actions/inquiries.ts — stores contact details,
  *   message, referer and user agent; IP used only for the in-memory rate limit.
+ * - Listing data routes (proxy.ts): client IP counted in Postgres `rate_limits`
+ *   (anti-scraping, required by the Georgia MLS IDX agreement), pruned after
+ *   two days. Listing page views: a count per listing per day, nothing about
+ *   the visitor (listing_views).
  * - Email: Resend (src/lib/email.ts); alerts have one-click unsubscribe.
  * - Map tiles: OpenFreeMap unless NEXT_PUBLIC_MAP_STYLE_URL (or, for dark mode,
  *   NEXT_PUBLIC_MAP_STYLE_DARK_URL) points elsewhere.
@@ -36,7 +40,7 @@ import { PageIntro } from "@/components/content/page-intro";
 import { site } from "@/config/site";
 
 /** Change whenever the policy text changes. */
-const LAST_UPDATED = "2026-09-25";
+const LAST_UPDATED = "2026-09-28";
 
 export const metadata: Metadata = {
   title: "Privacy policy",
@@ -163,6 +167,16 @@ export default function PrivacyPage() {
               <strong>When you submit a form</strong>, your IP address is used to limit repeated
               submissions. It&apos;s held only in server memory for a 10-minute window and
               isn&apos;t saved with your message.
+            </li>
+            <li>
+              <strong>When you search or view listings</strong>, your IP address is counted against
+              request limits that protect the listing data from bulk copying, as our agreement with
+              Georgia MLS requires. The counts are kept for at most a few days.
+            </li>
+            <li>
+              <strong>Listing views.</strong> We count how many times each listing page is viewed
+              each day, to share traffic figures with Georgia MLS. The count holds nothing about
+              you.
             </li>
             <li>
               <strong>Server logs.</strong> Like nearly every website, our hosting provider records

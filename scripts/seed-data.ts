@@ -1467,3 +1467,32 @@ export const LAKE_FIXTURES = [
     price: 456_789,
   },
 ] as const;
+
+/**
+ * Demo-feed listings for the Georgia MLS IDX display rules
+ * (src/lib/listings/visibility.ts), all in Decatur: one in each status the
+ * rules hide, a sold one (primary photo only) and an active one carrying the
+ * Exhibit C attribution and compensation fields. Tests find them by MLS
+ * number; e2e/gamls.spec.ts uses them. The buyer demo account has the
+ * withdrawn one saved, to show how a saved home the rules hide looks.
+ */
+export const IDX_FIXTURES = [
+  { mlsNumber: "10599001", status: "coming_soon", street: "301 Sycamore Place", price: 401_001 },
+  { mlsNumber: "10599002", status: "withdrawn", street: "302 Sycamore Place", price: 401_002 },
+  { mlsNumber: "10599003", status: "expired", street: "303 Sycamore Place", price: 401_003 },
+  { mlsNumber: "10599004", status: "canceled", street: "304 Sycamore Place", price: 401_004 },
+  { mlsNumber: "10599005", status: "closed", street: "305 Sycamore Place", price: 401_005 },
+  {
+    mlsNumber: "10599006",
+    status: "active",
+    street: "306 Sycamore Place",
+    price: 401_006,
+    attribution: {
+      attributionPhone: "(404) 555-0166",
+      attributionEmail: "listings@decatur-homes.example",
+      variableCompensation: false,
+      buyerAgencyCompensation: "2.5 %",
+      compensationComments: "Paid at closing from the seller's proceeds.",
+    },
+  },
+] as const;

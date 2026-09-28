@@ -1,6 +1,6 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
-import { parseSearchParams } from "./params";
+import { DEFAULT_CRITERIA, parseSearchParams, SORTS } from "./params";
 import { buildOrderBy, buildWhere, hasLocation, normalizeLocationQuery } from "./query";
 
 const dialect = new PgDialect();
@@ -16,6 +16,8 @@ describe("buildWhere", () => {
   it("always hides removed listings and defaults to active/coming-soon sales", () => {
     const { sql, params } = render({});
     expect(sql).toContain(`"listings"."removed_at" is null`);
+    // Georgia MLS: feed listings in a hidden status (Coming Soon among them) never match.
+    expect(sql).toContain(`not "listings"."idx_hidden"`);
     expect(sql).toContain(`"listings"."transaction_type" = $1`);
     expect(params).toEqual(["sale", "active", "coming_soon"]);
   });
@@ -148,4 +150,32 @@ describe("hasLocation", () => {
     expect(hasLocation({ q: undefined })).toBe(false);
     expect(hasLocation({ q: "Georgia, USA" })).toBe(false);
   });
+});
+
+// Georgia MLS IDX agreement §12: once the consumer picks a sort other than the
+// default ("recommended", which may put featured homes first), results are
+// ranked organically. Nothing is paid for, and neither our own nor featured
+// listings may be lifted.
+describe("unbiased sort", () => {
+  const PROMOTED = /is_featured|is_company_listing|list_agent_id|list_office/;
+
+  it("recommended is the default, the only order that looks at featured homes", () => {
+    expect(DEFAULT_CRITERIA.sort).toBe("recommended");
+    expect(parseSearchParams({}).sort).toBe("recommended");
+    const recommended = buildOrderBy(parseSearchParams({})).map((o) => dialect.sqlToQuery(o).sql);
+    expect(recommended.join(", ")).toMatch(/is_featured/);
+  });
+
+  it.each(SORTS.filter((s) => s !== "recommended"))(
+    "sort=%s ranks only by the chosen field, then id",
+    (sort) => {
+      for (const mode of ["buy", "rent", "sold"]) {
+        const order = buildOrderBy(parseSearchParams({ sort, mode }))
+          .map((o) => dialect.sqlToQuery(o).sql)
+          .join(", ");
+        expect(order, `${mode} ${sort}`).not.toMatch(PROMOTED);
+        expect(order.endsWith(`"listings"."id" asc`), order).toBe(true);
+      }
+    },
+  );
 });

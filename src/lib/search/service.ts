@@ -1,5 +1,6 @@
 import { count, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
+import { site } from "@/config/site";
 import { listings } from "@/db/schema";
 import { selectCards, withPhotos, type ListingCardData } from "@/lib/listings/card";
 import { PAGE_SIZE, type SearchCriteria } from "./params";
@@ -50,6 +51,8 @@ export type MapPin = {
   address: string;
   photo: string | null;
   featured: boolean;
+  /** IDX: the popup names the listing firm, like every card. */
+  office: string | null;
 };
 
 export const MAX_PINS = 750;
@@ -93,6 +96,8 @@ export async function searchMapPins(c: SearchCriteria): Promise<MapPin[]> {
       hideAddress: listings.hideAddress,
       photo: listings.primaryPhotoUrl,
       featured: listings.isFeatured,
+      office: listings.listOfficeName,
+      company: listings.isCompanyListing,
     })
     .from(listings)
     .where(buildWhere(c))
@@ -139,6 +144,8 @@ type PinRow = {
   hideAddress: boolean;
   photo: string | null;
   featured: boolean;
+  office: string | null;
+  company: boolean;
 };
 
 /**
@@ -168,7 +175,8 @@ export async function locationPins(c: SearchCriteria, limit: number = MAX_PINS):
       "listings"."living_area_sqft" as "sqft", "listings"."address_line1" as "addressLine1",
       "listings"."unit_number" as "unitNumber", "listings"."city",
       "listings"."hide_address" as "hideAddress", "listings"."primary_photo_url" as "photo",
-      "listings"."is_featured" as "featured"
+      "listings"."is_featured" as "featured",
+      "listings"."list_office_name" as "office", "listings"."is_company_listing" as "company"
     from top join ${listings} on "listings"."id" = top."id"
     order by ${order}
   `);
@@ -193,5 +201,6 @@ function toPins(rows: PinRow[]): MapPin[] {
         : `${r.addressLine1}${r.unitNumber ? ` #${r.unitNumber}` : ""}, ${r.city}`,
       photo: r.photo,
       featured: r.featured,
+      office: r.office ?? (r.company ? site.legalName : null),
     }));
 }

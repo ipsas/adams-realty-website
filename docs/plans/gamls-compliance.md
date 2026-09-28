@@ -14,3 +14,14 @@ Required before real feed data goes public. This belongs to GA-A, or to its own 
 - **Use restriction:** data is for consumers with a bona fide interest in buying, selling or renting, and may not be re-syndicated or redistributed without GAMLS's written consent (Exhibit A §§2, 5). This matters for any future plans to sell ads or leads.
 - **Refresh:** at least daily, 7 days a week, including photos; use the most frequent schedule the source allows (Exhibit A §§1, 6). The 15-minute sync on Vercel Pro satisfies this.
 - **Feed access:** RETS credentials within 5 business days. Bridge Web API (RESO) access requires the paid RETS subscription (§20). The site's provider targets RESO Web API (Bridge).
+
+### As built (mobile branch)
+
+Implemented as described in ARCHITECTURE.md → "Georgia MLS display rules": hidden statuses
+(`idx_hidden`, `publicListing()`), primary photo only, the Georgia MLS name and copyright
+notice, listing-firm attribution everywhere, the Exhibit C fields (and the mapper audit),
+`/listing-corrections`, per-listing page views with an admin CSV export, the Postgres-backed
+rate limiter in `proxy.ts`, and the unbiased-sort tests. Still with the owner: the official
+logo files, a dedicated corrections email if wanted, the DMCA agent, confirming the feed's
+field names, and whether the firm's own manual Coming Soon listings should also be hidden
+(they are shown today). HANDOFF.md section 6 lists these.

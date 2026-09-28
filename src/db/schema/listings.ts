@@ -213,6 +213,43 @@ export const listings = pgTable(
     listAgentEmail: text("list_agent_email"),
     listOfficeName: text("list_office_name"),
     listOfficeMlsId: text("list_office_mls_id"),
+    /**
+     * Georgia MLS Exhibit C "mandatory inclusion" fields, shown on the listing
+     * page when the feed sends them (src/lib/mls/reso/mapper.ts): the
+     * attribution contact, whether the listing broker has a variable
+     * commission arrangement, and buyer-agency compensation with its comments
+     * (the two are only ever shown together).
+     */
+    attributionPhone: text("attribution_phone"),
+    attributionEmail: text("attribution_email"),
+    variableCompensation: boolean("variable_compensation"),
+    buyerAgencyCompensation: text("buyer_agency_compensation"),
+    compensationComments: text("compensation_comments"),
+    /**
+     * The row came from an MLS feed (its source's kind isn't `manual`), so
+     * Georgia MLS IDX display rules apply to it (src/lib/listings/visibility.ts).
+     * Set by upsertListings from the source.
+     */
+    fromFeed: boolean("from_feed").notNull().default(false),
+    /**
+     * Georgia MLS forbids public display of feed listings that are Coming
+     * Soon, Withdrawn (On Hold maps here), Expired or Canceled. Every public
+     * query adds `idx_hidden = false` (`publicListing()`); only the dashboard
+     * sees these rows. Derived, so it can never disagree with the status.
+     */
+    idxHidden: boolean("idx_hidden")
+      .notNull()
+      .generatedAlwaysAs(
+        (): SQL =>
+          sql`${listings.fromFeed} and ${listings.status} in ('coming_soon', 'withdrawn', 'expired', 'canceled')`,
+      ),
+    /**
+     * When the listing first became publicly visible: on insert when it is,
+     * else when a hidden feed row (Coming Soon) first turns visible. Saved-search
+     * alerts call a home "new" by this, so a listing that spent its first days
+     * as Coming Soon is still announced when it goes active.
+     */
+    publicSince: timestamp("public_since", { withTimezone: true }),
     /** Listed by our brokerage (manual source, or office ID matches). */
     isCompanyListing: boolean("is_company_listing").notNull().default(false),
     isFeatured: boolean("is_featured").notNull().default(false),
