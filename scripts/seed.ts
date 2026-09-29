@@ -1,7 +1,7 @@
 /**
  * Seeds a development database with a realistic sample market: Adams Realty's
  * real office and broker, a few sample agents, open houses, price history,
- * leads and demo logins, and about 427 FICTIONAL listings:
+ * leads and demo logins, and about 431 FICTIONAL listings:
  * - 180 in Northeast Georgia, the towns and lakes the firm serves: Adams
  *   Realty's own listings plus a demo MLS feed. Adams listings are only here.
  * - 226 statewide (Atlanta and its suburbs, the regional cities, the
@@ -13,6 +13,8 @@
  * - 3 lake homes shaped like the real feed (LAKE_FIXTURES): the lake only in
  *   WaterBodyName, never in `neighborhood`, so lake searches stay tested.
  * - 6 Decatur listings for the Georgia MLS display rules (IDX_FIXTURES).
+ * - 4 Carnesville listings the firm entered by hand, one in each status the
+ *   public never sees (FIRM_HIDDEN_FIXTURES).
  *
  *   npm run db:seed
  *
@@ -65,6 +67,7 @@ import {
   EXTERIOR_FEATURES,
   EXTERIORS,
   FARM_DETAILS,
+  FIRM_HIDDEN_FIXTURES,
   FLOORING,
   HIGHLIGHTS,
   INTERIOR_FEATURES,
@@ -1097,6 +1100,53 @@ async function main() {
       await db.insert(savedListings).values({ userId: buyerId, listingId: id });
     }
   }
+  // The firm's own listings in each hidden status (FIRM_HIDDEN_FIXTURES): entered
+  // by hand, so only the dashboard shows them. Last, so no other row's draw moves.
+  const daniel = agentRows.find((a) => a.email === "daniel@adamsrealty.example")!;
+  const carnesville = areaBySlug.get("carnesville")!;
+  for (const [k, f] of FIRM_HIDDEN_FIXTURES.entries()) {
+    const key =
+      total +
+      statewideAreas.length +
+      lakeAreas.length +
+      LAKE_FIXTURES.length +
+      IDX_FIXTURES.length +
+      k +
+      1;
+    const { listing } = generateListing(key, {
+      area: carnesville,
+      type: "single_family",
+      mlsNumber: f.mlsNumber,
+    });
+    const listDate = f.status === "coming_soon" ? daysAgo(-7) : daysAgo(60);
+    const changed = f.status === "coming_soon" ? daysAgo(2) : daysAgo(12);
+    Object.assign(listing, {
+      status: f.status,
+      transactionType: "sale",
+      listPrice: f.price,
+      originalListPrice: f.price,
+      closePrice: null,
+      closeDate: null,
+      listDate: isoDate(listDate),
+      statusChangedAt: changed,
+      sourceModifiedAt: changed,
+      addressLine1: f.street,
+      unitNumber: null,
+      listAgentName: daniel.name,
+      listAgentEmail: daniel.email,
+      listAgentPhone: daniel.phone,
+      listOfficeName: "Adams Realty, Inc.",
+      listOfficeMlsId: OFFICE_MLS_ID,
+      listAgentMlsId: daniel.mlsAgentId,
+      openHouses: [],
+    } satisfies Partial<typeof listing>);
+    await db.transaction((tx) =>
+      upsertListing(tx, toSource(manualSource), listing, {
+        listAgentId: daniel.id,
+        isFeatured: false,
+      }),
+    );
+  }
   // Autocomplete reads the `places` view; a sync, a seed or a dashboard edit rebuilds it.
   await refreshPlaces(db);
   await assertStatewideFixtures();
@@ -1173,6 +1223,27 @@ async function assertStatewideFixtures() {
       "the active feed fixture 10599006 is found by its MLS number",
       (await buy({ q: "10599006" })) === 1,
     ],
+    // The firm hides its own listings in those statuses too, and still manages them.
+    ...(await Promise.all(
+      FIRM_HIDDEN_FIXTURES.map(async (f): Promise<[string, boolean]> => {
+        const [row] = await db
+          .execute<{ hidden: boolean; manual: boolean; status: string }>(
+            sql`select l.idx_hidden as hidden, s.kind = 'manual' as manual, l.status
+                  from listings l join data_sources s on s.id = l.source_id
+                 where l.mls_number = ${f.mlsNumber}`,
+          )
+          .then((r) => r.rows);
+        return [
+          `the firm's own ${f.status} fixture ${f.mlsNumber} is hidden from the public`,
+          !!row &&
+            row.manual &&
+            row.hidden &&
+            row.status === f.status &&
+            (await buy({ q: f.mlsNumber, pending: true })) === 0 &&
+            (await buy({ q: f.mlsNumber, mode: "sold" })) === 0,
+        ];
+      }),
+    )),
     ["no more than 750 live listings (the map's pin cap)", (await live(sql`true`)) <= 750],
     [
       "no listing sold before it was listed, and no history event before its listing",

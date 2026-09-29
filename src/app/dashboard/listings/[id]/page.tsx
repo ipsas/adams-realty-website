@@ -14,7 +14,8 @@ import { dataSources, listingMedia, listings, openHouses } from "@/db/schema";
 import { can } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { getAgentOptions } from "@/lib/dashboard/queries";
-import { formatOpenHouse, formatShortOpenHouse, statusLabel } from "@/lib/format";
+import { formatOpenHouse, formatShortOpenHouse, staffStatusLabel } from "@/lib/format";
+import { isIdxHidden } from "@/lib/listings/visibility";
 import { upcomingDays } from "@/lib/time";
 
 export const metadata = { title: "Edit listing" };
@@ -67,10 +68,17 @@ export default async function EditListingPage(props: PageProps<"/dashboard/listi
         title={l.addressLine1}
         description={
           <>
-            {statusLabel(l.status, l.transactionType)} · {l.city}, {l.state} {l.postalCode} ·{" "}
-            <Link href={`/homes/${l.slug}`} className="font-medium text-brand-700 hover:underline">
-              View public page
-            </Link>
+            {staffStatusLabel(l.status, l.transactionType)} · {l.city}, {l.state} {l.postalCode} ·{" "}
+            {isIdxHidden(l) ? (
+              <span data-testid="not-public">Not on the public site in this status</span>
+            ) : (
+              <Link
+                href={`/homes/${l.slug}`}
+                className="font-medium text-brand-700 hover:underline"
+              >
+                View public page
+              </Link>
+            )}
           </>
         }
         action={
@@ -86,7 +94,8 @@ export default async function EditListingPage(props: PageProps<"/dashboard/listi
       {created && (
         <div className="mb-6">
           <FormMessage tone="success">
-            Listing created. It&apos;s live on the site now if its status is Active or Coming soon.
+            Listing created. It shows on the public site in every status except Coming soon,
+            Withdrawn, Expired and Canceled.
           </FormMessage>
         </div>
       )}

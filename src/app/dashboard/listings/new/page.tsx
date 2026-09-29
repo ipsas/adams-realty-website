@@ -14,7 +14,7 @@ export default async function NewListingPage() {
     <>
       <PageHeader
         title="New listing"
-        description="For pocket listings, coming-soon marketing and rentals. Listings already in the MLS appear automatically. Open houses can be scheduled once the listing is created."
+        description="For pocket listings and rentals. Listings already in the MLS appear automatically. Coming soon listings stay off the public site until they go active. Open houses can be scheduled once the listing is created."
       />
       <ListingForm
         values={{

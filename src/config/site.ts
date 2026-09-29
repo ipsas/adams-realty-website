@@ -43,12 +43,19 @@ export const site = {
     copyrightHolder: "Georgia MLS",
     /**
      * IDX agreement §7: the Georgia MLS name and logo on pages with its
-     * listings. Null shows the name as a text wordmark. The official files are
-     * at gamls.com/logos (standard, and "reverse" for dark backgrounds): save
-     * them under public/brand/ and set, e.g.,
-     * `{ light: "/brand/gamls-logo.svg", dark: "/brand/gamls-logo-reverse.svg", width: 150, height: 47 }`.
+     * listings. The official files from gamls.com/logos: the standard one
+     * (blue and gold) for the light theme, the "reverse" one (white and gold)
+     * for the dark theme. Both are viewBox 488.87 × 141.29 (3.46:1), so
+     * 173 × 50 keeps the aspect ratio to within a hundredth of a pixel;
+     * `MlsMark` draws them 32 px tall at that ratio. Null would show the name
+     * as a text wordmark instead.
      */
-    logo: null as { light: string; dark: string; width: number; height: number } | null,
+    logo: {
+      light: "/brand/gamls_logo.svg",
+      dark: "/brand/gamls_logo_reverse.svg",
+      width: 173,
+      height: 50,
+    } as { light: string; dark: string; width: number; height: number } | null,
     /**
      * IDX agreement Exhibit A §6: how Georgia MLS (or anyone) reports a listing
      * with wrong information. Published on /listing-corrections and linked from

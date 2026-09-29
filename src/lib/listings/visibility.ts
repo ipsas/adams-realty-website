@@ -1,29 +1,30 @@
 import { and, isNull, sql, type SQL } from "drizzle-orm";
 import { listings } from "@/db/schema";
+import { HIDDEN_STATUSES } from "./hidden-statuses";
 
 /**
  * Georgia MLS IDX display rules (IDX/Vendor Data License Agreement, Aug 1 2023;
- * docs/plans/gamls-compliance.md). They govern rows that came from the feed
- * (`fromFeed`); the firm's own manually entered listings are its own to show.
+ * docs/plans/gamls-compliance.md), and the firm's own choice to follow the
+ * status rule for every listing.
  *
  * - Exhibit A §17: no public display of Expired, Coming Soon, On Hold or
- *   Withdrawn listings. The mapper stores On Hold as `withdrawn`; Canceled is
- *   hidden too (it is a withdrawal by another name, and hiding more is safe).
- * - Exhibit A §16 and Exhibit C: Sold, On Hold, Withdrawn and Expired listings
- *   show the primary photo only, never a secondary one.
+ *   Withdrawn listings. The mapper stores On Hold as `withdrawn` (the status
+ *   enum has no on-hold value); Canceled is hidden too (a withdrawal by another
+ *   name, and hiding more is safe). The firm hides its own manually entered
+ *   listings in these statuses the same way, so this rule applies to every row.
+ * - Exhibit A §16 and Exhibit C: Sold, On Hold, Withdrawn and Expired feed
+ *   listings show the primary photo only, never a secondary one. The firm's
+ *   own sold listings keep all their photos.
  * - A feed listing that left the feed (`removedAt`) is taken down, as the
  *   privacy page promises: no page, and saved homes show only that it's gone.
+ *
+ * Only public surfaces apply these; the dashboard shows staff every listing.
  */
 
 type Status = (typeof listings.status.enumValues)[number];
 
-/** Feed statuses the public never sees. Mirrors the `idx_hidden` generated column. */
-export const IDX_HIDDEN_STATUSES = [
-  "coming_soon",
-  "withdrawn",
-  "expired",
-  "canceled",
-] as const satisfies readonly Status[];
+/** Statuses the public never sees, for any listing. Mirrors the `idx_hidden` generated column. */
+export const IDX_HIDDEN_STATUSES = HIDDEN_STATUSES satisfies readonly Status[];
 
 /** Feed statuses shown with their primary photo only. */
 export const PRIMARY_PHOTO_ONLY_STATUSES = [
@@ -35,14 +36,14 @@ export const PRIMARY_PHOTO_ONLY_STATUSES = [
 
 type Subject = { fromFeed: boolean; status: string; removedAt?: Date | null };
 
-/** Whether Georgia MLS rules forbid showing this row publicly. The same rule as `idx_hidden`. */
-export function isIdxHidden(l: Pick<Subject, "fromFeed" | "status">): boolean {
-  return l.fromFeed && (IDX_HIDDEN_STATUSES as readonly string[]).includes(l.status);
+/** Whether the public may not see this listing at all. The same rule as `idx_hidden`. */
+export function isIdxHidden(l: Pick<Subject, "status">): boolean {
+  return (IDX_HIDDEN_STATUSES as readonly string[]).includes(l.status);
 }
 
 /**
  * Whether the listing's own page (and its details on a card) may be shown:
- * not for a hidden feed status, nor for a feed listing that left the feed.
+ * not for a hidden status, nor for a feed listing that left the feed.
  * The firm's own removed listings keep their "no longer on the market" page.
  */
 export function canShowDetails(l: Subject): boolean {
@@ -64,8 +65,8 @@ export function allowedPhotos<T>(l: Subject, photos: T[]): T[] {
 }
 
 /**
- * Every public listing query's base condition: still listed, and not a feed
- * listing the rules hide. Keeps `removed_at is null` so the partial indexes'
+ * Every public listing query's base condition: still listed, and not in a
+ * hidden status. Keeps `removed_at is null` so the partial indexes'
  * predicates still apply.
  */
 export function publicListing(): SQL {

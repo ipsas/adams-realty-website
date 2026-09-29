@@ -2,7 +2,7 @@
 
 Required before real feed data goes public. This belongs to GA-A, or to its own small step after it.
 
-- **No public display of Coming Soon, Expired, On Hold or Withdrawn listings** from the feed (Exhibit A §17). Today the site shows `coming_soon` in search, cards, map and listing pages. For MLS-sourced rows, exclude it (the firm's own manually entered listings are a separate question for the owner).
+- **No public display of Coming Soon, Expired, On Hold or Withdrawn listings** from the feed (Exhibit A §17). The owner decided to hide the firm's own manually entered listings in these statuses too, so the rule covers every listing.
 - **Sold, On Hold, Withdrawn and Expired listings: primary photo only.** Every secondary photo is excluded (Exhibit A §16, Exhibit C notes). Under-contract and pending listings may show all photos.
 - **Source attribution:** show the Georgia MLS name and logo on the pages that show listing data, plus a copyright notice naming GAMLS as the copyright holder (§§7, 10). Every listing, including thumbnails and cards, names the listing firm prominently, in type no smaller than the median listing-data text (§7).
 - **Mandatory fields shown:** Listing Office, Listing ID, Status, Variable Compensation, Attribution Contact Phone and Attribution Contact Email. **Never shown:** Listing Agreement Type, Listing Contract Date, On Market Date, Expiration Date, Private Remarks, Showing Contact Name/Phone, Office Remarks and Showing Requirements (Exhibit C). If buyer-agency compensation is shown, Compensation Comments are shown with it. Audit the RESO mapper and the listing page against this table.
@@ -21,7 +21,20 @@ Implemented as described in ARCHITECTURE.md → "Georgia MLS display rules": hid
 (`idx_hidden`, `publicListing()`), primary photo only, the Georgia MLS name and copyright
 notice, listing-firm attribution everywhere, the Exhibit C fields (and the mapper audit),
 `/listing-corrections`, per-listing page views with an admin CSV export, the Postgres-backed
-rate limiter in `proxy.ts`, and the unbiased-sort tests. Still with the owner: the official
-logo files, a dedicated corrections email if wanted, the DMCA agent, confirming the feed's
-field names, and whether the firm's own manual Coming Soon listings should also be hidden
-(they are shown today). HANDOFF.md section 6 lists these.
+rate limiter in `proxy.ts`, and the unbiased-sort tests.
+
+Owner decisions since, now built:
+
+- **Official Georgia MLS logo.** The files from gamls.com/logos are in `public/brand/`
+  (`gamls_logo.svg` for light backgrounds, `gamls_logo_reverse.svg` for dark) and set in
+  `site.mls.logo`; every `MlsAttribution` (footer, `/homes`, feed listing pages,
+  `/listing-corrections`) shows the one that matches the theme.
+- **The firm's own listings follow the status rule too.** Coming Soon, Withdrawn, Expired and
+  Canceled listings entered in the dashboard are hidden from the public like feed ones
+  (`drizzle/0011_hide_all_hidden_statuses.sql` drops `from_feed and` from `idx_hidden`). There
+  is no separate On Hold status: the mapper stores it as `withdrawn`, so it is hidden already.
+  Staff still see and manage these listings in the dashboard. Undo: a migration restoring
+  `from_feed and` in the column (and `isIdxHidden`).
+
+Still with the owner: a dedicated corrections email if wanted, the DMCA agent and confirming
+the feed's field names. HANDOFF.md section 6 lists these.

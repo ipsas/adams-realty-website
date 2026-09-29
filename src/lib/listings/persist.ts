@@ -146,10 +146,9 @@ export async function upsertListings(
         listAgentId,
         isCompanyListing,
         fromFeed,
-        // First time the public could see it (a feed listing entering as
-        // Coming Soon becomes public when it goes active).
-        publicSince:
-          previous?.publicSince ?? (isIdxHidden({ fromFeed, status: fields.status }) ? null : now),
+        // First time the public could see it (a listing entering as Coming
+        // Soon becomes public when it goes active).
+        publicSince: previous?.publicSince ?? (isIdxHidden(fields) ? null : now),
         isFeatured: opts.isFeatured ?? previous?.isFeatured ?? false,
         primaryPhotoUrl: photos[0]?.url ?? null,
         photoCount: photos.length,

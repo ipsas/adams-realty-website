@@ -150,10 +150,12 @@ Use your model table: Opus High for the work packages, and Xhigh if one gets stu
       first statewide load below, then widen the feed's filter to statewide. The "all of Georgia"
       copy should go live only once statewide listings are live, and only after Georgia MLS
       confirms the IDX license allows statewide display.
-- [ ] **Georgia MLS logo.** Download the official logo files from gamls.com/logos (the
-      standard SVG and the "reverse" SVG for dark backgrounds), save them in `public/brand/`
-      and set `site.mls.logo` in `src/config/site.ts`. Until then the site shows the name
-      "Georgia MLS" as a text wordmark.
+- [x] **Georgia MLS logo.** Done: the official files from gamls.com/logos are in
+      `public/brand/` and set in `site.mls.logo` (`src/config/site.ts`).
+- [x] **The firm's own Coming Soon, Withdrawn, Expired and Canceled listings.** Decided: hidden
+      from the public like Georgia MLS ones (`drizzle/0011`). Agents still see and edit them in
+      the dashboard; they appear on the site once their status is Active (or under contract,
+      pending or sold).
 - [ ] **Corrections contact for Georgia MLS.** `/listing-corrections` publishes
       (706) 246-0053 and contracts.adamsrealty@gmail.com (`site.mls.corrections`). The IDX
       agreement asks for a _dedicated_ email: create one (e.g. listings@ your domain) if you

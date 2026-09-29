@@ -78,6 +78,14 @@ export function statusLabel(status: string, transactionType?: string): string {
   return STATUS_LABELS[status] ?? status;
 }
 
+/** Staff-facing: like `statusLabel`, but tells the off-market statuses apart for the dashboard. */
+export function staffStatusLabel(status: string, transactionType?: string): string {
+  if (status === "withdrawn") return "Withdrawn";
+  if (status === "expired") return "Expired";
+  if (status === "canceled") return "Canceled";
+  return statusLabel(status, transactionType);
+}
+
 export const PROPERTY_TYPE_LABELS: Record<string, string> = {
   single_family: "Single-family home",
   condo: "Condo",

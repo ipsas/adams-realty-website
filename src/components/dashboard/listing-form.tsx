@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox, Field, FormMessage, Input, Select, Textarea } from "@/components/ui/form";
 import type { ListingFeatures } from "@/db/schema";
 import { cn } from "@/lib/cn";
+import { HIDDEN_STATUSES } from "@/lib/listings/hidden-statuses";
 import { deleteListing, saveListing, type ListingFormState } from "@/server/actions/dashboard";
 import { PhotoManager, type PhotoValue } from "./photo-manager";
 
@@ -68,6 +69,8 @@ const STATUSES = [
 ];
 /** Saving with one of these takes the listing's upcoming open houses off the site. */
 const OFF_MARKET = new Set(["closed", "withdrawn", "expired", "canceled"]);
+/** Statuses the public site never shows. */
+const NOT_PUBLIC = new Set<string>(HIDDEN_STATUSES);
 const TYPES = [
   ["single_family", "Single-family"],
   ["condo", "Condo"],
@@ -221,7 +224,7 @@ function ListingFields({
           label="Status"
           htmlFor="status"
           hint={
-            cancelsOpenHouses && (
+            cancelsOpenHouses ? (
               <span className="font-medium text-clay-600">
                 Saving takes{" "}
                 {upcomingOpenHouses === 1
@@ -229,6 +232,12 @@ function ListingFields({
                   : `the ${upcomingOpenHouses} upcoming open houses`}{" "}
                 off the site.
               </span>
+            ) : (
+              NOT_PUBLIC.has(status) && (
+                <span data-testid="status-not-public">
+                  Not shown on the public site in this status.
+                </span>
+              )
             )
           }
         >

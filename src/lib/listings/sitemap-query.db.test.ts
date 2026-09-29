@@ -9,7 +9,8 @@ import { getListingSitemapChunk } from "./sitemap-query";
 // Listing sitemap chunks against Postgres: exactly the live listings, each
 // once, in a stable order, whatever the chunk size.
 
-const LIVE = ["active", "coming_soon", "active_under_contract", "pending"] as const;
+// Coming Soon is left out: the public never sees it, even the firm's own.
+const LIVE = ["active", "active_under_contract", "pending"] as const;
 let liveSlugs: string[];
 
 /** Planner settings for this file's connections (the pool connects after this runs). */
@@ -35,14 +36,15 @@ beforeAll(async () => {
   await resetDb();
   const source = await createSource({ slug: "adams", kind: "manual", config: {} });
   // 13 live listings of every live status, inserted in an order unrelated to their ids…
-  const live = Array.from({ length: 13 }, (_, i) => listing(i, { status: LIVE[i % 4] }));
-  // …and some that must never appear: sold, off market, and taken down.
+  const live = Array.from({ length: 13 }, (_, i) => listing(i, { status: LIVE[i % 3] }));
+  // …and some that must never appear: sold, off market, coming soon, and taken down.
   const hidden = [
     listing(100, { status: "closed", closeDate: "2026-08-01", closePrice: 300_000 }),
     listing(101, { status: "withdrawn" }),
     listing(102, { status: "expired" }),
     listing(103, { status: "active" }),
     listing(104, { status: "pending" }),
+    listing(105, { status: "coming_soon" }),
   ];
   await insertListings(source, [...hidden.slice(0, 2), ...live, ...hidden.slice(2)]);
   await db

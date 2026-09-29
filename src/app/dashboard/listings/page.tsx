@@ -14,7 +14,8 @@ import { can } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { cn } from "@/lib/cn";
 import { getDashboardListings } from "@/lib/dashboard/queries";
-import { formatPrice, formatRelative, statusLabel } from "@/lib/format";
+import { formatPrice, formatRelative, staffStatusLabel } from "@/lib/format";
+import { isIdxHidden } from "@/lib/listings/visibility";
 
 export const metadata = { title: "Listings" };
 
@@ -130,7 +131,7 @@ export default async function DashboardListings(props: PageProps<"/dashboard/lis
                               STATUS_DOT[r.status] ?? "bg-faint",
                             )}
                           />
-                          {statusLabel(r.status, r.transactionType)}
+                          {staffStatusLabel(r.status, r.transactionType)}
                         </span>
                       </Td>
                       <Td className="text-right text-ink tabular">
@@ -142,12 +143,22 @@ export default async function DashboardListings(props: PageProps<"/dashboard/lis
                       <Td className="text-right tabular">{r.leads}</Td>
                       <Td>{formatRelative(r.updatedAt)}</Td>
                       <Td className="text-right whitespace-nowrap">
-                        <Link
-                          href={`/homes/${r.slug}`}
-                          className="mr-3 text-sm text-muted hover:text-ink"
-                        >
-                          View
-                        </Link>
+                        {isIdxHidden(r) ? (
+                          <span
+                            className="mr-3 text-sm text-muted"
+                            title="Coming soon, withdrawn, expired and canceled listings aren't shown on the public site."
+                            data-testid="not-public"
+                          >
+                            Not public
+                          </span>
+                        ) : (
+                          <Link
+                            href={`/homes/${r.slug}`}
+                            className="mr-3 text-sm text-muted hover:text-ink"
+                          >
+                            View
+                          </Link>
+                        )}
                         {editable && (
                           <Link
                             href={`/dashboard/listings/${r.id}`}

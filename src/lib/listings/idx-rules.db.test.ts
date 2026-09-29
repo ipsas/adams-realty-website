@@ -3,6 +3,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { listings } from "@/db/schema";
 import { findSearchMatches } from "@/lib/alerts/queries";
+import type { Actor } from "@/lib/auth/permissions";
+import { getDashboardListings } from "@/lib/dashboard/queries";
 import { mapResoProperty, type ResoProperty } from "@/lib/mls/reso/mapper";
 import type { NormalizedListing, NormalizedMedia } from "@/lib/mls/types";
 import { parseSearchParams } from "@/lib/search/params";
@@ -20,12 +22,13 @@ import {
   getTopCities,
 } from "./queries";
 import { getListingSitemapChunk } from "./sitemap-query";
-import { isIdxHidden } from "./visibility";
+import { IDX_HIDDEN_STATUSES, isIdxHidden } from "./visibility";
 
 // Georgia MLS IDX display rules on real queries, with feed rows ("fixtures")
 // in every status next to the firm's own manual listings in the same statuses:
-// hidden statuses stay off every public surface, sold feed listings carry one
-// photo, and the firm's own listings are untouched.
+// hidden statuses stay off every public surface for both (the firm hides its
+// own the same way), sold feed listings carry one photo, and the dashboard
+// still shows staff every one of the firm's listings.
 
 const STATUSES = listings.status.enumValues;
 type Status = (typeof STATUSES)[number];
@@ -100,12 +103,12 @@ const PUBLIC_LIVE = [
   "feed:pending",
   "manual:active",
   "manual:active_under_contract",
-  "manual:coming_soon",
   "manual:pending",
 ];
+const HIDDEN = [...IDX_HIDDEN_STATUSES];
 
 describe("the idx_hidden column", () => {
-  it("marks exactly the feed rows the rules hide", async () => {
+  it("marks exactly the rows in a hidden status, feed and manual alike", async () => {
     const rows = await db
       .select({
         id: listings.id,
@@ -124,17 +127,26 @@ describe("the idx_hidden column", () => {
         .filter((r) => r.idxHidden)
         .map((r) => labels.get(r.id))
         .sort(),
-    ).toEqual(["feed:canceled", "feed:coming_soon", "feed:expired", "feed:withdrawn"]);
+    ).toEqual([
+      "feed:canceled",
+      "feed:coming_soon",
+      "feed:expired",
+      "feed:withdrawn",
+      "manual:canceled",
+      "manual:coming_soon",
+      "manual:expired",
+      "manual:withdrawn",
+    ]);
   });
 });
 
-describe("hidden feed listings stay off every public surface", () => {
+describe("hidden listings stay off every public surface, the firm's own included", () => {
   it("search, in every mode", async () => {
     const ids = async (q: Record<string, string>) =>
       labelled(
         (await searchListings(parseSearchParams({ q: "Ruleton", ...q }))).items.map((i) => i.id),
       );
-    expect(await ids({})).toEqual(["feed:active", "manual:active", "manual:coming_soon"]);
+    expect(await ids({})).toEqual(["feed:active", "manual:active"]);
     expect(await ids({ pending: "1" })).toEqual(PUBLIC_LIVE);
     expect(await ids({ mode: "sold" })).toEqual(["feed:closed", "manual:closed"]);
   });
@@ -156,13 +168,12 @@ describe("hidden feed listings stay off every public surface", () => {
     expect(labelled((await getNewestListings(50)).map((l) => l.id))).toEqual([
       "feed:active",
       "manual:active",
-      "manual:coming_soon",
     ]);
-    expect(await getTopCities()).toEqual([{ city: "Ruleton", count: 3 }]);
+    expect(await getTopCities()).toEqual([{ city: "Ruleton", count: 2 }]);
     expect(await getPlacesIndex()).toEqual([
-      { county: "Clarke", cities: [{ city: "Ruleton", count: 3 }] },
+      { county: "Clarke", cities: [{ city: "Ruleton", count: 2 }] },
     ]);
-    expect((await getMarketStats()).active).toBe(3);
+    expect((await getMarketStats()).active).toBe(2);
   });
 
   it("location autocomplete counts", async () => {
@@ -171,12 +182,26 @@ describe("hidden feed listings stay off every public surface", () => {
   });
 
   it("listing pages", async () => {
-    for (const status of ["coming_soon", "withdrawn", "expired", "canceled"]) {
+    for (const status of HIDDEN) {
       expect(await getListingBySlug(await slugOf(`feed:${status}`)), status).toBeNull();
-      // The firm's own listing in the same status is its own call: still shown.
-      expect(await getListingBySlug(await slugOf(`manual:${status}`)), status).not.toBeNull();
+      expect(await getListingBySlug(await slugOf(`manual:${status}`)), status).toBeNull();
     }
-    expect(await getListingBySlug(await slugOf("feed:active"))).not.toBeNull();
+    for (const label of [...PUBLIC_LIVE, "feed:closed", "manual:closed"]) {
+      expect(await getListingBySlug(await slugOf(label)), label).not.toBeNull();
+    }
+  });
+
+  it("saved-search alerts announce only the listings the public can see", async () => {
+    // Every row was written moments ago; a window around now covers them all.
+    const now = new Date();
+    const win = { start: new Date(now.getTime() - 3_600_000), end: now };
+    const matches = await findSearchMatches(
+      db,
+      parseSearchParams({ q: "Ruleton", pending: "1" }),
+      { listings: win, events: win },
+      now,
+    );
+    expect(labelled(matches.newRows.map((r) => r.id))).toEqual(PUBLIC_LIVE);
   });
 
   it("a feed listing that left the feed has no page; the firm's own keeps one", async () => {
@@ -213,11 +238,26 @@ describe("photos", () => {
     expect(count.get("feed:closed")).toBe(1);
     expect(count.get("feed:active_under_contract")).toBe(3);
     expect(count.get("feed:active")).toBe(3);
-    for (const status of ["coming_soon", "withdrawn", "expired", "canceled"]) {
+    for (const status of HIDDEN) {
       expect(count.get(`feed:${status}`), status).toBe(0);
-      expect(count.get(`manual:${status}`), status).toBe(3);
+      expect(count.get(`manual:${status}`), status).toBe(0);
     }
     expect(count.get("manual:closed")).toBe(3);
+  });
+});
+
+describe("the dashboard", () => {
+  it("still lists every one of the firm's listings, hidden ones with their status", async () => {
+    const admin: Actor = { userId: "u-admin", role: "admin", agentId: null };
+    const rows = (await getDashboardListings(admin)).filter((r) => labels.has(r.id));
+    // Admins manage the company's listings: every manual row, whatever its status.
+    expect(rows.map((r) => labels.get(r.id)).sort()).toEqual(
+      STATUSES.map((s) => `manual:${s}`).sort(),
+    );
+    for (const status of HIDDEN) {
+      const row = rows.find((r) => labels.get(r.id) === `manual:${status}`)!;
+      expect(row.status, status).toBe(status);
+    }
   });
 });
 
@@ -259,6 +299,53 @@ describe("saved-search alerts", () => {
       later.end,
     );
     expect(again.newRows).toEqual([]);
+  });
+});
+
+describe("saved-search alerts for the firm's own listings", () => {
+  it("announce a manual Coming Soon listing as new when it goes active, not before", async () => {
+    const soon = inStatus(901, "coming_soon", { listDate: null, city: "Firmville" });
+    const row = await db.transaction((tx) => upsertListing(tx, persistSource(manual), soon));
+    const publicSince = async () =>
+      (
+        await db
+          .select({ publicSince: listings.publicSince })
+          .from(listings)
+          .where(eq(listings.id, row.id))
+      )[0].publicSince;
+    expect(await publicSince()).toBeNull();
+
+    const before = new Date();
+    const hiddenWin = { start: new Date(before.getTime() - 60_000), end: before };
+    const whileHidden = await findSearchMatches(
+      db,
+      parseSearchParams({ q: "Firmville" }),
+      { listings: hiddenWin, events: hiddenWin },
+      before,
+    );
+    expect(whileHidden.newRows).toEqual([]);
+
+    const goesLive = new Date(Date.now() + 7_200_000);
+    await db.transaction((tx) =>
+      upsertListing(
+        tx,
+        persistSource(manual),
+        { ...soon, status: "active", sourceModifiedAt: goesLive },
+        { now: goesLive },
+      ),
+    );
+    expect(await publicSince()).toEqual(goesLive);
+    const win = {
+      start: new Date(goesLive.getTime() - 60_000),
+      end: new Date(goesLive.getTime() + 60_000),
+    };
+    const matches = await findSearchMatches(
+      db,
+      parseSearchParams({ q: "Firmville" }),
+      { listings: win, events: win },
+      goesLive,
+    );
+    expect(matches.newRows.map((r) => r.id)).toEqual([row.id]);
   });
 });
 

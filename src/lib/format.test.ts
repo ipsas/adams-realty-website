@@ -11,6 +11,8 @@ import {
   formatStreet,
   freshness,
   STALE_FEED_MS,
+  staffStatusLabel,
+  statusLabel,
 } from "./format";
 import { estimateMonthlyCost, monthlyHoaAmount, monthlyPrincipalAndInterest } from "./mortgage";
 
@@ -40,6 +42,16 @@ describe("format", () => {
   it("counts days on market", () => {
     expect(daysSince("2026-09-20", new Date("2026-09-25T15:00:00Z"))).toBe(5);
     expect(daysSince("2026-09-30", new Date("2026-09-25T15:00:00Z"))).toBeLessThan(0);
+  });
+
+  it("tells staff which off-market status a listing is in; the public sees one label", () => {
+    for (const s of ["withdrawn", "expired", "canceled"]) expect(statusLabel(s)).toBe("Off market");
+    expect(staffStatusLabel("withdrawn")).toBe("Withdrawn");
+    expect(staffStatusLabel("expired")).toBe("Expired");
+    expect(staffStatusLabel("canceled")).toBe("Canceled");
+    expect(staffStatusLabel("coming_soon")).toBe("Coming soon");
+    expect(staffStatusLabel("active", "rent")).toBe("For rent");
+    expect(staffStatusLabel("closed")).toBe("Sold");
   });
 });
 

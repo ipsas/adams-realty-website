@@ -6,7 +6,9 @@ import { withDb } from "./mobile/helpers";
 /*
  * Georgia MLS IDX display rules (docs/plans/gamls-compliance.md), against the seed's
  * Georgia MLS fixtures (IDX_FIXTURES in scripts/seed-data.ts, all on Sycamore Place in
- * Decatur): one feed listing per hidden status, a sold one and an attributed active one.
+ * Decatur): one feed listing per hidden status, a sold one and an attributed active one;
+ * and the firm's own hand-entered listings in the same statuses (FIRM_HIDDEN_FIXTURES, on
+ * Quail Hollow Rd in Carnesville), which the firm hides the same way.
  */
 
 const HIDDEN = [
@@ -14,6 +16,12 @@ const HIDDEN = [
   { mls: "10599002", status: "withdrawn" },
   { mls: "10599003", status: "expired" },
   { mls: "10599004", status: "canceled" },
+];
+const FIRM_HIDDEN = [
+  { mls: "10599101", status: "coming_soon", street: "101 Quail Hollow Rd", label: "Coming soon" },
+  { mls: "10599102", status: "withdrawn", street: "102 Quail Hollow Rd", label: "Withdrawn" },
+  { mls: "10599103", status: "expired", street: "103 Quail Hollow Rd", label: "Expired" },
+  { mls: "10599104", status: "canceled", street: "104 Quail Hollow Rd", label: "Canceled" },
 ];
 const SOLD = "10599005";
 const ATTRIBUTED = "10599006";
@@ -55,8 +63,11 @@ function medianTextPx(root: Locator) {
 }
 
 test.describe("listings Georgia MLS forbids showing", () => {
-  for (const { mls, status } of HIDDEN) {
-    test(`a ${status} feed listing has no page and isn't in search or the sitemap`, async ({
+  for (const { mls, status, source } of [
+    ...HIDDEN.map((h) => ({ ...h, source: "feed" })),
+    ...FIRM_HIDDEN.map((h) => ({ ...h, source: "firm's own" })),
+  ]) {
+    test(`a ${status} ${source} listing has no page and isn't in search or the sitemap`, async ({
       page,
       request,
     }) => {
@@ -74,6 +85,19 @@ test.describe("listings Georgia MLS forbids showing", () => {
       expect(await sitemap.text()).not.toContain(slug);
     });
   }
+
+  test("the firm's own hidden listings stay in the dashboard, with their status", async ({
+    page,
+  }) => {
+    await signIn(page, "daniel@adamsrealty.example", "/dashboard");
+    await page.goto("/dashboard/listings");
+    for (const f of FIRM_HIDDEN) {
+      const row = page.getByRole("row", { name: new RegExp(f.street) });
+      await expect(row, f.status).toContainText(f.label);
+      await expect(row.getByTestId("not-public"), f.status).toBeVisible();
+      await expect(row.getByRole("link", { name: "Edit" }), f.status).toBeVisible();
+    }
+  });
 
   test("a saved home that went off market shows only that it's gone", async ({ page }) => {
     const { slug } = await slugOf("10599002");
@@ -130,30 +154,57 @@ test.describe("a sold Georgia MLS listing", () => {
 });
 
 /**
- * The Georgia MLS mark reads in both themes: the official logo files once `site.mls.logo` is
- * set (the standard one in light, the "reverse" one in dark, each loaded), else the name as a
- * text wordmark.
+ * The Georgia MLS mark reads in both themes: the official logo files (`site.mls.logo`), the
+ * standard one in light and the "reverse" one in dark, each served (HTTP 200) and loaded, drawn
+ * at its own aspect ratio. Both the device setting and the site's own theme choice
+ * (`data-theme` on <html>) switch it.
  */
 async function expectMlsMark(page: Page, mark: Locator) {
   const logo = site.mls.logo;
-  for (const colorScheme of ["light", "dark"] as const) {
-    await page.emulateMedia({ colorScheme });
-    if (!logo) {
-      await expect(mark).toHaveAttribute("data-mls-mark", "text");
-      await expect(mark).toHaveText(site.mls.name);
-      await expect(mark).toBeVisible();
-      continue;
-    }
+  expect(logo, "site.mls.logo is set to the official Georgia MLS files").not.toBeNull();
+  if (!logo) return;
+  for (const src of [logo.light, logo.dark]) {
+    const res = await page.request.get(src);
+    expect(res.status(), src).toBe(200);
+    expect(res.headers()["content-type"], src).toContain("image/svg+xml");
+  }
+
+  const expectShown = async (theme: "light" | "dark") => {
     await expect(mark).toHaveAttribute("data-mls-mark", "logo");
-    const shown = mark.locator(`img[src="${colorScheme === "light" ? logo.light : logo.dark}"]`);
-    const other = mark.locator(`img[src="${colorScheme === "light" ? logo.dark : logo.light}"]`);
-    await expect(shown).toBeVisible();
+    const shown = mark.locator(`img[src="${theme === "light" ? logo.light : logo.dark}"]`);
+    const other = mark.locator(`img[src="${theme === "light" ? logo.dark : logo.light}"]`);
+    await expect(shown, theme).toBeVisible();
     await expect(shown).toHaveAttribute("alt", site.mls.name);
-    await expect(other).toBeHidden();
+    await expect(other, theme).toBeHidden();
     await expect
       .poll(() => shown.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth))
       .toBeGreaterThan(0);
+    // Not stretched: the drawn box has the artwork's own ratio.
+    const box = await shown.evaluate((img: HTMLImageElement) => {
+      const r = img.getBoundingClientRect();
+      return { w: r.width, h: r.height, ratio: img.naturalWidth / img.naturalHeight };
+    });
+    expect(box.h).toBeGreaterThanOrEqual(24);
+    expect(Math.abs(box.w / box.h - box.ratio)).toBeLessThan(0.05);
+  };
+
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await expectShown(colorScheme);
   }
+  // The site's theme choice overrides the device's.
+  const setTheme = (t: string | null) =>
+    page.evaluate((t) => {
+      if (t) document.documentElement.setAttribute("data-theme", t);
+      else document.documentElement.removeAttribute("data-theme");
+    }, t);
+  await page.emulateMedia({ colorScheme: "light" });
+  await setTheme("dark");
+  await expectShown("dark");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await setTheme("light");
+  await expectShown("light");
+  await setTheme(null);
   await page.emulateMedia({ colorScheme: null });
 }
 
@@ -181,7 +232,7 @@ test.describe("attribution and required fields", () => {
       "Compensation comments: Paid at closing from the seller's proceeds.",
     );
     // Georgia MLS name/logo and copyright.
-    await expect(info.locator("[data-mls-mark]")).toBeVisible();
+    await expectMlsMark(page, info.locator("[data-mls-mark]"));
     await expect(info).toContainText(
       `Listing information © ${new Date().getFullYear()} ${site.mls.copyrightHolder}. All rights reserved.`,
     );
@@ -216,7 +267,7 @@ test.describe("attribution and required fields", () => {
     }
   });
 
-  test("the Georgia MLS name, logo and copyright are on the search page and in the footer", async ({
+  test("the Georgia MLS name, logo and copyright are on the search page, the footer and the corrections page", async ({
     page,
   }) => {
     const year = new Date().getFullYear();
@@ -229,6 +280,10 @@ test.describe("attribution and required fields", () => {
     const footer = page.locator("footer [data-mls-attribution]");
     await expect(footer).toContainText(`Listing information © ${year} Georgia MLS.`);
     await expectMlsMark(page, footer.locator("[data-mls-mark]"));
+
+    await page.goto("/listing-corrections");
+    const corrections = page.locator("main [data-mls-attribution]");
+    await expectMlsMark(page, corrections.locator("[data-mls-mark]"));
   });
 });
 

@@ -41,7 +41,7 @@ Browser ──► Next.js (App Router, React Server Components)
 
 **Sources.** Every listing belongs to a `data_sources` row:
 
-- `manual`: listings our agents enter in the dashboard (pocket listings, coming-soon, rentals). Editable here.
+- `manual`: listings our agents enter in the dashboard (pocket listings, coming-soon, rentals). Editable here. Coming soon, withdrawn, expired and canceled ones stay off the public site.
 - `reso_web_api`: an MLS feed. A **read-only mirror**, because the MLS is the system of record. Edit in the MLS and the change arrives on the next sync.
 
 **Model.** Column names follow the RESO Data Dictionary loosely, normalized for
@@ -193,25 +193,34 @@ Listings cover all of Georgia; statements about the firm stay true to Northeast 
 The IDX/Vendor Data License Agreement (Aug 1 2023; summary in `docs/plans/gamls-compliance.md`)
 governs every listing that came from the feed. Adams Realty, Inc. is the licensee.
 
-- **Which rows:** `listings.from_feed` (set by `upsertListings` from the source's kind). The
-  firm's own manually entered listings aren't feed data and keep showing in any status.
-- **Hidden statuses (Exhibit A §17):** the generated column `idx_hidden` is true for feed rows
-  that are Coming Soon, Withdrawn (On Hold maps here), Expired or Canceled. Every public query
-  starts from `publicListing()` / `publicConditions()` (`src/lib/listings/visibility.ts`):
+- **Which rows:** `listings.from_feed` (set by `upsertListings` from the source's kind) marks
+  feed data, which the photo, removal and attribution rules below apply to. The hidden-status
+  rule applies to every row: the firm hides its own manually entered listings in those statuses
+  too (owner's decision, `drizzle/0011`).
+- **Hidden statuses (Exhibit A §17):** the generated column `idx_hidden` is true for every row
+  that is Coming Soon, Withdrawn (On Hold maps here; the status enum has no on-hold value),
+  Expired or Canceled (`HIDDEN_STATUSES`, `src/lib/listings/hidden-statuses.ts`). Every public
+  query starts from `publicListing()` / `publicConditions()` (`src/lib/listings/visibility.ts`):
   search and pins, cards, the sitemap, autocomplete (the `places` view), town chips, the
   places index, home stats, area guides, agent pages and alerts. `getListingBySlug` returns
   null for such a row, and for a feed row that left the feed (`removed_at`), so the page 404s.
   A saved home in that state shows "No longer available" with its address and firm only; it
-  can be unsaved but not saved, and takes no inquiries.
+  can be unsaved but not saved, and takes no inquiries. The dashboard still lists the firm's
+  hidden listings with their exact status (`staffStatusLabel`), marked "Not public" in place of
+  a link to the page, and the listing form says when a status keeps a listing off the site.
+  `public_since` stays null until a hidden row first turns visible, so alerts announce a
+  Coming Soon listing, feed or manual, when it goes active.
 - **Primary photo only (§16, Exhibit C):** sold and off-market feed rows show one photo on the
   page (gallery, lightbox, JSON-LD) and on cards (`allowedPhotos` in `withPhotos`). OG images
-  and map popups only ever use the primary photo.
+  and map popups only ever use the primary photo. The firm's own sold listings keep every photo.
 - **Attribution (§7, §10):** every card, map popup, area-guide tile and listing page names the
   listing firm in `text-sm`, the size of the other listing text (`e2e/gamls.spec.ts` measures
   it against the median). `MlsAttribution` (`src/components/content/mls-attribution.tsx`)
   shows the Georgia MLS name and logo and "Listing information © <year> Georgia MLS" in the
-  footer, on the search page and in each feed listing's information block. The logo is a
-  text wordmark until the official files are added (`site.mls.logo`).
+  footer, on the search page and in each feed listing's information block. The logo is the
+  official artwork from gamls.com/logos (`site.mls.logo`): `public/brand/gamls_logo.svg`
+  (blue and gold) in the light theme, `gamls_logo_reverse.svg` (white and gold) in the dark
+  one, 32 px tall at its own aspect ratio, with "Georgia MLS" as its alt text.
 - **Fields (Exhibit C):** the listing page's "Listing information" block shows Listing office,
   Listing ID, Status, and when the feed sends them the attribution contact phone and email,
   Variable Compensation, and buyer-agency compensation always together with its comments.

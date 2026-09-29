@@ -232,20 +232,21 @@ export const listings = pgTable(
      */
     fromFeed: boolean("from_feed").notNull().default(false),
     /**
-     * Georgia MLS forbids public display of feed listings that are Coming
-     * Soon, Withdrawn (On Hold maps here), Expired or Canceled. Every public
-     * query adds `idx_hidden = false` (`publicListing()`); only the dashboard
-     * sees these rows. Derived, so it can never disagree with the status.
+     * Listings the public never sees: Coming Soon, Withdrawn (On Hold maps
+     * here), Expired or Canceled. Georgia MLS forbids showing its feed
+     * listings in these statuses, and the firm hides its own the same way.
+     * Every public query adds `idx_hidden = false` (`publicListing()`); only
+     * the dashboard sees these rows. Derived, so it can never disagree with
+     * the status.
      */
     idxHidden: boolean("idx_hidden")
       .notNull()
       .generatedAlwaysAs(
-        (): SQL =>
-          sql`${listings.fromFeed} and ${listings.status} in ('coming_soon', 'withdrawn', 'expired', 'canceled')`,
+        (): SQL => sql`${listings.status} in ('coming_soon', 'withdrawn', 'expired', 'canceled')`,
       ),
     /**
      * When the listing first became publicly visible: on insert when it is,
-     * else when a hidden feed row (Coming Soon) first turns visible. Saved-search
+     * else when a hidden row (Coming Soon) first turns visible. Saved-search
      * alerts call a home "new" by this, so a listing that spent its first days
      * as Coming Soon is still announced when it goes active.
      */

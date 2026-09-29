@@ -102,7 +102,7 @@ export async function createInquiry(_prev: InquiryState, form: FormData): Promis
   if (d.listingId) {
     [listing] = await db.select().from(listings).where(eq(listings.id, d.listingId)).limit(1);
     if (!listing) return { ok: false, message: "That home is no longer available." };
-    // Georgia MLS rules keep hidden feed listings off the site, so no leads on them either
+    // Hidden-status listings (feed or the firm's own) are off the site, so no leads on them either
     // (a problem report about one still reaches the office).
     if (!report && !canShowDetails(listing))
       return { ok: false, message: "That home is no longer available." };

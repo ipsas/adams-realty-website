@@ -10,21 +10,30 @@ import {
 } from "./visibility";
 
 // Georgia MLS IDX display rules (IDX agreement Exhibit A §§16-17, Exhibit C),
-// for every status a listing can have, from the feed and entered by hand.
+// for every status a listing can have, from the feed and entered by hand (the
+// firm hides its own listings in the hidden statuses too).
 const STATUSES = listings.status.enumValues;
 const PHOTOS = ["primary.jpg", "second.jpg", "third.jpg"];
 
 describe("Georgia MLS display rules", () => {
-  it("hide Coming Soon, Withdrawn (and On Hold), Expired and Canceled feed listings", () => {
-    const hidden = STATUSES.filter((status) => isIdxHidden({ fromFeed: true, status }));
+  it("hide Coming Soon, Withdrawn (and On Hold), Expired and Canceled listings", () => {
+    const hidden = STATUSES.filter((status) => isIdxHidden({ status }));
     expect(hidden.sort()).toEqual(["canceled", "coming_soon", "expired", "withdrawn"]);
     expect([...IDX_HIDDEN_STATUSES].sort()).toEqual(hidden.sort());
   });
 
-  it("leave every status of the firm's own manual listings alone", () => {
+  it("hide the firm's own manual listings in those statuses too", () => {
     for (const status of STATUSES) {
-      expect(isIdxHidden({ fromFeed: false, status }), status).toBe(false);
-      expect(canShowDetails({ fromFeed: false, status, removedAt: null }), status).toBe(true);
+      const hidden = (IDX_HIDDEN_STATUSES as readonly string[]).includes(status);
+      const l = { fromFeed: false, status, removedAt: null };
+      expect(isIdxHidden(l), status).toBe(hidden);
+      expect(canShowDetails(l), status).toBe(!hidden);
+      expect(allowedPhotos(l, PHOTOS), status).toEqual(hidden ? [] : PHOTOS);
+    }
+  });
+
+  it("keep every photo of the firm's own visible listings, sold ones included", () => {
+    for (const status of ["active", "active_under_contract", "pending", "closed"]) {
       expect(primaryPhotoOnly({ fromFeed: false, status }), status).toBe(false);
       expect(allowedPhotos({ fromFeed: false, status }, PHOTOS), status).toEqual(PHOTOS);
     }
@@ -45,11 +54,13 @@ describe("Georgia MLS display rules", () => {
     expect(allowedPhotos(sold, [])).toEqual([]);
   });
 
-  it("show nothing of a hidden feed listing, photos included", () => {
+  it("show nothing of a hidden listing, photos included, from the feed or not", () => {
     for (const status of IDX_HIDDEN_STATUSES) {
-      const l = { fromFeed: true, status, removedAt: null };
-      expect(canShowDetails(l), status).toBe(false);
-      expect(allowedPhotos(l, PHOTOS), status).toEqual([]);
+      for (const fromFeed of [true, false]) {
+        const l = { fromFeed, status, removedAt: null };
+        expect(canShowDetails(l), `${status} fromFeed=${fromFeed}`).toBe(false);
+        expect(allowedPhotos(l, PHOTOS), `${status} fromFeed=${fromFeed}`).toEqual([]);
+      }
     }
   });
 

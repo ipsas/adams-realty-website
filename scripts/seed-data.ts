@@ -1476,6 +1476,20 @@ export const LAKE_FIXTURES = [
  * number; e2e/gamls.spec.ts uses them. The buyer demo account has the
  * withdrawn one saved, to show how a saved home the rules hide looks.
  */
+/**
+ * Listings the firm entered by hand (the manual source), one in each status the
+ * public never sees: the firm hides its own Coming Soon, Withdrawn, Expired and
+ * Canceled listings like Georgia MLS ones (src/lib/listings/visibility.ts). All
+ * in Carnesville, listed by the sample agent Daniel Reyes, so the dashboard
+ * shows them to him and to admins. e2e/gamls.spec.ts finds them by MLS number.
+ */
+export const FIRM_HIDDEN_FIXTURES = [
+  { mlsNumber: "10599101", status: "coming_soon", street: "101 Quail Hollow Rd", price: 402_101 },
+  { mlsNumber: "10599102", status: "withdrawn", street: "102 Quail Hollow Rd", price: 402_102 },
+  { mlsNumber: "10599103", status: "expired", street: "103 Quail Hollow Rd", price: 402_103 },
+  { mlsNumber: "10599104", status: "canceled", street: "104 Quail Hollow Rd", price: 402_104 },
+] as const;
+
 export const IDX_FIXTURES = [
   { mlsNumber: "10599001", status: "coming_soon", street: "301 Sycamore Place", price: 401_001 },
   { mlsNumber: "10599002", status: "withdrawn", street: "302 Sycamore Place", price: 401_002 },

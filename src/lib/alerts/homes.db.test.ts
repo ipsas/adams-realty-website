@@ -9,10 +9,10 @@ import { closeDb, createSource, listing, persistSource, resetDb } from "@/test/d
 import { findHomeCandidates, loadHomeChanges } from "./homes";
 import { runAlerts } from "./run";
 
-// Saved-home alert emails under the Georgia MLS IDX rules: a saved feed home
-// that turns Withdrawn or Expired is hidden from the public, so it must not
-// reach an email either. Sold feed homes and the firm's own listings in any
-// status stay public and still alert.
+// Saved-home alert emails under the Georgia MLS IDX rules: a saved home that
+// turns Withdrawn or Expired is hidden from the public, so it must not reach an
+// email either. The firm hides its own listings in those statuses the same way.
+// Sold feed homes and visible changes to the firm's listings still alert.
 
 const HOUR = 3_600_000;
 const now = new Date();
@@ -31,6 +31,7 @@ const HOMES = {
   feedPriceCut: { key: 3, from: "feed", to: { listPrice: 250_000 } },
   feedSold: { key: 4, from: "feed", to: { status: "closed", closeDate: day(changedAt) } },
   firmWithdrawn: { key: 5, from: "manual", to: { status: "withdrawn" } },
+  firmPriceCut: { key: 6, from: "manual", to: { listPrice: 260_000 } },
 } as const satisfies Record<
   string,
   { key: number; from: "feed" | "manual"; to: Partial<NormalizedListing> }
@@ -78,8 +79,8 @@ afterAll(async () => {
   await closeDb();
 });
 
-const SHOWN: Name[] = ["feedPriceCut", "feedSold", "firmWithdrawn"];
-const HIDDEN: Name[] = ["feedExpired", "feedWithdrawn"];
+const SHOWN: Name[] = ["feedPriceCut", "feedSold", "firmPriceCut"];
+const HIDDEN: Name[] = ["feedExpired", "feedWithdrawn", "firmWithdrawn"];
 
 describe("saved-home alerts", () => {
   it("find only saved homes the public may still see", async () => {

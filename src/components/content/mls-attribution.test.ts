@@ -7,9 +7,9 @@ import { site } from "@/config/site";
 import { MlsAttribution, MlsMark } from "./mls-attribution";
 
 /**
- * The Georgia MLS mark (IDX agreement §7). The official logo files are added
- * by hand (site.ts → mls.logo); these tests keep the logo branch working
- * before that happens, and make a wrong path fail once it does.
+ * The Georgia MLS mark (IDX agreement §7): the official logo files from
+ * gamls.com/logos, configured in site.ts → mls.logo. The text wordmark is
+ * only the fallback for a missing setting.
  */
 
 type Logo = { light: string; dark: string; width: number; height: number } | null;
@@ -21,10 +21,10 @@ afterEach(() => {
 });
 
 const FIXTURE = {
-  light: "/brand/gamls-logo.svg",
-  dark: "/brand/gamls-logo-reverse.svg",
+  light: "/brand/fixture-light.svg",
+  dark: "/brand/fixture-dark.svg",
   width: 150,
-  height: 47,
+  height: 43,
 };
 
 function imgs(html: string) {
@@ -35,7 +35,7 @@ function imgs(html: string) {
 }
 
 describe("MlsMark", () => {
-  it("shows the name as a text wordmark while no logo is configured", () => {
+  it("falls back to the name as a text wordmark if no logo is configured", () => {
     mls.logo = null;
     const html = renderToStaticMarkup(createElement(MlsMark));
     expect(html).toContain('data-mls-mark="text"');
@@ -43,25 +43,31 @@ describe("MlsMark", () => {
     expect(imgs(html)).toEqual([]);
   });
 
-  it("shows the standard logo in light mode and the reverse logo in dark once configured", () => {
-    mls.logo = FIXTURE;
+  it("shows the standard logo in light mode and the reverse logo in dark", () => {
     const html = renderToStaticMarkup(createElement(MlsMark));
     expect(html).toContain('data-mls-mark="logo"');
     expect(html).not.toContain('data-mls-mark="text"');
 
     const [light, dark, ...rest] = imgs(html);
     expect(rest).toEqual([]);
-    expect(light.src).toBe(FIXTURE.light);
-    expect(dark.src).toBe(FIXTURE.dark);
+    expect(light.src).toBe("/brand/gamls_logo.svg");
+    expect(dark.src).toBe("/brand/gamls_logo_reverse.svg");
     for (const img of [light, dark]) expect(img.alt).toBe(site.mls.name);
-    // Exactly one shows per theme.
+    // Exactly one shows per theme, at a fixed height and its own width (never stretched).
+    for (const img of [light, dark])
+      expect(img.cls.split(" ")).toEqual(expect.arrayContaining(["h-8", "w-auto"]));
     expect(light.cls.split(" ")).toContain("dark:hidden");
     expect(light.cls.split(" ")).not.toContain("hidden");
     expect(dark.cls.split(" ")).toEqual(expect.arrayContaining(["hidden", "dark:block"]));
   });
 
-  it("carries the mark and the copyright notice in the attribution block", () => {
+  it("renders whatever logo paths are configured", () => {
     mls.logo = FIXTURE;
+    const [light, dark] = imgs(renderToStaticMarkup(createElement(MlsMark)));
+    expect([light.src, dark.src]).toEqual([FIXTURE.light, FIXTURE.dark]);
+  });
+
+  it("carries the mark and the copyright notice in the attribution block", () => {
     const html = renderToStaticMarkup(createElement(MlsAttribution));
     expect(html).toContain('data-mls-mark="logo"');
     expect(html).toContain(`Listings courtesy of ${site.mls.name}.`);
@@ -70,21 +76,35 @@ describe("MlsMark", () => {
 });
 
 describe("site.mls.logo", () => {
-  it("points at image files that exist under public/ when set", () => {
+  const viewBox = (svg: string) =>
+    svg
+      .match(/<svg\b[^>]*\bviewBox="([^"]+)"/)?.[1]
+      .trim()
+      .split(/[\s,]+/)
+      .map(Number);
+
+  it("is the official Georgia MLS artwork: two existing SVGs, standard and reverse", () => {
     const logo = configured;
-    if (!logo) {
-      // Not configured yet: the site renders the text wordmark (tested above).
-      expect(logo).toBeNull();
-      return;
-    }
-    expect(logo.light).not.toBe(logo.dark);
-    expect(logo.width).toBeGreaterThan(0);
-    expect(logo.height).toBeGreaterThan(0);
-    for (const src of [logo.light, logo.dark]) {
-      expect(src).toMatch(/^\/brand\/[\w.-]+\.(svg|png|webp)$/);
+    expect(logo, "site.mls.logo must be set to the official files").not.toBeNull();
+    expect(logo!.light).toBe("/brand/gamls_logo.svg");
+    expect(logo!.dark).toBe("/brand/gamls_logo_reverse.svg");
+    for (const src of [logo!.light, logo!.dark]) {
       const file = join(process.cwd(), "public", src);
       expect(existsSync(file), `${src} is missing from public/`).toBe(true);
-      if (src.endsWith(".svg")) expect(readFileSync(file, "utf8")).toMatch(/<svg\b/);
+      const svg = readFileSync(file, "utf8");
+      expect(svg).toMatch(/<svg\b/);
+      // Static artwork only: an <img> wouldn't run a script, but nothing else belongs there.
+      expect(svg).not.toMatch(/<script|\son\w+=|<foreignObject|xlink:href="(?!#)|href="http/i);
+    }
+  });
+
+  it("keeps the artwork's aspect ratio, so it is never stretched", () => {
+    const logo = configured!;
+    for (const src of [logo.light, logo.dark]) {
+      const [, , w, h] = viewBox(readFileSync(join(process.cwd(), "public", src), "utf8"))!;
+      expect(w / h, src).toBeCloseTo(488.86865 / 141.28671, 5);
+      // The whole-pixel width × height is the artwork's ratio, to within a tenth of a pixel.
+      expect(Math.abs(logo.width - (logo.height * w) / h), src).toBeLessThan(0.1);
     }
   });
 });
