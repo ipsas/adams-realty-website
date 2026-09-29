@@ -195,6 +195,22 @@ const attributedListingPath = (page: Page) =>
   firstLink(page, "/homes?q=10599006", "article a[href^='/homes/']", /^\/homes\/306-sycamore/);
 const firstGuidePath = (page: Page) =>
   firstLink(page, "/areas", "main a[href^='/areas/']", /^\/areas\/[a-z0-9-]+$/);
+/** A lead's page and a listing's editor, as the admin sees them (the "All leads" and
+ * "Back to listings" links sit at their top). */
+const firstLeadPath = (page: Page) =>
+  firstLink(
+    page,
+    "/dashboard/leads?status=all",
+    "main a[href^='/dashboard/leads/']:visible:not([href*='export'])",
+    /^\/dashboard\/leads\/[0-9a-f-]{36}$/,
+  );
+const firstEditorPath = (page: Page) =>
+  firstLink(
+    page,
+    "/dashboard/listings",
+    "main a[href^='/dashboard/listings/']:visible:not([href$='/new'])",
+    /^\/dashboard\/listings\/[0-9a-f-]{36}$/,
+  );
 
 const PAGES = {
   home: { name: "/", path: "/", ready: "main h1" },
@@ -230,6 +246,13 @@ const PAGES = {
   listings: {
     name: "/dashboard/listings",
     path: "/dashboard/listings",
+    ready: "main h1",
+    role: "staff",
+  },
+  lead: { name: "a lead", path: firstLeadPath, ready: "main h1", role: "staff" },
+  listingEditor: {
+    name: "a listing's editor",
+    path: firstEditorPath,
     ready: "main h1",
     role: "staff",
   },

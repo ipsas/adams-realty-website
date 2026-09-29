@@ -48,7 +48,8 @@ export function ListingCard({
 
   return (
     <article
-      className="group relative"
+      // `data-returned` is set for a moment on the card the buyer comes Back to (search-view).
+      className="group relative rounded-[var(--radius-card)] outline-0 outline-offset-[6px] outline-primary transition-[outline-width] duration-300 data-returned:outline-[3px]"
       onMouseEnter={() => onHover?.(l.id)}
       onMouseLeave={() => onHover?.(null)}
     >

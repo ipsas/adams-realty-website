@@ -8,6 +8,7 @@ import {
   STATUS_TABS,
 } from "@/components/dashboard/listings-filter";
 import { PageHeader, Table, Td, Th } from "@/components/dashboard/ui";
+import { ReturnSource } from "@/components/layout/return-link";
 import { LinkButton } from "@/components/ui/button";
 import { Photo } from "@/components/ui/photo";
 import { can } from "@/lib/auth/permissions";
@@ -39,6 +40,7 @@ export default async function DashboardListings(props: PageProps<"/dashboard/lis
 
   return (
     <>
+      <ReturnSource scope="listings" />
       <PageHeader
         title={admin ? "Company listings" : "My listings"}
         description={`${

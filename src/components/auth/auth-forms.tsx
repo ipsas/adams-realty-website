@@ -65,7 +65,8 @@ export function SignInForm({ next, googleEnabled }: { next: string; googleEnable
               );
               return;
             }
-            router.push(next);
+            // Replace, so Back from where they land skips the sign-in page.
+            router.replace(next);
             router.refresh();
           })
         }
@@ -140,7 +141,8 @@ export function SignUpForm({ next, googleEnabled }: { next: string; googleEnable
               );
               return;
             }
-            router.push(next);
+            // Replace, so Back from where they land skips the sign-in page.
+            router.replace(next);
             router.refresh();
           })
         }

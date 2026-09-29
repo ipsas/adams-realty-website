@@ -17,6 +17,7 @@ import {
 } from "@/lib/search/params";
 import { LocationSearch } from "./location-search";
 import { MoreFilters } from "./more-filters";
+import type { SearchUpdate } from "./use-search-nav";
 
 // Low steps matter here: land, manufactured homes and small-town houses often list under $200K.
 const SALE_PRICES = [
@@ -42,7 +43,7 @@ export function FilterBar({
   update,
 }: {
   criteria: SearchCriteria;
-  update: (patch: Partial<SearchCriteria>) => void;
+  update: SearchUpdate;
   signedIn: boolean;
 }) {
   const [moreOpen, setMoreOpen] = useState(false);
@@ -61,8 +62,8 @@ export function FilterBar({
         <LocationSearch
           className="w-full shrink-0 lg:w-64 xl:w-80"
           defaultValue={c.q ?? ""}
-          // A new place replaces the map area.
-          onSearch={(q) => update({ q: q || undefined, bounds: undefined })}
+          // A new place replaces the map area, and is a new search: Back returns to the last one.
+          onSearch={(q) => update({ q: q || undefined, bounds: undefined }, { push: true })}
         />
         {/* Scrolls horizontally on small screens; popovers render as bottom sheets there. */}
         <div className="-mx-4 scrollbar-none flex flex-1 items-center gap-2 overflow-x-auto px-4 sm:-mx-6 sm:px-6 lg:mx-0 lg:overflow-visible lg:px-0">

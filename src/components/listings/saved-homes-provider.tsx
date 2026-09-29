@@ -5,12 +5,40 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   useTransition,
   type ReactNode,
 } from "react";
+import { toast } from "@/components/ui/toast";
+import { ensureSaved } from "@/server/actions/save-intent";
 import { toggleSavedListing } from "@/server/actions/saved";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Where to return after signing in from a heart (F08): this page with its whole query
+ * (so the search survives) plus `save=<id>`, which saves the home once signed in.
+ */
+export function saveIntentNext(pathAndQuery: string, listingId: string): string {
+  const url = new URL(pathAndQuery, "http://x");
+  url.searchParams.set("save", listingId);
+  return url.pathname + url.search;
+}
+
+/** Drops `save=` from the address bar without a server request (Next syncs its router). */
+function dropSaveParam() {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("save")) return;
+  url.searchParams.delete("save");
+  const state: Record<string, unknown> = { ...(window.history.state ?? {}) };
+  // Without its own keys, Next's replaceState patch updates useSearchParams (see replaceViewParam).
+  delete state.__NA;
+  delete state.__PRIVATE_NEXTJS_INTERNALS_TREE;
+  window.history.replaceState(state, "", url.pathname + url.search + url.hash);
+}
 
 type SavedHomes = {
   signedIn: boolean;
@@ -57,7 +85,8 @@ export function SavedHomesProvider({
   const toggle = useCallback(
     (id: string) => {
       if (!signedIn) {
-        router.push(`/sign-in?next=${encodeURIComponent(pathname)}&reason=save`);
+        const next = saveIntentNext(window.location.pathname + window.location.search, id);
+        router.push(`/sign-in?next=${encodeURIComponent(next)}&reason=save`);
         return;
       }
       const wasSaved = ids.has(id);
@@ -73,14 +102,16 @@ export function SavedHomesProvider({
         const res = await toggleSavedListing(id);
         if (!res.ok) {
           flip(wasSaved);
-          if (res.error === "unauthenticated")
-            router.push(`/sign-in?next=${encodeURIComponent(pathname)}`);
+          if (res.error === "unauthenticated") {
+            const next = saveIntentNext(window.location.pathname + window.location.search, id);
+            router.push(`/sign-in?next=${encodeURIComponent(next)}&reason=save`);
+          }
         } else if (res.saved !== !wasSaved) {
           flip(res.saved);
         }
       });
     },
-    [ids, signedIn, router, pathname],
+    [ids, signedIn, router],
   );
 
   const setLocal = useCallback((id: string, saved: boolean) => {
@@ -92,6 +123,26 @@ export function SavedHomesProvider({
       return next;
     });
   }, []);
+
+  // Signed in with a pending heart from before sign-in (?save=<id>): save it, once.
+  const handledSave = useRef<string | null>(null);
+  useEffect(() => {
+    if (!signedIn) return;
+    const id = new URLSearchParams(window.location.search).get("save");
+    if (!id) return;
+    dropSaveParam();
+    if (handledSave.current === id || !UUID.test(id)) return;
+    handledSave.current = id;
+    void ensureSaved(id).then((res) => {
+      if (!res.ok) return;
+      setLocal(id, true);
+      toast("Saved to your homes", {
+        action: { label: "View", onClick: () => router.push("/saved") },
+      });
+    });
+    // The pathname changes when sign-in lands on the page; signedIn when the layout catches up.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signedIn, pathname]);
 
   const value = useMemo<SavedHomes>(
     () => ({

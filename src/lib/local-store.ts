@@ -9,7 +9,7 @@ import { useCallback, useState, useSyncExternalStore } from "react";
  * same tab re-render; other tabs are covered by the `storage` event.
  */
 
-export { STORE_KEYS, type StoreKey } from "@/lib/store-keys";
+export { SESSION_KEYS, STORE_KEYS, type StoreKey } from "@/lib/store-keys";
 
 /** The slice of the Storage API we use; tests pass a Map-backed fake. */
 export type KeyValueStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -18,6 +18,15 @@ export type KeyValueStorage = Pick<Storage, "getItem" | "setItem" | "removeItem"
 export function browserStorage(): KeyValueStorage | null {
   try {
     return typeof window === "undefined" ? null : window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+/** window.sessionStorage (this tab only), or null on the server or when access throws. */
+export function browserSessionStorage(): KeyValueStorage | null {
+  try {
+    return typeof window === "undefined" ? null : window.sessionStorage;
   } catch {
     return null;
   }

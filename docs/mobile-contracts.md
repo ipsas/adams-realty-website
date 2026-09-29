@@ -57,7 +57,9 @@ exceptions:
 - two bars older than the markers: the /homes List/Map toggle (`bottom-6`; the
   results list pads its own bottom, `max-lg:pb-24`, so the Georgia MLS notice
   at the end of the list is never under it) and the listing's call-to-action
-  bar, which pads `<main>` itself (`pb-24`) until WP5 replaces it.
+  bar (`ListingCtaBar`), which pads `<main>` itself (`pb-24`) until WP5
+  replaces it. It hides (`data-state="hidden"`, `inert`) while any part of
+  `#contact` is on screen, so it never covers the form's Send button.
 
 ## Stacking
 
@@ -113,6 +115,19 @@ hrefs, slug-shaped slugs, http(s) or root-relative photos) and writes:
 `clearRecents()` removes all three and the cookie. `ar:searchAsMove`,
 `ar:installDismissedAt`, `ar:visitDays` and `ar:uid` are reserved.
 
+sessionStorage (this tab only; `SESSION_KEYS`, read through
+`browserSessionStorage()`):
+
+- `ar:search:<path+query>`: where a results list was (F13): `{scrollTop, slug,
+view, savedAt}`, keyed without the sheet position and `save=`, params sorted
+  (`placeKey`), used for 30 minutes. `src/lib/search/restore.ts` sanitizes it.
+- `ar:return:<scope>` (`search`, `leads`, `listings`): the one-time hand-off
+  from a list to the detail page it opened (`{from, to, at}`, 5 minutes). The
+  detail page takes it and stamps its own history entry (`__arReturn` in
+  `history.state`, next to Next's keys), so a reload keeps "act like Back".
+- `ar:list:<scope>`: the last dashboard list URL of that scope, for the return
+  link's fallback (search uses `ar:lastSearch`).
+
 `ar:theme` (dark mode) holds the appearance: the JSON string `"light"` or
 `"dark"`; no key means Match my device. Only `src/lib/theme.ts` writes it
 (`writeThemePref`), and the head script in `src/lib/theme-script.ts` reads it
@@ -132,8 +147,11 @@ apart, and both can be present (`?q=Hartwell&view=1&view=list`):
   `set()` or `delete()` the whole key, which would drop the filter.
 - `useSearchNav().update()` keeps the sheet position through filter changes,
   and `setView()` rewrites it with `history.replaceState`, without a server
-  request. Nothing calls `setView()` yet; /homes still switches between list
-  and map with local React state.
+  request. Until WP3's sheet, the list/map toggle below lg calls `setView("map")`
+  and `setView(null)` (list), plus `setLastSearchView()`, and SearchView reads
+  the mode from `useSearchParams()`.
+- `update()` replaces the history entry for filter, sort, mode and map
+  changes; a new place and a new page of results pass `{ push: true }`.
 - Recent searches ignore the sheet position but not the filter.
 
 ## Service worker protocol
@@ -240,7 +258,14 @@ Keep these when editing the files that hold them:
 - `params.ts`: `SORT_LABELS`, `sortLabel`, `SORT_HELP`, and `VIEW_PARAMS`,
   `ViewParam`, `parseViewParam` and `setViewParam`, which `use-search-nav.ts`
   and `recent.ts` import.
-- `homes/[slug]/page.tsx`: the `RecordView` mount.
+- `homes/[slug]/page.tsx`: the `RecordView` mount, "Back to results"
+  (`ReturnLink scope="search"`), `data-testid="agent-phone"` (a `tel:` link) and
+  the `ListingCtaBar` rules.
+- `search-view.tsx`: `usePlaceRestoration` (F13) and the click-capture handler
+  that saves the place and calls `markReturn`; `listing-card.tsx`: the
+  `data-returned` outline.
+- `return-link.tsx`: `ReturnLink` and `ReturnSource`; `saved-homes-provider.tsx`:
+  `saveIntentNext` and the `?save=` effect.
 - `pwa-runtime.tsx`, `install-entry.tsx`: their signatures.
 - `src/lib/theme.ts` and `src/lib/theme-script.ts`: `THEME_COLORS`,
   `setChromeColor`, `readResolvedTheme`, `applyTheme`, `writeThemePref`;

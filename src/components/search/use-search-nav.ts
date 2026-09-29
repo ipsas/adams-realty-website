@@ -32,21 +32,27 @@ export function currentView(): ViewParam | undefined {
   return parseViewParam(new URLSearchParams(window.location.search).getAll("view"));
 }
 
+export type SearchUpdate = (patch: Partial<SearchCriteria>, opts?: { push?: boolean }) => void;
+
 /**
  * Updates the search URL (the source of truth) and lets the server re-render
  * results. update() keeps the current `view`; setView() changes only `view`,
  * in place, without a server request.
+ *
+ * Filter, sort and map changes replace the current history entry, so one Back
+ * leaves the search however many chips were tapped. A new place and a new page
+ * of results push (`{ push: true }`), so Back returns to the previous one.
  */
 export function useSearchNav(criteria: SearchCriteria) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const update = useCallback(
-    (patch: Partial<SearchCriteria>, opts: { replace?: boolean } = {}) => {
+  const update = useCallback<SearchUpdate>(
+    (patch, opts = {}) => {
       const href = buildSearchHref(criteria, patch, currentView());
       startTransition(() => {
-        if (opts.replace) router.replace(href, { scroll: false });
-        else router.push(href, { scroll: false });
+        if (opts.push) router.push(href, { scroll: false });
+        else router.replace(href, { scroll: false });
       });
     },
     [criteria, router],

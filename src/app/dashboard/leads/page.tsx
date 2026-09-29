@@ -2,6 +2,7 @@ import { CalendarDays, ChevronRight, Download, MessageSquareText } from "lucide-
 import Link from "next/link";
 import { LeadAgentSelect, LeadStatusSelect } from "@/components/dashboard/lead-controls";
 import { LeadTypeBadge, PageHeader, StatusDot, Table, Td, Th } from "@/components/dashboard/ui";
+import { ReturnSource } from "@/components/layout/return-link";
 import { buttonClasses } from "@/components/ui/button";
 import { site } from "@/config/site";
 import { can } from "@/lib/auth/permissions";
@@ -45,6 +46,7 @@ export default async function LeadsPage(props: PageProps<"/dashboard/leads">) {
 
   return (
     <>
+      <ReturnSource scope="leads" />
       <PageHeader
         title="Leads"
         description={

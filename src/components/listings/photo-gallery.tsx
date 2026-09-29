@@ -2,15 +2,21 @@
 
 import { ChevronLeft, ChevronRight, Grid2x2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useDialogHistory } from "@/components/ui/dialog";
 import { Photo } from "@/components/ui/photo";
 import { cn } from "@/lib/cn";
 
 type GalleryPhoto = { url: string; caption: string | null };
 
-/** Hero mosaic (1 large + 4 small) with a full-screen, keyboard- and swipe-friendly lightbox. */
+/**
+ * Hero mosaic (1 large + 4 small) with a full-screen, keyboard- and swipe-friendly lightbox.
+ * Opening the lightbox adds a same-URL history entry, so Back (or Android's back gesture)
+ * closes it and stays on the listing; closing it any other way removes that entry again.
+ */
 export function PhotoGallery({ photos, alt }: { photos: GalleryPhoto[]; alt: string }) {
   const [open, setOpen] = useState<number | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
+  useDialogHistory(open !== null, () => setOpen(null));
 
   useEffect(() => {
     const d = dialog.current;

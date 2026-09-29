@@ -401,7 +401,7 @@ The sheet contains:
 - Name, phone and email, prefilled when signed in. 'Add a note' is collapsed.
 - The privacy line 'Goes only to <first name> at Adams Realty. Never sold or shared. No lender calls.' No consent box is pre-checked.
 
-The submit button reads 'Request tour for Sat, Oct 3 at 2 PM'. A signed-in buyer needs 3 taps: Request a tour, a time, Send.
+The submit button reads 'Send tour request for Sat, Oct 3 at 2 PM'. A signed-in buyer needs 3 taps: Request a tour, a time, Send.
 
 The success state keeps state.message. Its reply-time copy is 'An Adams agent will reply during business hours (Mon–Sat 9am–6pm)'; the invented 'within the hour' line is removed. It also offers 'Text <agent>' and Done.
 

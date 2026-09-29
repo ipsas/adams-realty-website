@@ -1,5 +1,4 @@
 import {
-  ArrowLeft,
   CalendarDays,
   ChevronRight,
   ExternalLink,
@@ -16,6 +15,7 @@ import { z } from "zod";
 import { LeadAgentSelect, LeadStatusSelect } from "@/components/dashboard/lead-controls";
 import { LeadNotes, type LeadNoteItem } from "@/components/dashboard/lead-notes";
 import { LeadTypeBadge, PageHeader, StatusDot } from "@/components/dashboard/ui";
+import { ReturnLink } from "@/components/layout/return-link";
 import { Avatar } from "@/components/ui/avatar";
 import { buttonClasses, LinkButton } from "@/components/ui/button";
 import { Label } from "@/components/ui/form";
@@ -101,13 +101,10 @@ export default async function LeadDetailPage(props: PageProps<"/dashboard/leads/
 
   return (
     <>
-      <Link
-        href="/dashboard/leads"
-        className="mb-3 -ml-2 inline-flex min-h-10 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-muted transition-colors hover:text-ink"
-      >
-        <ArrowLeft className="size-4" aria-hidden />
+      {/* Back to the leads list as it was (tab and scroll), or the last one seen. */}
+      <ReturnLink scope="leads" fallback="/dashboard/leads" className="mb-3">
         All leads
-      </Link>
+      </ReturnLink>
       <PageHeader
         title={lead.name}
         description={

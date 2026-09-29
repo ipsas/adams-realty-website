@@ -20,10 +20,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { MlsAttribution } from "@/components/content/mls-attribution";
+import { telHref } from "@/components/content/contact";
+import { ReturnLink } from "@/components/layout/return-link";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { ContactForm } from "@/components/listings/contact-form";
 import { CountView } from "@/components/listings/count-view";
 import { ListingCard } from "@/components/listings/listing-card";
+import { ListingCtaBar } from "@/components/listings/listing-cta-bar";
 import { LocationMapLazy } from "@/components/listings/location-map-lazy";
 import { PaymentCalculator } from "@/components/listings/payment-calculator";
 import { PhotoGallery } from "@/components/listings/photo-gallery";
@@ -160,24 +163,33 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
               .
             </p>
           )}
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <nav aria-label="Breadcrumb" className="flex items-center gap-1 text-sm text-muted">
-              <Link href="/homes" className="hover:text-ink">
-                Homes
-              </Link>
-              <ChevronRight className="size-3.5" />
-              <Link href={searchHref({ q: l.city })} className="hover:text-ink">
-                {l.city}
-              </Link>
-              {l.neighborhood && l.neighborhood !== l.city && (
-                <>
-                  <ChevronRight className="size-3.5" />
-                  <Link href={searchHref({ q: l.neighborhood })} className="hover:text-ink">
-                    {l.neighborhood}
-                  </Link>
-                </>
-              )}
-            </nav>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
+              {/* Back to the search this home was opened from (or the last one). */}
+              <ReturnLink scope="search" fallback="/homes">
+                Back to results
+              </ReturnLink>
+              <nav
+                aria-label="Breadcrumb"
+                className="hidden items-center gap-1 text-sm text-muted sm:flex"
+              >
+                <Link href="/homes" className="hover:text-ink">
+                  Homes
+                </Link>
+                <ChevronRight className="size-3.5" />
+                <Link href={searchHref({ q: l.city })} className="hover:text-ink">
+                  {l.city}
+                </Link>
+                {l.neighborhood && l.neighborhood !== l.city && (
+                  <>
+                    <ChevronRight className="size-3.5" />
+                    <Link href={searchHref({ q: l.neighborhood })} className="hover:text-ink">
+                      {l.neighborhood}
+                    </Link>
+                  </>
+                )}
+              </nav>
+            </div>
             <div className="flex items-center gap-2">
               {canEdit && (
                 <Link
@@ -502,26 +514,35 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
             </div>
 
             {/* Contact sidebar */}
-            <aside id="contact" className="lg:sticky lg:top-24 lg:self-start">
+            <aside id="contact" className="scroll-mt-20 lg:sticky lg:top-24 lg:self-start">
               <div className="rounded-3xl border border-line bg-surface p-6 shadow-card">
                 {agent ? (
-                  <Link
-                    href={`/agents/${agent.slug}`}
-                    className="group mb-5 flex items-center gap-4"
-                  >
+                  <div className="mb-5 flex items-center gap-4">
                     <Avatar
                       src={agent.photoUrl}
                       name={agent.name}
                       className="size-16 rounded-full text-xl"
                     />
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-xs tracking-wide text-muted uppercase">Listing agent</p>
-                      <p className="font-semibold text-ink group-hover:text-brand-700">
+                      <Link
+                        href={`/agents/${agent.slug}`}
+                        className="block font-semibold text-ink hover:text-brand-700"
+                      >
                         {agent.name}
-                      </p>
-                      <p className="text-sm text-muted">{agent.phone}</p>
+                      </Link>
+                      {agent.phone && (
+                        // Tap to call: buyers on phones call.
+                        <a
+                          href={telHref(agent.phone)}
+                          className="flex min-h-11 items-center text-sm font-medium text-brand-700 hover:underline pointer-fine:mt-0.5 pointer-fine:min-h-0"
+                          data-testid="agent-phone"
+                        >
+                          Call {agent.phone}
+                        </a>
+                      )}
                     </div>
-                  </Link>
+                  </div>
                 ) : tours ? (
                   <div className="mb-5">
                     <p className="font-display-tight text-xl text-ink">
@@ -582,25 +603,22 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
           )}
         </Container>
 
-        {/* Mobile CTA */}
+        {/* Mobile CTA: hides while the form is on screen, and leads to it. */}
         {!l.removedAt && (
-          <div className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-between gap-3 border-t border-line bg-canvas/95 px-4 py-3 backdrop-blur lg:hidden">
-            <div>
-              <p className="font-semibold text-ink tabular">
-                {formatPrice(l.listPrice)}
-                {rent && "/mo"}
-              </p>
-              <p className="text-xs text-muted">
-                {l.bedrooms ?? "—"} bd · {formatBaths(l.bathrooms)} ba
-              </p>
-            </div>
-            <a
-              href="#contact"
-              className="flex h-11 items-center rounded-xl bg-primary px-5 text-sm font-semibold text-white"
-            >
-              {!tours ? "Ask a question" : sold ? "Ask about this home" : "Request a tour"}
-            </a>
-          </div>
+          <ListingCtaBar
+            label={!tours ? "Ask a question" : sold ? "Ask about this home" : "Request a tour"}
+            summary={
+              <>
+                <p className="font-semibold text-ink tabular">
+                  {formatPrice(l.listPrice)}
+                  {rent && "/mo"}
+                </p>
+                <p className="text-xs text-muted">
+                  {l.bedrooms ?? "—"} bd · {formatBaths(l.bathrooms)} ba
+                </p>
+              </>
+            }
+          />
         )}
       </main>
       <SiteFooter disclaimer={source.disclaimer} />

@@ -205,7 +205,7 @@ export function ContactForm({
 
       <FormMessage>{!state.ok && state.message}</FormMessage>
       <Button type="submit" size="lg" className="w-full" disabled={pending}>
-        {pending ? "Sending…" : mode === "tour" ? "Request tour" : "Send message"}
+        {pending ? "Sending…" : mode === "tour" ? "Send tour request" : "Send message"}
       </Button>
       <p className="text-center text-xs leading-relaxed text-faint">
         Your info goes only to {site.name} — never sold or shared. By sending, you agree we may

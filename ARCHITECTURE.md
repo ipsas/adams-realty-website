@@ -333,9 +333,10 @@ storage keys) and marks what is reserved for which work package.
   that show listings, `article` means a `ListingCard`, so other tiles such as
   the map's preview strip must not be `article`s.
 - **The `view` param is shared.** The "View" amenity filter is `view=1`. The
-  phone results sheet (WP3; nothing writes its position yet) will keep its
-  position in the same key (`view=map` or `view=list`) so Back and relaunch
-  restore it. The values tell them apart and both can appear
+  phone results sheet keeps its position in the same key (`view=map` or
+  `view=list`) so Back and relaunch restore it. Until the sheet exists (WP3),
+  the list/map toggle below lg writes it: map is `view=map`, list is no value.
+  The values tell them apart and both can appear
   (`?view=1&view=list`): `parseSearchParams` turns the filter on if any value
   is `1`, and sheet code reads and writes only its own value through
   `parseViewParam` and `setViewParam`. The sheet position is UI state, kept out
@@ -346,7 +347,28 @@ storage keys) and marks what is reserved for which work package.
   failure reads as "no data", and `recent.ts` sanitizes what it reads back
   because users can edit it. Recent searches, the last search (also in the
   `ar_last_search` cookie, for relaunch), recently viewed homes and the
-  appearance (`ar:theme`) live there.
+  appearance (`ar:theme`) live there. This tab's sessionStorage (prefixes in
+  `SESSION_KEYS`) holds where each results list was and the list a detail page
+  was opened from (see "Getting back" below).
+- **Getting back.** Browsing is open a home, look, go back, open the next, so
+  Back never loses the buyer's place:
+  - The results list scrolls inside its own box, which the browser doesn't
+    restore, so `usePlaceRestoration` (search-view.tsx, `src/lib/search/restore.ts`)
+    saves the scroll position, the tapped card and list or map per search URL
+    and puts them back on Back, on reload and via "Back to results", outlining
+    the card for a moment (`data-returned`).
+  - Filter, sort and map changes replace the history entry; a new place and a
+    new page of results push. Dialogs with `closeOnBack` and the photo viewer
+    (`useDialogHistory`) close on Back before the page is left.
+  - `ReturnLink` (`src/components/layout/return-link.tsx`) is the way back from
+    a detail page: "Back to results" on a listing, "All leads", "Back to
+    listings". When the list opened it in this tab (a one-time mark in
+    sessionStorage, then a stamp on the page's history entry), it calls
+    router.back(); otherwise it links to the last list (the last search for
+    listings), else the plain list. Dashboard list pages render `ReturnSource`.
+  - Signing in from a heart returns to the same URL with `save=<id>`; the saved
+    homes provider saves it (`ensureSaved`) and drops the parameter. Sign-in
+    replaces its own history entry.
 - **PWA.** There is no service worker yet. `src/lib/pwa/protocol.ts` is the
   contract the page and the worker will share: which pages may be cached, and
   which requests are never intercepted (anything but GET, so no server action;

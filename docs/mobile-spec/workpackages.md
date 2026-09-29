@@ -138,6 +138,13 @@ features: ['F06', 'F07', 'F08', 'F09', 'F10', 'F49', 'F40', 'F47', 'F34', 'F36']
 owns: ['src/components/layout/site-header.tsx', 'src/components/layout/tab-bar.tsx', 'src/components/layout/site-footer.tsx', 'src/components/layout/logo.tsx', 'src/components/listings/saved-homes-provider.tsx', 'src/components/auth/auth-shell.tsx', 'src/components/auth/auth-forms.tsx', 'src/app/(auth)/sign-in/page.tsx', 'src/app/(auth)/sign-up/page.tsx', 'src/app/(auth)/forgot-password/page.tsx', 'src/app/(auth)/reset-password/page.tsx', 'src/proxy.ts', 'src/app/(site)/page.tsx', 'src/app/(site)/account/page.tsx', 'src/components/account/account-forms.tsx', 'src/app/(site)/sell/page.tsx', 'src/app/(site)/agents/page.tsx', 'src/app/(site)/agents/[slug]/page.tsx', 'src/app/(site)/about/page.tsx', 'src/app/(site)/accessibility/page.tsx', 'src/app/(site)/contact/page.tsx', 'src/app/(site)/fair-housing/page.tsx', 'src/app/(site)/privacy/page.tsx', 'src/app/(site)/terms/page.tsx', 'src/app/(site)/areas/page.tsx', 'src/app/(site)/areas/[slug]/page.tsx', 'src/app/(site)/alerts/unsubscribe/page.tsx', 'src/app/(site)/alerts/unsubscribe/submit-button.tsx', 'src/components/areas/area-agents.tsx', 'src/components/areas/area-card.tsx', 'src/components/areas/area-cta.tsx', 'src/components/areas/area-sort-nav.tsx', 'src/components/areas/market-snapshot.tsx', 'src/components/areas/recent-sales.tsx', 'src/components/content/contact-cta.tsx', 'src/components/content/contact-methods.tsx', 'src/components/content/legal.tsx', 'src/components/content/page-intro.tsx', 'src/components/content/toc-nav.tsx', 'src/app/not-found.tsx', 'src/app/error.tsx', 'src/app/forbidden.tsx']
 new: ['src/components/layout/mobile-menu.tsx', 'src/components/layout/use-scroll-direction.ts', 'src/components/layout/back-button.tsx', 'src/server/actions/save-intent.ts', 'src/components/home/returning-visitor.tsx', 'src/components/home/snap-row.tsx', 'src/components/home/theme-color-sync.tsx', 'src/components/auth/password-input.tsx', 'e2e/mobile/shell.spec.ts', 'e2e/mobile/home.spec.ts', 'e2e/mobile/content.spec.ts']
 
+ALREADY BUILT (site review #1, before the packages; keep it):
+
+- F08 save-through-sign-in exists: `src/server/actions/save-intent.ts` (`ensureSaved`, idempotent, checks `can.saveListing`, the uuid and that the listing is shown and not removed) and the `?save=` effect in `saved-homes-provider.tsx` (it drops `save=` with a router-synced `history.replaceState`, so no server request, then saves, sets the heart and toasts 'Saved to your homes' with View). A signed-out heart pushes `/sign-in?next=<path + whole query + save=<id>>&reason=save` (`saveIntentNext`). WP2 keeps these and the e2e case in `e2e/back-nav-suite.ts` ("signing in from a heart").
+- Sign-in and sign-up `router.replace(next)`, so Back from the page they land on skips the sign-in page (which would bounce forward again).
+- The results list comes back where it was after the sign-in round trip: the heart tap saves the list's place (search-view.tsx), and `save=` doesn't change its key.
+- back-button.tsx (standalone Back) should follow the same rule as `ReturnLink` (`src/components/layout/return-link.tsx`): router.back() only when the previous entry is this site's.
+
 STEPS:
 
 - Set up the worktree with `scripts/mobile-worktree.sh 2` (port 3102, database adams_wp2). This package starts only after G0, because site-footer.tsx, the account files, (site)/page.tsx and the content/area pages are #10 paths.
@@ -259,6 +266,13 @@ features: ['F11', 'F12', 'F13', 'F14', 'F15', 'F16', 'F45', 'F46', 'F47', 'F35',
 owns: ['src/components/search/search-view.tsx', 'src/components/search/search-map.tsx', 'src/components/search/map-setup.ts', 'src/components/search/pagination.tsx', 'src/components/listings/listing-card.tsx', 'src/lib/search/service.ts', 'src/app/homes/page.tsx']
 new: ['src/app/homes/(search)/page.tsx', 'src/app/homes/(search)/loading.tsx', 'src/components/search/map-sheet.tsx', 'src/components/search/use-sheet-drag.ts', 'src/lib/search/sheet-snaps.ts', 'src/lib/search/sheet-snaps.test.ts', 'src/components/search/map-preview-strip.tsx', 'src/components/search/results-header.tsx', 'src/components/search/results-footer.tsx', 'src/components/search/use-search-restoration.ts', 'src/lib/search/last-search.ts', 'src/lib/search/last-search.test.ts', 'e2e/mobile/search-map.spec.ts']
 
+ALREADY BUILT (site review #1, before the packages; keep it and build the sheet on it):
+
+- F13 restoration exists for today's list: `usePlaceRestoration` in search-view.tsx with `src/lib/search/restore.ts` (sessionStorage `ar:search:<path+query without the sheet view and save=, params sorted>` → {scrollTop, slug, view, savedAt}, 30 minutes). It saves on a card or heart tap (capture phase), when the search changes, on unmount, on pagehide and on visibilitychange, and restores on mount (client Back, reload, "Back to results"). The tapped card gets `data-returned` for 2.4s (a 3px `outline-primary`, not `ring-2`, so the "no ring-2 after a touch tap" acceptance still holds) and focus. WP3 moves it into `use-search-restoration.ts`, adds the detent to the stored value and points it at the sheet body on phones; `e2e/back-nav-suite.ts` must keep passing (10th card, Back, within 50px, on desktop, pixel7 and iphone13).
+- The list/map toggle already keeps its mode in the URL: map is `view=map`, list is no sheet value, written with `setView()` (no request) and `setLastSearchView()`. The sheet replaces the toggle and keeps the values (map = peek); a URL without a value becomes half.
+- The map preview's link opens the home with `router.push` (it is plain DOM), so Back returns to the map as it was; the strip's cards must do the same.
+- Filter, sort and map changes replace the history entry (`update()` default); a new place and a new page push (`{ push: true }`). `markReturn("search", …)` on a card or preview tap makes the listing's "Back to results" act like Back; the strip's cards go through the same capture handler.
+
 STEPS:
 
 - Set up the worktree with `scripts/mobile-worktree.sh 3` (port 3103, database adams_wp3).
@@ -364,6 +378,10 @@ features: ['F18', 'F19', 'F20', 'F21', 'F43', 'F34', 'F36']
 owns: ['src/components/search/filter-bar.tsx', 'src/components/search/more-filters.tsx', 'src/components/search/location-search.tsx', 'src/components/search/hero-search.tsx', 'src/components/search/save-search-button.tsx', 'src/lib/search/params.ts', 'src/lib/search/params.test.ts', 'src/lib/search/query.ts', 'src/lib/search/query.test.ts', 'src/app/api/locations/suggest/route.ts']
 new: ['src/components/search/filters-sheet.tsx', 'src/components/search/quick-filters.tsx', 'src/components/search/search-suggestions-panel.tsx', 'src/components/search/near-me-button.tsx', 'src/components/search/use-result-count.ts', 'src/components/search/price-range.tsx', 'src/app/api/search/count/route.ts', 'src/lib/search/count-key.ts', 'src/lib/search/count-key.test.ts', 'src/lib/search/geo.ts', 'src/lib/search/geo.test.ts', 'src/lib/search/suggest.ts', 'e2e/mobile/search-filters.spec.ts']
 
+ALREADY BUILT (site review #1, before the packages; keep it):
+
+- `useSearchNav().update()` replaces the history entry by default: filter, sort, mode and map changes never add a Back step (owner decision). A new place (`LocationSearch`) and a new page push with `{ push: true }`. The filters sheet follows the same rule: Apply is `navigateFromDialog(href, { replace: true })`.
+
 STEPS:
 
 - Set up the worktree with `scripts/mobile-worktree.sh 4` (port 3104, database adams_wp4).
@@ -393,7 +411,7 @@ STEPS:
 - 48px toggle chips with aria-pressed.
 - Sort as a radiogroup with SORT_HELP.
 - A sticky footer with pb-safe, 'Reset all', and 'Show {n} homes' from useResultCount(draft).
-- Apply: await navigateFromDialog(buildSearchHref(criteria, draft)). Never call update() followed by history.back().
+- Apply: await navigateFromDialog(buildSearchHref(criteria, draft), { replace: true }). Never call update() followed by history.back().
 - The draft is keyed on the JSON of the URL criteria.
 - Live count:
 - src/components/search/use-result-count.ts: 150ms debounce, AbortController, returns {count, loading, error}. The label shows 'Counting…' while loading.
@@ -443,7 +461,7 @@ ACCEPTANCE:
 - Tapping Beds 3+ sets aria-pressed='true' within 100ms, and the button label changes to 'Counting…' or a number within 300ms.
 - The final N equals '{n} results' after apply.
 - The URL is unchanged before apply.
-- After apply, history.length is exactly 1 more than before the sheet opened, and a single page.goBack() returns to the pre-filter URL.
+- After apply, the URL is the filtered search and history.length is exactly 1 more than before the sheet opened (the sheet's own entry, now a forward entry). A single page.goBack() leaves /homes for the page before the search: filters never add a Back step (owner decision, site review #1).
 - page.goBack() with the sheet open closes it and keeps the URL.
 - Every control in the Filters sheet is at least 44px tall. Every input and select on /homes (compact bar, sheet, save-search dialog) computes a font-size of at least 16px on pixel7, iphone13, iphone13-landscape and ipad-mini.
 - GET /api/search/count?q=Decatur&beds=3 returns {total: n}, equal to the count on /homes?q=Decatur&beds=3. In the final serial block, 121 requests with x-forwarded-for '203.0.113.<random>' produce a 429 on the 121st, and a following request without that header still returns 200. count-key.test.ts passes.
@@ -473,6 +491,15 @@ features: ['F24', 'F25', 'F26', 'F27', 'F28', 'F44', 'F46', 'F40', 'F35', 'F36']
 owns: ['src/app/homes/[slug]/page.tsx', 'src/components/listings/photo-gallery.tsx', 'src/components/listings/contact-form.tsx', 'src/components/listings/share-button.tsx', 'src/components/listings/payment-calculator.tsx', 'src/components/listings/location-map-lazy.tsx', 'src/components/listings/location-map.tsx', 'src/components/ui/expandable.tsx', 'src/components/ui/photo.tsx']
 new: ['src/app/homes/[slug]/loading.tsx', 'src/components/listings/lightbox.tsx', 'src/components/listings/use-pinch-zoom.ts', 'src/lib/pinch-math.ts', 'src/lib/pinch-math.test.ts', 'src/components/listings/listing-action-bar.tsx', 'src/components/listings/listing-top-bar.tsx', 'src/components/listings/tour-sheet.tsx', 'src/components/listings/contact-choice-sheet.tsx', 'src/components/listings/copy-address.tsx', 'src/components/listings/listing-context-links.tsx', 'src/lib/calendar.ts', 'src/lib/calendar.test.ts', 'src/components/listings/add-to-calendar.tsx', 'e2e/mobile/listing.spec.ts', 'e2e/mobile/tour.spec.ts']
 
+ALREADY BUILT (site review #1 and #2, before the packages; keep it):
+
+- "‹ Back to results" (`ReturnLink scope="search"`, `src/components/layout/return-link.tsx`) sits at the top left of the listing, before the breadcrumb (which is already `hidden sm:flex`). Opened from a search in this tab it acts like Back (the list comes back at the same card and scroll); otherwise it links to the last search, else /homes. The overlay Back circle and ListingTopBar's Back use the same component logic instead of "router.back() for same-origin history, else /homes".
+- The lightbox already calls `useDialogHistory`: Back closes it first, and closing it any other way removes its entry.
+- `ListingCtaBar` (`listing-cta-bar.tsx`) replaced the inline CTA: it hides (`data-state="hidden"`, `inert`, slid below the screen) while any part of `#contact` is on screen, and its button scrolls `#contact` into view and focuses `#c-name`. ListingActionBar keeps both rules (its 30% threshold is fine as long as the bar never covers the form's Send button).
+- The form's tour submit reads 'Send tour request', so it can't be confused with the bar's 'Request a tour'. On phones the tour sheet's submit reads 'Send tour request for {day} at {time}'; desktop keeps exactly 'Send tour request'.
+- The listing agent's phone is a tap-to-call link (`data-testid="agent-phone"`, `telHref`), separate from the link to the agent's page. The contact choice sheet keeps a real `tel:` link too.
+- `e2e/back-nav-suite.ts` covers these on desktop, pixel7 and iphone13 and must keep passing.
+
 STEPS:
 
 - Set up the worktree with `scripts/mobile-worktree.sh 5` (port 3105, database adams_wp5).
@@ -491,12 +518,12 @@ STEPS:
 - src/components/ui/photo.tsx gains optional draggable (default false), an onLoad passthrough and a zoomSizes hint; the change is backward compatible.
 - src/app/homes/[slug]/page.tsx:
 - In the phone variant, hide the breadcrumb and the Share/Save row.
-- Pass the overlay buttons into PhotoGallery: Back (router.back() for same-origin history, else a Link to /homes), ShareButton variant='icon', and SaveButton overlay.
+- Pass the overlay buttons into PhotoGallery: Back (ReturnLink's rule: like Back when opened from a search in this tab, else the last search, else /homes), ShareButton variant='icon', and SaveButton overlay.
 - Mount <ListingTopBar> (data-own-chrome='top').
 - Summary order: status plus freshness(source.lastSyncedAt), where stale shows the notice and no 'Updated'; then the price (the first p.tabular in main); then the 'est. $X/mo all-in' pill linking to #costs, via quickMonthlyCost; then facts; then the h1 with <CopyAddress>.
 - Similar homes use snap-row classes below sm.
 - Add a 'Report a problem with this listing' mailto link.
-- Replace the inline mobile CTA with <ListingActionBar>.
+- Replace ListingCtaBar with <ListingActionBar>.
 - Remove main's pb-24, since the foundation's #main padding uses --bottom-chrome-h.
 - #contact gets scroll-mt-24.
 - Keep the RecordView mount (foundation), 'Listed by', the disclaimer block and the JSON-LD.
@@ -517,7 +544,7 @@ STEPS:
 - An In person / Video radiogroup (aria-checked).
 - The privacy line from F27.
 - Inputs use 'pointer-coarse:text-base' through form.tsx.
-- On phones the submit reads 'Request tour for {day} at {time}'; desktop keeps exactly 'Request tour'.
+- On phones the submit reads 'Send tour request for {day} at {time}'; desktop keeps exactly 'Send tour request'.
 - Success copy: 'An Adams agent will reply during business hours ({site.hours}).' This replaces the invented 'We usually reply within the hour during business hours.'
 - Success actions: 'Text {first name}' and Done.
 - Keep the ids c-name, c-phone, c-email and c-message.
@@ -601,6 +628,10 @@ ALL OF GEORGIA (hand-off from GA-A):
 features: ['F33', 'F42', 'F34', 'F36']
 owns: ['src/components/dashboard/dashboard-nav.tsx', 'src/app/dashboard/layout.tsx', 'src/app/dashboard/page.tsx', 'src/app/dashboard/leads/page.tsx', 'src/app/dashboard/leads/[id]/page.tsx', 'src/app/dashboard/listings/page.tsx', 'src/app/dashboard/listings/[id]/page.tsx', 'src/app/dashboard/listings/new/page.tsx', 'src/app/dashboard/users/page.tsx', 'src/app/dashboard/agents/page.tsx', 'src/app/dashboard/agents/[id]/page.tsx', 'src/app/dashboard/agents/new/page.tsx', 'src/app/dashboard/profile/page.tsx', 'src/app/dashboard/sources/page.tsx', 'src/components/dashboard/lead-controls.tsx', 'src/components/dashboard/ui.tsx', 'src/components/dashboard/listing-form.tsx', 'src/components/dashboard/agent-form.tsx', 'src/components/dashboard/lead-notes.tsx', 'src/components/dashboard/photo-manager.tsx', 'src/components/dashboard/open-house-manager.tsx', 'src/components/dashboard/listings-filter.tsx', 'src/lib/dashboard/queries.ts']
 new: ['src/components/dashboard/lead-card.tsx', 'src/components/dashboard/lead-status-chips.tsx', 'src/components/dashboard/focus-scroll.tsx', 'src/components/dashboard/mobile-dashboard-bar.tsx', 'src/components/dashboard/listing-row-card.tsx', 'e2e/mobile/staff.spec.ts']
+
+ALREADY BUILT (site review #1, before the packages; keep it):
+
+- "All leads" on a lead's page and "Back to listings" on the listing editor and New listing page are `ReturnLink`s (44px): opened from the list they act like Back (tab, filters and scroll come back), otherwise they link to the last list seen in this tab. The leads and listings pages render `<ReturnSource>`, which remembers the list URL and marks the hand-off; the phone lead cards and ListingRowCard must stay plain links on those pages so it sees them.
 
 STEPS:
 

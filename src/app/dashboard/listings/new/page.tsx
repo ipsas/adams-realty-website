@@ -1,5 +1,6 @@
 import { ListingForm } from "@/components/dashboard/listing-form";
 import { PageHeader } from "@/components/dashboard/ui";
+import { ReturnLink } from "@/components/layout/return-link";
 import { site } from "@/config/site";
 import { can } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
@@ -12,6 +13,9 @@ export default async function NewListingPage() {
   const agents = await getAgentOptions();
   return (
     <>
+      <ReturnLink scope="listings" fallback="/dashboard/listings" className="mb-3">
+        Back to listings
+      </ReturnLink>
       <PageHeader
         title="New listing"
         description="For pocket listings and rentals. Listings already in the MLS appear automatically. Coming soon listings stay off the public site until they go active. Open houses can be scheduled once the listing is created."

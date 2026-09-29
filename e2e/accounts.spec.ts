@@ -30,7 +30,7 @@ test("tour requests reach the listing agent", async ({ page }) => {
   await page.locator("article a").first().click();
   await page.fill("#c-name", "E2E Tester");
   await page.fill("#c-email", "e2e@example.com");
-  await page.getByRole("button", { name: "Request tour" }).click();
+  await page.getByRole("button", { name: "Send tour request" }).click();
   await expect(page.getByText(/Request sent!/)).toBeVisible();
 });
 

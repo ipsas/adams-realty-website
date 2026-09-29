@@ -6,6 +6,7 @@ import { z } from "zod";
 import { ListingForm } from "@/components/dashboard/listing-form";
 import { OpenHouseManager, type OpenHouseRow } from "@/components/dashboard/open-house-manager";
 import { PageHeader } from "@/components/dashboard/ui";
+import { ReturnLink } from "@/components/layout/return-link";
 import { buttonClasses } from "@/components/ui/button";
 import { FormMessage } from "@/components/ui/form";
 import { site } from "@/config/site";
@@ -64,6 +65,9 @@ export default async function EditListingPage(props: PageProps<"/dashboard/listi
 
   return (
     <>
+      <ReturnLink scope="listings" fallback="/dashboard/listings" className="mb-3">
+        Back to listings
+      </ReturnLink>
       <PageHeader
         title={l.addressLine1}
         description={
