@@ -272,20 +272,6 @@ export async function getPopularAreas(limit = 8) {
     .limit(limit);
 }
 
-/** Headline numbers for the homepage. */
-export async function getMarketStats() {
-  const [row] = await db
-    .select({
-      active: sql<number>`count(*) filter (where ${listings.status} in ('active','coming_soon') and ${listings.transactionType} = 'sale')::int`,
-      newThisWeek: sql<number>`count(*) filter (where ${listings.listDate} >= current_date - 7 and ${listings.transactionType} = 'sale')::int`,
-      medianPrice: sql<number>`(percentile_cont(0.5) within group (order by ${listings.listPrice}) filter (where ${listings.status} = 'active' and ${listings.transactionType} = 'sale'))::int`,
-      openHouses: sql<number>`(select count(distinct ${openHouses.listingId}) from ${openHouses} where ${openHouses.startsAt} > now() and ${openHouses.startsAt} < now() + interval '7 days')::int`,
-    })
-    .from(listings)
-    .where(publicListing());
-  return row;
-}
-
 /** The for-sale set the default /homes search shows (and `listings_buy_*` indexes cover). */
 const forSaleNow = () =>
   and(
@@ -293,6 +279,37 @@ const forSaleNow = () =>
     eq(listings.transactionType, "sale"),
     inArray(listings.status, ["active", "coming_soon"]),
   );
+
+/**
+ * Headline numbers for the homepage. Every count is over public listings only
+ * (`publicListing()`), so none counts a home the site won't show. "Open houses
+ * this week" counts the homes its link, `/homes?openHouse=1`, lists (the
+ * for-sale set with an open house that hasn't ended) whose next open house
+ * starts within 7 days.
+ */
+export async function getMarketStats() {
+  // Uncorrelated (select fields render columns unqualified, so a correlated
+  // `listing_id = id` would bind both to open_houses), and Postgres hashes it once.
+  const openHouseThisWeek = db
+    .select({ id: openHouses.listingId })
+    .from(openHouses)
+    .where(
+      and(
+        sql`${openHouses.endsAt} > now()`,
+        sql`${openHouses.startsAt} < now() + interval '7 days'`,
+      ),
+    );
+  const [row] = await db
+    .select({
+      active: sql<number>`count(*) filter (where ${listings.status} in ('active','coming_soon') and ${listings.transactionType} = 'sale')::int`,
+      newThisWeek: sql<number>`count(*) filter (where ${listings.listDate} >= current_date - 7 and ${listings.transactionType} = 'sale')::int`,
+      medianPrice: sql<number>`(percentile_cont(0.5) within group (order by ${listings.listPrice}) filter (where ${listings.status} = 'active' and ${listings.transactionType} = 'sale'))::int`,
+      openHouses: sql<number>`count(*) filter (where ${and(forSaleNow(), inArray(listings.id, openHouseThisWeek))})::int`,
+    })
+    .from(listings)
+    .where(publicListing());
+  return row;
+}
 
 export type CityCount = { city: string; count: number };
 

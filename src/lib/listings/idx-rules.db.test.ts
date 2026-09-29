@@ -1,7 +1,8 @@
 import { eq, inArray, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db } from "@/db";
-import { listings } from "@/db/schema";
+import * as schema from "@/db/schema";
+import { listings, openHouses } from "@/db/schema";
 import { findSearchMatches } from "@/lib/alerts/queries";
 import type { Actor } from "@/lib/auth/permissions";
 import { getDashboardListings } from "@/lib/dashboard/queries";
@@ -138,6 +139,24 @@ describe("the idx_hidden column", () => {
       "manual:withdrawn",
     ]);
   });
+
+  it("matches the schema file's expression on every row, so the migrations built the column the schema describes", async () => {
+    // The schema-vs-snapshot diff (src/db/schema/migrations.test.ts) can't see
+    // a hand-edited migration; this checks the database the migrations built.
+    const { generateDrizzleJson } = await import("drizzle-kit/api");
+    type Column = { name: string; generated?: { as: string } };
+    const table = generateDrizzleJson(schema).tables["public.listings"] as {
+      columns: Record<string, Column>;
+    };
+    const generated = Object.values(table.columns).filter((c) => c.generated);
+    expect(generated.map((c) => c.name)).toContain("idx_hidden");
+    for (const c of generated) {
+      const { rows } = await db.execute<{ n: number }>(
+        sql`select count(*)::int as n from listings where ${sql.identifier(c.name)} is distinct from (${sql.raw(c.generated!.as)})`,
+      );
+      expect(rows[0].n, c.name).toBe(0);
+    }
+  });
 });
 
 describe("hidden listings stay off every public surface, the firm's own included", () => {
@@ -174,6 +193,33 @@ describe("hidden listings stay off every public surface, the firm's own included
       { county: "Clarke", cities: [{ city: "Ruleton", count: 2 }] },
     ]);
     expect((await getMarketStats()).active).toBe(2);
+  });
+
+  it("the home page's open-house count: only homes its link, /homes?openHouse=1, lists", async () => {
+    // An open house tomorrow on every row, hidden ones included (the firm's own
+    // Coming Soon keeps its open houses), and one next month on the only
+    // other public for-sale row, which isn't "this week".
+    const hour = 3_600_000;
+    const at = (h: number) => new Date(Date.now() + h * hour);
+    const rows = [...labels.keys()].map((listingId) => ({
+      listingId,
+      startsAt: at(24),
+      endsAt: at(26),
+    }));
+    await db.insert(openHouses).values(rows);
+    try {
+      const shown = await searchListings(parseSearchParams({ openHouse: "1" }));
+      expect(labelled(shown.items.map((i) => i.id))).toEqual(["feed:active", "manual:active"]);
+      expect((await getMarketStats()).openHouses).toBe(2);
+
+      await db
+        .update(openHouses)
+        .set({ startsAt: at(24 * 30), endsAt: at(24 * 30 + 2) })
+        .where(eq(openHouses.listingId, idOf("manual:active")));
+      expect((await getMarketStats()).openHouses).toBe(1);
+    } finally {
+      await db.delete(openHouses);
+    }
   });
 
   it("location autocomplete counts", async () => {
