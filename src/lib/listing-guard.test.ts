@@ -196,6 +196,47 @@ describe("the listing guard", () => {
     spy.mockRestore();
   });
 
+  it("counts an IPv6 client by its /64 (its /48 for the day), wherever in it the request comes from", async () => {
+    const { deps, hits } = setup();
+    for (const ip of ["2001:db8:77::1", "2001:db8:77::2", "2001:db8:77:0:abcd::3"]) {
+      expect(await guardListingData(req("/homes", { ip }), deps)).toBeNull();
+    }
+    const keys = hits.flatMap((h) => h.windows.map((w) => `${w.name}:${h.subject}`));
+    expect(new Set(keys)).toEqual(
+      new Set([
+        "page:1m:2001:db8:77:0::/64",
+        "page:1h:2001:db8:77:0::/64",
+        "page:1d:2001:db8:77::/48",
+      ]),
+    );
+    expect(keys).toHaveLength(9);
+  });
+
+  it("tells a paused signed-in buyer which allowance ran out: their account's, or their connection's", async () => {
+    const buyer = async (): Promise<ProxyUser> => ({ userId: "b1", role: "user" });
+    const overFor = (subject: (s: string) => boolean) =>
+      setup({
+        user: buyer,
+        hit: async (s, windows) =>
+          subject(s)
+            ? { ok: false, retryAfter: 5_000, exceeded: windows[0].name }
+            : { ok: true, retryAfter: 0, exceeded: null },
+      });
+    const byAccount = await guardListingData(req("/homes"), overFor((s) => s === "user:b1").deps);
+    expect(byAccount?.status).toBe(429);
+    const accountHtml = await byAccount!.text();
+    expect(accountHtml).toContain("page requests from your account");
+    expect(accountHtml).not.toContain("shares one allowance");
+
+    const byAddress = await guardListingData(req("/homes"), overFor((s) => s === IP).deps);
+    expect(byAddress?.status).toBe(429);
+    const addressHtml = await byAddress!.text();
+    expect(addressHtml).toContain("page requests from your internet connection");
+    expect(addressHtml).toContain("Everyone signed in on this connection shares one allowance.");
+    expect(addressHtml).not.toContain("your account");
+    expect(addressHtml).not.toContain("/sign-in");
+  });
+
   it("doesn't count requests with no client IP", async () => {
     const { deps, hits } = setup({ over: true });
     expect(await guardListingData(req("/homes", { ip: "" }), deps)).toBeNull();

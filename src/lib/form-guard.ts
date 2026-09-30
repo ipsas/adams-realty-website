@@ -1,15 +1,19 @@
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import type { Executor } from "@/db";
-import { isLoopback, normalizeIp } from "@/lib/anti-scraping";
+import { ipPlans, isLoopback, normalizeIp } from "@/lib/anti-scraping";
+import { FORM_TOKEN_MAX_LEADS } from "@/lib/form-token";
 import { hitRateLimits, type LimitResult, type LimitWindow } from "@/lib/rate-limit-db";
 
 /**
  * Submission limits for the public forms, per client IP, per email address
  * and per account, counted in Postgres (`rate_limits`, the same table and
  * statement as the listing limiter), so they hold across serverless
- * instances. Emails are hashed in the counter keys. Outside production,
- * loopback addresses (`next dev`, e2e runs) aren't counted by IP.
+ * instances. An IPv6 client counts by its /64, or its /48 for the daily
+ * windows (`ipLimitSubject` in ./anti-scraping.ts), so rotating addresses
+ * within its block doesn't reset them. Emails are hashed in the counter keys.
+ * Outside production, loopback addresses (`next dev`, e2e runs) aren't
+ * counted by IP.
  */
 
 const MINUTE = 60_000;
@@ -48,6 +52,24 @@ export const FORM_LIMITS: Record<
   },
 };
 
+/** Leads per form timer token (./form-token.ts): a day's window, as long as a token lives. */
+export const LEAD_TOKEN_LIMIT: LimitWindow[] = [
+  { name: "lead-token:1d", limit: FORM_TOKEN_MAX_LEADS, ms: DAY },
+];
+
+/**
+ * Counts one lead sent with the form token `tokenId`; false once the token has carried
+ * more than FORM_TOKEN_MAX_LEADS (the lead is then flagged "reused-timer"). Not by
+ * address: the token is what a script would reuse from every address.
+ */
+export async function countLeadToken(
+  db: Executor,
+  tokenId: string,
+  now: Date = new Date(),
+): Promise<boolean> {
+  return (await hitRateLimits(db, `token:${tokenId}`, LEAD_TOKEN_LIMIT, now)).ok;
+}
+
 /** A stable, non-reversible key for an email address. */
 export function emailKey(email: string): string {
   return createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 32);
@@ -65,7 +87,11 @@ export async function hitFormLimits(
   const limits = FORM_LIMITS[form];
   const checks: Promise<LimitResult>[] = [];
   const ip = who.ip ? normalizeIp(who.ip) : null;
-  if (ip && !(!production && isLoopback(ip))) checks.push(hitRateLimits(db, ip, limits.ip, now));
+  if (ip && !(!production && isLoopback(ip))) {
+    // An IPv6 client is counted by its /64 (its /48 for a day), like the listing limiter.
+    for (const p of ipPlans(ip, limits.ip, 1))
+      checks.push(hitRateLimits(db, p.subject, p.windows, now));
+  }
   if (limits.email && who.email) {
     checks.push(hitRateLimits(db, emailKey(who.email), limits.email, now));
   }

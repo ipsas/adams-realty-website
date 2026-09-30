@@ -189,7 +189,8 @@ Use your model table: Opus High for the work packages, and Xhigh if one gets stu
       use Search Console's Removals tool for it.
 - [ ] **The office's internet address.** So the office never meets the listing rate limit, set
       `OFFICE_IPS` in Vercel to the office's public IP address (several can be separated by commas;
-      ranges like `203.0.113.0/28` work). Empty by default. Staff who are signed in are never
+      ranges like `203.0.113.0/28` work; if the office has IPv6, add its block, such as
+      `2001:db8:1:2::/64`, since its devices change their IPv6 address often). Empty by default. Staff who are signed in are never
       limited anyway.
 - [ ] **Postal address in emails.** It's already set from the office address; confirm it's correct.
 - [ ] **Photo resizing (may carry a small monthly cost).** Georgia MLS photos arrive full size

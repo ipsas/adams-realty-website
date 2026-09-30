@@ -484,6 +484,93 @@ export function searchLandSuite(test: typeof baseTest, { phone }: { phone: boole
       await expectFactsLayout(page, { phone });
     });
 
+    test("a home's four facts keep their icons and stay in their cells on the narrowest phones", async ({
+      page,
+    }) => {
+      // The home on the biggest lot has the longest values ("139.51 acres"): at 320px each
+      // of the four cells has about 70px for its text, at 280px (a folding phone's cover
+      // screen) less, which split "139.51" and "2,340" mid-number before the cells' padding
+      // tightened there.
+      const slug = await withDb((db) =>
+        db
+          .query<{ slug: string }>(
+            `select slug from listings
+              where ${FOR_SALE} and property_type not in ('land', 'commercial')
+                and coalesce(living_area_sqft, 0) > 0 and lot_size_sqft >= 21780
+              order by lot_size_sqft desc, id limit 1`,
+          )
+          .then((r) => r.rows[0].slug),
+      );
+      const measure = () =>
+        page.getByTestId("big-facts").evaluate((dl) =>
+          [...dl.children].map((cell) => {
+            const cs = getComputedStyle(cell);
+            const box = cell.getBoundingClientRect();
+            const inner = box.right - parseFloat(cs.paddingRight) - parseFloat(cs.borderRightWidth);
+            const icon = cell.querySelector("svg")!.getBoundingClientRect();
+            // The text itself, line by line (a box can be narrower than what it holds).
+            const lines = [...cell.querySelectorAll("dd, dt")].flatMap((t) => {
+              const range = document.createRange();
+              range.selectNodeContents(t);
+              return [...range.getClientRects()];
+            });
+            // Each word of the value on one line: a number is never split.
+            const dd = cell.querySelector("dd")!;
+            const text = dd.firstChild as Text;
+            let at = 0;
+            const splitWords = dd.textContent!.split(" ").filter((word) => {
+              const range = document.createRange();
+              range.setStart(text, at);
+              range.setEnd(text, at + word.length);
+              at += word.length + 1;
+              return new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size > 1;
+            });
+            return {
+              value: dd.textContent,
+              icon: [Math.round(icon.width), Math.round(icon.height)],
+              overIcon: Math.max(0, ...lines.map((l) => Math.round(icon.right - l.left))),
+              pastEdge: Math.max(0, ...lines.map((l) => Math.round(l.right - inner))),
+              splitWords,
+            };
+          }),
+        );
+      const expectTidy = (
+        cells: Awaited<ReturnType<typeof measure>>,
+        where: string,
+        { words = true } = {},
+      ) => {
+        for (const c of cells) {
+          const at = `${where}: ${c.value}`;
+          expect(c.icon, at).toEqual([20, 20]);
+          expect(c.overIcon, at).toBe(0);
+          expect(c.pastEdge, at).toBe(0);
+          if (words) expect(c.splitWords, at).toEqual([]);
+        }
+      };
+      for (const width of [320, 280]) {
+        await page.setViewportSize({ width, height: 740 });
+        await gotoHydrated(page, `/homes/${slug}`, "main p.tabular");
+        const cells = await measure();
+        expect(cells.map((c) => c.value)).toEqual([
+          expect.any(String),
+          expect.any(String),
+          expect.any(String),
+          expect.stringMatching(/^[\d.]+ acres$/),
+        ]);
+        expectTidy(cells, `${width}px`);
+        await expectNoHorizontalOverflow(page);
+      }
+      // A value longer than any cell (none is, today) wraps inside its cell: it neither
+      // squeezes the icon nor spills out.
+      await page
+        .getByTestId("big-facts")
+        .locator("dd")
+        .last()
+        .evaluate((dd) => (dd.textContent = "123,456,789,012.25 acres"));
+      expectTidy(await measure(), "280px, an over-long value", { words: false });
+      await expectNoHorizontalOverflow(page);
+    });
+
     test("area market numbers give land's price per acre", async ({ page }) => {
       await gotoHydrated(page, "/areas/carnesville", "main h1");
       const tile = page.getByTestId("market-tile").filter({ hasText: "Median price per acre" });

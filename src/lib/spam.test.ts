@@ -31,7 +31,9 @@ describe("form signals", () => {
   it("reads stored reasons back, ignoring anything unknown", () => {
     expect(parseSpamReasons("honeypot,seo-pitch,bogus")).toEqual(["honeypot", "seo-pitch"]);
     expect(parseSpamReasons(undefined)).toEqual([]);
-    for (const r of parseSpamReasons("honeypot,too-fast,no-timer,seo-pitch")) {
+    const all = "honeypot,too-fast,no-timer,reused-timer,seo-pitch";
+    expect(parseSpamReasons(all)).toHaveLength(5);
+    for (const r of parseSpamReasons(all)) {
       expect(SPAM_REASON_LABELS[r]).toBeTruthy();
     }
   });

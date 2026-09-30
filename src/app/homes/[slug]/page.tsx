@@ -710,11 +710,18 @@ function StatusPill({ status, transactionType }: { status: string; transactionTy
   );
 }
 
+/**
+ * One of the strip's facts. The icon never shrinks, and a value too long for its cell
+ * wraps inside it (`overflow-wrap: anywhere`, which also lets the text column shrink
+ * below its longest word) rather than squeezing the icon or spilling out. Below 360px
+ * the cell's padding tightens, so a home's "139.51 acres" still breaks only at its space
+ * on a 280px phone (e2e/search-land-suite.ts).
+ */
 function BigFact({ icon, label, value }: { icon: ReactNode; label: string; value: ReactNode }) {
   return (
-    <div className="flex items-center gap-3 bg-surface px-5 py-4 [&_svg]:size-5 [&_svg]:shrink-0 [&_svg]:text-brand-600">
+    <div className="flex items-center gap-2 bg-surface px-3 py-4 min-[360px]:gap-3 min-[360px]:px-5 [&_svg]:size-5 [&_svg]:shrink-0 [&_svg]:text-brand-600">
       {icon}
-      <div className="min-w-0">
+      <div>
         <dd className="text-lg font-semibold [overflow-wrap:anywhere] text-ink tabular">{value}</dd>
         <dt className="text-xs text-muted">{label}</dt>
       </div>

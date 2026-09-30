@@ -147,7 +147,7 @@ ALREADY BUILT (site review #1, before the packages; keep it):
 
 ALREADY BUILT (site review #6 and form spam, before the packages; keep it):
 
-- `src/proxy.ts` (WP2 owns it) now runs the listing rate limiter (`src/lib/listing-guard.ts`: preview robots, DNS-verified crawlers, staff and `OFFICE_IPS` exempt, signed-in buyers per account and, together, per address (`members:*`), client refreshes and prefetches at 1 unit plus their own `quick:*` cap, the branded 429 page with its short and long variants) and demo-data mode's `X-Robots-Tag` on `/homes`, `/areas`, `/places` and `/agents`. Its matcher and `route()` must keep all three jobs.
+- `src/proxy.ts` (WP2 owns it) now runs the listing rate limiter (`src/lib/listing-guard.ts`: preview robots, DNS-verified crawlers, staff and `OFFICE_IPS` exempt, signed-in buyers per account and, together, per address (`members:*`), an IPv6 "address" being its /64 (its /48 for daily windows), client refreshes and prefetches at 1 unit plus their own `quick:*` cap, the branded 429 page with its short and long variants, naming which allowance ran out) and demo-data mode's `X-Robots-Tag` on `/homes`, `/areas`, `/places` and `/agents`. Its matcher and `route()` must keep all three jobs.
 - The sign-up form renders `<Honeypot />` and sends `await stamp(form)`'s `formToken` and the honeypot as the `x-form-token` / `x-form-hp` headers (`fetchOptions.headers`); the Better Auth hook (`src/lib/auth/sign-up-guard.ts`) refuses sign-ups without them. A restyled sign-up keeps both, and `e2e/limits-spam-suite.ts` ("sign-up refuses a robot…") must keep passing.
 
 STEPS:

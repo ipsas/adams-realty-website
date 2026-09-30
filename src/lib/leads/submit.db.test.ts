@@ -118,6 +118,31 @@ describe("submitInquiry", () => {
     expect(sent).toEqual([]);
   });
 
+  it("flags leads past the few one form token may carry, whatever address or email sends them", async () => {
+    // One token, fetched once and waited on once, then sent from five addresses (IPv4 and
+    // IPv6) with five emails: the first FORM_TOKEN_MAX_LEADS are leads, the rest spam.
+    const token = openedAgo(10_000);
+    const ips = [
+      "198.51.100.201",
+      "198.51.100.202",
+      "2001:db8:5::1",
+      "2001:db8:6::1",
+      "203.0.113.77",
+    ];
+    const results = [];
+    for (const ip of ips)
+      results.push(await submitInquiry(form({ formToken: token }), ctx({ ip }), deps()));
+    const rows = await Promise.all(results.map((r) => row(r.id!)));
+    expect(rows.map((r) => r.status)).toEqual(["new", "new", "new", "spam", "spam"]);
+    expect(rows[3].metadata.spam).toBe("reused-timer");
+    expect(rows[4].metadata.spam).toBe("reused-timer");
+    expect(results.every((r) => r.ok)).toBe(true); // the robot learns nothing
+    expect(sent).toHaveLength(3);
+    // A fresh token (a page opened again) is fine.
+    const fresh = await submitInquiry(form(), ctx(), deps());
+    expect((await row(fresh.id!)).status).toBe("new");
+  });
+
   it("flags an SEO pitch from a stranger, but not the same words from someone the office works with", async () => {
     const stranger = await submitInquiry(form({ message: PITCH }), ctx(), deps());
     expect((await row(stranger.id!)).status).toBe("spam");

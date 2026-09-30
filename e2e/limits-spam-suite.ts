@@ -354,16 +354,49 @@ export function limitsSpamSuite(test: typeof baseTest, { phone }: { phone: boole
         expect((await page.goto("/homes?q=Royston"))?.status()).toBe(200);
         expect(await counter(`members:1d:${ip}`)).toBeGreaterThanOrEqual(PAGE_UNITS);
         // Every buyer on this address together has used up the day: a fresh account (or
-        // this one) is paused, without being told to sign in.
+        // this one) is paused, told it's the connection they share (not their account),
+        // and not told to sign in.
         await setDailyCounter("members:1d", ip, 5_000 * PAGE_UNITS);
         const res = await page.goto("/homes?q=Royston");
         expect(res?.status()).toBe(429);
         await expect(page.getByRole("heading", { level: 1 })).toHaveText(LONG_PAUSE);
-        await expect(page.locator("main")).toContainText("from your account");
+        await expect(page.locator("main")).toContainText("from your internet connection");
+        await expect(page.locator("main")).toContainText(
+          "Everyone signed in on this connection shares one allowance.",
+        );
+        await expect(page.locator("main")).not.toContainText("your account");
         await expect(
           page.locator("main a[href^='/sign-in'], main a[href^='/sign-up']"),
         ).toHaveCount(0);
         await clearCounters(ip);
+      });
+
+      test("an IPv6 client can't dodge the limit by changing its address within its block", async ({
+        request,
+      }) => {
+        // A made-up /48 in the documentation range, and an address in it.
+        const hex = () => (Math.floor(Math.random() * 0xefff) + 0x1000).toString(16);
+        const site48 = `2001:db8:${hex()}`;
+        const other48 = `2001:db8:${hex()}`;
+        const get = (ip: string) => request.get("/homes", { headers: { "x-forwarded-for": ip } });
+        expect((await get(`${site48}::1`)).status()).toBe(200);
+        expect((await get(`${site48}::2`)).status()).toBe(200);
+        // Both addresses spent one allowance: their /64's for the minute, their /48's for the day.
+        expect(await counter(`page:1m:${site48}:0::/64`)).toBe(2 * PAGE_UNITS);
+        expect(await counter(`page:1d:${site48}::/48`)).toBe(2 * PAGE_UNITS);
+        expect(await counter(`page:1m:${site48}::1`)).toBe(0);
+        // Its day used up: a new address, or a new /64 in the /48, is paused too.
+        await setDailyCounter("page:1d", `${site48}::/48`, 5_000 * PAGE_UNITS);
+        expect((await get(`${site48}::3`)).status()).toBe(429);
+        expect((await get(`${site48}:9:0:0:0:1`)).status()).toBe(429);
+        // Someone else's block isn't.
+        expect((await get(`${other48}::1`)).status()).toBe(200);
+        await withDb((db) =>
+          db.query("delete from rate_limits where key like $1 or key like $2", [
+            `%:${site48}:%`,
+            `%:${other48}:%`,
+          ]),
+        );
       });
 
       test("a 'Googlebot' that DNS doesn't confirm is limited like anyone else", async ({
@@ -439,6 +472,46 @@ export function limitsSpamSuite(test: typeof baseTest, { phone }: { phone: boole
       expect((await latestLead(email)).status).toBe("new");
       await page.reload();
       await expect(page.getByTestId("spam-notice")).toHaveCount(0);
+      await deleteLeads(email);
+    });
+
+    test("a form whose tab comes back after hours away sends a fresh timer token", async ({
+      page,
+    }) => {
+      test.setTimeout(60_000);
+      const email = `back-${Date.now()}@example.com`;
+      const tokens: string[] = [];
+      page.on("response", async (res) => {
+        if (!res.url().includes("/api/form-token")) return;
+        tokens.push(((await res.json()) as { token: string }).token);
+      });
+      await page.clock.install();
+      await gotoHydrated(page, "/contact", "#c-name");
+      await expect.poll(() => tokens.length).toBeGreaterThan(0);
+      await page.waitForTimeout(500);
+      const opened = tokens.length;
+      const comeBack = () =>
+        page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+      // An hour away: the token still has most of its day, so it's kept.
+      await page.clock.fastForward("01:00:00");
+      await comeBack();
+      await page.waitForTimeout(500);
+      expect(tokens).toHaveLength(opened);
+      // Thirteen hours away: a fresh one, which is what the form then sends.
+      await page.clock.fastForward("12:00:00");
+      await comeBack();
+      await expect.poll(() => tokens.length).toBe(opened + 1);
+      const fresh = tokens.at(-1)!;
+      await page.fill("#c-name", "Back Again");
+      await page.fill("#c-email", email);
+      await waitLikeAPerson(page);
+      const sent = page.waitForRequest(
+        (r) => r.method() === "POST" && (r.postData() ?? "").includes(fresh),
+      );
+      await page.getByRole("button", { name: "Send message" }).click();
+      await sent;
+      await expect(page.getByText(/Thanks/).first()).toBeVisible();
+      expect((await latestLead(email)).status).toBe("new");
       await deleteLeads(email);
     });
 

@@ -3,6 +3,9 @@ import {
   claimedCrawler,
   clientIp,
   ipInList,
+  ipLimitSubject,
+  ipPlans,
+  ipv6Groups,
   isCrawlerHost,
   isListingDataPath,
   isLoopback,
@@ -200,6 +203,74 @@ describe("anti-scraping policy", () => {
     expect(isCrawlerHost("bing", "crawl-66-249-66-1.googlebot.com")).toBe(false);
   });
 
+  it("reads IPv6 addresses in every written form, and nothing else", () => {
+    expect(ipv6Groups("2001:db8:77::1")).toEqual([0x2001, 0xdb8, 0x77, 0, 0, 0, 0, 1]);
+    expect(ipv6Groups("2001:DB8:0077:0000:0000:0000:0000:0001")).toEqual(
+      ipv6Groups("2001:db8:77::1"),
+    );
+    expect(ipv6Groups("::1")).toEqual([0, 0, 0, 0, 0, 0, 0, 1]);
+    expect(ipv6Groups("fe80::1%eth0")).toEqual([0xfe80, 0, 0, 0, 0, 0, 0, 1]);
+    expect(ipv6Groups("64:ff9b::192.0.2.33")).toEqual([0x64, 0xff9b, 0, 0, 0, 0, 0xc000, 0x221]);
+    expect(ipv6Groups("2001:db8::")).toEqual([0x2001, 0xdb8, 0, 0, 0, 0, 0, 0]);
+    for (const bad of [
+      "203.0.113.5",
+      "1::2::3",
+      "2001:db8:1:2:3:4:5",
+      "12345::1",
+      "g::1",
+      "",
+      "::ffff:10.0.0.1",
+    ])
+      expect(ipv6Groups(bad), bad).toBeNull();
+  });
+
+  it("counts an IPv6 client by its /64, and by its /48 for the day; IPv4 by its address", () => {
+    const MIN = 60_000;
+    const DAY = 86_400_000;
+    // Every address in one /64 is one client for the minute and hour windows...
+    const a = ipLimitSubject("2001:db8:77::1", MIN);
+    expect(a).toBe("2001:db8:77:0::/64");
+    for (const same of ["2001:db8:77::2", "2001:db8:77:0:dead:beef:1:3", "2001:DB8:77:0::ffff"])
+      expect(ipLimitSubject(same, MIN), same).toBe(a);
+    expect(ipLimitSubject("2001:db8:77:1::1", MIN)).not.toBe(a);
+    // ...and every /64 in one /48 for the day.
+    expect(ipLimitSubject("2001:db8:77::1", DAY)).toBe("2001:db8:77::/48");
+    expect(ipLimitSubject("2001:db8:77:ffff::9", DAY)).toBe("2001:db8:77::/48");
+    expect(ipLimitSubject("2001:db8:78::1", DAY)).not.toBe("2001:db8:77::/48");
+    // IPv4, IPv4-mapped IPv6 and anything unreadable: the address itself.
+    expect(ipLimitSubject("203.0.113.9", DAY)).toBe("203.0.113.9");
+    expect(ipLimitSubject("::ffff:203.0.113.9", MIN)).toBe("203.0.113.9");
+    expect(ipLimitSubject("not-an-ip", MIN)).toBe("not-an-ip");
+    // One set of windows splits into one counter per subject.
+    expect(ipPlans("2001:db8:77::5", LIMITS.page, 4)).toEqual([
+      { subject: "2001:db8:77:0::/64", windows: LIMITS.page.filter((w) => w.ms < DAY), units: 4 },
+      { subject: "2001:db8:77::/48", windows: LIMITS.page.filter((w) => w.ms >= DAY), units: 4 },
+    ]);
+    expect(ipPlans("203.0.113.9", LIMITS.page, 4)).toEqual([
+      { subject: "203.0.113.9", windows: LIMITS.page, units: 4 },
+    ]);
+  });
+
+  it("gives an IPv6 client rotating through its /64 no fresh allowance, anonymous or signed in", () => {
+    const subjects = (ip: string) =>
+      [
+        ...limitPlan({ kind: "anonymous" }, "page", ip),
+        ...limitPlan({ kind: "anonymous" }, "refresh", ip),
+        ...limitPlan({ kind: "anonymous" }, "api", ip),
+        ...limitPlan({ kind: "member", userId: "u1" }, "page", ip),
+        ...limitPlan({ kind: "member", userId: "u1" }, "api", ip),
+        ...limitPlan({ kind: "preview" }, "page", ip),
+      ].flatMap((p) => p.windows.map((w) => `${w.name}:${p.subject}`));
+    const first = subjects("2001:db8:77::1");
+    expect(subjects("2001:db8:77::2")).toEqual(first);
+    expect(subjects("2001:db8:77:0:1234:5678:9abc:def0")).toEqual(first);
+    expect(first).toContain("page:1m:2001:db8:77:0::/64");
+    expect(first).toContain("page:1d:2001:db8:77::/48");
+    expect(first).toContain("members:1d:2001:db8:77::/48");
+    expect(first).toContain("api:1h:2001:db8:77:0::/64");
+    expect(first.some((k) => k.includes("::1"))).toBe(false);
+  });
+
   it("parses the office allowlist and matches addresses and IPv4 ranges", () => {
     const list = parseIpList(" 203.0.113.5, 198.51.100.0/28 2001:DB8::1, bogus, 1.2.3/8 ");
     expect(list).toEqual(["203.0.113.5", "198.51.100.0/28", "2001:db8::1"]);
@@ -212,6 +283,25 @@ describe("anti-scraping policy", () => {
     expect(parseIpList(undefined)).toEqual([]);
     expect(parseIpList("")).toEqual([]);
     expect(ipInList("203.0.113.5", [])).toBe(false);
+  });
+
+  it("takes IPv6 ranges in the office allowlist, since a device changes its IPv6 address often", () => {
+    const list = parseIpList(
+      "2001:DB8:1:2::/64, 2001:db8:9::/48, 2001:db8::/129, 10.0.0.0/33, a/b/c",
+    );
+    expect(list).toEqual(["2001:db8:1:2::/64", "2001:db8:9::/48"]);
+    expect(ipInList("2001:db8:1:2:aaaa:bbbb:cccc:dddd", list)).toBe(true);
+    expect(ipInList("2001:db8:1:3::1", list)).toBe(false);
+    expect(ipInList("2001:db8:9:ffff::1", list)).toBe(true);
+    expect(ipInList("2001:db8:a::1", list)).toBe(false);
+    expect(ipInList("203.0.113.5", list)).toBe(false);
+    // Ranges that don't fall on a group boundary.
+    expect(ipInList("2001:db8:1:1::1", ["2001:db8:1::/63"])).toBe(true);
+    expect(ipInList("2001:db8:1:2::1", ["2001:db8:1::/63"])).toBe(false);
+    expect(ipInList("2001:db8:1:3::1", ["2001:db8:1::/62"])).toBe(true);
+    expect(ipInList("2001:db8:1:4::1", ["2001:db8:1::/62"])).toBe(false);
+    expect(ipInList("198.51.100.15", ["198.51.100.0/28"])).toBe(true);
+    expect(ipInList("198.51.100.3", ["0.0.0.0/0"])).toBe(true);
   });
 
   it("knows loopback addresses", () => {

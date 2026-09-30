@@ -15,9 +15,13 @@ import type { LimitWindow } from "./rate-limit-db";
  *   limited like anyone else.
  * - Staff (agents and admins) and the office's own addresses (`OFFICE_IPS`)
  *   are not limited. Signed-in buyers are limited per account and, all
- *   together, per address, apart from the anonymous allowance, so a busy
- *   shared address (office Wi-Fi, a library, a phone carrier) never locks
- *   them out.
+ *   together, per address, in an allowance apart from the anonymous one: an
+ *   address whose anonymous visitors are paused doesn't pause them. A very
+ *   busy shared address (a library, carrier NAT) can still use up the
+ *   members' allowance too; only `OFFICE_IPS` is never limited.
+ * - An "address" is an IPv4 address, or an IPv6 /64 (the block one home or
+ *   server gets, whose 2^64 addresses a client can rotate through freely),
+ *   and a /48 for the daily windows (`ipLimitSubject`).
  * - Everyone else is rate limited per client IP, well above what a person
  *   browsing does: bursts per minute, sustained use per hour and per day.
  *   A full page load costs `PAGE_UNITS`; the site's own client-side refreshes
@@ -172,11 +176,72 @@ export function clientIp(h: HeaderLike): string | null {
   return forwarded || h.get("x-real-ip")?.trim() || null;
 }
 
-/** An IPv4-mapped IPv6 address ("::ffff:1.2.3.4") as plain IPv4; IPv6 lowercased. */
+/** An IPv4-mapped IPv6 address ("::ffff:1.2.3.4") as plain IPv4; IPv6 lowercased, zone dropped. */
 export function normalizeIp(ip: string): string {
-  const v = ip.trim().toLowerCase();
+  const v = ip.trim().toLowerCase().replace(/%.*$/, "");
   const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(v);
   return mapped ? mapped[1] : v;
+}
+
+/**
+ * An IPv6 address's eight 16-bit groups ("::" expanded, a trailing dotted IPv4 part
+ * read as two groups), or null when it isn't one.
+ */
+export function ipv6Groups(ip: string): number[] | null {
+  const v = normalizeIp(ip);
+  if (!v.includes(":")) return null;
+  const halves = v.split("::");
+  if (halves.length > 2) return null;
+  const parse = (part: string): number[] | null => {
+    if (!part) return [];
+    const out: number[] = [];
+    const pieces = part.split(":");
+    for (let i = 0; i < pieces.length; i++) {
+      const p = pieces[i];
+      if (i === pieces.length - 1 && p.includes(".")) {
+        const n = ipv4ToInt(p);
+        if (n === null) return null;
+        out.push(Math.floor(n / 65_536), n % 65_536);
+      } else if (/^[0-9a-f]{1,4}$/.test(p)) out.push(parseInt(p, 16));
+      else return null;
+    }
+    return out;
+  };
+  const head = parse(halves[0]);
+  const tail = halves.length === 2 ? parse(halves[1]) : [];
+  if (!head || !tail) return null;
+  if (halves.length === 1) return head.length === 8 ? head : null;
+  const gap = 8 - head.length - tail.length;
+  return gap >= 1 ? [...head, ...Array<number>(gap).fill(0), ...tail] : null;
+}
+
+/**
+ * What a per-address limit counts, for a window of `windowMs`: an IPv4 address as is;
+ * an IPv6 address by its /64, since one home, phone or server gets a whole /64 and can
+ * send from any address in it (counted per address, each new one would start a fresh
+ * allowance); and by its /48 for the daily windows, the block one site (a business, a
+ * server host's customer) usually gets, so moving between /64s doesn't renew the day's
+ * allowance either. The key reads like "2001:db8:77:0::/64".
+ */
+export function ipLimitSubject(ip: string, windowMs: number): string {
+  const groups = ipv6Groups(ip);
+  if (!groups) return normalizeIp(ip);
+  const bits = windowMs >= DAY ? 48 : 64;
+  return `${groups
+    .slice(0, bits / 16)
+    .map((g) => g.toString(16))
+    .join(":")}::/${bits}`;
+}
+
+/** Counters for `windows` against an address, grouped by what each window counts (ipLimitSubject). */
+export function ipPlans(ip: string, windows: LimitWindow[], units: number): LimitPlan[] {
+  if (!ipv6Groups(ip)) return [{ subject: normalizeIp(ip), windows, units }];
+  const bySubject = new Map<string, LimitWindow[]>();
+  for (const w of windows) {
+    const subject = ipLimitSubject(ip, w.ms);
+    bySubject.set(subject, [...(bySubject.get(subject) ?? []), w]);
+  }
+  return [...bySubject].map(([subject, ws]) => ({ subject, windows: ws, units }));
 }
 
 export function isLoopback(ip: string): boolean {
@@ -196,8 +261,9 @@ const ipv4ToInt = (ip: string): number | null => {
 };
 
 /**
- * Parses an allowlist: comma- or space-separated addresses, IPv4 ranges in
- * CIDR form ("203.0.113.0/28"), exact IPv6 addresses. Bad entries are ignored.
+ * Parses an allowlist: comma- or space-separated addresses and ranges in CIDR form,
+ * IPv4 ("203.0.113.0/28") or IPv6 ("2001:db8:77::/64"; a device on IPv6 changes its own
+ * address within its /64 every day or so, so list the block). Bad entries are ignored.
  */
 export function parseIpList(value: string | null | undefined): string[] {
   return (value ?? "")
@@ -205,23 +271,40 @@ export function parseIpList(value: string | null | undefined): string[] {
     .map((s) => s.trim())
     .filter((s) => {
       if (!s) return false;
-      const [addr, bits] = s.split("/");
-      if (bits !== undefined) return ipv4ToInt(addr) !== null && /^\d+$/.test(bits) && +bits <= 32;
-      return ipv4ToInt(addr) !== null || addr.includes(":");
+      const [addr, bits, extra] = s.split("/");
+      if (extra !== undefined) return false;
+      const max = ipv4ToInt(addr) !== null ? 32 : ipv6Groups(addr) ? 128 : 0;
+      if (!max) return false;
+      return bits === undefined || (/^\d{1,3}$/.test(bits) && +bits <= max);
     })
-    .map(normalizeIp);
+    .map((s) => {
+      const [addr, bits] = s.split("/");
+      return bits === undefined ? normalizeIp(addr) : `${normalizeIp(addr)}/${bits}`;
+    });
+}
+
+/** Whether the first `bits` bits of two addresses match, each as `width`-bit parts. */
+function samePrefix(a: number[], b: number[], bits: number, width: number): boolean {
+  for (let i = 0; i < a.length && bits > 0; i++, bits -= width) {
+    const size = 2 ** (width - Math.min(bits, width));
+    if (Math.floor(a[i] / size) !== Math.floor(b[i] / size)) return false;
+  }
+  return true;
 }
 
 export function ipInList(ip: string, list: readonly string[]): boolean {
   const v = normalizeIp(ip);
   const n = ipv4ToInt(v);
+  const groups = n === null ? ipv6Groups(v) : null;
   return list.some((entry) => {
     const [addr, bits] = entry.split("/");
-    if (bits === undefined) return addr === v;
-    const base = ipv4ToInt(addr);
-    if (n === null || base === null) return false;
-    const size = 2 ** (32 - Number(bits));
-    return Math.floor(n / size) === Math.floor(base / size);
+    const base4 = ipv4ToInt(addr);
+    if (base4 !== null) {
+      return n !== null && samePrefix([n], [base4], bits === undefined ? 32 : +bits, 32);
+    }
+    const base6 = ipv6Groups(addr);
+    if (!base6 || !groups) return false;
+    return samePrefix(groups, base6, bits === undefined ? 128 : +bits, 16);
   });
 }
 
@@ -269,33 +352,26 @@ export type LimitPlan = { subject: string; windows: LimitWindow[]; units: number
  * request (refresh or prefetch) costs 1 there and 1 against its quick cap.
  */
 export function limitPlan(visitor: Visitor, kind: RequestKind, ip: string): LimitPlan[] {
-  const spend = (subject: string, units: LimitWindow[], quick: LimitWindow[]): LimitPlan[] =>
-    kind === "page"
-      ? [{ subject, windows: units, units: PAGE_UNITS }]
-      : [
-          { subject, windows: units, units: 1 },
-          { subject, windows: quick, units: 1 },
-        ];
+  type Count = (windows: LimitWindow[], units: number) => LimitPlan[];
+  const byIp: Count = (windows, units) => ipPlans(ip, windows, units);
+  const spend = (count: Count, units: LimitWindow[], quick: LimitWindow[]): LimitPlan[] =>
+    kind === "page" ? count(units, PAGE_UNITS) : [...count(units, 1), ...count(quick, 1)];
   switch (visitor.kind) {
     case "exempt":
       return [];
     case "member": {
-      const user = `user:${visitor.userId}`;
-      if (kind === "api") {
-        return [
-          { subject: user, windows: LIMITS.api, units: 1 },
-          { subject: ip, windows: LIMITS.membersApi, units: 1 },
-        ];
-      }
+      const subject = `user:${visitor.userId}`;
+      const byUser: Count = (windows, units) => [{ subject, windows, units }];
+      if (kind === "api") return [...byUser(LIMITS.api, 1), ...byIp(LIMITS.membersApi, 1)];
       return [
-        ...spend(user, LIMITS.account, LIMITS.accountQuick),
-        ...spend(ip, LIMITS.members, LIMITS.membersQuick),
+        ...spend(byUser, LIMITS.account, LIMITS.accountQuick),
+        ...spend(byIp, LIMITS.members, LIMITS.membersQuick),
       ];
     }
     case "preview":
-      return [{ subject: ip, windows: LIMITS.preview, units: 1 }];
+      return byIp(LIMITS.preview, 1);
     case "anonymous":
-      if (kind === "api") return [{ subject: ip, windows: LIMITS.api, units: 1 }];
-      return spend(ip, LIMITS.page, LIMITS.quick);
+      if (kind === "api") return byIp(LIMITS.api, 1);
+      return spend(byIp, LIMITS.page, LIMITS.quick);
   }
 }

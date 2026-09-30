@@ -5,10 +5,10 @@ import type { Executor } from "@/db";
 import { agents, inquiries, listings } from "@/db/schema";
 import { offersTours } from "@/lib/areas/firm-area";
 import type { Email } from "@/lib/email";
-import { hitFormLimits, isKnownCustomer, retryPhrase } from "@/lib/form-guard";
+import { countLeadToken, hitFormLimits, isKnownCustomer, retryPhrase } from "@/lib/form-guard";
 import { inquiryReply, withoutTour } from "@/lib/inquiry-reply";
 import { canShowDetails } from "@/lib/listings/visibility";
-import { formTokenElapsed, formTokenSecret } from "@/lib/form-token";
+import { formTokenSecret, readFormToken } from "@/lib/form-token";
 import {
   FORM_TOKEN_FIELD,
   formSignals,
@@ -33,8 +33,9 @@ import { leadEmailInput, sendNewLeadEmails } from "./notify";
  *
  * Spam (src/lib/spam.ts): over a submission limit, the sender is told to wait
  * and nothing is stored. Suspected spam (the honeypot, sent too fast or not
- * from the page, an SEO pitch from a non-customer) is stored with status
- * `spam` and its reasons in `metadata.spam`, unassigned (the agent it would
+ * from the page, on a timer token that already carried several leads, an SEO
+ * pitch from a non-customer) is stored with status `spam` and its reasons in
+ * `metadata.spam`, unassigned (the agent it would
  * have gone to is kept in `metadata.routedAgentId`), and never emailed. The
  * sender sees the usual thank-you, so robots learn nothing.
  *
@@ -163,15 +164,14 @@ export async function submitInquiry(
       .filter(Boolean)
       .join("\n\n") || null;
 
+  const now = deps.now ?? new Date();
+  const token = readFormToken(raw[FORM_TOKEN_FIELD], formTokenSecret(), now.getTime());
   const spam = formSignals({
     honeypot: raw[HONEYPOT_FIELD],
-    elapsedMs: formTokenElapsed(
-      raw[FORM_TOKEN_FIELD],
-      formTokenSecret(),
-      (deps.now ?? new Date()).getTime(),
-    ),
+    elapsedMs: token?.elapsedMs ?? null,
     minMs: MIN_FILL_MS.message,
   });
+  if (token && !(await countLeadToken(db, token.id, now))) spam.push("reused-timer");
   if (isSeoPitch(message) && !(await isKnownCustomer(db, d.email, ctx.userId)))
     spam.push("seo-pitch");
   const suspected = spam.length > 0;

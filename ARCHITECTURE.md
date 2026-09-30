@@ -274,7 +274,7 @@ governs every listing that came from the feed. Adams Realty, Inc. is the license
     500 a day, a tenth of a day's pages, since the user agent alone makes one), but not the
     API.
   - Not limited: staff (agents and admins), the office's addresses (`OFFICE_IPS`, comma-
-    separated, IPv4 CIDR allowed, empty by default), loopback outside production (`next dev`,
+    separated, IPv4 and IPv6 CIDR allowed, empty by default), loopback outside production (`next dev`,
     e2e runs), and Google/Bing crawlers confirmed by reverse + forward DNS
     (`src/lib/crawler-verify.ts`, cached per IP a day; a crawler name alone proves nothing).
     The DNS must end in googlebot.com or google.com (Bing: search.msn.com), never
@@ -282,11 +282,19 @@ governs every listing that came from the feed. Adams Realty, Inc. is the license
     would pass.
   - Signed-in buyers count per account (`account:*`, well above the per-IP limits) and, all
     together, per IP in their own allowance the size of the anonymous one (`members:*`,
-    `members-quick:*`, `members-api:*`), never against the anonymous one, so a shared address
-    (office Wi-Fi, a library, a phone carrier) can't lock them out, and accounts made from
-    one address (sign-up checks no email) add one allowance, not one each.
+    `members-quick:*`, `members-api:*`), never against the anonymous one: an address whose
+    anonymous visitors are paused doesn't pause them, and accounts made from one address
+    (sign-up checks no email) add one allowance, not one each. The flip side: a very busy
+    shared address (a library, public Wi-Fi, carrier NAT), or one account scraping from it,
+    can use up the members' allowance and pause every buyer signed in there, for up to a
+    day. Only the office's own addresses (`OFFICE_IPS`) are never limited. The 429 page says
+    which allowance ran out (the account, or the connection everyone signed in on it shares).
     The proxy verifies the session (Better Auth's signed cookie cache, else the `sessions`
     table; `src/lib/auth/proxy-session.ts`); a cookie's presence proves nothing.
+  - "Per IP" means per IPv4 address, or per IPv6 /64 (a /48 for the daily windows;
+    `ipLimitSubject`): one home, phone or server gets a whole /64 and can send from any of its
+    2^64 addresses, so counting single IPv6 addresses would give it a fresh allowance per
+    address. The form limits (`src/lib/form-guard.ts`) count the same way.
   - Everyone else: per client IP (Vercel's `x-forwarded-for`), per minute, hour and day, in
     units (`page:*`: 120 pages a minute, 1,500 an hour, 5,000 a day): a full page load costs
     `PAGE_UNITS` (4); the site's own client refreshes (map moves, filters, link taps, server
@@ -377,14 +385,21 @@ contact, agent, listing report, valuation, sign-up, saved searches):
 - A honeypot field (`website`) and a timer: `<Honeypot />` and `useFormTimer()`
   (`src/components/ui/spam-guard.tsx`) add them. When the form mounts, the page fetches
   `GET /api/form-token`: the server's time, signed with `BETTER_AUTH_SECRET`
-  (`src/lib/form-token.ts`, good for a week). The form sends it back (`formToken`; sign-up in
-  the `x-form-token` header) and the server measures the time on its own clock, so a client
-  can't claim one. Too fast (`MIN_FILL_MS`: 3 s for messages, 2 s for sign-up and saved
-  searches, the latter timed from when the search page opened) or no valid token (posted
-  straight to the server, forged, edited or expired) is suspect.
+  (`src/lib/form-token.ts`, good for a day; a page that comes back into view with a token
+  over 12 hours old fetches a fresh one, since phones keep tabs for days). The form sends
+  it back (`formToken`; sign-up in the `x-form-token` header) and the server measures the
+  time on its own clock, so a client can't claim one. Too fast (`MIN_FILL_MS`: 3 s for
+  messages, 2 s for sign-up and saved searches, the latter timed from when the search page
+  opened) or no valid token (posted straight to the server, forged, edited or expired) is
+  suspect. One token carries at most three leads (`FORM_TOKEN_MAX_LEADS`, counted in
+  `rate_limits` by the token's nonce); later leads on it are flagged `reused-timer`, so a
+  script can't fetch one token, wait once and send every lead with it. Tokens aren't tied
+  to the sender's address on purpose: a phone moving from Wi-Fi to mobile data, carrier NAT
+  and iCloud Private Relay all change it mid-form, and a real lead would land in spam.
 - Per-IP and per-email submission limits (per account for saved searches) in the same
-  Postgres limiter; emails are hashed in the counter keys. Over a limit the sender is asked
-  to wait (with the office phone) and nothing is stored.
+  Postgres limiter, an IPv6 sender counted by its /64 (its /48 for the daily windows) like
+  the listing limiter; emails are hashed in the counter keys. Over a limit the sender is
+  asked to wait (with the office phone) and nothing is stored.
 - A content filter for SEO pitches ("Google's index", "search visibility", "SEO"…) with a
   link, or two such phrases, from anyone the office hasn't worked with (`isKnownCustomer`:
   an earlier lead from that email or signed-in account that staff moved to contacted,

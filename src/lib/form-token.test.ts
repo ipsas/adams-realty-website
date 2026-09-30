@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { FORM_TOKEN_MAX_AGE_MS, formTokenElapsed, issueFormToken } from "./form-token";
+import { FORM_TOKEN_REFRESH_MS } from "./spam";
+import {
+  FORM_TOKEN_MAX_AGE_MS,
+  formTokenElapsed,
+  issueFormToken,
+  readFormToken,
+} from "./form-token";
 
 const SECRET = "test-secret-test-secret-test-secret-42";
 const T0 = 1_780_000_000_000;
@@ -27,7 +33,19 @@ describe("the form timer token", () => {
     expect(formTokenElapsed(backdated, SECRET, T0 + 1_000)).toBeNull();
   });
 
-  it("expires after a week, and refuses a token from the future beyond clock drift", () => {
+  it("names each token, so its uses can be counted", () => {
+    const token = issueFormToken(SECRET, T0);
+    const read = readFormToken(token, SECRET, T0 + 5_000)!;
+    expect(read.elapsedMs).toBe(5_000);
+    expect(read.id).toBe(token.split(".")[2]);
+    expect(readFormToken(issueFormToken(SECRET, T0), SECRET, T0)!.id).not.toBe(read.id);
+    expect(readFormToken("v1.1.2.3", SECRET, T0)).toBeNull();
+  });
+
+  it("expires after a day, and refuses a token from the future beyond clock drift", () => {
+    expect(FORM_TOKEN_MAX_AGE_MS).toBe(86_400_000);
+    // The page swaps a token for a fresh one well before it expires (useFormTimer).
+    expect(FORM_TOKEN_REFRESH_MS).toBeLessThanOrEqual(FORM_TOKEN_MAX_AGE_MS / 2);
     const token = issueFormToken(SECRET, T0);
     expect(formTokenElapsed(token, SECRET, T0 + FORM_TOKEN_MAX_AGE_MS)).toBe(FORM_TOKEN_MAX_AGE_MS);
     expect(formTokenElapsed(token, SECRET, T0 + FORM_TOKEN_MAX_AGE_MS + 1)).toBeNull();

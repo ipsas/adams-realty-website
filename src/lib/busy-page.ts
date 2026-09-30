@@ -6,11 +6,14 @@ import { THEME_COLORS, THEME_SCRIPT } from "@/lib/theme-script";
  * them: status 429, served straight from the proxy, so it is a self-contained
  * HTML string (no React, no database, no external files). Branded, in the
  * site's light and dark palettes (the same `ar:theme` choice as the site, via
- * THEME_SCRIPT, else the device setting), with Back, a way to sign in
- * (signed-in buyers are limited per account, not per address) and the office
- * phone. A short pause ("One moment, please") leads with Try again; a long one
- * (an hourly or daily window) says the listings are paused for a while and
- * leads with signing in, since Try again would only bring this page back.
+ * THEME_SCRIPT, else the device setting), with Back, a way to sign in (for a
+ * visitor who isn't: signed-in buyers count against an allowance of their own)
+ * and the office phone. A short pause ("One moment, please") leads with Try
+ * again; a long one (an hourly or daily window) says the listings are paused
+ * for a while and leads with signing in, since Try again would only bring this
+ * page back. It names what was busy: the visitor's internet connection, or a
+ * signed-in buyer's account, or the connection that every buyer signed in on
+ * it shares.
  */
 
 const esc = (s: string) =>
@@ -46,39 +49,49 @@ const DARK = `--canvas:${THEME_COLORS.dark};--surface:#171e1b;--ink:#ecebe4;--in
  * Up to this wait (seconds, the per-minute window) the pause is "a moment" and Try again
  * is the main action. Longer (an hourly or daily window, up to a day), Try again would only
  * show this page again, so the page says the listings are paused for a while and offers
- * signing in (buyers are limited per account, not per address) instead.
+ * signing in (signed-in buyers count against an allowance of their own) instead.
  */
 export const SHORT_WAIT_S = 120;
+
+/**
+ * Whose allowance ran out: an anonymous visitor's connection; a signed-in buyer's own
+ * account; or the allowance every buyer signed in on one connection shares (members:*).
+ */
+export type BusyFor = "visitor" | "account" | "members";
 
 export function busyPageHtml(opts: {
   retryAfter: number;
   pathname: string;
   search: string;
-  /** A signed-in buyer (paused by their account's or address's members' allowance). */
-  signedIn?: boolean;
+  /** Whose allowance ran out (default: an anonymous visitor's). */
+  busyFor?: BusyFor;
 }) {
+  const busyFor = opts.busyFor ?? "visitor";
+  const signedIn = busyFor !== "visitor";
   const again = retryHref(opts.pathname, opts.search);
   const signIn = `/sign-in?next=${encodeURIComponent(again)}`;
   const short = opts.retryAfter <= SHORT_WAIT_S;
   const back = (cls: string) =>
     `<button class="btn ${cls}" type="button" data-testid="busy-back" onclick="if(history.length>1){history.back()}else{location.href='/'}">Back</button>`;
   const title = short ? "One moment, please" : "Listings are paused for now";
-  const from = opts.signedIn ? "your account" : "your internet connection";
+  const from = busyFor === "account" ? "your account" : "your internet connection";
+  const shared =
+    busyFor === "members" ? " Everyone signed in on this connection shares one allowance." : "";
   const why = short
-    ? `We&#39;ve had a lot of page requests from ${from} in a short time, so we&#39;ve paused listings for a moment. This protects the listing data from automated copying.`
-    : `We&#39;ve had a great many page requests from ${from}, so listings are paused there for a while. This protects the listing data from automated copying.`;
+    ? `We&#39;ve had a lot of page requests from ${from} in a short time, so we&#39;ve paused listings for a moment.${shared} This protects the listing data from automated copying.`
+    : `We&#39;ve had a great many page requests from ${from}, so listings are paused there for a while.${shared} This protects the listing data from automated copying.`;
   const actions = short
     ? `<a class="btn primary" href="${esc(again)}" data-testid="busy-retry">Try again</a>
 ${back("secondary")}`
-    : opts.signedIn
+    : signedIn
       ? back("primary")
       : `<a class="btn primary" href="${esc(signIn)}" data-testid="busy-sign-in">Sign in to keep browsing</a>
 ${back("secondary")}`;
-  const signInLine = opts.signedIn
+  const signInLine = signedIn
     ? ""
     : short
-      ? `<p class="small">Have an account? <a href="${esc(signIn)}">Sign in</a> and keep browsing.</p>`
-      : `<p class="small">Signed-in buyers aren&#39;t affected by this pause. No account? <a href="/sign-up?next=${encodeURIComponent(again)}">Create one</a>; it&#39;s free.</p>`;
+      ? `<p class="small">Have an account? <a href="${esc(signIn)}">Sign in</a> and keep browsing: signed-in buyers have an allowance of their own.</p>`
+      : `<p class="small">Signed-in buyers browse on an allowance of their own. No account? <a href="/sign-up?next=${encodeURIComponent(again)}">Create one</a>; it&#39;s free.</p>`;
   return `<!doctype html>
 <html lang="en">
 <head>

@@ -14,7 +14,7 @@ import {
   type Visitor,
 } from "@/lib/anti-scraping";
 import type { ProxyUser } from "@/lib/auth/proxy-session";
-import { busyPageHtml } from "@/lib/busy-page";
+import { busyPageHtml, type BusyFor } from "@/lib/busy-page";
 import type { LimitResult, LimitWindow } from "@/lib/rate-limit-db";
 
 /**
@@ -65,8 +65,21 @@ export async function guardListingData(
   if (!plans.length) return null;
   try {
     const results = await Promise.all(plans.map((p) => deps.hit(p.subject, p.windows, p.units)));
-    const over = results.filter((r) => !r.ok).sort((a, b) => b.retryAfter - a.retryAfter)[0];
-    if (over) return tooMany(request, kind, over.retryAfter, visitor.kind === "member");
+    const over = results
+      .map((r, i) => ({ ...r, plan: plans[i] }))
+      .filter((r) => !r.ok)
+      .sort((a, b) => b.retryAfter - a.retryAfter)[0];
+    if (over) {
+      // A signed-in buyer is paused by their own account's allowance, or by the one
+      // every buyer signed in on their address shares.
+      const busyFor: BusyFor =
+        visitor.kind !== "member"
+          ? "visitor"
+          : over.plan.subject.startsWith("user:")
+            ? "account"
+            : "members";
+      return tooMany(request, kind, over.retryAfter, busyFor);
+    }
   } catch (e) {
     // The limiter must never take the site down.
     console.error("[proxy] rate limit check failed; letting the request through", e);
@@ -99,7 +112,7 @@ async function identify(
   return preview ? { kind: "preview" } : { kind: "anonymous" };
 }
 
-function tooMany(request: NextRequest, kind: RequestKind, retryAfter: number, signedIn: boolean) {
+function tooMany(request: NextRequest, kind: RequestKind, retryAfter: number, busyFor: BusyFor) {
   const headers = {
     "Retry-After": String(retryAfter),
     "Cache-Control": "no-store",
@@ -117,7 +130,7 @@ function tooMany(request: NextRequest, kind: RequestKind, retryAfter: number, si
     retryAfter,
     pathname: request.nextUrl.pathname,
     search: request.nextUrl.search,
-    signedIn,
+    busyFor,
   });
   return new NextResponse(html, {
     status: 429,

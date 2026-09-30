@@ -11,7 +11,8 @@
  *   form; the server measures from it on its own clock, so the visitor can't
  *   claim a time. A form sent faster than a person can read and type, or with
  *   no valid token (posted straight to the server, not from the page), is
- *   suspect.
+ *   suspect; so is a lead on a token that already carried several
+ *   (FORM_TOKEN_MAX_LEADS).
  * - Content: the SEO pitches the office already received through the site
  *   ("your site isn't in Google's index", "improve your search visibility",
  *   with a link). Only from senders who aren't customers.
@@ -22,6 +23,11 @@
 export const HONEYPOT_FIELD = "website";
 /** The form's timer token (./form-token.ts), from GET /api/form-token. */
 export const FORM_TOKEN_FIELD = "formToken";
+/**
+ * A page whose timer token is older than this when it comes back into view fetches a
+ * fresh one (`useFormTimer`), well before the token's day is up (FORM_TOKEN_MAX_AGE_MS).
+ */
+export const FORM_TOKEN_REFRESH_MS = 12 * 3_600_000;
 /** The header sign-up sends the token in, since Better Auth's body is its own. */
 export const FORM_TOKEN_HEADER = "x-form-token";
 
@@ -35,13 +41,14 @@ export const MIN_FILL_MS = {
   saveSearch: 2_000,
 } as const;
 
-export type SpamReason = "honeypot" | "too-fast" | "no-timer" | "seo-pitch";
+export type SpamReason = "honeypot" | "too-fast" | "no-timer" | "reused-timer" | "seo-pitch";
 
 /** How the dashboard explains each reason. */
 export const SPAM_REASON_LABELS: Record<SpamReason, string> = {
   honeypot: "Filled in a hidden field that people never see",
   "too-fast": "Sent seconds after the form opened, faster than a person types",
   "no-timer": "Sent straight to the server, not from the form on the page",
+  "reused-timer": "Sent with a form timer already used for several messages, as scripts do",
   "seo-pitch": "An SEO or search-ranking sales pitch from someone the office hasn't worked with",
 };
 

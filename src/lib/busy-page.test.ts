@@ -43,13 +43,42 @@ describe("the 429 page", () => {
     expect(SHORT_WAIT_S).toBeGreaterThanOrEqual(60);
   });
 
-  it("doesn't tell a signed-in buyer to sign in", () => {
+  it("doesn't tell a signed-in buyer to sign in, and names the allowance that ran out", () => {
     for (const retryAfter of [30, 5_000]) {
-      const html = busyPageHtml({ retryAfter, pathname: "/homes", search: "", signedIn: true });
-      expect(html).not.toContain("/sign-in");
-      expect(html).not.toContain("/sign-up");
-      expect(html).toContain("page requests from your account");
-      expect(html).toContain('data-testid="busy-back"');
+      const account = busyPageHtml({
+        retryAfter,
+        pathname: "/homes",
+        search: "",
+        busyFor: "account",
+      });
+      const members = busyPageHtml({
+        retryAfter,
+        pathname: "/homes",
+        search: "",
+        busyFor: "members",
+      });
+      for (const html of [account, members]) {
+        expect(html).not.toContain("/sign-in");
+        expect(html).not.toContain("/sign-up");
+        expect(html).not.toContain("allowance of their own");
+        expect(html).toContain('data-testid="busy-back"');
+      }
+      // Their own account's allowance...
+      expect(account).toContain("page requests from your account");
+      expect(account).not.toContain("shares one allowance");
+      // ...or the one every buyer signed in on the connection shares: not "your account".
+      expect(members).toContain("page requests from your internet connection");
+      expect(members).toContain("Everyone signed in on this connection shares one allowance.");
+      expect(members).not.toContain("your account");
+    }
+  });
+
+  it("promises a signed-out visitor only what's true: signed-in buyers have their own allowance", () => {
+    for (const retryAfter of [30, 5_000]) {
+      const html = busyPageHtml({ retryAfter, pathname: "/homes", search: "" });
+      expect(html).toContain("page requests from your internet connection");
+      expect(html).toContain("allowance of their own");
+      expect(html).not.toMatch(/aren&#39;t affected|can&#39;t lock|never/);
     }
   });
 

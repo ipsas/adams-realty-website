@@ -4,8 +4,8 @@ import { rateLimits } from "@/db/schema";
 
 /**
  * Fixed-window rate limits kept in Postgres (`rate_limits`), so every
- * serverless instance counts against the same numbers, unlike the in-memory
- * `rateLimit` in ./rate-limit.ts. One statement per request whatever the
+ * serverless instance counts against the same numbers. One statement per
+ * subject whatever the
  * number of windows: an upsert that bumps (or restarts) each window's counter
  * and returns the new counts.
  */
@@ -26,7 +26,7 @@ export type LimitResult = {
 };
 
 /**
- * Counts one request by `subject` (a client IP, an account, a hashed email)
+ * Counts one request by `subject` (a client address or IPv6 block, an account, a hashed email)
  * against every window. `units` is what this request costs (the page limiter
  * charges a full page load more than a client-side refresh); a window is
  * exceeded once its count passes its limit.

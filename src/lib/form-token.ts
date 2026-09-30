@@ -9,12 +9,22 @@ import { env } from "@/lib/env";
  * the client can't claim a number: a script has to fetch a token and then wait as long
  * as a person would (review fix round 1: `formElapsed=99999` used to pass).
  *
- * A token is good for a week (a form left open overnight still works). It isn't single
- * use: the per-address and per-email limits (./form-guard.ts) bound how often it's used.
+ * A token is good for a day (a form left open overnight still works; the page fetches a
+ * fresh one when a tab comes back after hours away, `useFormTimer`). One token carries
+ * at most FORM_TOKEN_MAX_LEADS leads (`countLeadToken` in ./form-guard.ts; a person may
+ * send a question and then a tour request from one page); past that its leads are flagged
+ * "reused-timer". So a script can't fetch one token, wait once and send every lead with it.
+ *
+ * Not bound to the client's address, on purpose: a phone that moves from Wi-Fi to mobile
+ * data, a carrier's NAT and iCloud Private Relay all change the address between opening a
+ * form and sending it, and a real buyer's lead would land in spam unread. The per-address
+ * limits (./form-guard.ts, IPv6 counted per /64) bound what one address sends.
  */
 
 const DAY = 86_400_000;
-export const FORM_TOKEN_MAX_AGE_MS = 7 * DAY;
+export const FORM_TOKEN_MAX_AGE_MS = DAY;
+/** How many leads one token may carry before the rest are flagged "reused-timer". */
+export const FORM_TOKEN_MAX_LEADS = 3;
 /** How far ahead of the server's clock a token may claim to be (instances' clocks differ). */
 const CLOCK_SKEW_MS = 5_000;
 
@@ -37,6 +47,15 @@ export function formTokenElapsed(
   secret: string,
   now = Date.now(),
 ): number | null {
+  return readFormToken(token, secret, now)?.elapsedMs ?? null;
+}
+
+/** A valid token's age and its id (its nonce, to count its uses), else null (see formTokenElapsed). */
+export function readFormToken(
+  token: string | null | undefined,
+  secret: string,
+  now = Date.now(),
+): { elapsedMs: number; id: string } | null {
   const m = /^v1\.(\d{1,15})\.([A-Za-z0-9_-]{1,32})\.([A-Za-z0-9_-]{43})$/.exec(
     token?.trim() ?? "",
   );
@@ -47,7 +66,7 @@ export function formTokenElapsed(
   if (given.length !== expected.length || !timingSafeEqual(given, expected)) return null;
   const elapsed = now - Number(issued);
   if (elapsed < -CLOCK_SKEW_MS || elapsed > FORM_TOKEN_MAX_AGE_MS) return null;
-  return Math.max(0, elapsed);
+  return { elapsedMs: Math.max(0, elapsed), id: nonce };
 }
 
 /** The key tokens are signed with: the auth secret, which every deployment has. */
