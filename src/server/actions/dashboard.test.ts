@@ -164,6 +164,30 @@ describe("saveListing", () => {
     expect(h.state.placesRefreshed).toBe(1);
   });
 
+  // Site review #8: the lot size is typed in acres (the default) or square feet.
+  it.each([
+    [{ lotSize: "2.5", lotSizeUnit: "acres" }, 108_900],
+    [{ lotSize: "166", lotSizeUnit: "acres" }, 7_230_960],
+    [{ lotSize: "9800", lotSizeUnit: "sqft" }, 9_800],
+    [{ lotSize: "3" }, 130_680],
+    [{ lotSize: "", lotSizeUnit: "acres" }, null],
+  ])("stores a lot size of %o as %s square feet", async (fields, sqft) => {
+    queueUpdate();
+    const res = await saveListing({ ok: false }, form(fields));
+    expect(res.ok).toBe(true);
+    expect(h.state.upserts[0].lotSizeSqft).toBe(sqft);
+  });
+
+  it("rejects a lot too large to be real, pointing at the field", async () => {
+    const res = await saveListing(
+      { ok: false },
+      form({ lotSize: "5000000", lotSizeUnit: "acres" }),
+    );
+    expect(res.ok).toBe(false);
+    expect(res.errors?.lotSize).toMatch(/too large/);
+    expect(h.state.upserts).toEqual([]);
+  });
+
   it("keeps the listing's open houses (upsertListing replaces them)", async () => {
     queueUpdate({ opens: [openHouse] });
     const res = await saveListing({ ok: false }, form());

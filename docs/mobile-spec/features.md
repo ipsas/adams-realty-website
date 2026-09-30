@@ -189,7 +189,7 @@ Strip cards are about 85vw wide and are div role='group' elements, not article e
 
 - photo;
 - price and the 'est. $X/mo' line (sale listings only);
-- beds, baths and sqft;
+- beds, baths and sqft, or for bare land 'Land · X acres · $Y/acre' (`landSummary`; site review #8);
 - address (data-testid 'preview-address');
 - 'Listing by <office>' (IDX);
 - a 44px plain SaveButton.
@@ -225,6 +225,7 @@ Controls and gestures:
 Moving the map:
 
 - On phones, search-as-you-move defaults to off (ar:searchAsMove in local store). A 44px 'Search this area' pill appears under the top bar, positioned from --top-chrome-h, after any user pan or zoom, and applies the new bounds.
+- A map search drops the town (site review #5): the results are every home in view, headed 'Homes in this map area', with 'Back to <town>' from the `from` param (already built; docs/mobile-contracts.md).
 - Desktop keeps the 'Search as I move the map' checkbox, on by default.
 - A map error event shows the overlay 'Map unavailable offline'.
 - P1: a GeolocateControl on coarse pointers runs an explicit bounds search on moveend.
@@ -251,7 +252,7 @@ Contracts kept:
 Value: You see what you would pay each month next to every price, the portals' weakest point.
 Sale cards and strip cards show a muted line 'est. $3,412/mo all-in' under the price. The value comes from quickMonthlyCost({price, annualTax, hoaFee, hoaFrequency}) with site.finance defaults, and the foundation adds the needed columns to cardColumns and to MapPin.
 
-Rentals, sold homes and land without a price show nothing. The listing page shows the same figure as a pill linking to #costs, where the assumptions are spelled out.
+Rentals, sold homes, land without a price and bare land show nothing (bare land's estimate has no home insurance and a land loan's terms vary, which the listing page explains; site review #8). The listing page shows the same figure as a pill linking to #costs, where the assumptions are spelled out.
 
 The display-mode toggle, '$3.4K/mo' pins, the maxMonthly filter and the monthly sort are wave 2 (see deferred).
 

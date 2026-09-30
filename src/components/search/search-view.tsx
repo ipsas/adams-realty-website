@@ -1,7 +1,8 @@
 "use client";
 
-import { List, Map as MapIcon, SearchX } from "lucide-react";
+import { ArrowLeft, BellPlus, Check, List, Map as MapIcon, SearchX } from "lucide-react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   useEffect,
@@ -21,9 +22,13 @@ import type { ListingCardData } from "@/lib/listings/card";
 import { MlsAttribution } from "@/components/content/mls-attribution";
 import { site } from "@/config/site";
 import {
+  type Bounds,
+  clearedFilters,
   countActiveFilters,
   describeCriteria,
+  listingNoun,
   parseViewParam,
+  searchHref,
   serializeCriteria,
   SORTS,
   sortLabel,
@@ -33,11 +38,20 @@ import {
 import { markReturn } from "@/lib/return-nav";
 import { recordSearch, setLastSearchView } from "@/lib/search/recent";
 import { listingSlugOf, placeKey, readPlace, writePlace } from "@/lib/search/restore";
+import type { NearbyTown } from "@/lib/search/place";
 import type { MapPin } from "@/lib/search/service";
 import { FilterBar } from "./filter-bar";
 import { Pagination } from "./pagination";
-import { SaveSearchButton } from "./save-search-button";
-import { currentView, useSearchNav } from "./use-search-nav";
+import { SaveSearchButton, useSaveSearch, type SaveSearchState } from "./save-search-button";
+import { buildSearchHref, currentView, useSearchNav } from "./use-search-nav";
+
+/** What a search with no results offers (computed on the server; site review #5). */
+export type EmptyHelp = {
+  /** Where the searched place is, so the map goes there; null when it's unknown. */
+  placeBounds: Bounds | null;
+  /** The nearest towns with homes for this search. */
+  nearby: NearbyTown[];
+};
 
 // MapLibre touches `window` at import time, so the map only renders on the client.
 const SearchMap = dynamic(() => import("./search-map"), {
@@ -47,22 +61,34 @@ const SearchMap = dynamic(() => import("./search-map"), {
 
 export function SearchView({
   criteria,
+  heading,
+  place,
+  from,
   items,
   total,
   pageCount,
   pins,
   maxPins,
   signedIn,
+  emptyHelp,
 }: {
   criteria: SearchCriteria;
+  /** "Homes for sale in Hartwell", "Homes near Lake Hartwell", "Homes in this map area"… */
+  heading: string;
+  /** The place searched as the heading names it ("Hartwell", "Lake Hartwell"), if any. */
+  place?: string;
+  /** The town a moved map came from ("Back to Royston"). */
+  from?: string;
   items: ListingCardData[];
   total: number;
   pageCount: number;
   pins: MapPin[];
   maxPins: number;
   signedIn: boolean;
+  emptyHelp?: EmptyHelp;
 }) {
   const { update, setView, isPending } = useSearchNav(criteria);
+  const save = useSaveSearch(signedIn);
   const router = useRouter();
   const [highlighted, setHighlighted] = useState<string | null>(null);
   const [searchAsMove, setSearchAsMove] = useState(true);
@@ -76,7 +102,7 @@ export function SearchView({
   const query = searchParams.toString();
   const here = query ? `/homes?${query}` : "/homes";
 
-  const place = usePlaceRestoration({ here, listRef, mobileView, setView });
+  const restore = usePlaceRestoration({ here, listRef, mobileView, setView });
 
   // A tap on a card (or its heart) or on the map's preview remembers the card and the list's
   // place, and marks the hand-off so the listing's "Back to results" acts like Back.
@@ -88,7 +114,7 @@ export function SearchView({
       listingSlugOf(anchor?.href) ??
       listingSlugOf(card?.querySelector<HTMLAnchorElement>("a[href^='/homes/']")?.href);
     if (!slug) return;
-    place.remember(slug);
+    restore.remember(slug);
     const plain = e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
     if (!anchor || !plain || listingSlugOf(anchor.href) !== slug) return;
     markReturn("search", here, `/homes/${slug}`);
@@ -116,12 +142,9 @@ export function SearchView({
     sort: undefined,
   });
 
-  const noun =
-    criteria.mode === "rent"
-      ? "rentals"
-      : criteria.mode === "sold"
-        ? "sold homes"
-        : "homes for sale";
+  // Moving the map drops the town and searches every home in view (site review #5); the
+  // town is kept as `from`, for "Back to Royston".
+  const backToTown = () => update({ q: from, bounds: undefined });
 
   return (
     <div className="flex h-[calc(100dvh-4rem)] flex-col" onClickCapture={onClickCapture}>
@@ -133,7 +156,7 @@ export function SearchView({
         <div
           ref={listRef}
           data-results-list
-          onScroll={place.onScroll}
+          onScroll={restore.onScroll}
           className={cn(
             "w-full overflow-y-auto max-lg:pb-24 lg:w-[56%] xl:w-[52%] 2xl:w-[48%]",
             mobileView === "map" && "max-lg:hidden",
@@ -142,10 +165,22 @@ export function SearchView({
           <div className="px-4 pt-5 sm:px-6">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
-                <h1 className="font-display-tight text-2xl font-medium text-ink">
-                  {noun.charAt(0).toUpperCase() + noun.slice(1)} in{" "}
-                  {criteria.q ?? (criteria.bounds ? "this area" : site.coverage.name)}
-                </h1>
+                <h1 className="font-display-tight text-2xl font-medium text-ink">{heading}</h1>
+                {from && (
+                  <Link
+                    href={buildSearchHref(criteria, { q: from, bounds: undefined })}
+                    replace
+                    scroll={false}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      backToTown();
+                    }}
+                    className="mt-1 inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-brand-700 hover:underline pointer-fine:min-h-0"
+                    data-testid="back-to-town"
+                  >
+                    <ArrowLeft className="size-4" /> Back to {from}
+                  </Link>
+                )}
                 <p className="mt-0.5 text-sm text-muted" aria-live="polite">
                   {formatNumber(total)} {total === 1 ? "result" : "results"}
                   {countActiveFilters(criteria) > 0 && ` · ${describeCriteria(criteria)}`}
@@ -167,7 +202,7 @@ export function SearchView({
                     ))}
                   </Select>
                 </label>
-                <SaveSearchButton criteria={criteria} signedIn={signedIn} />
+                <SaveSearchButton criteria={criteria} save={save} />
               </div>
             </div>
           </div>
@@ -193,20 +228,14 @@ export function SearchView({
               </div>
             ) : (
               <EmptyState
-                hasBounds={!!criteria.bounds}
+                criteria={criteria}
+                place={place}
+                from={from}
+                help={emptyHelp}
+                save={save}
+                onBackToTown={backToTown}
                 onZoomOut={() => update({ bounds: undefined })}
-                onReset={() =>
-                  update({
-                    mode: criteria.mode,
-                    q: criteria.q,
-                    bounds: undefined,
-                    minPrice: undefined,
-                    maxPrice: undefined,
-                    beds: undefined,
-                    baths: undefined,
-                    types: undefined,
-                  })
-                }
+                onClearFilters={() => update(clearedFilters())}
               />
             )}
             <Pagination
@@ -237,11 +266,15 @@ export function SearchView({
           <SearchMap
             pins={pins}
             bounds={criteria.bounds}
+            placeBounds={emptyHelp?.placeBounds ?? undefined}
             fitKey={fitKey}
             highlightedId={highlighted}
             onHover={setHighlighted}
             onUserMove={(bounds) => {
-              if (searchAsMove) update({ bounds });
+              if (!searchAsMove) return;
+              // The town gives way to the map: every home in view, with a way back.
+              if (criteria.q) update({ bounds, q: undefined }, { from: place ?? criteria.q });
+              else update({ bounds });
             }}
           />
           <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
@@ -255,7 +288,7 @@ export function SearchView({
                 <button
                   type="button"
                   className="font-medium text-brand-700 hover:underline"
-                  onClick={() => update({ bounds: undefined })}
+                  onClick={() => (from ? backToTown() : update({ bounds: undefined }))}
                 >
                   Reset
                 </button>
@@ -398,33 +431,113 @@ function usePlaceRestoration({
   };
 }
 
+/** "1 home", "3 rentals", "2 sold homes". */
+function modeNoun(mode: SearchCriteria["mode"], n: number): string {
+  const one = mode === "rent" ? "rental" : mode === "sold" ? "sold home" : "home";
+  return n === 1 ? one : `${one}s`;
+}
+
+/**
+ * No results (site review #5): never a dead end. It offers an email alert for this search,
+ * the whole state, the nearest towns that have homes and, only when filters are on, a way
+ * to clear them. The map meanwhile shows the place searched (`EmptyHelp.placeBounds`).
+ */
 function EmptyState({
-  hasBounds,
+  criteria,
+  place,
+  from,
+  help,
+  save,
+  onBackToTown,
   onZoomOut,
-  onReset,
+  onClearFilters,
 }: {
-  hasBounds: boolean;
+  criteria: SearchCriteria;
+  /** The place searched, as the heading names it. */
+  place?: string;
+  from?: string;
+  help?: EmptyHelp;
+  save: SaveSearchState;
+  onBackToTown: () => void;
   onZoomOut: () => void;
-  onReset: () => void;
+  onClearFilters: () => void;
 }) {
+  const filters = countActiveFilters(criteria) > 0;
+  const hasBounds = !!criteria.bounds;
+  const everywhere = listingNoun({ mode: criteria.mode, types: criteria.types }, { bare: true });
+  const nearby = help?.nearby ?? [];
   return (
-    <div className="flex flex-col items-center rounded-3xl border border-dashed border-line-strong px-6 py-16 text-center">
+    <div
+      className="flex flex-col items-center rounded-3xl border border-dashed border-line-strong px-6 py-12 text-center"
+      data-testid="no-results"
+    >
       <SearchX className="size-10 text-faint" strokeWidth={1.5} />
       <h2 className="mt-4 text-lg font-semibold text-ink">No homes match — yet</h2>
       <p className="mt-1 max-w-sm text-sm text-muted">
-        Try widening your filters{hasBounds ? " or searching a bigger area" : ""}. Or save this
-        search and we&apos;ll email you the moment something fits.
+        {filters
+          ? `Try fewer filters${hasBounds ? " or a bigger map area" : ""}, or look nearby.`
+          : `Nothing is listed ${place ? `in ${place}` : hasBounds ? "in this map area" : `in ${site.coverage.name}`} right now.`}{" "}
+        We can email you as soon as something lists.
       </p>
-      <div className="mt-6 flex gap-2">
-        {hasBounds && (
-          <Button variant="secondary" onClick={onZoomOut}>
-            Search the whole area
+      <div className="mt-6 flex flex-wrap justify-center gap-2">
+        <Button
+          variant={save.saved ? "subtle" : "primary"}
+          onClick={save.launch}
+          disabled={save.saved}
+        >
+          {save.saved ? <Check /> : <BellPlus />}
+          {save.saved ? "We’ll email you" : "Email me when homes list here"}
+        </Button>
+        <Link
+          href={searchHref({ mode: criteria.mode, types: criteria.types })}
+          className="inline-flex h-11 items-center rounded-full border border-line-strong bg-surface px-5 text-sm font-medium text-ink hover:border-faint pointer-fine:h-10"
+        >
+          See all {everywhere.charAt(0).toLowerCase() + everywhere.slice(1)} in {site.coverage.name}
+        </Link>
+        {hasBounds &&
+          (from ? (
+            <Button variant="secondary" onClick={onBackToTown}>
+              Back to {from}
+            </Button>
+          ) : criteria.q ? (
+            <Button variant="secondary" onClick={onZoomOut}>
+              Search the whole area
+            </Button>
+          ) : null)}
+        {filters && (
+          <Button variant="ghost" onClick={onClearFilters}>
+            Clear filters
           </Button>
         )}
-        <Button variant="ghost" onClick={onReset}>
-          Clear filters
-        </Button>
       </div>
+      {nearby.length > 0 && (
+        <nav aria-label="Nearby towns" className="mt-8 w-full max-w-sm text-left">
+          <h3 className="text-sm font-semibold text-ink">Nearby towns with homes</h3>
+          <ul className="mt-2 divide-y divide-line rounded-2xl border border-line bg-surface">
+            {nearby.map((t) => (
+              <li key={t.city}>
+                <Link
+                  href={buildSearchHref(
+                    t.filtered ? criteria : { mode: criteria.mode, sort: "recommended", page: 1 },
+                    { q: t.city, bounds: undefined },
+                  )}
+                  className="flex min-h-11 items-center justify-between gap-3 px-4 py-2 text-sm text-ink hover:bg-sunken"
+                >
+                  <span className="font-medium">{t.city}</span>
+                  <span className="text-muted tabular">
+                    {t.count}{" "}
+                    {t.filtered && filters
+                      ? t.count === 1
+                        ? "match"
+                        : "matches"
+                      : modeNoun(criteria.mode, t.count)}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      )}
     </div>
   );
 }

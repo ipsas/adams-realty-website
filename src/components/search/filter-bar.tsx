@@ -131,6 +131,10 @@ export function FilterBar({
                   );
                 })}
               </div>
+              {/* Site review #5: commercial isn't a home, so it's in only when picked. */}
+              <p className="mt-3 max-w-64 text-xs text-muted">
+                With no type picked, you see every type except commercial.
+              </p>
             </fieldset>
           </Popover>
 

@@ -212,6 +212,15 @@ const firstEditorPath = (page: Page) =>
     /^\/dashboard\/listings\/[0-9a-f-]{36}$/,
   );
 
+/** The biggest land tract for sale: acres, price per acre and the land-loan estimate. */
+const landListingPath = (page: Page) =>
+  firstLink(
+    page,
+    "/homes?types=land&sort=lot_desc",
+    "article a[href^='/homes/']",
+    /^\/homes\/[a-z0-9-]+$/,
+  );
+
 const PAGES = {
   home: { name: "/", path: "/", ready: "main h1" },
   homes: { name: "/homes", path: "/homes", ready: "[aria-live=polite]" },
@@ -250,6 +259,30 @@ const PAGES = {
     role: "staff",
   },
   lead: { name: "a lead", path: firstLeadPath, ready: "main h1", role: "staff" },
+  // Site review #5 and #8: the no-results helpers, a moved map's way back, land's own page,
+  // an area's price per acre, and the lot-size unit switch.
+  noResults: {
+    name: "a search with no results",
+    path: "/homes?q=Carnesville&mode=rent",
+    ready: "[data-testid=no-results]",
+  },
+  mapArea: {
+    name: "a map-area search with its way back",
+    path: "/homes?bounds=-83.2,34.2,-83.0,34.35&from=Royston",
+    ready: "[data-testid=back-to-town]",
+  },
+  landListing: { name: "a land listing", path: landListingPath, ready: "[data-testid=big-facts]" },
+  landGuide: {
+    name: "an area guide with land",
+    path: "/areas/carnesville",
+    ready: "[data-testid=market-tile]",
+  },
+  newListing: {
+    name: "the new-listing form",
+    path: "/dashboard/listings/new",
+    ready: "#lotSize",
+    role: "staff",
+  },
   listingEditor: {
     name: "a listing's editor",
     path: firstEditorPath,

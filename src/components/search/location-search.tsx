@@ -1,12 +1,18 @@
 "use client";
 
-import { Building2, Hash, Home, Loader2, MapPin, Search } from "lucide-react";
+import { Building2, Hash, Home, Loader2, MapPin, Search, Waves } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import type { Suggestion } from "@/lib/listings/queries";
 
-const ICONS = { city: Building2, neighborhood: MapPin, zip: Hash, address: Home } as const;
+const ICONS = {
+  city: Building2,
+  neighborhood: MapPin,
+  zip: Hash,
+  address: Home,
+  lake: Waves,
+} as const;
 
 /**
  * Location box with typeahead (areas + addresses). Picking an area runs a
@@ -87,7 +93,8 @@ export function LocationSearch({
       router.push(`/homes/${s.value}`);
       return;
     }
-    setValue(s.label);
+    // A lake's label says "(lake area)"; the box keeps just its name, like the URL.
+    setValue(s.kind === "lake" ? s.value : s.label);
     onSearch(s.value);
   };
 

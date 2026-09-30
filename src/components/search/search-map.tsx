@@ -23,6 +23,7 @@ import {
 import { useMapTheme } from "@/components/theme/use-theme";
 import { readResolvedTheme } from "@/lib/theme";
 import { formatBaths, formatNumber, formatPrice, formatPriceShort } from "@/lib/format";
+import { landSummary } from "@/lib/listings/land";
 import type { Bounds } from "@/lib/search/params";
 import type { MapPin } from "@/lib/search/service";
 
@@ -51,6 +52,8 @@ type Props = {
   pins: MapPin[];
   /** Current bounds filter, if the search is map-driven. */
   bounds?: Bounds;
+  /** Where the searched place is, shown when it has no pins (a search with no results). */
+  placeBounds?: Bounds;
   /** Changes when the non-map criteria change; triggers a re-fit to the results. */
   fitKey: string;
   highlightedId: string | null;
@@ -264,18 +267,14 @@ function hasSize(el: HTMLElement): boolean {
 function initialView(
   bounds: Bounds | undefined,
   pins: MapPin[],
+  placeBounds?: Bounds,
 ): { bounds: maplibregl.LngLatBoundsLike; options: maplibregl.FitBoundsOptions } {
-  if (bounds) {
-    return {
-      bounds: [
-        [bounds.west, bounds.south],
-        [bounds.east, bounds.north],
-      ],
-      options: { padding: 56, maxZoom: 14 },
-    };
-  }
+  if (bounds) return { bounds: boundsLike(bounds), options: { padding: 56, maxZoom: 14 } };
   const fromPins = pinsBounds(pins);
   if (fromPins) return { bounds: fromPins, options: { padding: 56, maxZoom: 14 } };
+  // Nothing to pin: the place searched, when it's known (a town whose homes all sold).
+  if (placeBounds)
+    return { bounds: boundsLike(placeBounds), options: { padding: 56, maxZoom: 12 } };
   const c = site.coverage.bounds;
   return {
     bounds: [
@@ -284,6 +283,13 @@ function initialView(
     ],
     options: { padding: 24 },
   };
+}
+
+function boundsLike(b: Bounds): maplibregl.LngLatBoundsLike {
+  return [
+    [b.west, b.south],
+    [b.east, b.north],
+  ];
 }
 
 function pinsBounds(pins: MapPin[]): maplibregl.LngLatBoundsLike | null {
@@ -299,6 +305,19 @@ function pinsBounds(pins: MapPin[]): maplibregl.LngLatBoundsLike | null {
     [w, s],
     [e, n],
   ];
+}
+
+/** "3 bd · 2 ba · 1,850 sqft", or for land "Land · 12.5 acres · $8,400/acre". */
+function pinFacts(p: MapPin): string {
+  return (
+    landSummary({
+      propertyType: p.propertyType,
+      livingAreaSqft: p.sqft,
+      bedrooms: p.beds,
+      lotSizeSqft: p.lotSqft,
+      price: p.rent ? null : p.price,
+    }) ?? `${p.beds ?? "—"} bd · ${formatBaths(p.baths)} ba · ${formatNumber(p.sqft)} sqft`
+  );
 }
 
 /** Popup contents built with DOM APIs (never innerHTML) — listing text comes from third-party feeds. */
@@ -321,7 +340,7 @@ function popupNode(p: MapPin): HTMLElement {
   price.textContent = formatPrice(p.price);
   const facts = document.createElement("p");
   facts.className = "text-xs text-ink-soft mt-0.5";
-  facts.textContent = `${p.beds ?? "—"} bd · ${formatBaths(p.baths)} ba · ${formatNumber(p.sqft)} sqft`;
+  facts.textContent = pinFacts(p);
   const addr = document.createElement("p");
   addr.className = "text-xs text-muted mt-0.5 truncate";
   addr.textContent = p.address;
@@ -341,6 +360,7 @@ function popupNode(p: MapPin): HTMLElement {
 export default function SearchMap({
   pins,
   bounds,
+  placeBounds,
   fitKey,
   highlightedId,
   onHover,
@@ -349,7 +369,6 @@ export default function SearchMap({
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const loaded = useRef(false);
-  const programmatic = useRef(false);
   const lastFitKey = useRef<string | null>(null);
   const popup = useRef<maplibregl.Popup | null>(null);
   // The style URL the map was last asked to show.
@@ -360,9 +379,27 @@ export default function SearchMap({
   const theme = useMapTheme();
 
   // Keep the latest callbacks/data without re-creating the map.
-  const latest = useRef({ onHover, onUserMove, pinsById, data, highlightedId, bounds, pins });
+  const latest = useRef({
+    onHover,
+    onUserMove,
+    pinsById,
+    data,
+    highlightedId,
+    bounds,
+    pins,
+    placeBounds,
+  });
   useEffect(() => {
-    latest.current = { onHover, onUserMove, pinsById, data, highlightedId, bounds, pins };
+    latest.current = {
+      onHover,
+      onUserMove,
+      pinsById,
+      data,
+      highlightedId,
+      bounds,
+      pins,
+      placeBounds,
+    };
   });
   // A fit asked for while the map had no size (hidden behind the list on phones), to run
   // as soon as it has one.
@@ -371,7 +408,7 @@ export default function SearchMap({
   // Create the map once.
   useEffect(() => {
     if (!container.current) return;
-    const initial = initialView(bounds, pins);
+    const initial = initialView(bounds, pins, placeBounds);
 
     ensureMapLibre();
     // Read synchronously (not from the hook's first value), so a dark page never starts on
@@ -402,7 +439,11 @@ export default function SearchMap({
       const el = container.current;
       if (!pendingFit.current || !el || !hasSize(el)) return;
       pendingFit.current = false;
-      const view = initialView(latest.current.bounds, latest.current.pins);
+      const view = initialView(
+        latest.current.bounds,
+        latest.current.pins,
+        latest.current.placeBounds,
+      );
       // Programmatic: `movestart` sees no originalEvent, so this won't trigger a bounds search.
       map.fitBounds(view.bounds, { ...view.options, duration: 0 });
     });
@@ -461,15 +502,26 @@ export default function SearchMap({
       map.easeTo({ center: (f.geometry as GeoJSON.Point).coordinates as [number, number], zoom });
     });
 
+    // Moves nest: a resize's movestart/moveend wraps the fit it triggers (pendingFit), so
+    // each movestart pushes whether it was a gesture and where the view started, and its
+    // moveend pops the same entry. A tap on a pin moves nothing, and must not turn a town
+    // search into a map-area one (site review #5).
+    const moves: { user: boolean; center: maplibregl.LngLat; zoom: number }[] = [];
     map.on("movestart", (e) => {
       // Only user gestures carry an originalEvent.
-      programmatic.current = !("originalEvent" in e && e.originalEvent);
+      moves.push({
+        user: "originalEvent" in e && !!e.originalEvent,
+        center: map.getCenter(),
+        zoom: map.getZoom(),
+      });
     });
     map.on("moveend", () => {
-      if (programmatic.current) {
-        programmatic.current = false;
-        return;
-      }
+      const start = moves.pop();
+      if (!start?.user) return;
+      const from = map.project(start.center);
+      const to = map.project(map.getCenter());
+      const moved = Math.hypot(from.x - to.x, from.y - to.y) >= 4;
+      if (!moved && Math.abs(map.getZoom() - start.zoom) < 0.01) return;
       const b = map.getBounds();
       latest.current.onUserMove({
         west: b.getWest(),
@@ -508,16 +560,20 @@ export default function SearchMap({
     const map = mapRef.current;
     if (!map || !loaded.current) return;
     (map.getSource(SOURCE_ID) as GeoJSONSource | undefined)?.setData(data);
-    if (!bounds && lastFitKey.current !== fitKey) {
+    // A map-area search stays where the buyer put it; leaving it ("Back to Royston",
+    // Reset) fits the results again, even when the rest of the search is unchanged.
+    if (bounds) lastFitKey.current = null;
+    else if (lastFitKey.current !== fitKey) {
       lastFitKey.current = fitKey;
-      const b = pinsBounds(pins);
+      // No results: show the place searched, if it's known (site review #5).
+      const b = pinsBounds(pins) ?? (placeBounds ? boundsLike(placeBounds) : null);
       const el = container.current;
       // Hidden (phones, list view): fit when the map is next shown.
       if (b && el && !hasSize(el)) pendingFit.current = true;
       // Programmatic: `movestart` sees no originalEvent, so this won't trigger a bounds search.
       else if (b) map.fitBounds(b, { padding: 56, maxZoom: 14, duration: 600 });
     }
-  }, [data, pins, bounds, fitKey]);
+  }, [data, pins, bounds, placeBounds, fitKey]);
 
   useEffect(() => {
     const map = mapRef.current;

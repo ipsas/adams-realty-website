@@ -57,6 +57,14 @@ import {
   PROPERTY_TYPE_LABELS,
   statusLabel,
 } from "@/lib/format";
+import {
+  formatAcres,
+  formatPricePerAcre,
+  isBareLand,
+  isLandType,
+  LAND_LOAN_NOTE,
+  landFacts,
+} from "@/lib/listings/land";
 import { getListingBySlug, getSimilarListings, type ListingDetail } from "@/lib/listings/queries";
 import { estimateMonthlyCost, financeFor, monthlyHoaAmount } from "@/lib/mortgage";
 import { searchHref } from "@/lib/search/params";
@@ -66,13 +74,17 @@ export async function generateMetadata(props: PageProps<"/homes/[slug]">): Promi
   const data = await getListingBySlug(slug);
   if (!data) return { title: "Home not found" };
   const l = data.listing;
-  const facts = [
-    l.bedrooms !== null && `${l.bedrooms} bd`,
-    l.bathrooms !== null && `${formatBaths(l.bathrooms)} ba`,
-    l.livingAreaSqft && `${formatNumber(l.livingAreaSqft)} sqft`,
-  ]
-    .filter(Boolean)
-    .join(", ");
+  const facts = isBareLand(l)
+    ? l.lotSizeSqft
+      ? landFacts(l).replace(" · ", ", ")
+      : ""
+    : [
+        l.bedrooms !== null && `${l.bedrooms} bd`,
+        l.bathrooms !== null && `${formatBaths(l.bathrooms)} ba`,
+        l.livingAreaSqft && `${formatNumber(l.livingAreaSqft)} sqft`,
+      ]
+        .filter(Boolean)
+        .join(", ");
   const title = `${formatFullAddress(l)} | ${facts ? `${facts} | ` : ""}${formatPrice(l.listPrice)}`;
   const description =
     l.description?.slice(0, 180) ??
@@ -112,6 +124,15 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
       ? l.originalListPrice - l.listPrice
       : 0;
   const monthlyHoa = monthlyHoaAmount(l.hoaFee, l.hoaFrequency);
+  // Land with no house (site review #8): no home to insure, a land loan instead of a home
+  // mortgage, and none of a house's facts.
+  const bare = isBareLand(l);
+  // "About this home" for homes; land, commercial and other property is a property.
+  const home = !bare && l.propertyType !== "commercial" && l.propertyType !== "other";
+  const perAcre =
+    !rent && isLandType(l.propertyType)
+      ? formatPricePerAcre(sold && l.closePrice ? l.closePrice : l.listPrice, l.lotSizeSqft)
+      : null;
   // Insurance and the tax fallback follow the county (coastal and metro rates differ).
   const finance = financeFor(l.county);
   const estimate = estimateMonthlyCost({
@@ -120,8 +141,9 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
     interestRatePct: finance.interestRate,
     loanTermYears: finance.loanTermYears,
     annualTax: l.taxAnnualAmount || (l.listPrice * finance.propertyTaxRatePct) / 100,
-    annualInsurance: (l.listPrice * finance.insuranceRatePct) / 100,
+    annualInsurance: bare ? 0 : (l.listPrice * finance.insuranceRatePct) / 100,
     monthlyHoa,
+    noMortgageInsurance: bare,
   });
   // Tours only where our agents work (or on our own listings); elsewhere, a question to the office.
   const tours = offersTours(l);
@@ -242,11 +264,12 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                   )}
                 </div>
                 {!rent && !sold && (
-                  <a href="#costs" className="group text-right">
+                  <a href="#costs" className="group text-right" data-testid="estimate-pill">
                     <p className="text-sm text-muted">Est. monthly cost</p>
                     <p className="text-xl font-semibold text-ink tabular group-hover:text-brand-700">
                       {formatPrice(Math.round(estimate.total))}/mo
                     </p>
+                    {bare && <p className="max-w-56 text-xs text-muted">{LAND_LOAN_NOTE}</p>}
                   </a>
                 )}
               </div>
@@ -259,8 +282,20 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                 </p>
               )}
 
-              <dl className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-4">
-                {l.propertyType !== "land" && (
+              <dl
+                className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-4"
+                data-testid="big-facts"
+              >
+                {bare ? (
+                  <>
+                    <BigFact
+                      icon={<LandPlot />}
+                      label="Acreage"
+                      value={formatAcres(l.lotSizeSqft)}
+                    />
+                    {perAcre && <BigFact icon={<Tag />} label="Price per acre" value={perAcre} />}
+                  </>
+                ) : (
                   <>
                     <BigFact icon={<BedDouble />} label="Beds" value={l.bedrooms ?? "—"} />
                     <BigFact icon={<Bath />} label="Baths" value={formatBaths(l.bathrooms)} />
@@ -269,13 +304,13 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                       label="Sq ft"
                       value={formatNumber(l.livingAreaSqft)}
                     />
+                    <BigFact
+                      icon={<LandPlot />}
+                      label="Lot"
+                      value={formatLot(l.lotSizeSqft).replace(" lot", "")}
+                    />
                   </>
                 )}
-                <BigFact
-                  icon={<LandPlot />}
-                  label="Lot"
-                  value={formatLot(l.lotSizeSqft).replace(" lot", "")}
-                />
               </dl>
 
               {openHouses.length > 0 && (
@@ -295,7 +330,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                 </section>
               )}
 
-              <Section title="About this home">
+              <Section title={home ? "About this home" : "About this property"}>
                 {l.headline && <p className="mb-3 text-lg font-medium text-ink">{l.headline}</p>}
                 {l.description ? (
                   <Expandable collapsedHeight="9rem">
@@ -312,8 +347,15 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                     label="Type"
                     value={l.propertySubType ?? PROPERTY_TYPE_LABELS[l.propertyType]}
                   />
-                  <Fact icon={<CalendarDays />} label="Year built" value={l.yearBuilt ?? "—"} />
-                  {!rent && l.livingAreaSqft ? (
+                  {/* A house's facts; bare land has none of them (site review #8). */}
+                  {!bare && (
+                    <Fact icon={<CalendarDays />} label="Year built" value={l.yearBuilt ?? "—"} />
+                  )}
+                  {isLandType(l.propertyType) && l.lotSizeSqft ? (
+                    <Fact icon={<LandPlot />} label="Acreage" value={formatAcres(l.lotSizeSqft)} />
+                  ) : null}
+                  {perAcre && <Fact icon={<Tag />} label="Price per acre" value={perAcre} />}
+                  {!rent && !bare && l.livingAreaSqft ? (
                     <Fact
                       icon={<Tag />}
                       label="Price per sq ft"
@@ -329,13 +371,17 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                         : "None"
                     }
                   />
-                  <Fact
-                    icon={<Car />}
-                    label="Garage"
-                    value={
-                      l.garageSpaces ? `${l.garageSpaces} car${l.garageSpaces > 1 ? "s" : ""}` : "—"
-                    }
-                  />
+                  {!bare && (
+                    <Fact
+                      icon={<Car />}
+                      label="Garage"
+                      value={
+                        l.garageSpaces
+                          ? `${l.garageSpaces} car${l.garageSpaces > 1 ? "s" : ""}`
+                          : "—"
+                      }
+                    />
+                  )}
                   {l.taxAnnualAmount ? (
                     <Fact
                       icon={<DollarSign />}
@@ -358,6 +404,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                     monthlyHoa={monthlyHoa}
                     insuranceRatePct={finance.insuranceRatePct}
                     taxRatePct={finance.propertyTaxRatePct}
+                    land={bare}
                   />
                 </Section>
               )}
@@ -549,8 +596,8 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                       See it with a local expert
                     </p>
                     <p className="mt-1 text-sm text-muted">
-                      An {site.name} agent can tour this home with you — often same day — and tell
-                      you what the listing doesn&apos;t.
+                      An {site.name} agent can {home ? "tour this home" : "show you this property"}{" "}
+                      with you — often same day — and tell you what the listing doesn&apos;t.
                     </p>
                   </div>
                 ) : (
@@ -592,7 +639,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
           {similar.length > 0 && (
             <section className="mt-20">
               <h2 className="mb-6 font-display-tight text-3xl font-medium text-ink">
-                Similar homes nearby
+                {home ? "Similar homes nearby" : "Similar properties nearby"}
               </h2>
               <div className="grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
                 {similar.map((s) => (
@@ -614,7 +661,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                   {rent && "/mo"}
                 </p>
                 <p className="text-xs text-muted">
-                  {l.bedrooms ?? "—"} bd · {formatBaths(l.bathrooms)} ba
+                  {bare ? landFacts(l) : `${l.bedrooms ?? "—"} bd · ${formatBaths(l.bathrooms)} ba`}
                 </p>
               </>
             }
@@ -768,8 +815,10 @@ function eventLabel(e: ListingDetail["events"][number]): string {
 
 function JsonLd({ data }: { data: ListingDetail }) {
   const l = data.listing;
-  const residenceType =
-    l.propertyType === "condo"
+  // Bare land is a place, not a residence.
+  const residenceType = isBareLand(l)
+    ? "Place"
+    : l.propertyType === "condo"
       ? "Apartment"
       : l.propertyType === "single_family"
         ? "SingleFamilyResidence"

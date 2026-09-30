@@ -94,13 +94,14 @@ test.describe("towns come from the listings", () => {
   });
 
   test("the town chips are the busiest towns, most homes for sale first", async ({ page }) => {
-    // Every town's homes for sale (what /homes shows by default), counted in the database.
+    // Every town's homes for sale (what /homes shows by default, commercial left out),
+    // counted in the database.
     const busiest = await withDb((db) =>
       db
         .query<{ city: string; n: number }>(
           `select city, count(*)::int as n from listings
             where removed_at is null and not idx_hidden and transaction_type = 'sale'
-              and status in ('active', 'coming_soon')
+              and status in ('active', 'coming_soon') and property_type <> 'commercial'
             group by city order by n desc, city`,
         )
         .then((r) => r.rows),

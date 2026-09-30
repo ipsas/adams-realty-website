@@ -127,10 +127,12 @@ Adding a non-RESO feed means implementing `ListingProvider` (`src/lib/mls/types.
   therefore linkable, works with back/forward, and is stored verbatim as a saved
   search.
 - **SQL** (`buildConditions` / `buildOrderBy`, unit-tested by rendering SQL):
+  - **A town is that town (site review #5).** When `q` names a city some public listing is in (`resolveTown`, `src/lib/search/place.ts`, looked up once per page and per alert run), the location condition is that city alone (`LocationScope.town`): "Hartwell" no longer pulls in every "Lake Hartwell" home in Lavonia and Toccoa. A ZIP stays a ZIP and a lake guide's name or alias stays a lake search (`lakeGuide`). Everything else is matched as below.
   - **Location:** ZIP match, or full-text search on `location_vector` (address, city, ZIP, neighborhood, lake from RESO WaterBodyName, MLS number; never the description), plus prefix and trigram matching for half-typed names and addresses. A guide name or alias ("Lake Hartwell", "Lanier") also matches the way its guide does (`areaCondition`, inside the guide's counties). Each branch, the guide-name one included, has an index per scope (live listings, sold homes), so the matches of other statuses are never read. Nothing indexes the status alone: Postgres would AND a 50k–160k-row status bitmap into every location search (4 ms of a 6 ms page), and `src/lib/search/indexes.test.ts` fails if such an index comes back. `search_vector` (descriptions included) stays for keyword search.
   - **Map area:** `longitude BETWEEN … AND latitude BETWEEN …`, backed by a partial (latitude, longitude) btree. No PostGIS needed.
   - **Order:** one partial btree per sort order and mode (for sale, `pending=1`, sold; rent is small enough for one), each matching `buildOrderBy` exactly, so a page reads straight off an index. `src/lib/search/indexes.test.ts` checks the migrations against `buildOrderBy`/`buildConditions`.
-  - **Filters:** ordinary indexed columns.
+  - **Filters:** ordinary indexed columns. With no property type picked, commercial is left out (`defaultTypesCondition`, `property_type <> 'commercial'`); land and farms stay in (owner decision). The home page's counts, town chips and places index use the same set (`forSaleNow`), and `listings_buy_geo_idx` carries `property_type` so viewport and default counts stay index-only.
+  - **Land sorts (site review #8):** "Acreage (most first)" (`lot_desc`) and "Price per acre" (`price_per_acre_asc`, price over lot size), each with a partial index per mode (`drizzle/0012`).
 - **Map pins** are a separate lightweight query over all matches, capped at 750 (the first 750
   in the search's order). Walking the order index reads 750 ÷ (share of rows matching) rows;
   for a location search Postgres can't judge that share and walked 20k rows for sold homes in
@@ -143,6 +145,9 @@ Adding a non-RESO feed means implementing `ListingProvider` (`src/lib/mls/types.
   large pin sets off the request path.
   MapLibre clusters them and draws collision-aware price pills with dots underneath.
   The map loads its self-hosted web worker from `/vendor/maplibre/<version>/`.
+- **Headings and places (site review #5).** The results heading follows the search (`searchHeading`): "Homes for sale in Hartwell" (the town as the listings spell it), "Homes near Lake Hartwell", "Homes in this map area", and by type "Land for sale in Georgia". Autocomplete folds a lake's rows (one per town) into one "Lake Hartwell (lake area)" suggestion, offers a lake guide whenever a word of its names is typed, and lists towns whose homes have all sold (`shapeAreaSuggestions`, `src/lib/search/suggest.ts`).
+- **Moving the map drops the town.** A buyer's pan or zoom searches every home in view (`bounds`, no `q`), and the town is kept as `from` for "Back to Royston" (UI state like `view`; see `docs/mobile-contracts.md`).
+- **No results is never a dead end.** The page offers "Email me when homes list here" (the save-search dialog), "See all … in Georgia", and 2–3 nearby towns with homes for the search (`nearbyTowns`: filters kept when a town matches them, else the mode alone); "Clear filters" shows only when filters are on. The map goes to the searched place's listings of any status (`placeBounds`), else the state.
 - **Scaling path.** Postgres handles a statewide MLS comfortably: `npm run perf:seed` builds
   `adams_perf` (about 220k synthetic listings: 45k for sale, 5k rentals, 160k closed) and
   `npm run perf:measure` times every search against its targets (default /homes page 1 in
@@ -187,6 +192,26 @@ Listings cover all of Georgia; statements about the firm stay true to Northeast 
   Liberty, Bryan and McIntosh; a higher property-tax fallback for the metro and city-county
   governments). The home page never mentions monthly costs (owner decision); listing pages
   keep their estimate.
+
+## Land and farms
+
+Land is about one listing in five here, and is compared by acreage and price per acre
+(site review #8). `src/lib/listings/land.ts` is the one place that decides it:
+
+- **Bare land** (`isBareLand`) is a land or farm listing with no living area and no
+  bedrooms. Cards, the map preview, recent sales and alert emails describe it as
+  "Land · 12.5 acres · $8,400/acre" (`landSummary`), never "— bd · — ba".
+- **Its page** says "About this property" (commercial and other property too), shows
+  Acreage and Price per acre, and hides Year built, Garage, Price per sq ft, beds and
+  baths; the phone bar reads "Land · X acres".
+- **Its estimate** has no home insurance (there's no house) and no mortgage
+  insurance, and says "Land loan: terms vary; check with your lender" next to the
+  figure and in the calculator (`LAND_LOAN_NOTE`). Farms with a house keep the home
+  estimate. The home page still never mentions monthly costs.
+- **Area guides** add "Median price per acre" (bare land and farms for sale with a lot
+  size) when there is any.
+- **The dashboard's lot size** is typed in acres by default, with a switch to square
+  feet that converts the number; the database keeps square feet (`lotSizeToSqft`).
 
 ## Georgia MLS display rules
 
@@ -495,7 +520,10 @@ must keep.
   limiter; for mobile, device storage and recents, the PWA protocol and purge,
   the dialog's keyboard and swipe math, the toast store, deep links and idle
   scheduling.
-- **End-to-end (Playwright, `e2e/`):** public pages (desktop and mobile),
+- **End-to-end (Playwright, `e2e/`):** searches and land (`search-land-suite.ts`,
+  run by `search-land.spec.ts` on desktop and `mobile/search-land.spec.ts` on phones:
+  towns, lakes, a moved map, no results, commercial, land cards, sorts, pages, area
+  price per acre and the lot-size switch), public pages (desktop and mobile),
   accounts, saving, tour requests, dashboard permissions, admin listing
   creation, the statewide feed (`statewide.spec.ts`), and GA-A's coverage copy, towns,
   places index, out-of-area questions and map view (`georgia.spec.ts`,

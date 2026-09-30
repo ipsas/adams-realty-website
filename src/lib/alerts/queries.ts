@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import type { Executor } from "@/db";
 import { dataSources, listingEvents, listings } from "@/db/schema";
+import { resolveScope } from "@/lib/search/place";
 import { buildWhere } from "@/lib/search/query";
 import type { SearchCriteria } from "@/lib/search/params";
 import type { AlertListing } from "./present";
@@ -18,6 +19,8 @@ export const alertListingColumns = {
   bedrooms: listings.bedrooms,
   bathrooms: listings.bathrooms,
   livingAreaSqft: listings.livingAreaSqft,
+  propertyType: listings.propertyType,
+  lotSizeSqft: listings.lotSizeSqft,
   addressLine1: listings.addressLine1,
   unitNumber: listings.unitNumber,
   city: listings.city,
@@ -70,7 +73,8 @@ export async function findSearchMatches(
   win: { listings: Window; events: Window },
   now: Date,
 ): Promise<SearchMatches> {
-  const matches = buildWhere(criteria, now);
+  // A town search alerts on that town only, as the search page shows it.
+  const matches = buildWhere(criteria, now, await resolveScope(db, criteria));
   const total = sql<number>`count(*) over ()`.mapWith(Number);
   const inEvents = (type: "price_change" | "sold") =>
     and(

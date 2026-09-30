@@ -24,6 +24,11 @@ export type CostAssumptions = {
   annualInsurance: number;
   /** Monthly HOA in dollars. */
   monthlyHoa: number;
+  /**
+   * Bare land (site review #8): private mortgage insurance belongs to home mortgages,
+   * and a land loan carries none. Callers pass 0 insurance too: there's no house.
+   */
+  noMortgageInsurance?: boolean;
 };
 
 export type MonthlyCost = {
@@ -50,7 +55,7 @@ export function estimateMonthlyCost(a: CostAssumptions): MonthlyCost {
   );
   const taxes = a.annualTax / 12;
   const insurance = a.annualInsurance / 12;
-  const pmi = a.downPaymentPct < 20 ? (loanAmount * 0.005) / 12 : 0;
+  const pmi = !a.noMortgageInsurance && a.downPaymentPct < 20 ? (loanAmount * 0.005) / 12 : 0;
   const hoa = a.monthlyHoa;
   return {
     principalAndInterest,

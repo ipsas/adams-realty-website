@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useTransition } from "react";
 import {
+  FROM_PARAM,
+  parseFromParam,
   parseViewParam,
   searchHref,
   setViewParam,
@@ -20,11 +22,31 @@ export function buildSearchHref(
   criteria: SearchCriteria,
   patch: Partial<SearchCriteria>,
   view?: ViewParam | null,
+  from?: string,
 ): string {
-  const href = searchHref({ ...criteria, ...patch, page: patch.page ?? 1 });
-  if (!view) return href;
-  return `${href}${href.includes("?") ? "&" : "?"}view=${view}`;
+  const next = { ...criteria, ...patch, page: patch.page ?? 1 };
+  const params = new URL(searchHref(next), "http://x").searchParams;
+  // "Back to <town>" only means something while the map area is the search.
+  if (from && next.bounds && !next.q) params.set(FROM_PARAM, from);
+  if (view) params.append("view", view);
+  const qs = params.toString();
+  return qs ? `/homes?${qs}` : "/homes";
 }
+
+/** The town the current map-area search came from (`from`), client only. */
+export function currentFrom(): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  return parseFromParam(new URLSearchParams(window.location.search));
+}
+
+export type SearchUpdateOptions = {
+  push?: boolean;
+  /**
+   * The place this change leaves behind for "Back to …" (a map move dropping the
+   * town). Without it, a map-area search keeps the `from` it already has.
+   */
+  from?: string;
+};
 
 /** The sheet position in the current URL's `view` values (client only). */
 export function currentView(): ViewParam | undefined {
@@ -32,7 +54,7 @@ export function currentView(): ViewParam | undefined {
   return parseViewParam(new URLSearchParams(window.location.search).getAll("view"));
 }
 
-export type SearchUpdate = (patch: Partial<SearchCriteria>, opts?: { push?: boolean }) => void;
+export type SearchUpdate = (patch: Partial<SearchCriteria>, opts?: SearchUpdateOptions) => void;
 
 /**
  * Updates the search URL (the source of truth) and lets the server re-render
@@ -49,7 +71,7 @@ export function useSearchNav(criteria: SearchCriteria) {
 
   const update = useCallback<SearchUpdate>(
     (patch, opts = {}) => {
-      const href = buildSearchHref(criteria, patch, currentView());
+      const href = buildSearchHref(criteria, patch, currentView(), opts.from ?? currentFrom());
       startTransition(() => {
         if (opts.push) router.push(href, { scroll: false });
         else router.replace(href, { scroll: false });

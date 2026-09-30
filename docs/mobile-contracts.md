@@ -154,6 +154,24 @@ apart, and both can be present (`?q=Hartwell&view=1&view=list`):
   changes; a new place and a new page of results pass `{ push: true }`.
 - Recent searches ignore the sheet position but not the filter.
 
+## The `from` param (a moved map's way back)
+
+Moving the map drops the place (site review #5): the search becomes every home in
+view (`bounds`, no `q`), headed "Homes in this map area". The place it left is kept as
+`from=<name>` so the list can offer "Back to Royston" (`data-testid="back-to-town"`),
+after a reload too. Like `view`, it is UI state: never part of `SearchCriteria`,
+saved searches, alerts or recents (`parseFromParam` reads it, `serializeCriteria`
+never writes it).
+
+- `SearchView.onUserMove` calls `update({ bounds, q: undefined }, { from: place })`
+  when the search had a place; `buildSearchHref(criteria, patch, view, from)` writes
+  `from` only while the result has `bounds` and no `q`, and `update()` keeps the
+  current one through filter and map changes (`currentFrom()`).
+- "Back to <town>" and the map's Reset call `update({ q: from, bounds: undefined })`:
+  replace, like any map change, and the map fits the town's results again
+  (`search-map.tsx` clears its fit key while a map area is the search).
+- WP3's "Search this area" pill applies bounds the same way (drop `q`, pass `from`).
+
 ## Service worker protocol
 
 Reserved (WP1). `src/lib/pwa/protocol.ts` defines the caches (`static-v1` for
@@ -257,7 +275,16 @@ Keep these when editing the files that hold them:
   button.
 - `params.ts`: `SORT_LABELS`, `sortLabel`, `SORT_HELP`, and `VIEW_PARAMS`,
   `ViewParam`, `parseViewParam` and `setViewParam`, which `use-search-nav.ts`
-  and `recent.ts` import.
+  and `recent.ts` import; `FROM_PARAM`, `parseFromParam`, `listingNoun`,
+  `typesNoun` and `clearedFilters` (site review #5).
+- `homes/page.tsx` computes the results heading (`searchHeading`,
+  `src/lib/search/heading.ts`), the searched place's name and, with no results,
+  `EmptyHelp` (the place's bounds and `nearbyTowns`); `SearchView` renders them and
+  keeps `data-testid="no-results"` and `data-testid="back-to-town"`.
+- `src/lib/listings/land.ts`: `isBareLand`, `landSummary` ("Land · X acres ·
+  $Y/acre", `data-testid="card-land"` on cards), `LAND_LOAN_NOTE`; every place that
+  shows bare land (cards, the map preview, the phone strip, the listing page and its
+  bar) uses them.
 - `homes/[slug]/page.tsx`: the `RecordView` mount, "Back to results"
   (`ReturnLink scope="search"`), `data-testid="agent-phone"` (a `tel:` link) and
   the `ListingCtaBar` rules.

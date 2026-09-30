@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { site } from "@/config/site";
 import { cn } from "@/lib/cn";
 import { formatPrice } from "@/lib/format";
+import { LAND_LOAN_NOTE } from "@/lib/listings/land";
 import { estimateMonthlyCost } from "@/lib/mortgage";
 
 const SEGMENTS = [
@@ -17,7 +18,9 @@ const SEGMENTS = [
 /**
  * The full monthly cost — portals often show principal & interest only.
  * Taxes come from the listing when available, else a typical rate for its
- * county; insurance uses its county's typical rate (`financeFor`).
+ * county; insurance uses its county's typical rate (`financeFor`). Bare land
+ * (`land`) has no house to insure and no mortgage insurance, and says a land
+ * loan's terms vary rather than posing as a home mortgage (site review #8).
  */
 export function PaymentCalculator({
   price,
@@ -25,6 +28,7 @@ export function PaymentCalculator({
   monthlyHoa,
   insuranceRatePct = site.finance.insuranceRatePct,
   taxRatePct = site.finance.propertyTaxRatePct,
+  land = false,
 }: {
   price: number;
   annualTax: number | null;
@@ -33,6 +37,8 @@ export function PaymentCalculator({
   insuranceRatePct?: number;
   /** Fallback annual tax as a % of price when the listing has no tax figure. */
   taxRatePct?: number;
+  /** Land with no house on it. */
+  land?: boolean;
 }) {
   const f = site.finance;
   const [homePrice, setHomePrice] = useState(price);
@@ -49,10 +55,22 @@ export function PaymentCalculator({
         loanTermYears: term,
         // Scale the listed tax with the price the user is exploring.
         annualTax: annualTax ? annualTax * (homePrice / price) : (homePrice * taxRatePct) / 100,
-        annualInsurance: (homePrice * insuranceRatePct) / 100,
+        annualInsurance: land ? 0 : (homePrice * insuranceRatePct) / 100,
         monthlyHoa,
+        noMortgageInsurance: land,
       }),
-    [homePrice, downPct, rate, term, annualTax, price, monthlyHoa, taxRatePct, insuranceRatePct],
+    [
+      homePrice,
+      downPct,
+      rate,
+      term,
+      annualTax,
+      price,
+      monthlyHoa,
+      taxRatePct,
+      insuranceRatePct,
+      land,
+    ],
   );
 
   const segments = SEGMENTS.filter((s) => cost[s.key] > 0);
@@ -91,7 +109,7 @@ export function PaymentCalculator({
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
         <NumberField
-          label="Home price"
+          label={land ? "Price" : "Home price"}
           prefix="$"
           value={homePrice}
           step={5000}
@@ -135,12 +153,24 @@ export function PaymentCalculator({
             ))}
           </select>
         </label>
-        <p className="text-xs leading-relaxed text-faint sm:col-span-2 lg:col-span-1 xl:col-span-2">
-          Estimate only. Taxes use the listing&apos;s most recent figure where available
-          {annualTax ? "" : ` (none listed, so ${taxRatePct}% of price, typical for the area)`};
-          insurance assumes {insuranceRatePct}% of price per year, typical for the area, not
-          including flood cover. Mortgage insurance applies below 20% down.
-        </p>
+        {land ? (
+          <p
+            className="text-xs leading-relaxed text-muted sm:col-span-2 lg:col-span-1 xl:col-span-2"
+            data-testid="land-loan-note"
+          >
+            <span className="font-semibold text-ink-soft">{LAND_LOAN_NOTE}.</span> Estimate only,
+            with no home or mortgage insurance: there&apos;s no house on this land. Taxes use the
+            listing&apos;s most recent figure where available
+            {annualTax ? "" : ` (none listed, so ${taxRatePct}% of price, typical for the area)`}.
+          </p>
+        ) : (
+          <p className="text-xs leading-relaxed text-faint sm:col-span-2 lg:col-span-1 xl:col-span-2">
+            Estimate only. Taxes use the listing&apos;s most recent figure where available
+            {annualTax ? "" : ` (none listed, so ${taxRatePct}% of price, typical for the area)`};
+            insurance assumes {insuranceRatePct}% of price per year, typical for the area, not
+            including flood cover. Mortgage insurance applies below 20% down.
+          </p>
+        )}
       </div>
     </div>
   );

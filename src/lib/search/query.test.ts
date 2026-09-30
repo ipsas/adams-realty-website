@@ -1,13 +1,20 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_CRITERIA, parseSearchParams, SORTS } from "./params";
-import { buildOrderBy, buildWhere, hasLocation, normalizeLocationQuery } from "./query";
+import {
+  buildOrderBy,
+  buildWhere,
+  hasLocation,
+  lakeGuide,
+  normalizeLocationQuery,
+  type LocationScope,
+} from "./query";
 
 const dialect = new PgDialect();
 const now = new Date("2026-09-25T12:00:00Z");
 
-function render(params: Record<string, string>) {
-  const where = buildWhere(parseSearchParams(params), now);
+function render(params: Record<string, string>, scope?: LocationScope) {
+  const where = buildWhere(parseSearchParams(params), now, scope);
   if (!where) throw new Error("expected a where clause");
   return dialect.sqlToQuery(where);
 }
@@ -19,7 +26,9 @@ describe("buildWhere", () => {
     // Georgia MLS: feed listings in a hidden status (Coming Soon among them) never match.
     expect(sql).toContain(`not "listings"."idx_hidden"`);
     expect(sql).toContain(`"listings"."transaction_type" = $1`);
-    expect(params).toEqual(["sale", "active", "coming_soon"]);
+    // Commercial is left out of the default search (site review #5).
+    expect(params).toEqual(["sale", "active", "coming_soon", "commercial"]);
+    expect(sql).toContain(`"listings"."property_type" <> $4`);
   });
 
   it("adds under-contract and pending when requested", () => {
@@ -29,13 +38,14 @@ describe("buildWhere", () => {
       "coming_soon",
       "active_under_contract",
       "pending",
+      "commercial",
     ]);
   });
 
   it("limits sold searches to a lookback window", () => {
     const { sql, params } = render({ mode: "sold", soldWithinDays: "90" });
     expect(sql).toContain(`"listings"."close_date" >=`);
-    expect(params).toEqual(["closed", "sale", "2026-06-27"]);
+    expect(params).toEqual(["closed", "sale", "2026-06-27", "commercial"]);
   });
 
   it("matches ZIP codes exactly", () => {
@@ -108,7 +118,62 @@ describe("property types", () => {
   it("filters on any mix of types, commercial included", () => {
     const { sql, params } = render({ types: "land,farm_ranch,commercial" });
     expect(sql).toContain(`"listings"."property_type" in ($`);
+    expect(sql).not.toContain(`"listings"."property_type" <>`);
     expect(params.slice(-3)).toEqual(["land", "farm_ranch", "commercial"]);
+  });
+
+  it.each(["buy", "rent", "sold"])(
+    "%s: with no type picked, everything but commercial (land stays in)",
+    (mode) => {
+      const { sql, params } = render({ mode });
+      expect(sql).toContain(`"listings"."property_type" <> $`);
+      expect(sql).not.toContain(`"listings"."property_type" in (`);
+      expect(params).toContain("commercial");
+      expect(params).not.toContain("land");
+    },
+  );
+
+  it("commercial alone finds commercial", () => {
+    const { sql, params } = render({ types: "commercial" });
+    expect(sql).toContain(`"listings"."property_type" in ($`);
+    expect(sql).not.toContain("<>");
+    expect(params.at(-1)).toBe("commercial");
+  });
+});
+
+// Site review #5: "Hartwell" also matched every "Lake Hartwell" home in Lavonia and Toccoa.
+describe("a town search", () => {
+  it("matches the town's name on city only, nothing else", () => {
+    const { sql, params } = render({ q: "hartwell, GA" }, { town: "Hartwell" });
+    expect(sql).toContain(
+      `btrim(regexp_replace(lower("listings"."city"), '[^a-z0-9]+', ' ', 'g')) = any(array[$`,
+    );
+    expect(sql).not.toContain("location_vector");
+    expect(sql).not.toContain("neighborhood");
+    expect(sql).not.toContain("water_body");
+    expect(params).toContain("hartwell");
+  });
+
+  it("without a resolved town, the text is matched as a place (lakes, neighborhoods…)", () => {
+    const { sql } = render({ q: "Hartwell" });
+    expect(sql).toContain("location_vector");
+  });
+
+  it("a ZIP stays a ZIP whatever the scope says", () => {
+    const { sql } = render({ q: "30643" }, { town: "Hartwell" });
+    expect(sql).toContain(`"listings"."postal_code" = $`);
+    expect(sql).not.toContain(`lower("listings"."city")`);
+  });
+});
+
+describe("lakeGuide", () => {
+  it("finds lake guides by name or alias, never a town guide", () => {
+    expect(lakeGuide("Lake Hartwell")?.slug).toBe("lake-hartwell");
+    expect(lakeGuide("Hartwell Lake, GA")?.slug).toBe("lake-hartwell");
+    expect(lakeGuide("Lanier")?.slug).toBe("lake-lanier");
+    expect(lakeGuide("Hartwell")).toBeUndefined();
+    expect(lakeGuide("Royston")).toBeUndefined();
+    expect(lakeGuide(undefined)).toBeUndefined();
   });
 });
 
@@ -116,6 +181,23 @@ describe("buildOrderBy", () => {
   it("sorts sold results by close date for 'newest'", () => {
     const order = buildOrderBy(parseSearchParams({ mode: "sold", sort: "newest" }));
     expect(dialect.sqlToQuery(order[0]).sql).toContain("close_date");
+  });
+
+  // Site review #8: land buyers compare tracts by size and price per acre.
+  it("sorts by acreage, most first, tracts without a lot size last", () => {
+    const order = buildOrderBy(parseSearchParams({ sort: "lot_desc" })).map(
+      (o) => dialect.sqlToQuery(o).sql,
+    );
+    expect(order).toEqual([`"listings"."lot_size_sqft" desc nulls last`, `"listings"."id" asc`]);
+  });
+
+  it("sorts by price per acre, cheapest first, tracts without a lot size last", () => {
+    const order = buildOrderBy(parseSearchParams({ sort: "price_per_acre_asc" })).map(
+      (o) => dialect.sqlToQuery(o).sql,
+    );
+    expect(order[0]).toBe(
+      `("listings"."list_price"::float / nullif("listings"."lot_size_sqft", 0)) asc nulls last`,
+    );
   });
 });
 

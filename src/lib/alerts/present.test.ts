@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { listingFacts } from "@/lib/email-templates";
 import {
   allocateRows,
   priceCutDetails,
@@ -59,6 +60,24 @@ describe("toEmailListing", () => {
     expect(toEmailListing({ ...listing, status: "closed", closePrice: 470_000 }).price).toBe(
       470_000,
     );
+  });
+});
+
+describe("land in alert emails (site review #8)", () => {
+  it("says 'Land · X acres' instead of empty beds and baths", () => {
+    const land = toEmailListing({
+      ...listing,
+      propertyType: "land",
+      bedrooms: null,
+      bathrooms: null,
+      livingAreaSqft: null,
+      lotSizeSqft: 12.5 * 43_560,
+    });
+    expect(land.landFacts).toBe("Land · 12.5 acres");
+    expect(listingFacts(land)).toBe("Land · 12.5 acres");
+    const house = toEmailListing({ ...listing, propertyType: "single_family", lotSizeSqft: 9000 });
+    expect(house.landFacts).toBeNull();
+    expect(listingFacts(house)).toBe("3 bd · 2.5 ba · 1,850 sqft");
   });
 });
 

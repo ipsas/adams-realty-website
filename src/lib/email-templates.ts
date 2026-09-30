@@ -159,6 +159,8 @@ export type EmailListing = {
   bedrooms: number | null;
   bathrooms: number | null;
   livingAreaSqft: number | null;
+  /** Bare land's facts ("Land · 12.5 acres"), shown instead of beds, baths and sqft. */
+  landFacts?: string | null;
   street: string;
   cityLine: string;
   badge?: { label: string; tone: BadgeTone };
@@ -168,7 +170,10 @@ export type EmailListing = {
   attribution?: string | null;
 };
 
-export function listingFacts(l: Pick<EmailListing, "bedrooms" | "bathrooms" | "livingAreaSqft">) {
+export function listingFacts(
+  l: Pick<EmailListing, "bedrooms" | "bathrooms" | "livingAreaSqft" | "landFacts">,
+) {
+  if (l.landFacts) return l.landFacts;
   return [
     l.bedrooms !== null ? `${l.bedrooms} bd` : null,
     l.bathrooms !== null ? `${formatBaths(l.bathrooms)} ba` : null,

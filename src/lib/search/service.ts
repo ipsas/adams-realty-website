@@ -4,7 +4,8 @@ import { site } from "@/config/site";
 import { listings } from "@/db/schema";
 import { selectCards, withPhotos, type ListingCardData } from "@/lib/listings/card";
 import { PAGE_SIZE, type SearchCriteria } from "./params";
-import { buildOrderBy, buildWhere, hasLocation } from "./query";
+import { resolveScope } from "./place";
+import { buildOrderBy, buildWhere, hasLocation, type LocationScope } from "./query";
 
 /**
  * Search entry points. Backed by Postgres (full-text + GiST geo index), which
@@ -20,8 +21,15 @@ export type SearchResult = {
   pageCount: number;
 };
 
-export async function searchListings(c: SearchCriteria): Promise<SearchResult> {
-  const where = buildWhere(c);
+/**
+ * `scope` is whether `q` names a town (./place.ts); callers that already know
+ * pass it, else it's looked up.
+ */
+export async function searchListings(
+  c: SearchCriteria,
+  scope?: LocationScope,
+): Promise<SearchResult> {
+  const where = buildWhere(c, undefined, scope ?? (await resolveScope(db, c)));
   const [rows, [{ total }]] = await Promise.all([
     selectCards(db)
       .where(where)
@@ -48,6 +56,11 @@ export type MapPin = {
   beds: number | null;
   baths: number | null;
   sqft: number | null;
+  /** Land shows "Land · X acres" in the preview instead of beds and baths. */
+  propertyType: string;
+  lotSqft: number | null;
+  /** A rental's price is monthly rent: no price per acre. */
+  rent: boolean;
   address: string;
   photo: string | null;
   featured: boolean;
@@ -70,13 +83,14 @@ export const MAX_PINS = 750;
  * in Savannah: 20k rows, 70–130 ms, against 15 ms collected). So a location
  * search picks the way here (`walkPins`), from Postgres's own row estimates.
  */
-export async function searchMapPins(c: SearchCriteria): Promise<MapPin[]> {
+export async function searchMapPins(c: SearchCriteria, scope?: LocationScope): Promise<MapPin[]> {
+  const resolved = scope ?? (await resolveScope(db, c));
   if (hasLocation(c)) {
     const [matches, inScope] = await Promise.all([
-      estimateRows(buildWhere(c)),
+      estimateRows(buildWhere(c, undefined, resolved)),
       estimateRows(buildWhere({ ...c, q: undefined })),
     ]);
-    if (!walkPins(matches, inScope)) return locationPins(c);
+    if (!walkPins(matches, inScope)) return locationPins(c, MAX_PINS, resolved);
   }
   const rows = await db
     .select({
@@ -90,6 +104,9 @@ export async function searchMapPins(c: SearchCriteria): Promise<MapPin[]> {
       beds: listings.bedrooms,
       baths: listings.bathrooms,
       sqft: listings.livingAreaSqft,
+      propertyType: listings.propertyType,
+      lotSqft: listings.lotSizeSqft,
+      transactionType: listings.transactionType,
       addressLine1: listings.addressLine1,
       unitNumber: listings.unitNumber,
       city: listings.city,
@@ -100,7 +117,7 @@ export async function searchMapPins(c: SearchCriteria): Promise<MapPin[]> {
       company: listings.isCompanyListing,
     })
     .from(listings)
-    .where(buildWhere(c))
+    .where(buildWhere(c, undefined, resolved))
     .orderBy(...buildOrderBy(c))
     .limit(MAX_PINS);
   return toPins(rows);
@@ -138,6 +155,9 @@ type PinRow = {
   beds: number | null;
   baths: number | null;
   sqft: number | null;
+  propertyType: string;
+  lotSqft: number | null;
+  transactionType: string;
   addressLine1: string;
   unitNumber: string | null;
   city: string;
@@ -154,15 +174,20 @@ type PinRow = {
  * `limit` are picked from them, and only those are read in full. Exported for
  * tests; `searchMapPins` decides when to use it.
  */
-export async function locationPins(c: SearchCriteria, limit: number = MAX_PINS): Promise<MapPin[]> {
+export async function locationPins(
+  c: SearchCriteria,
+  limit: number = MAX_PINS,
+  scope?: LocationScope,
+): Promise<MapPin[]> {
+  const where = buildWhere(c, undefined, scope ?? (await resolveScope(db, c)));
   const order = sql.join(buildOrderBy(c), sql`, `);
   // buildOrderBy's column refs are qualified with "listings": the CTE rows
   // are aliased to that name so the same ORDER BY applies to them.
   const { rows } = await db.execute<PinRow>(sql`
     with matches as materialized (
-      select "id", "is_featured", "list_date", "close_date", "photo_count", "list_price", "living_area_sqft"
+      select "id", "is_featured", "list_date", "close_date", "photo_count", "list_price", "living_area_sqft", "lot_size_sqft"
       from ${listings}
-      where ${buildWhere(c)}
+      where ${where}
     ),
     top as (
       select "listings"."id" from matches as "listings" order by ${order} limit ${limit}
@@ -172,7 +197,9 @@ export async function locationPins(c: SearchCriteria, limit: number = MAX_PINS):
       "listings"."latitude" as "lat", "listings"."longitude" as "lng",
       "listings"."list_price" as "price", "listings"."close_price" as "closePrice",
       "listings"."status", "listings"."bedrooms" as "beds", "listings"."bathrooms" as "baths",
-      "listings"."living_area_sqft" as "sqft", "listings"."address_line1" as "addressLine1",
+      "listings"."living_area_sqft" as "sqft", "listings"."property_type" as "propertyType",
+      "listings"."lot_size_sqft" as "lotSqft", "listings"."transaction_type" as "transactionType",
+      "listings"."address_line1" as "addressLine1",
       "listings"."unit_number" as "unitNumber", "listings"."city",
       "listings"."hide_address" as "hideAddress", "listings"."primary_photo_url" as "photo",
       "listings"."is_featured" as "featured",
@@ -196,6 +223,9 @@ function toPins(rows: PinRow[]): MapPin[] {
       beds: r.beds,
       baths: r.baths,
       sqft: r.sqft,
+      propertyType: r.propertyType,
+      lotSqft: r.lotSqft,
+      rent: r.transactionType === "rent",
       address: r.hideAddress
         ? r.city
         : `${r.addressLine1}${r.unitNumber ? ` #${r.unitNumber}` : ""}, ${r.city}`,

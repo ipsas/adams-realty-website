@@ -47,6 +47,10 @@ export type AreaStats = {
   medianPricePerSqft: number | null;
   /** Homes behind the $/sqft median: residential types with a living area (no land, farms or commercial). */
   pricePerSqftSample: number;
+  /** Median asking price per acre of bare land and farms for sale (site review #8). */
+  medianPricePerAcre: number | null;
+  /** Tracts behind the $/acre median: land and farms with no house and a lot size. */
+  pricePerAcreSample: number;
   medianDaysOnMarket: number | null;
   daysOnMarketSample: number;
   /** Sale listings with a list date in the last NEW_WINDOW_DAYS. */
@@ -73,6 +77,8 @@ export function emptyStats(): AreaStats {
     maxListPrice: null,
     medianPricePerSqft: null,
     pricePerSqftSample: 0,
+    medianPricePerAcre: null,
+    pricePerAcreSample: 0,
     medianDaysOnMarket: null,
     daysOnMarketSample: 0,
     newListings: 0,

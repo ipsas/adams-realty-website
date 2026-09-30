@@ -32,6 +32,12 @@ const hartwellLake = area({
   counties: ["Hart", "Franklin", "Stephens"],
   aliases: ["Hartwell Lake"],
 });
+const carnesville = area({
+  slug: "carnesville",
+  name: "Carnesville",
+  city: "Carnesville",
+  counties: ["Franklin"],
+});
 const subdivision = area({
   slug: "reunion",
   name: "Reunion",
@@ -66,6 +72,41 @@ beforeAll(async () => {
     home({ city: "Marietta", county: "Cobb", neighborhood: "Reunion" }),
     home({ city: "Marietta", county: "Cobb", neighborhood: "Reunion" }),
     home({ city: "Marietta", county: "Cobb", neighborhood: "Reunion" }),
+    // Carnesville land (site review #8): $10,000, $5,500 and $6,024 an acre…
+    ...[
+      [100_000, 10],
+      [220_000, 40],
+      [1_000_000, 166],
+    ].map(([price, acres]) =>
+      home({
+        city: "Carnesville",
+        county: "Franklin",
+        propertyType: "land",
+        listPrice: price,
+        lotSizeSqft: acres * 43_560,
+      }),
+    ),
+    // …and what the per-acre median leaves out: a farm with a house, land with no
+    // size, a house, and sold land.
+    home({
+      city: "Carnesville",
+      county: "Franklin",
+      propertyType: "farm_ranch",
+      listPrice: 900_000,
+      lotSizeSqft: 20 * 43_560,
+      livingAreaSqft: 2_400,
+      bedrooms: 4,
+    }),
+    home({ city: "Carnesville", county: "Franklin", propertyType: "land", lotSizeSqft: null }),
+    home({ city: "Carnesville", county: "Franklin", lotSizeSqft: 43_560 }),
+    home({
+      city: "Carnesville",
+      county: "Franklin",
+      propertyType: "land",
+      status: "closed",
+      closePrice: 10_000,
+      lotSizeSqft: 43_560,
+    }),
   ]);
 });
 afterAll(closeDb);
@@ -85,6 +126,14 @@ describe("getAreaStats", () => {
     expect(stats.get("jefferson")!.forSale).toBe(3);
     expect(stats.get("lake-hartwell")!.forSale).toBe(2);
     expect(stats.get("reunion")!.forSale).toBe(1);
+  });
+
+  it("gives land's median price per acre, from bare tracts for sale with a size", async () => {
+    const stats = (await getAreaStats([carnesville])).get("carnesville")!;
+    expect(stats.pricePerAcreSample).toBe(3);
+    expect(stats.medianPricePerAcre).toBe(6024);
+    // Areas with no land report none.
+    expect((await getAreaStats([subdivision])).get("reunion")!.pricePerAcreSample).toBe(0);
   });
 
   it("agrees with the guide page's own listing query", async () => {

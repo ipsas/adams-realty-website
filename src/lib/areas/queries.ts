@@ -3,6 +3,7 @@ import type { Area } from "@/config/areas";
 import { db } from "@/db";
 import { agents, listings } from "@/db/schema";
 import { selectCards, withPhotos } from "@/lib/listings/card";
+import { SQFT_PER_ACRE } from "@/lib/listings/land";
 import { publicListing } from "@/lib/listings/visibility";
 import {
   areaCondition,
@@ -33,6 +34,8 @@ type StatsRow = {
   maxListPrice: number | null;
   medianPricePerSqft: number | null;
   pricePerSqftSample: number;
+  medianPricePerAcre: number | null;
+  pricePerAcreSample: number;
   medianDaysOnMarket: number | null;
   daysOnMarketSample: number;
   newListings: number;
@@ -75,6 +78,8 @@ export async function getAreaStats(
   // $/sqft only means something for homes: a farm's price is mostly land, a
   // storefront's is priced as commercial space.
   const hasSqft = sql`${forSale} and ${L.propertyType} in ('single_family', 'condo', 'townhouse', 'multi_family', 'manufactured') and ${L.livingAreaSqft} > 0`;
+  // $/acre is how land is compared (site review #8): bare land and farms with a lot size.
+  const hasAcres = sql`${forSale} and ${L.propertyType} in ('land', 'farm_ranch') and coalesce(${L.livingAreaSqft}, 0) = 0 and coalesce(${L.bedrooms}, 0) = 0 and ${L.lotSizeSqft} > 0`;
   const onMarket = sql`${sale} and ${L.status} = 'active' and ${L.listDate} <= ${today}::date`;
   const median = (expr: SQL, where: SQL) =>
     sql`percentile_cont(0.5) within group (order by ${expr}) filter (where ${where})`;
@@ -129,6 +134,8 @@ export async function getAreaStats(
       max(${L.listPrice}) filter (where ${forSale}) as "maxListPrice",
       ${median(sql`${L.listPrice}::float8 / ${L.livingAreaSqft}`, hasSqft)}::int as "medianPricePerSqft",
       ${count(hasSqft)} as "pricePerSqftSample",
+      ${median(sql`${L.listPrice}::float8 / (${L.lotSizeSqft}::float8 / ${SQFT_PER_ACRE})`, hasAcres)}::int as "medianPricePerAcre",
+      ${count(hasAcres)} as "pricePerAcreSample",
       ${median(sql`${today}::date - ${L.listDate}`, onMarket)}::int as "medianDaysOnMarket",
       ${count(onMarket)} as "daysOnMarketSample",
       ${count(sql`${sale} and ${L.listDate} between ${newSince}::date and ${today}::date`)} as "newListings",
@@ -160,6 +167,8 @@ export async function getAreaStats(
       maxListPrice: r.maxListPrice,
       medianPricePerSqft: r.medianPricePerSqft,
       pricePerSqftSample: r.pricePerSqftSample,
+      medianPricePerAcre: r.medianPricePerAcre,
+      pricePerAcreSample: r.pricePerAcreSample,
       medianDaysOnMarket: r.medianDaysOnMarket,
       daysOnMarketSample: r.daysOnMarketSample,
       newListings: r.newListings,

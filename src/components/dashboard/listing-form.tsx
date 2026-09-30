@@ -13,6 +13,7 @@ import { Checkbox, Field, FormMessage, Input, Select, Textarea } from "@/compone
 import type { ListingFeatures } from "@/db/schema";
 import { cn } from "@/lib/cn";
 import { HIDDEN_STATUSES } from "@/lib/listings/hidden-statuses";
+import { lotSizeInUnit, lotSizeToSqft, type LotUnit } from "@/lib/listings/land";
 import { deleteListing, saveListing, type ListingFormState } from "@/server/actions/dashboard";
 import { PhotoManager, type PhotoValue } from "./photo-manager";
 
@@ -452,26 +453,30 @@ function ListingFields({
             ["bathroomsFull", "Full baths", v.bathroomsFull],
             ["bathroomsHalf", "Half baths", v.bathroomsHalf],
             ["livingAreaSqft", "Living area (sq ft)", v.livingAreaSqft],
-            ["lotSizeSqft", "Lot size (sq ft)", v.lotSizeSqft],
+            ["lotSizeSqft", "Lot size", v.lotSizeSqft],
             ["yearBuilt", "Year built", v.yearBuilt],
             ["garageSpaces", "Garage spaces", v.garageSpaces],
             ["hoaFee", "HOA ($/month)", v.hoaFee],
             ["taxAnnualAmount", "Annual property tax ($)", v.taxAnnualAmount],
           ] as const
-        ).map(([name, label, value]) => (
-          <Field key={name} label={label} htmlFor={name} error={e[name]}>
-            <Input
-              id={name}
-              name={name}
-              type="number"
-              min={0}
-              inputMode="numeric"
-              defaultValue={val(value)}
-              aria-invalid={invalid(name)}
-              className={control}
-            />
-          </Field>
-        ))}
+        ).map(([name, label, value]) =>
+          name === "lotSizeSqft" ? (
+            <LotSizeField key={name} sqft={value} error={e.lotSize} />
+          ) : (
+            <Field key={name} label={label} htmlFor={name} error={e[name]}>
+              <Input
+                id={name}
+                name={name}
+                type="number"
+                min={0}
+                inputMode="numeric"
+                defaultValue={val(value)}
+                aria-invalid={invalid(name)}
+                className={control}
+              />
+            </Field>
+          ),
+        )}
         <div className="flex flex-wrap gap-x-6 gap-y-3 sm:col-span-3">
           <Checkbox name="hasPool" label="Private pool" defaultChecked={v.hasPool} />
           <Checkbox name="isWaterfront" label="Waterfront" defaultChecked={v.isWaterfront} />
@@ -599,5 +604,71 @@ function Group({
       {description && <p className="-mt-1 mb-4 text-sm text-muted">{description}</p>}
       <div className={cn("grid grid-cols-1 gap-4 sm:grid-cols-3", className)}>{children}</div>
     </fieldset>
+  );
+}
+
+/**
+ * Lot size in acres or square feet (site review #8). It starts on acres, how land is
+ * listed here, so nobody multiplies by 43,560; switching the unit converts the number.
+ * The server stores square feet (`lotSizeToSqft`).
+ */
+function LotSizeField({ sqft, error }: { sqft: number | null | undefined; error?: string }) {
+  const [unit, setUnit] = useState<LotUnit>("acres");
+  const [value, setValue] = useState(() => lotSizeInUnit(sqft, "acres"));
+  const switchTo = (next: LotUnit) => {
+    if (next === unit) return;
+    const n = value.trim() === "" ? null : Number(value);
+    setValue(lotSizeInUnit(lotSizeToSqft(n, unit), next));
+    setUnit(next);
+  };
+  return (
+    <Field
+      label="Lot size"
+      htmlFor="lotSize"
+      error={error}
+      hint={unit === "acres" ? "In acres, e.g. 12.5" : "In square feet"}
+    >
+      <div className="flex gap-2">
+        <Input
+          id="lotSize"
+          name="lotSize"
+          type="number"
+          min={0}
+          step="any"
+          inputMode="decimal"
+          value={value}
+          onChange={(ev) => setValue(ev.target.value)}
+          aria-invalid={error ? true : undefined}
+          className={cn(control, "min-w-0 flex-1")}
+        />
+        <fieldset className="flex shrink-0 rounded-xl border border-line-strong p-0.5">
+          <legend className="sr-only">Lot size unit</legend>
+          {(
+            [
+              ["acres", "Acres"],
+              ["sqft", "Sq ft"],
+            ] as const
+          ).map(([u, label]) => (
+            <label
+              key={u}
+              className={cn(
+                "relative flex min-h-10 cursor-pointer items-center rounded-[10px] px-3 text-sm font-medium focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-primary pointer-coarse:min-h-11",
+                unit === u ? "bg-ink text-on-ink" : "text-ink-soft hover:bg-sunken",
+              )}
+            >
+              <input
+                type="radio"
+                name="lotSizeUnit"
+                value={u}
+                checked={unit === u}
+                onChange={() => switchTo(u)}
+                className="absolute inset-0 cursor-pointer opacity-0"
+              />
+              {label}
+            </label>
+          ))}
+        </fieldset>
+      </div>
+    </Field>
   );
 }

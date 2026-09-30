@@ -33,6 +33,25 @@ describe("buildSearchHref", () => {
     expect(back.beds).toBe(2);
   });
 
+  // Site review #5: a moved map drops the town and remembers it for "Back to Royston".
+  it("carries `from` only while the map area is the search", () => {
+    const town = parseSearchParams({ q: "Royston" });
+    const bounds = { west: -83.3, south: 34.2, east: -83.1, north: 34.4 };
+    const moved = buildSearchHref(town, { bounds, q: undefined }, "map", "Royston");
+    const url = new URL(moved, "http://x").searchParams;
+    expect(url.get("from")).toBe("Royston");
+    expect(url.get("q")).toBeNull();
+    expect(url.get("bounds")).toBe("-83.3,34.2,-83.1,34.4");
+    expect(url.getAll("view")).toEqual(["map"]);
+    // Back to the town: no bounds, so no `from`.
+    const back = parseSearchParams(url);
+    expect(buildSearchHref(back, { q: "Royston", bounds: undefined }, null, "Royston")).toBe(
+      "/homes?q=Royston",
+    );
+    // A search with a place never carries it.
+    expect(buildSearchHref(town, { beds: 3 }, null, "Royston")).toBe("/homes?q=Royston&beds=3");
+  });
+
   it("does not mutate the criteria", () => {
     buildSearchHref(criteria, { q: "Midtown" });
     expect(criteria.q).toBe("Decatur");

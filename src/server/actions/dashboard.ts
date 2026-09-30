@@ -19,6 +19,7 @@ import { authorize, can, ForbiddenError, type Actor } from "@/lib/auth/permissio
 import { getActor } from "@/lib/auth/session";
 import { geocodeAddress } from "@/lib/geocode";
 import { LISTINGS_TAG } from "@/lib/listings/cache-tags";
+import { lotSizeToSqft } from "@/lib/listings/land";
 import { upsertListing } from "@/lib/listings/persist";
 import { refreshPlaces } from "@/lib/listings/places";
 import { SyncFailedError, syncSource } from "@/lib/mls/sync";
@@ -171,6 +172,9 @@ function parsePhotos(
   return { ok: true, photos: unique };
 }
 
+/** About 2,300 acres: the largest lot the form takes. */
+const MAX_LOT_SQFT = 100_000_000;
+
 const listingSchema = z.object({
   id: z
     .string()
@@ -218,7 +222,9 @@ const listingSchema = z.object({
   bathroomsFull: int(0, 50),
   bathroomsHalf: int(0, 50),
   livingAreaSqft: int(0, 100_000),
-  lotSizeSqft: int(0, 100_000_000),
+  // Acres or square feet, as the form's switch says (it starts on acres; site review #8).
+  lotSize: num(0, 100_000_000),
+  lotSizeUnit: z.enum(["acres", "sqft"]).catch("acres"),
   yearBuilt: int(1700, 2100),
   garageSpaces: int(0, 50),
   hoaFee: int(0, 100_000),
@@ -265,6 +271,13 @@ export async function saveListing(
     return { ok: false, errors, message: "Please fix the highlighted fields." };
   }
   const d = parsed.data;
+  const lotSizeSqft = lotSizeToSqft(d.lotSize, d.lotSizeUnit);
+  if (lotSizeSqft !== null && lotSizeSqft > MAX_LOT_SQFT)
+    return {
+      ok: false,
+      errors: { lotSize: "That lot size is too large. Check the number and the unit." },
+      message: "Please fix the highlighted fields.",
+    };
   const photoList = parsePhotos(d.photos);
   if (!photoList.ok)
     return {
@@ -348,7 +361,7 @@ export async function saveListing(
     bathroomsHalf: d.bathroomsHalf ?? null,
     bathrooms: baths,
     livingAreaSqft: d.livingAreaSqft ?? null,
-    lotSizeSqft: d.lotSizeSqft ?? null,
+    lotSizeSqft,
     yearBuilt: d.yearBuilt ?? null,
     stories: existing?.stories ?? null,
     garageSpaces: d.garageSpaces ?? null,

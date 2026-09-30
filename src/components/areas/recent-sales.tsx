@@ -9,6 +9,7 @@ import {
   formatStreet,
 } from "@/lib/format";
 import { formatRatio } from "@/lib/areas/stats";
+import { landSummary } from "@/lib/listings/land";
 import type { CardRow } from "@/lib/listings/card";
 
 /**
@@ -63,17 +64,17 @@ export function RecentSales({ sales }: { sales: CardRow[] }) {
 
 /** "3 bd · 2 ba · 1,850 sqft", or the facts that matter for land, farms and commercial. */
 function saleFacts(s: CardRow): string {
+  // Bare land and farms: acres and price per acre (site review #8).
+  const land = landSummary({ ...s, price: s.closePrice ?? s.listPrice });
+  if (land) return land;
   const lot = s.lotSizeSqft ? formatLot(s.lotSizeSqft).replace(" lot", "") : null;
   switch (s.propertyType) {
-    case "land":
-      return lot ? `Land · ${lot}` : "Land";
     case "commercial":
       return s.livingAreaSqft
         ? `Commercial · ${formatNumber(s.livingAreaSqft)} sqft`
         : "Commercial";
     case "farm_ranch":
-      if (s.bedrooms === null) return lot ? `Farm · ${lot}` : "Farm";
-      return `${s.bedrooms} bd · ${formatBaths(s.bathrooms)} ba${lot ? ` · ${lot}` : ""}`;
+      return `${s.bedrooms ?? "—"} bd · ${formatBaths(s.bathrooms)} ba${lot ? ` · ${lot}` : ""}`;
     default:
       return `${s.bedrooms ?? "—"} bd · ${formatBaths(s.bathrooms)} ba · ${formatNumber(s.livingAreaSqft)} sqft`;
   }

@@ -32,6 +32,8 @@ export const SORTS = [
   "price_desc",
   "sqft_desc",
   "price_per_sqft_asc",
+  "lot_desc",
+  "price_per_acre_asc",
 ] as const;
 export type SortValue = (typeof SORTS)[number];
 
@@ -42,6 +44,9 @@ export const SORT_LABELS: Record<SortValue, string> = {
   price_desc: "Price (high to low)",
   sqft_desc: "Square feet",
   price_per_sqft_asc: "Price per sqft",
+  // Land buyers compare tracts by size and price per acre (site review #8).
+  lot_desc: "Acreage (most first)",
+  price_per_acre_asc: "Price per acre",
 };
 
 /** Sort label for the current mode: "newest" reads "Recently sold" in sold mode. */
@@ -297,6 +302,27 @@ export function countActiveFilters(c: SearchCriteria): number {
   return n;
 }
 
+/** A patch that turns off every filter `countActiveFilters` counts (place, mode and sort stay). */
+export function clearedFilters(): Partial<SearchCriteria> {
+  const patch: Partial<SearchCriteria> = {
+    minPrice: undefined,
+    maxPrice: undefined,
+    beds: undefined,
+    baths: undefined,
+    types: undefined,
+    minSqft: undefined,
+    maxSqft: undefined,
+    minLotSqft: undefined,
+    minYear: undefined,
+    maxYear: undefined,
+    maxHoa: undefined,
+    maxDaysOnMarket: undefined,
+    pending: undefined,
+  };
+  for (const f of FEATURE_FLAGS) patch[f] = undefined;
+  return patch;
+}
+
 const TYPE_LABELS: Record<PropertyTypeValue, string> = {
   single_family: "Houses",
   condo: "Condos",
@@ -328,16 +354,55 @@ function shortMoney(n: number): string {
   return `$${n}`;
 }
 
+/**
+ * What a search lists, by its property types: "Land" for land alone, "Land & farms" for
+ * the two together, "Houses", "Condos"…; null for the default mix (or any other mix),
+ * which reads as homes.
+ */
+export function typesNoun(types: readonly PropertyTypeValue[] | undefined): string | null {
+  if (!types?.length) return null;
+  if (types.length === 1) return TYPE_NOUNS[types[0]];
+  if (types.length === 2 && types.includes("land") && types.includes("farm_ranch"))
+    return "Land & farms";
+  return null;
+}
+
+/**
+ * The noun phrase a results heading starts with: "Homes for sale", "Rentals", "Sold
+ * homes", or by property type "Land for sale", "Land for rent", "Sold land".
+ * `bare` drops "for sale" (for "Homes near Lake Hartwell", "Homes in this map area").
+ */
+export function listingNoun(
+  c: Pick<SearchCriteria, "mode" | "types">,
+  { bare = false }: { bare?: boolean } = {},
+): string {
+  const typed = typesNoun(c.types);
+  if (c.mode === "sold") return typed ? `Sold ${typed.toLowerCase()}` : "Sold homes";
+  if (c.mode === "rent") return typed ? `${typed} for rent` : "Rentals";
+  const noun = typed ?? "Homes";
+  return bare ? noun : `${noun} for sale`;
+}
+
+/**
+ * The town a map-area search came from (site review #5). Moving the map drops
+ * the town (`q`) and searches every home in view; `from` keeps the town's name
+ * in the URL so the page can offer "Back to Royston" after a reload too. UI
+ * state like the `view` sheet position: not part of SearchCriteria, saved
+ * searches or alerts, and only meaningful with `bounds` and no `q`.
+ */
+export const FROM_PARAM = "from";
+
+export function parseFromParam(raw: RawParams): string | undefined {
+  const v = get(raw, FROM_PARAM)?.trim().slice(0, 120);
+  return v || undefined;
+}
+
 /** Human summary, used as the default saved-search name and page title. */
 export function describeCriteria(c: SearchCriteria): string {
   const parts: string[] = [];
   if (c.beds) parts.push(`${c.beds}+ bd`);
-  const noun =
-    c.types?.length === 1
-      ? TYPE_NOUNS[c.types[0]].toLowerCase()
-      : c.mode === "rent"
-        ? "rentals"
-        : "homes";
+  const typed = typesNoun(c.types);
+  const noun = typed ? typed.toLowerCase() : c.mode === "rent" ? "rentals" : "homes";
   parts.push(c.mode === "sold" ? `sold ${noun}` : noun);
   if (c.q) parts.push(`in ${c.q}`);
   else if (c.bounds) parts.push("in map area");

@@ -197,9 +197,11 @@ describe("migration indexes vs buildOrderBy/buildConditions", () => {
         ix.where.every((w) => conds.has(w)),
     );
     expect(geo.map((i) => i.name)).toEqual(["listings_buy_geo_idx"]);
-    // idx_hidden too: the Georgia MLS rule filter keeps viewport counts index-only.
-    expect(geo[0].include).toEqual(["list_price", "idx_hidden"]);
+    // idx_hidden and property_type too: the Georgia MLS rule filter and the default
+    // search's "no commercial" keep viewport counts index-only.
+    expect(geo[0].include).toEqual(["list_price", "idx_hidden", "property_type"]);
     expect(conds.has("not idx_hidden")).toBe(true);
+    expect(conds.has("property_type <> 'commercial'")).toBe(true);
     expect(conds.has("longitude between -84.6 and -84.1")).toBe(true);
   });
 

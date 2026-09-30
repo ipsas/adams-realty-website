@@ -1268,8 +1268,9 @@ async function assertStatewideFixtures() {
       )) === 0,
     ],
   ];
-  // The data-driven town lists (home page chips, footer, "See all towns") against a direct count.
-  const forSale = sql`transaction_type = 'sale' and status in ('active', 'coming_soon')`;
+  // The data-driven town lists (home page chips, footer, "See all towns") against a direct
+  // count of what /homes shows by default: homes for sale, commercial property left out.
+  const forSale = sql`transaction_type = 'sale' and status in ('active', 'coming_soon') and property_type <> 'commercial'`;
   const byCity = await db
     .execute<{ city: string; n: number }>(
       sql`select city, count(*)::int as n from listings where removed_at is null and not idx_hidden and ${forSale}

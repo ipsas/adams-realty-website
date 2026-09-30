@@ -9,22 +9,40 @@ import { Field, FormMessage, Input, Select } from "@/components/ui/form";
 import { describeCriteria, type SearchCriteria } from "@/lib/search/params";
 import { saveSearch } from "@/server/actions/saved";
 
-export function SaveSearchButton({
-  criteria,
-  signedIn,
-}: {
-  criteria: SearchCriteria;
-  signedIn: boolean;
-}) {
+/**
+ * Opens the save-search dialog, or sends a signed-out buyer to sign in first. Shared by
+ * the Save search button and the no-results page's "Email me when homes list here", so
+ * the page keeps one dialog and one Save search button.
+ */
+export function useSaveSearch(signedIn: boolean) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
   const [open, setOpen] = useState(false);
   const [saved, setSaved] = useState(false);
+  const query = params.toString();
+  const launch = () => {
+    if (!signedIn) {
+      router.push(`/sign-in?next=${encodeURIComponent(`${pathname}?${query}`)}&reason=save-search`);
+      return;
+    }
+    setOpen(true);
+  };
+  return { open, setOpen, saved, setSaved, launch, query };
+}
+
+export type SaveSearchState = ReturnType<typeof useSaveSearch>;
+
+export function SaveSearchButton({
+  criteria,
+  save,
+}: {
+  criteria: SearchCriteria;
+  save: SaveSearchState;
+}) {
+  const { open, setOpen, saved, setSaved, query } = save;
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-
-  const query = params.toString();
 
   return (
     <>
@@ -32,14 +50,8 @@ export function SaveSearchButton({
         variant={saved ? "subtle" : "primary"}
         className="rounded-full"
         onClick={() => {
-          if (!signedIn) {
-            router.push(
-              `/sign-in?next=${encodeURIComponent(`${pathname}?${query}`)}&reason=save-search`,
-            );
-            return;
-          }
           setError(null);
-          setOpen(true);
+          save.launch();
         }}
       >
         {saved ? <Check /> : <BellPlus />}

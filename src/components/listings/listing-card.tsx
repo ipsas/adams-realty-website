@@ -20,6 +20,7 @@ import {
 } from "@/lib/format";
 import { site } from "@/config/site";
 import type { ListingCardData } from "@/lib/listings/card";
+import { landSummary } from "@/lib/listings/land";
 import { canShowDetails, primaryPhotoOnly } from "@/lib/listings/visibility";
 import { SaveButton } from "./save-button";
 
@@ -45,6 +46,8 @@ export function ListingCard({
   const office = l.listOfficeName ?? (l.isCompanyListing ? site.legalName : null);
   const price = sold && l.closePrice ? l.closePrice : l.listPrice;
   const rent = l.transactionType === "rent";
+  // Bare land: "Land · 12.5 acres · $8,400/acre" instead of "— bd · — ba" (site review #8).
+  const land = landSummary({ ...l, price: rent ? null : price });
 
   return (
     <article
@@ -102,8 +105,8 @@ export function ListingCard({
           </div>
           {!restricted && (
             <p className="mt-0.5 text-sm text-ink-soft">
-              {l.propertyType === "land" ? (
-                <>Land · {l.lotSizeSqft ? `${(l.lotSizeSqft / 43_560).toFixed(2)} acres` : "—"}</>
+              {land ? (
+                <span data-testid="card-land">{land}</span>
               ) : (
                 <>
                   <Strong>{l.bedrooms ?? "—"}</Strong> bd <Dot />{" "}

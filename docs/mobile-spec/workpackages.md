@@ -273,6 +273,14 @@ ALREADY BUILT (site review #1, before the packages; keep it and build the sheet 
 - The map preview's link opens the home with `router.push` (it is plain DOM), so Back returns to the map as it was; the strip's cards must do the same.
 - Filter, sort and map changes replace the history entry (`update()` default); a new place and a new page push (`{ push: true }`). `markReturn("search", …)` on a card or preview tap makes the listing's "Back to results" act like Back; the strip's cards go through the same capture handler.
 
+ALREADY BUILT (site review #5 and #8, before the packages; keep it):
+
+- The h1 is `heading` from the page (`searchHeading`, `src/lib/search/heading.ts`): "Homes for sale in Hartwell" (a town is that town only; `resolveScope` runs once in the page and is passed to `searchListings` and `searchMapPins`), "Homes near Lake Hartwell", "Homes in this map area", and by type "Land for sale in Georgia". results-header.tsx keeps it; don't rebuild it from `criteria.q`.
+- A buyer's map move drops the town: `update({ bounds, q: undefined }, { from: place })`, and the list shows "Back to <town>" (`data-testid="back-to-town"`, 44px on coarse pointers) while `from` is in the URL (docs/mobile-contracts.md, "The `from` param"). The 'Search this area' pill applies bounds the same way. After "Back to <town>" or Reset the map fits the town again (`lastFitKey` is cleared while a map area is the search).
+- No results renders `EmptyState` (`data-testid="no-results"`): "Email me when homes list here" (the same save-search dialog, via `useSaveSearch`, so the page keeps one dialog and one Save search button), "See all … in Georgia", 2–3 nearby towns (`EmptyHelp.nearby`, 44px rows) and "Clear filters" only with filters on. The map shows the searched place (`placeBounds` prop, from `EmptyHelp.placeBounds`), else the state. The sheet shows it at half.
+- Bare land on cards reads "Land · X acres · $Y/acre" (`landSummary`, `data-testid="card-land"`); the map preview does too (`pinFacts`; `MapPin` has `propertyType`, `lotSqft` and `rent`). The strip's cards use `landSummary` in place of beds, baths and sqft, and bare land shows no 'all-in' line (its estimate has no home insurance and a land loan's terms vary; the listing page explains it).
+- The sort select has "Acreage (most first)" and "Price per acre" (SORTS), each backed by a partial index per mode.
+
 STEPS:
 
 - Set up the worktree with `scripts/mobile-worktree.sh 3` (port 3103, database adams_wp3).
@@ -328,7 +336,7 @@ STEPS:
 - onPointerEnter and onPointerLeave act only for e.pointerType === 'mouse';
 - an inner Pressed element using useLinkStatus;
 - a pointer-coarse: photo-count chip, while the hover arrows stay for fine pointers;
-- for sale listings, an 'est. {formatMonthly(quickMonthlyCost(...))} all-in' muted line under the price;
+- for sale listings, an 'est. {formatMonthly(quickMonthlyCost(...))} all-in' muted line under the price (not for bare land: `isBareLand`, see ALREADY BUILT);
 - keep article, 'article a', data-testid='card-address', 'Listing by' and SaveButton.
 - src/components/search/pagination.tsx: size-11 on coarse pointers. The scroll target is the sheet body on phones.
 - e2e/mobile/search-map.spec.ts covers detents, drag and fling, keyboard, focus expansion, setView without requests, the pin strip, restoration, the relaunch redirect, Search this area, the card monthly line, md–lg width, the freshness footer (withDb sets last_synced_at and restores it), landscape (tagged @landscape) and the contracts.
@@ -382,6 +390,14 @@ ALREADY BUILT (site review #1, before the packages; keep it):
 
 - `useSearchNav().update()` replaces the history entry by default: filter, sort, mode and map changes never add a Back step (owner decision). A new place (`LocationSearch`) and a new page push with `{ push: true }`. The filters sheet follows the same rule: Apply is `navigateFromDialog(href, { replace: true })`.
 
+ALREADY BUILT (site review #5 and #8, before the packages; keep it):
+
+- `src/lib/search/suggest.ts` exists: `shapeAreaSuggestions` folds a lake's rows into one "Lake Hartwell (lake area)" suggestion (kind `lake`, value the lake's name, the Waves icon), offers lake guides by any word of their names, and adds towns whose homes have all sold ("No homes listed right now"). WP4's wider autocomplete extends this file rather than creating it; picking a lake puts just its name in the box.
+- A town search is that town only (`LocationScope.town`, resolved from the listings by `resolveTown` in `src/lib/search/place.ts`); the count route must pass the same scope (`buildWhere(c, undefined, await resolveScope(db, c))`) so "Show {n} homes" matches the list.
+- With no property type picked, commercial is left out (`defaultTypesCondition`); land stays in. The type popover says so ("With no type picked, you see every type except commercial."); the filters sheet keeps that sentence.
+- SORTS include `lot_desc` ("Acreage (most first)") and `price_per_acre_asc` ("Price per acre"); the sheet's Sort radiogroup lists them.
+- `clearedFilters()` (params.ts) is the patch "Reset all" applies.
+
 STEPS:
 
 - Set up the worktree with `scripts/mobile-worktree.sh 4` (port 3104, database adams_wp4).
@@ -427,7 +443,7 @@ STEPS:
 - P1 keywords (F43): in params.ts, parse and serialize kw (trimmed, at most 60 characters), count it as an active filter, and describe it as 'with “…”'. In query.ts, kw adds searchVector @@ websearch_to_tsquery('english', kw). Add a Keywords input to FiltersSheet and MoreFilters. Tests go in params.test.ts and query.test.ts.
 - P1 autocomplete (F43):
 - src/lib/search/suggest.ts: getSearchSuggestions(term) runs the existing area and address queries, plus an exact mls_number match that returns {kind:'listing', href:'/homes/<slug>'}, plus a county prefix match ({kind:'county', label:'<County> County'}).
-- query.ts locationCondition adds county ilike, with a normalizer that strips a trailing ' County'.
+- query.ts locationCondition adds county ilike, with a normalizer that strips a trailing ' County'. It must not widen a town search (`scope.town` keeps matching the city alone).
 - src/app/api/locations/suggest/route.ts switches to suggest.ts; listings/queries.ts is untouched.
 - LocationSearch navigates directly for listing suggestions.
 - e2e/mobile/search-filters.spec.ts:
@@ -499,6 +515,11 @@ ALREADY BUILT (site review #1 and #2, before the packages; keep it):
 - The form's tour submit reads 'Send tour request', so it can't be confused with the bar's 'Request a tour'. On phones the tour sheet's submit reads 'Send tour request for {day} at {time}'; desktop keeps exactly 'Send tour request'.
 - The listing agent's phone is a tap-to-call link (`data-testid="agent-phone"`, `telHref`), separate from the link to the agent's page. The contact choice sheet keeps a real `tel:` link too.
 - `e2e/back-nav-suite.ts` covers these on desktop, pixel7 and iphone13 and must keep passing.
+
+ALREADY BUILT (site review #8, before the packages; keep it):
+
+- Bare land (`isBareLand`, `src/lib/listings/land.ts`) says "About this property" (commercial and other property too), shows Acreage and Price per acre (`data-testid="big-facts"`) and no Year built, Garage, Price per sq ft, beds or baths. Its estimate has no home or mortgage insurance and carries "Land loan: terms vary; check with your lender" under the pill (`data-testid="estimate-pill"`) and in the calculator (`PaymentCalculator land`, `data-testid="land-loan-note"`). The action bar's summary reads "Land · X acres" for it, and the 'est. $X/mo all-in' pill follows the same estimate (no insurance) with the land-loan line.
+- `e2e/search-land-suite.ts` covers it on desktop, pixel7 and iphone13 and must keep passing.
 
 STEPS:
 
@@ -632,6 +653,10 @@ new: ['src/components/dashboard/lead-card.tsx', 'src/components/dashboard/lead-s
 ALREADY BUILT (site review #1, before the packages; keep it):
 
 - "All leads" on a lead's page and "Back to listings" on the listing editor and New listing page are `ReturnLink`s (44px): opened from the list they act like Back (tab, filters and scroll come back), otherwise they link to the last list seen in this tab. The leads and listings pages render `<ReturnSource>`, which remembers the list URL and marks the hand-off; the phone lead cards and ListingRowCard must stay plain links on those pages so it sees them.
+
+ALREADY BUILT (site review #8, before the packages; keep it):
+
+- The listing form's lot size is `LotSizeField` (`name="lotSize"`, a radio pair `lotSizeUnit` Acres / Sq ft, Acres first and checked); switching converts the number and the server stores square feet (`lotSizeToSqft`). Phone layouts keep the switch at 44px and the input at 16px.
 
 STEPS:
 

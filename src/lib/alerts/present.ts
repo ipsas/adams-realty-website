@@ -1,6 +1,7 @@
 import { site } from "@/config/site";
 import { absoluteUrl, type BadgeTone, type EmailListing } from "@/lib/email-templates";
 import { formatCityLine, formatPrice, formatStreet, statusLabel } from "@/lib/format";
+import { isBareLand, landFacts } from "@/lib/listings/land";
 
 /**
  * Turns alert query results into email rows. Pure — unit-tested without a
@@ -28,6 +29,9 @@ export type AlertListing = {
   bedrooms: number | null;
   bathrooms: number | null;
   livingAreaSqft: number | null;
+  /** For land: "Land · 12.5 acres" instead of beds and baths. */
+  propertyType?: string;
+  lotSizeSqft?: number | null;
   addressLine1: string;
   unitNumber: string | null;
   city: string;
@@ -57,6 +61,10 @@ export function toEmailListing(
     bedrooms: l.bedrooms,
     bathrooms: l.bathrooms,
     livingAreaSqft: l.livingAreaSqft,
+    landFacts:
+      l.propertyType && isBareLand({ ...l, propertyType: l.propertyType })
+        ? landFacts({ ...l, propertyType: l.propertyType })
+        : null,
     street: formatStreet(l),
     cityLine: formatCityLine(l),
     attribution: office ? `Listed by ${office}` : null,

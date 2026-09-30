@@ -9,14 +9,15 @@ import {
   isNotNull,
   isNull,
   lte,
+  ne,
   or,
   sql,
   type SQL,
 } from "drizzle-orm";
-import { findArea } from "@/config/areas";
+import { findArea, normalizeAreaName, type Area } from "@/config/areas";
 import { site } from "@/config/site";
 import { listings, openHouses } from "@/db/schema";
-import { areaCondition } from "@/lib/areas/match";
+import { areaCondition, normalizedMatch } from "@/lib/areas/match";
 import { publicConditions } from "@/lib/listings/visibility";
 import type { SearchCriteria } from "./params";
 
@@ -51,16 +52,40 @@ export function hasLocation(c: Pick<SearchCriteria, "q">): boolean {
 }
 
 /**
- * The location box. It matches where a listing is (address, city, ZIP,
- * neighborhood, lake, MLS number) through `location_vector`, never the
- * description, so "Atlanta" means homes in Atlanta, not every listing
+ * What the location box's text turned out to be, resolved against the
+ * listings (`resolveTown` in ./place.ts). Only a town changes the SQL: the
+ * rest is known from the text alone.
+ */
+export type LocationScope = {
+  /** The town `q` names exactly (a city some listing is in), as the listings spell it. */
+  town?: string;
+};
+
+/**
+ * The area guide a lake search names ("Lake Hartwell", "Hartwell Lake",
+ * "Lanier"): a guide that isn't a town. Such a search covers the lake area,
+ * whatever town each home's mail goes to.
+ */
+export function lakeGuide(q: string | undefined): Area | undefined {
+  if (!q) return undefined;
+  const area = findArea(normalizeLocationQuery(q));
+  return area && normalizeAreaName(area.name) !== normalizeAreaName(area.city) ? area : undefined;
+}
+
+/**
+ * The location box. A town ("Hartwell") means homes in that town and nothing
+ * else (site review #5: it used to pull in every "Lake Hartwell" home in
+ * Lavonia and Toccoa too). Anything else matches where a listing is (address,
+ * city, ZIP, neighborhood, lake, MLS number) through `location_vector`, never
+ * the description, so "Atlanta" means homes in Atlanta, not every listing
  * "minutes from Atlanta". Each branch has an index (GIN, trigram, btree, or
  * the area-guide expression indexes), so the OR stays a bitmap scan.
  */
-function locationCondition(rawQ: string): SQL | undefined {
+function locationCondition(rawQ: string, scope: LocationScope): SQL | undefined {
   const q = normalizeLocationQuery(rawQ);
   if (!q) return undefined;
   if (/^\d{5}$/.test(q)) return eq(listings.postalCode, q);
+  if (scope.town) return normalizedMatch(listings.city, [normalizeAreaName(scope.town)]);
   const like = q.replace(/[%_\\]/g, "\\$&");
   // A guide name or alias ("Lake Hartwell", "Hartwell Lake", "Lanier") also
   // matches the way its guide does: the exact neighborhood or lake name, or
@@ -79,14 +104,39 @@ function locationCondition(rawQ: string): SQL | undefined {
   );
 }
 
+/** Just the location part of a search (any status), for finding where a place is. */
+export function locationWhere(q: string, scope: LocationScope = {}): SQL | undefined {
+  return locationCondition(q, scope);
+}
+
+/**
+ * Commercial property is left out unless the buyer picks property types (site
+ * review #5): a "Homes for sale" search full of storefronts reads "— bd · — ba".
+ * Land and farms stay in (owner decision: land is a core part of this market).
+ */
+export const DEFAULT_EXCLUDED_TYPES = ["commercial"] as const;
+
+/** The default search's property types: everything but `DEFAULT_EXCLUDED_TYPES`. */
+export function defaultTypesCondition(): SQL {
+  return ne(listings.propertyType, DEFAULT_EXCLUDED_TYPES[0]);
+}
+
 /** Monthly-equivalent HOA fee, so "max HOA $300/mo" compares like with like. */
 const monthlyHoa = sql`(case ${listings.hoaFrequency}
   when 'quarterly' then ${listings.hoaFee} / 3.0
   when 'annually' then ${listings.hoaFee} / 12.0
   else ${listings.hoaFee} end)`;
 
-/** Translates search criteria into SQL conditions. Pure — exported for tests. */
-export function buildConditions(c: SearchCriteria, now: Date = new Date()): SQL[] {
+/**
+ * Translates search criteria into SQL conditions. Pure — exported for tests.
+ * `scope` says whether `q` is a town (resolved by the caller from the
+ * listings; see ./place.ts); without it, `q` is matched as free text.
+ */
+export function buildConditions(
+  c: SearchCriteria,
+  now: Date = new Date(),
+  scope: LocationScope = {},
+): SQL[] {
   // Still listed, and not hidden by Georgia MLS rules (src/lib/listings/visibility.ts).
   const conds: (SQL | undefined)[] = [...publicConditions()];
 
@@ -106,12 +156,12 @@ export function buildConditions(c: SearchCriteria, now: Date = new Date()): SQL[
     );
   }
 
-  if (c.q) conds.push(locationCondition(c.q));
+  if (c.q) conds.push(locationCondition(c.q, scope));
   if (c.minPrice !== undefined) conds.push(gte(listings.listPrice, c.minPrice));
   if (c.maxPrice !== undefined) conds.push(lte(listings.listPrice, c.maxPrice));
   if (c.beds !== undefined) conds.push(gte(listings.bedrooms, c.beds));
   if (c.baths !== undefined) conds.push(gte(listings.bathrooms, c.baths));
-  if (c.types?.length) conds.push(inArray(listings.propertyType, c.types));
+  conds.push(c.types?.length ? inArray(listings.propertyType, c.types) : defaultTypesCondition());
   if (c.minSqft !== undefined) conds.push(gte(listings.livingAreaSqft, c.minSqft));
   if (c.maxSqft !== undefined) conds.push(lte(listings.livingAreaSqft, c.maxSqft));
   if (c.minLotSqft !== undefined) conds.push(gte(listings.lotSizeSqft, c.minLotSqft));
@@ -153,8 +203,8 @@ export function buildConditions(c: SearchCriteria, now: Date = new Date()): SQL[
   return conds.filter((x): x is SQL => x !== undefined);
 }
 
-export function buildWhere(c: SearchCriteria, now?: Date): SQL | undefined {
-  return and(...buildConditions(c, now));
+export function buildWhere(c: SearchCriteria, now?: Date, scope?: LocationScope): SQL | undefined {
+  return and(...buildConditions(c, now, scope));
 }
 
 export function buildOrderBy(c: SearchCriteria): SQL[] {
@@ -173,6 +223,14 @@ export function buildOrderBy(c: SearchCriteria): SQL[] {
     case "price_per_sqft_asc":
       return [
         sql`(${listings.listPrice}::float / nullif(${listings.livingAreaSqft}, 0)) asc nulls last`,
+        tiebreak,
+      ];
+    case "lot_desc":
+      return [sql`${listings.lotSizeSqft} desc nulls last`, tiebreak];
+    case "price_per_acre_asc":
+      // Price per square foot of lot orders exactly like price per acre.
+      return [
+        sql`(${listings.listPrice}::float / nullif(${listings.lotSizeSqft}, 0)) asc nulls last`,
         tiebreak,
       ];
     case "recommended":

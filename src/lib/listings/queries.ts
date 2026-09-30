@@ -12,6 +12,8 @@ import {
   savedListings,
 } from "@/db/schema";
 import { firmAreaCondition } from "@/lib/areas/firm-area";
+import { defaultTypesCondition } from "@/lib/search/query";
+import { MAX_AREA_SUGGESTIONS, shapeAreaSuggestions, type Suggestion } from "@/lib/search/suggest";
 import { cardColumns, selectCards, withPhotos } from "./card";
 import { canShowDetails, primaryPhotoOnly, publicListing } from "./visibility";
 
@@ -175,21 +177,15 @@ export async function getSavedListingIds(userId: string): Promise<string[]> {
   return rows.map((r) => r.id);
 }
 
-export type Suggestion = {
-  kind: "city" | "neighborhood" | "zip" | "address";
-  label: string;
-  sublabel?: string;
-  /** Value for the search `q` param, or a slug for addresses. */
-  value: string;
-  /** Live listings in the place (not for addresses). */
-  count?: number;
-};
+export type { Suggestion } from "@/lib/search/suggest";
 
 /**
  * Location autocomplete: areas first, then matching addresses. Area names and
  * counts come from the `places` materialized view (rebuilt after each sync,
  * seed and dashboard listing change; see refreshPlaces), so a keystroke reads
- * a few index entries instead of every live listing sharing the prefix.
+ * a few index entries instead of every live listing sharing the prefix. A
+ * lake is one "lake area" suggestion, and towns whose homes have all sold are
+ * offered too (`shapeAreaSuggestions`).
  */
 export async function getLocationSuggestions(term: string): Promise<Suggestion[]> {
   const t = term.trim();
@@ -197,13 +193,30 @@ export async function getLocationSuggestions(term: string): Promise<Suggestion[]
   const escaped = t.replace(/[%_\\]/g, "\\$&");
   const live = and(publicListing(), inArray(listings.status, [...LIVE_STATUSES]));
 
-  const [areas, addresses] = await Promise.all([
+  const [areas, pastOnly, addresses] = await Promise.all([
     db
       .select({ kind: places.kind, label: places.label, sublabel: places.sublabel, n: places.n })
       .from(places)
       .where(sql`lower(${places.label}) like ${`${escaped.toLowerCase()}%`}`)
       .orderBy(desc(places.n), asc(places.label))
-      .limit(6),
+      // Room for a lake's rows (one per town) to fold into one suggestion.
+      .limit(12),
+    // Towns with past sales, in the sold scope's trigram index; the shaping
+    // keeps only those with nothing listed now.
+    db
+      .select({ city: listings.city })
+      .from(listings)
+      .where(
+        and(
+          publicListing(),
+          eq(listings.transactionType, "sale"),
+          eq(listings.status, "closed"),
+          sql`${listings.city} ilike ${`${escaped}%`}`,
+        ),
+      )
+      .groupBy(listings.city)
+      .orderBy(sql`count(*) desc`, listings.city)
+      .limit(MAX_AREA_SUGGESTIONS),
     /^\d*\s*[a-z]/i.test(t) && t.length >= 3
       ? db
           .select({
@@ -227,18 +240,11 @@ export async function getLocationSuggestions(term: string): Promise<Suggestion[]
   ]);
 
   return [
-    ...areas.map((a) => ({
-      kind: a.kind,
-      label: a.label,
-      sublabel:
-        a.kind === "zip"
-          ? (a.sublabel ?? undefined)
-          : a.kind === "neighborhood"
-            ? `Neighborhood in ${a.sublabel}`
-            : (a.sublabel ?? undefined),
-      value: a.label,
-      count: a.n,
-    })),
+    ...shapeAreaSuggestions(
+      t,
+      areas,
+      pastOnly.map((r) => r.city),
+    ),
     ...addresses.map((a) => ({
       kind: "address" as const,
       label: `${a.addressLine1}${a.unitNumber ? ` #${a.unitNumber}` : ""}`,
@@ -265,19 +271,28 @@ export async function getPopularAreas(limit = 8) {
     })
     .from(listings)
     .where(
-      and(publicListing(), eq(listings.status, "active"), eq(listings.transactionType, "sale")),
+      and(
+        publicListing(),
+        eq(listings.status, "active"),
+        eq(listings.transactionType, "sale"),
+        defaultTypesCondition(),
+      ),
     )
     .groupBy(listings.city)
     .orderBy(sql`count(*) desc`, listings.city)
     .limit(limit);
 }
 
-/** The for-sale set the default /homes search shows (and `listings_buy_*` indexes cover). */
+/**
+ * The for-sale set the default /homes search shows (and `listings_buy_*` indexes cover):
+ * commercial property left out, as there (`defaultTypesCondition`).
+ */
 const forSaleNow = () =>
   and(
     publicListing(),
     eq(listings.transactionType, "sale"),
     inArray(listings.status, ["active", "coming_soon"]),
+    defaultTypesCondition(),
   );
 
 /**
@@ -301,9 +316,10 @@ export async function getMarketStats() {
     );
   const [row] = await db
     .select({
-      active: sql<number>`count(*) filter (where ${listings.status} in ('active','coming_soon') and ${listings.transactionType} = 'sale')::int`,
-      newThisWeek: sql<number>`count(*) filter (where ${listings.listDate} >= current_date - 7 and ${listings.transactionType} = 'sale')::int`,
-      medianPrice: sql<number>`(percentile_cont(0.5) within group (order by ${listings.listPrice}) filter (where ${listings.status} = 'active' and ${listings.transactionType} = 'sale'))::int`,
+      // What /homes lists by default: the for-sale set without commercial property.
+      active: sql<number>`count(*) filter (where ${forSaleNow()})::int`,
+      newThisWeek: sql<number>`count(*) filter (where ${listings.listDate} >= current_date - 7 and ${listings.transactionType} = 'sale' and ${defaultTypesCondition()})::int`,
+      medianPrice: sql<number>`(percentile_cont(0.5) within group (order by ${listings.listPrice}) filter (where ${listings.status} = 'active' and ${listings.transactionType} = 'sale' and ${defaultTypesCondition()}))::int`,
       openHouses: sql<number>`count(*) filter (where ${and(forSaleNow(), inArray(listings.id, openHouseThisWeek))})::int`,
     })
     .from(listings)

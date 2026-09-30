@@ -371,8 +371,14 @@ export const listings = pgTable(
     index("listings_buy_ppsf_idx")
       .on(sql`(${t.listPrice}::float / nullif(${t.livingAreaSqft}, 0)) asc nulls last`, t.id)
       .where(FOR_SALE),
-    // Map bounds are `longitude/latitude BETWEEN`. The migration adds
-    // INCLUDE (list_price) so viewport counts stay index-only.
+    // Land sorts (site review #8): acreage, and price per acre.
+    index("listings_buy_lot_idx").on(t.lotSizeSqft.desc().nullsLast(), t.id).where(FOR_SALE),
+    index("listings_buy_ppa_idx")
+      .on(sql`(${t.listPrice}::float / nullif(${t.lotSizeSqft}, 0)) asc nulls last`, t.id)
+      .where(FOR_SALE),
+    // Map bounds are `longitude/latitude BETWEEN`. The migration adds INCLUDE
+    // (list_price, idx_hidden, property_type) so viewport counts stay
+    // index-only, the default search's "no commercial" included.
     index("listings_buy_geo_idx").on(t.latitude, t.longitude).where(FOR_SALE),
     // `pending=1` (under contract and pending too): its 4-status IN doesn't
     // imply FOR_SALE, so it gets the same set.
@@ -392,6 +398,10 @@ export const listings = pgTable(
     index("listings_live_sqft_idx").on(t.livingAreaSqft.desc().nullsLast(), t.id).where(LIVE_SALE),
     index("listings_live_ppsf_idx")
       .on(sql`(${t.listPrice}::float / nullif(${t.livingAreaSqft}, 0)) asc nulls last`, t.id)
+      .where(LIVE_SALE),
+    index("listings_live_lot_idx").on(t.lotSizeSqft.desc().nullsLast(), t.id).where(LIVE_SALE),
+    index("listings_live_ppa_idx")
+      .on(sql`(${t.listPrice}::float / nullif(${t.lotSizeSqft}, 0)) asc nulls last`, t.id)
       .where(LIVE_SALE),
     // Rentals: few enough that one index serves every order and the count.
     index("listings_rent_recommended_idx")
@@ -418,6 +428,10 @@ export const listings = pgTable(
     index("listings_sold_sqft_idx").on(t.livingAreaSqft.desc().nullsLast(), t.id).where(SOLD),
     index("listings_sold_ppsf_idx")
       .on(sql`(${t.listPrice}::float / nullif(${t.livingAreaSqft}, 0)) asc nulls last`, t.id)
+      .where(SOLD),
+    index("listings_sold_lot_idx").on(t.lotSizeSqft.desc().nullsLast(), t.id).where(SOLD),
+    index("listings_sold_ppa_idx")
+      .on(sql`(${t.listPrice}::float / nullif(${t.lotSizeSqft}, 0)) asc nulls last`, t.id)
       .where(SOLD),
     // Listing sitemap chunks (src/app/homes/sitemap.ts) page through live
     // listings by id. The migration adds INCLUDE (slug, updated_at) so a chunk
