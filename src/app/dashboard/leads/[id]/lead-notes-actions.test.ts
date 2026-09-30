@@ -137,7 +137,8 @@ describe("addLeadNote", () => {
     h.state.updates = [[{ id: LEAD_ID }]];
     const res = await addLeadNote({ ok: true }, noteForm({ markContacted: "on" }));
     expect(res).toEqual({ ok: true, message: "Note added and lead marked as contacted." });
-    expect(h.state.updated).toEqual([{ status: "contacted" }]);
+    // The first reply is recorded too, kept if a status change already did (coalesce).
+    expect(h.state.updated).toEqual([{ status: "contacted", firstContactedAt: expect.anything() }]);
     expect(h.state.audits[0]).toMatchObject({
       changes: { status: { from: "new", to: "contacted" } },
     });

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BellRing,
   ChartColumn,
   Building2,
   CircleUserRound,
@@ -46,6 +47,7 @@ export function DashboardNav({
     ...(hasAgentProfile
       ? [{ href: "/dashboard/profile", label: "My profile", icon: CircleUserRound }]
       : []),
+    { href: "/dashboard/settings", label: "Email settings", icon: BellRing },
     ...(admin
       ? [
           { href: "/dashboard/agents", label: "Agents", icon: Contact },

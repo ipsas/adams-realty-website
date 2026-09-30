@@ -217,8 +217,42 @@ describe("hidden listings stay off every public surface, the firm's own included
         .set({ startsAt: at(24 * 30), endsAt: at(24 * 30 + 2) })
         .where(eq(openHouses.listingId, idOf("manual:active")));
       expect((await getMarketStats()).openHouses).toBe(1);
+
+      // One that already ended (it started this week, but it's over): neither the link
+      // nor the count shows it.
+      await db
+        .update(openHouses)
+        .set({ startsAt: at(-26), endsAt: at(-24) })
+        .where(eq(openHouses.listingId, idOf("feed:active")));
+      const afterEnded = await searchListings(parseSearchParams({ openHouse: "1" }));
+      expect(labelled(afterEnded.items.map((i) => i.id))).toEqual(["manual:active"]);
+      expect((await getMarketStats()).openHouses).toBe(0);
     } finally {
       await db.delete(openHouses);
+    }
+  });
+
+  it("the home page's 'New this week' count: only homes its link, /homes?maxDaysOnMarket=7, lists", async () => {
+    // Every row was listed 5 days ago: in the window, but only the for-sale public ones
+    // (not pending, under contract, sold or hidden) are on the link's page.
+    const shown = await searchListings(parseSearchParams({ maxDaysOnMarket: "7" }));
+    expect(labelled(shown.items.map((i) => i.id))).toEqual(["feed:active", "manual:active"]);
+    expect((await getMarketStats()).newThisWeek).toBe(2);
+
+    // Listed 10 days ago: out of both.
+    await db
+      .update(listings)
+      .set({ listDate: daysAgo(10) })
+      .where(eq(listings.id, idOf("manual:active")));
+    try {
+      const later = await searchListings(parseSearchParams({ maxDaysOnMarket: "7" }));
+      expect(labelled(later.items.map((i) => i.id))).toEqual(["feed:active"]);
+      expect((await getMarketStats()).newThisWeek).toBe(1);
+    } finally {
+      await db
+        .update(listings)
+        .set({ listDate: daysAgo(5) })
+        .where(eq(listings.id, idOf("manual:active")));
     }
   });
 

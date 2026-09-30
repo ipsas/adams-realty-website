@@ -130,7 +130,11 @@ Use your model table: Opus High for the work packages, and Xhigh if one gets stu
 - [ ] **Other agents.** Remove the sample agents, or send real names, photos and bios.
 - [ ] **Legal review** of `/privacy` and `/terms` (they are drafts).
 - [ ] **Email sending.** Create a [Resend](https://resend.com) account, verify your domain, and set
-      `RESEND_API_KEY`, `EMAIL_FROM` and `LEADS_INBOX`. Until then no emails are sent.
+      `RESEND_API_KEY`, `EMAIL_FROM` and `LEADS_INBOX`. Until then no emails are sent (the
+      server logs them instead). Once it's set, each new lead goes to its agent (or
+      `LEADS_INBOX`) with a copy to Andrea, agents are emailed when she assigns them a lead,
+      and every staff member gets a 7 a.m. summary of leads that need attention. Andrea can
+      turn her copies and the summary off in _Dashboard → Email settings_.
 - [ ] **Domain and hosting.** Add your domain in Vercel. The live business site should be on Vercel
       Pro, whose terms cover commercial use and which allows the 15-minute MLS sync. Only
       after the project is on Pro (a sub-daily cron fails every deployment on Hobby, which the

@@ -676,6 +676,13 @@ ALREADY BUILT (form spam, before the packages; keep it):
 
 - Suspected spam is stored with status `spam`, unassigned, with its reasons in `metadata.spam`; `getLeads` returns `spamReasons`, the Spam tab label carries a count (`data-testid="spam-count"`), a flagged lead shows `<SpamFlag>` ("Flagged automatically", `data-testid="spam-flag"`) and its page a notice (`data-testid="spam-notice"`). Lead cards show `SpamFlag` next to the type badge; setting any other status restores its agent (`updateInquiryStatus`).
 
+ALREADY BUILT (site review #3 and #9, lead emails and follow-up, before the packages; keep it):
+
+- The overview opens with `<NeedsAttention>` (src/components/dashboard/needs-attention.tsx, `data-testid="needs-attention"`): new leads waiting more than 2 office hours with a red `AlertPill` ("Waiting 4 days"), tours in the next 48 hours and follow-ups due, each a 44px link to /dashboard/leads/<id>. It already comes before the stats on phones, so WP6's 'Needs reply' cards should build on it (same data: `getNeedsAttention` in src/lib/leads/attention.ts) rather than add a second list. Admins also get `<ReplyTimes>` below the stats.
+- A lead's page has `FollowUpControl` (date field plus Tomorrow / In 3 days / Next week / Clear, `data-testid="follow-up"`, 16px field, 44px buttons on touch) in the Lead status panel, a "Waiting N days" pill in the header and a "First contact" detail. Lead cards should show the same flags the list already renders (`waiting-label`, `follow-up-on`). Moving a lead to contacted or qualified stamps `first_contacted_at`; the status chips must go through `updateInquiryStatus` so it keeps doing that.
+- Dashboard → Email settings (/dashboard/settings, a nav item for all staff) holds two switches; the More sheet must include it.
+- Lead emails now link to /dashboard/leads/<id> itself, not the list's `?focus=<id>`; the focus deep link below is still wanted for links from elsewhere.
+
 STEPS:
 
 - Set up the worktree with `scripts/mobile-worktree.sh 6` (port 3106, database adams_wp6). Start only after G0, because every owned file is a #10 path. Build on #10's /dashboard/leads/[id] and lead notes.

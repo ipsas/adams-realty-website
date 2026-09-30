@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { canDeleteLeadNote, MAX_NOTE_LENGTH } from "@/app/dashboard/leads/[id]/note-policy";
@@ -8,6 +8,13 @@ import { db } from "@/db";
 import { inquiries, leadNotes } from "@/db/schema";
 import { can } from "@/lib/auth/permissions";
 import { getActor } from "@/lib/auth/session";
+import {
+  addDays,
+  followUpDate,
+  FOLLOW_UP_PRESETS,
+  marketToday,
+  type FollowUpPreset,
+} from "@/lib/leads/working-hours";
 import { audit } from "../audit";
 
 // Private notes staff keep on a lead (calls, showings, next steps). Whoever may
@@ -101,7 +108,11 @@ export async function addLeadNote(_prev: LeadNoteState, form: FormData): Promise
     const advanced = d.markContacted
       ? await tx
           .update(inquiries)
-          .set({ status: "contacted" })
+          .set({
+            status: "contacted",
+            // The first reply (site review #9); kept if a status change recorded it earlier.
+            firstContactedAt: sql`coalesce(${inquiries.firstContactedAt}, now())`,
+          })
           .where(and(eq(inquiries.id, d.inquiryId), eq(inquiries.status, "new")))
           .returning({ id: inquiries.id })
       : [];
@@ -179,4 +190,68 @@ export async function deleteLeadNote(
 
   revalidateLead(row.inquiryId);
   return { ok: true, message: "Note deleted." };
+}
+
+export type FollowUpResult = {
+  ok: boolean;
+  /** The stored date (YYYY-MM-DD), or null when cleared. */
+  followUpOn?: string | null;
+  message?: string;
+};
+
+/** A real YYYY-MM-DD day (not 2026-02-31). */
+const isCalendarDate = (v: string) =>
+  /^\d{4}-\d{2}-\d{2}$/.test(v) &&
+  !Number.isNaN(Date.parse(`${v}T00:00:00Z`)) &&
+  new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v;
+
+/** How far ahead a follow-up can be set. */
+const MAX_FOLLOW_UP_DAYS = 366;
+
+/**
+ * Sets a lead's "Follow up on" date (site review #9): a quick button
+ * (`tomorrow`, `in3`, `week`, counted from today in the market's time zone),
+ * a date (YYYY-MM-DD, today or later), or "" to clear it. Whoever may update
+ * the lead may set it.
+ */
+export async function setLeadFollowUp(inquiryId: string, value: string): Promise<FollowUpResult> {
+  const actor = await getActor();
+  if (!actor) return { ok: false, message: SESSION_ENDED };
+  if (!can.viewDashboard(actor)) return { ok: false, message: "You can't change this lead." };
+  if (!z.string().uuid().safeParse(inquiryId).success)
+    return { ok: false, message: "Lead not found." };
+
+  const now = new Date();
+  const today = marketToday(now);
+  let date: string | null;
+  if (value === "") date = null;
+  else if (FOLLOW_UP_PRESETS.some((p) => p.value === value))
+    date = followUpDate(value as FollowUpPreset, now);
+  else if (isCalendarDate(value)) date = value;
+  else return { ok: false, message: "Choose a date." };
+  if (date !== null && date < today) return { ok: false, message: "Choose today or a later date." };
+  if (date !== null && date > addDays(today, MAX_FOLLOW_UP_DAYS))
+    return { ok: false, message: "Choose a date within the next year." };
+
+  const [lead] = await db
+    .select({ agentId: inquiries.agentId, followUpOn: inquiries.followUpOn })
+    .from(inquiries)
+    .where(eq(inquiries.id, inquiryId))
+    .limit(1);
+  if (!lead) return { ok: false, message: "Lead not found." };
+  if (!can.updateInquiry(actor, lead))
+    return { ok: false, message: "This lead is no longer assigned to you." };
+
+  await db.transaction(async (tx) => {
+    await tx.update(inquiries).set({ followUpOn: date }).where(eq(inquiries.id, inquiryId));
+    await audit(tx, {
+      actorId: actor.userId,
+      action: "inquiry.follow_up",
+      entityType: "inquiry",
+      entityId: inquiryId,
+      changes: { followUpOn: { from: lead.followUpOn, to: date } },
+    });
+  });
+  revalidateLead(inquiryId);
+  return { ok: true, followUpOn: date };
 }

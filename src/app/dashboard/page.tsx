@@ -8,17 +8,32 @@ import {
   Td,
   Th,
 } from "@/components/dashboard/ui";
+import { NeedsAttention, ReplyTimes } from "@/components/dashboard/needs-attention";
 import { LinkButton } from "@/components/ui/button";
+import { db } from "@/db";
 import { can } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { getOverview } from "@/lib/dashboard/queries";
+import {
+  attentionScope,
+  getNeedsAttention,
+  getReplyTimes,
+  REPLY_WINDOW_DAYS,
+} from "@/lib/leads/attention";
 import { formatPriceShort, formatRelative } from "@/lib/format";
 
 export const metadata = { title: "Overview" };
 
 export default async function DashboardHome() {
   const actor = await requirePermission("/dashboard", can.viewDashboard);
-  const { listingStats, leadStats, saves, recentLeads } = await getOverview(actor);
+  const now = new Date();
+  const scope = attentionScope(actor);
+  const [{ listingStats, leadStats, saves, recentLeads }, attention, replyTimes] =
+    await Promise.all([
+      getOverview(actor),
+      scope ? getNeedsAttention(db, scope, now) : null,
+      can.viewReplyTimes(actor) ? getReplyTimes(db, now) : null,
+    ]);
   const admin = actor.role === "admin";
   return (
     <>
@@ -35,6 +50,7 @@ export default async function DashboardHome() {
           ) : undefined
         }
       />
+      {attention && <NeedsAttention attention={attention} office={admin} now={now} />}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Active listings"
@@ -57,6 +73,8 @@ export default async function DashboardHome() {
           hint={`${leadStats.tours} upcoming tour requests`}
         />
       </div>
+
+      {replyTimes && <ReplyTimes rows={replyTimes} days={REPLY_WINDOW_DAYS} />}
 
       <div className="mt-10 mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-ink">Latest leads</h2>

@@ -3,12 +3,9 @@ import { z } from "zod";
 import { site } from "@/config/site";
 import type { Executor } from "@/db";
 import { agents, inquiries, listings } from "@/db/schema";
-import { toEmailListing } from "@/lib/alerts/present";
 import { offersTours } from "@/lib/areas/firm-area";
 import type { Email } from "@/lib/email";
-import { leadNotificationEmail } from "@/lib/email-templates";
 import { hitFormLimits, isKnownCustomer, retryPhrase } from "@/lib/form-guard";
-import { formatCityLine, formatFullAddress, formatStreet } from "@/lib/format";
 import { inquiryReply, withoutTour } from "@/lib/inquiry-reply";
 import { canShowDetails } from "@/lib/listings/visibility";
 import {
@@ -20,6 +17,7 @@ import {
   type SpamReason,
 } from "@/lib/spam";
 import { zonedDateTime } from "@/lib/time";
+import { leadEmailInput, sendNewLeadEmails } from "./notify";
 
 /**
  * Public lead forms (tour requests, questions, valuations, listing problem
@@ -38,6 +36,8 @@ import { zonedDateTime } from "@/lib/time";
  * `spam` and its reasons in `metadata.spam`, unassigned (the agent it would
  * have gone to is kept in `metadata.routedAgentId`), and never emailed. The
  * sender sees the usual thank-you, so robots learn nothing.
+ *
+ * Emails (./notify.ts): the agent or office inbox, plus the admins' copies.
  */
 
 export type InquiryState = {
@@ -96,6 +96,12 @@ export type SubmitDeps = {
   inbox: string;
   production?: boolean;
   now?: Date;
+  /**
+   * Runs the emails later: the server action passes `afterResponse`
+   * (./deliver.ts), so they finish after the response. Omitted (tests), they
+   * are sent before `submitInquiry` returns.
+   */
+  defer?: (task: () => Promise<unknown>) => void;
 };
 
 export type SubmitResult = InquiryState & { id?: string; spam?: SpamReason[] };
@@ -192,49 +198,36 @@ export async function submitInquiry(
   const reply = report ? REPORT_REPLY : inquiryReply(d, agent?.name ?? null, outOfArea);
   if (suspected) return { ok: true, message: reply, id: row.id, spam };
 
-  // Notify without failing the request if email is down — the lead is already saved.
-  const to = report ? site.mls.corrections.email : (agent?.email ?? deps.inbox);
-  const subject = report
-    ? `Listing problem report: ${listing ? formatFullAddress(listing) : "a listing"}`
-    : d.type === "tour"
-      ? `Tour request: ${listing ? formatFullAddress(listing) : "a home"}`
-      : d.type === "valuation"
-        ? "New home valuation request"
-        : `New ${d.type} from ${d.name}`;
-  const email = leadNotificationEmail({
-    subject,
-    type: d.type,
-    name: d.name,
-    email: d.email,
-    phone: d.phone,
-    // Their own words; the valuation address gets its own row.
-    message: [d.message, d.notes].filter(Boolean).join("\n\n") || null,
-    propertyAddress: d.address,
-    tourLabel: tourAt
-      ? tourAt.toLocaleString("en-US", {
-          timeZone: site.market.timeZone,
-          weekday: "short",
-          month: "short",
-          day: "numeric",
-          hour: "numeric",
-          minute: "2-digit",
-          timeZoneName: "short",
-        })
-      : null,
-    tourType: d.type === "tour" ? (d.tourType ?? "in_person") : null,
-    listing: listing ? toEmailListing(listing) : null,
-    listingPlace: listing
-      ? listing.hideAddress
-        ? `a home in ${formatCityLine(listing)}`
-        : formatStreet(listing)
-      : null,
-    source: d.source,
-    dashboardUrl: `${deps.siteUrl}/dashboard/leads?focus=${row.id}`,
-    assignedAgentName: agent?.name ?? null,
-  });
-  await deps
-    .send({ to, replyTo: d.email, subject: email.subject, text: email.text, html: email.html })
-    .catch((e) => console.error("[inquiry] notification failed", e));
+  // The lead is saved; email failures are logged, never shown to the sender.
+  const notify = () =>
+    sendNewLeadEmails(
+      { db, send: deps.send, siteUrl: deps.siteUrl },
+      {
+        id: row.id,
+        input: leadEmailInput({
+          id: row.id,
+          type: d.type,
+          name: d.name,
+          email: d.email,
+          phone: d.phone ?? null,
+          // Their own words; the valuation address gets its own row.
+          message: [d.message, d.notes].filter(Boolean).join("\n\n") || null,
+          propertyAddress: d.address,
+          tourAt,
+          tourType: d.type === "tour" ? (d.tourType ?? "in_person") : null,
+          source: d.source,
+          listing: listing ?? null,
+          agentName: agent?.name ?? null,
+          siteUrl: deps.siteUrl,
+        }),
+        to: report ? site.mls.corrections.email : (agent?.email ?? deps.inbox),
+        replyTo: d.email,
+        agentUserId: agent?.userId ?? null,
+        copies: !report,
+      },
+    );
+  if (deps.defer) deps.defer(notify);
+  else await notify();
 
   return { ok: true, message: reply, id: row.id, spam: [] };
 }

@@ -1,6 +1,6 @@
 "use server";
 
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -17,7 +17,11 @@ import {
 } from "@/db/schema";
 import { authorize, can, ForbiddenError, type Actor } from "@/lib/auth/permissions";
 import { getActor } from "@/lib/auth/session";
+import { sendEmail } from "@/lib/email";
+import { env } from "@/lib/env";
 import { geocodeAddress } from "@/lib/geocode";
+import { afterResponse } from "@/lib/leads/deliver";
+import { sendLeadAssignedEmail } from "@/lib/leads/notify";
 import { LISTINGS_TAG } from "@/lib/listings/cache-tags";
 import { lotSizeToSqft } from "@/lib/listings/land";
 import { upsertListing } from "@/lib/listings/persist";
@@ -543,6 +547,30 @@ async function listingsChanged() {
 
 const inquiryStatus = z.enum(["new", "contacted", "qualified", "closed", "spam"]);
 
+/** Statuses that mean someone has been in touch: moving to one records the first contact. */
+const CONTACTED = new Set(["contacted", "qualified"]);
+
+/** Lead emails from the dashboard, sent after the response (src/lib/leads/deliver.ts). */
+function emailAgentAboutAssignment(inquiryId: string, agentId: string, actor: Actor) {
+  afterResponse("lead assignment email", async () => {
+    const [me] = await db
+      .select({ name: users.name })
+      .from(users)
+      .where(eq(users.id, actor.userId))
+      .limit(1);
+    await sendLeadAssignedEmail(
+      { db, send: sendEmail, siteUrl: env.NEXT_PUBLIC_SITE_URL },
+      { inquiryId, agentId, assignedBy: { userId: actor.userId, name: me?.name ?? null } },
+    );
+  });
+}
+
+function revalidateLeads(id: string) {
+  revalidatePath("/dashboard/leads");
+  revalidatePath(`/dashboard/leads/${id}`);
+  revalidatePath("/dashboard");
+}
+
 export async function updateInquiryStatus(id: string, status: string) {
   const actor = await requireStaff();
   const parsed = inquiryStatus.safeParse(status);
@@ -566,21 +594,40 @@ export async function updateInquiryStatus(id: string, status: string) {
           .limit(1)
           .then((r) => r[0]?.id ?? null)
       : null;
-  await db
-    .update(inquiries)
-    .set({ status: parsed.data, ...(restore ? { agentId: restore } : {}) })
-    .where(eq(inquiries.id, id));
-  if (restore) {
-    await audit(db, {
-      actorId: actor.userId,
-      action: "inquiry.assign",
-      entityType: "inquiry",
-      entityId: id,
-      changes: { agentId: restore, reason: "cleared from spam" },
-    });
-  }
-  revalidatePath("/dashboard/leads");
-  revalidatePath("/dashboard");
+  await db.transaction(async (tx) => {
+    await tx
+      .update(inquiries)
+      .set({
+        status: parsed.data,
+        ...(restore ? { agentId: restore } : {}),
+        // The first move to contacted or qualified is the first reply (site review #9).
+        ...(CONTACTED.has(parsed.data)
+          ? { firstContactedAt: sql`coalesce(${inquiries.firstContactedAt}, now())` }
+          : {}),
+      })
+      .where(eq(inquiries.id, id));
+    if (lead.status !== parsed.data) {
+      await audit(tx, {
+        actorId: actor.userId,
+        action: "inquiry.status",
+        entityType: "inquiry",
+        entityId: id,
+        changes: { status: { from: lead.status, to: parsed.data } },
+      });
+    }
+    if (restore) {
+      await audit(tx, {
+        actorId: actor.userId,
+        action: "inquiry.assign",
+        entityType: "inquiry",
+        entityId: id,
+        changes: { agentId: restore, reason: "cleared from spam" },
+      });
+    }
+  });
+  // The lead never reached its agent while it sat in Spam: tell them now.
+  if (restore) emailAgentAboutAssignment(id, restore, actor);
+  revalidateLeads(id);
   return { ok: true as const };
 }
 
@@ -588,7 +635,14 @@ export async function assignInquiry(id: string, agentId: string) {
   const actor = await requireStaff();
   authorize(can.assignInquiry(actor));
   const target = agentId === "" ? null : z.string().uuid().parse(agentId);
-  await db.transaction(async (tx) => {
+  const previous = await db.transaction(async (tx) => {
+    const [before] = await tx
+      .select({ agentId: inquiries.agentId, status: inquiries.status })
+      .from(inquiries)
+      .where(eq(inquiries.id, id))
+      .for("update")
+      .limit(1);
+    if (!before) return undefined;
     await tx.update(inquiries).set({ agentId: target }).where(eq(inquiries.id, id));
     await audit(tx, {
       actorId: actor.userId,
@@ -597,8 +651,14 @@ export async function assignInquiry(id: string, agentId: string) {
       entityId: id,
       changes: { agentId: target },
     });
+    return before;
   });
-  revalidatePath("/dashboard/leads");
+  if (!previous) return { ok: false as const };
+  // Assigned or reassigned (not unassigned, not re-picking the same agent, not spam
+  // an admin is only tidying): the agent hears about it by email.
+  if (target && target !== previous.agentId && previous.status !== "spam")
+    emailAgentAboutAssignment(id, target, actor);
+  revalidateLeads(id);
   return { ok: true as const };
 }
 

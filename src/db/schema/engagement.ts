@@ -79,6 +79,14 @@ export const inquiries = pgTable(
     /** Page the lead came from, e.g. "listing", "sell", "agent", "contact". */
     source: text("source").notNull(),
     metadata: jsonb("metadata").$type<Record<string, string>>().notNull().default({}),
+    /**
+     * When the lead first left "new" for contacted or qualified (a status change,
+     * or a note saved with "Mark as contacted"). Never moves once set. Null for
+     * leads not contacted yet, and for leads handled before it was recorded.
+     */
+    firstContactedAt: timestamp("first_contacted_at", { withTimezone: true }),
+    /** "Follow up on" date, a calendar day in the market's time zone. */
+    followUpOn: date("follow_up_on", { mode: "string" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -87,6 +95,7 @@ export const inquiries = pgTable(
   },
   (t) => [
     index("inquiries_agent_status_idx").on(t.agentId, t.status),
+    index("inquiries_follow_up_idx").on(t.followUpOn),
     index("inquiries_created_idx").on(t.createdAt),
     index("inquiries_listing_idx").on(t.listingId),
   ],
@@ -119,6 +128,24 @@ export const leadNotes = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("lead_notes_inquiry_idx").on(t.inquiryId, t.createdAt)],
+);
+
+/**
+ * One row per morning summary (src/lib/leads/digest.ts) and market-calendar
+ * day: `recipient` is `agent:<agent id>` or `office:<user id>`. Inserting the
+ * row claims the day, so the two daily crons that may run it never send twice;
+ * a failed send deletes it again for the next run.
+ */
+export const leadDigests = pgTable(
+  "lead_digests",
+  {
+    recipient: text("recipient").notNull(),
+    day: date("day", { mode: "string" }).notNull(),
+    /** Leads the summary listed (0: nothing needed attention, so no email went out). */
+    items: integer("items").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.recipient, t.day] })],
 );
 
 /**

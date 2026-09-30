@@ -40,6 +40,7 @@ import {
   savedSearches,
   users,
 } from "@/db/schema";
+import { addDays, addOfficeTime, marketToday } from "@/lib/leads/working-hours";
 import { upsertListing, type PersistSource } from "@/lib/listings/persist";
 import { refreshPlaces } from "@/lib/listings/places";
 import {
@@ -735,7 +736,7 @@ async function main() {
   const password = process.env.SEED_PASSWORD ?? "adams-demo-2026";
   console.info("Resetting tables…");
   await db.execute(sql`
-    TRUNCATE audit_logs, inquiries, saved_searches, saved_listings, listing_events, open_houses,
+    TRUNCATE audit_logs, inquiries, lead_digests, saved_searches, saved_listings, listing_events, open_houses,
       listing_media, listings, sync_runs, data_sources, agents, offices, verifications, sessions,
       accounts, users RESTART IDENTITY CASCADE
   `);
@@ -928,11 +929,12 @@ async function main() {
     leadNames.map((name, i) => {
       const l = ourListings[i % ourListings.length];
       const type = (["tour", "question", "tour", "offer", "question", "valuation"] as const)[i];
+      const agentId = type === "valuation" ? null : l.agentId;
       return {
         type,
         status: (["new", "new", "contacted", "qualified", "new", "new"] as const)[i],
         listingId: type === "valuation" ? null : l.id,
-        agentId: type === "valuation" ? null : l.agentId,
+        agentId,
         name,
         email: `${name.split(" ")[0].toLowerCase()}@example.com`,
         phone: `(706) 555-01${String(20 + i * 7)}`,
@@ -950,6 +952,20 @@ async function main() {
         tourType: type === "tour" ? ("in_person" as const) : null,
         source: type === "valuation" ? "sell" : "listing",
         createdAt: daysAgo(i * 0.7),
+        // The contacted and qualified leads were answered 40 minutes and 3 hours (of
+        // office time) after they arrived, for the broker's reply-time table. Never on Andrea's own leads:
+        // a reply time is a statistic about her, and hers must be real.
+        firstContactedAt:
+          (i === 2 || i === 3) && agentId !== broker.id
+            ? new Date(
+                Math.min(
+                  addOfficeTime(daysAgo(i * 0.7), (i === 2 ? 40 : 180) * 60_000).getTime(),
+                  NOW.getTime(),
+                ),
+              )
+            : null,
+        // A follow-up due today and one tomorrow ("Needs attention", the morning email).
+        followUpOn: i === 3 ? marketToday(NOW) : i === 2 ? addDays(marketToday(NOW), 1) : null,
       };
     }),
   );

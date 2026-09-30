@@ -12,8 +12,10 @@ import Link from "next/link";
 import { forbidden, notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { z } from "zod";
+import { FollowUpControl } from "@/components/dashboard/follow-up-control";
 import { LeadAgentSelect, LeadStatusSelect } from "@/components/dashboard/lead-controls";
 import { LeadNotes, type LeadNoteItem } from "@/components/dashboard/lead-notes";
+import { AlertPill } from "@/components/dashboard/needs-attention";
 import { LeadTypeBadge, PageHeader, StatusDot } from "@/components/dashboard/ui";
 import { ReturnLink } from "@/components/layout/return-link";
 import { Avatar } from "@/components/ui/avatar";
@@ -51,6 +53,13 @@ import {
   telHref,
   TOUR_TYPE_LABELS,
 } from "./lead-format";
+import {
+  formatOfficeDuration,
+  isWaitingTooLong,
+  marketToday,
+  waitingLabel,
+  workingMsBetween,
+} from "@/lib/leads/working-hours";
 import { parseSpamReasons, SPAM_REASON_LABELS } from "@/lib/spam";
 import { canDeleteLeadNote } from "./note-policy";
 
@@ -100,6 +109,8 @@ export default async function LeadDetailPage(props: PageProps<"/dashboard/leads/
   const from = refererPath(lead.metadata.referer);
   const tourPassed = lead.tourAt ? lead.tourAt <= now : false;
   const spamReasons = lead.status === "spam" ? parseSpamReasons(lead.metadata.spam) : [];
+  const canUpdate = can.updateInquiry(actor, lead);
+  const waitingTooLong = lead.status === "new" && isWaitingTooLong(lead.createdAt, now);
 
   return (
     <>
@@ -113,6 +124,9 @@ export default async function LeadDetailPage(props: PageProps<"/dashboard/leads/
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
             <LeadTypeBadge type={lead.type} />
             <StatusDot status={lead.status} />
+            {waitingTooLong && (
+              <AlertPill testId="lead-waiting">{waitingLabel(lead.createdAt, now)}</AlertPill>
+            )}
             <span>
               Received {formatRelative(lead.createdAt, now)}
               {listing && (
@@ -209,6 +223,13 @@ export default async function LeadDetailPage(props: PageProps<"/dashboard/leads/
                 selectId="lead-status"
               />
             </div>
+            {canUpdate && (
+              <FollowUpControl
+                inquiryId={lead.id}
+                followUpOn={lead.followUpOn}
+                today={marketToday(now)}
+              />
+            )}
             {admin ? (
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="lead-agent">Assigned agent</Label>
@@ -285,7 +306,7 @@ export default async function LeadDetailPage(props: PageProps<"/dashboard/leads/
               )}
             </div>
 
-            <dl className="grid grid-cols-1 gap-4 border-t border-line px-5 py-4 text-sm sm:grid-cols-3">
+            <dl className="grid grid-cols-1 gap-4 border-t border-line px-5 py-4 text-sm sm:grid-cols-2 xl:grid-cols-4">
               <Detail label="Received">
                 <time dateTime={lead.createdAt.toISOString()}>
                   {formatLeadDateTime(lead.createdAt, now)}
@@ -302,13 +323,34 @@ export default async function LeadDetailPage(props: PageProps<"/dashboard/leads/
               <Detail label="Assigned agent">
                 {lead.agentName ?? <span className="text-clay-600">Unassigned</span>}
               </Detail>
+              <Detail label="First contact">
+                <span data-testid="first-contact">
+                  {lead.firstContactedAt ? (
+                    <>
+                      <time dateTime={lead.firstContactedAt.toISOString()}>
+                        {formatLeadDateTime(lead.firstContactedAt, now)}
+                      </time>
+                      <span className="block text-xs text-muted">
+                        {formatOfficeDuration(
+                          workingMsBetween(lead.createdAt, lead.firstContactedAt),
+                        )}{" "}
+                        of office time after it arrived
+                      </span>
+                    </>
+                  ) : lead.status === "new" ? (
+                    <span className={waitingTooLong ? "text-clay-600" : "text-muted"}>Not yet</span>
+                  ) : (
+                    <span className="text-muted">Not recorded</span>
+                  )}
+                </span>
+              </Detail>
             </dl>
           </section>
 
           <LeadNotes
             inquiryId={lead.id}
             notes={noteItems}
-            canAdd={can.updateInquiry(actor, lead)}
+            canAdd={canUpdate}
             viewerName={session?.user.name ?? "You"}
             offerMarkContacted={lead.status === "new"}
           />

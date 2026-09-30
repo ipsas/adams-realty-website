@@ -137,7 +137,9 @@ Vercel plus Neon (or Supabase) Postgres is the simplest setup:
    empty database, and search engines are told to stay off the sample pages.
 3. The crons in `vercel.json` run the MLS sync, the off-market purge (`?purge=1`, a separate
    purge-only run) and email alerts once a day, which is what Vercel's free (Hobby) plan
-   allows; a sub-daily schedule fails the deployment there. On Vercel Pro, set the sync to
+   allows; a sub-daily schedule fails the deployment there. The staff's 7 a.m. lead summary
+   has no cron of its own: the sync and alerts routes both try it, and the first run at or
+   after 7 a.m. Eastern sends it (11:00 UTC in summer, 12:00 UTC in winter), once a day. On Vercel Pro, set the sync to
    `*/15 * * * *` (keep the purge daily, at a minute no sync starts on) and alerts to
    `5 * * * *` (hourly): see HANDOFF.md section 6.
 4. Cached listing data (home page numbers and featured homes, area guide stats) refreshes

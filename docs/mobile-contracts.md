@@ -308,6 +308,13 @@ Keep these when editing the files that hold them:
   that mounts with the page.
 - The 429 page (`src/lib/busy-page.ts`): `data-testid="busy-retry"`, `"busy-back"` and
   `"busy-phone"`.
+- Lead follow-up (site review #3, #9): `needs-attention.tsx` (`NeedsAttention`,
+  `AlertPill`, `ReplyTimes`; `data-testid="needs-attention"`, `"attention-waiting"`,
+  `"attention-tours"`, `"attention-follow-ups"`, `"waiting-label"`), `FollowUpControl`
+  (`data-testid="follow-up"`, `#follow-up-on`), `EmailSettingSwitch`
+  (`data-testid="setting-<name>"`), and on a lead's page `"lead-waiting"` and
+  `"first-contact"`. Status changes go through `updateInquiryStatus`, which stamps the
+  first contact and emails a restored agent after the response.
 
 Which package may edit which file is set out in `docs/mobile-spec/foundation.md`
 ("Ownership after the foundation"). This file is part of ARCHITECTURE.md's

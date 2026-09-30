@@ -212,6 +212,14 @@ const spamLeadPath = (page: Page) =>
     "main a[href^='/dashboard/leads/']:visible:not([href*='export'])",
     /^\/dashboard\/leads\/[0-9a-f-]{36}$/,
   );
+/** The seed's valuation request, unassigned for days: first under "Waiting too long". */
+const waitingLeadPath = (page: Page) =>
+  firstLink(
+    page,
+    "/dashboard",
+    "[data-testid=attention-waiting] a[href^='/dashboard/leads/']:visible",
+    /^\/dashboard\/leads\/[0-9a-f-]{36}$/,
+  );
 const firstEditorPath = (page: Page) =>
   firstLink(
     page,
@@ -252,7 +260,13 @@ const PAGES = {
   fairHousing: { name: "/fair-housing", path: "/fair-housing", ready: "main h1" },
   saved: { name: "/saved", path: "/saved", ready: "main h1", role: "buyer" },
   account: { name: "/account", path: "/account", ready: "main h1", role: "buyer" },
-  dashboard: { name: "/dashboard", path: "/dashboard", ready: "main h1", role: "staff" },
+  // The "Needs attention" box and reply times sit on the overview (site review #9).
+  dashboard: {
+    name: "/dashboard",
+    path: "/dashboard",
+    ready: "[data-testid=needs-attention]",
+    role: "staff",
+  },
   leads: { name: "/dashboard/leads", path: "/dashboard/leads", ready: "main h1", role: "staff" },
   traffic: {
     name: "/dashboard/traffic",
@@ -310,6 +324,19 @@ const PAGES = {
     name: "a lead held back as spam",
     path: spamLeadPath,
     ready: "[data-testid=spam-notice]",
+    role: "staff",
+  },
+  // Site review #3/#9: email settings, and a lead waiting too long (red pill, follow-up date).
+  emailSettings: {
+    name: "/dashboard/settings",
+    path: "/dashboard/settings",
+    ready: "[data-testid=setting-leadCopies]",
+    role: "staff",
+  },
+  waitingLead: {
+    name: "a lead waiting too long",
+    path: waitingLeadPath,
+    ready: "[data-testid=lead-waiting]",
     role: "staff",
   },
 } satisfies Record<string, AxePage>;

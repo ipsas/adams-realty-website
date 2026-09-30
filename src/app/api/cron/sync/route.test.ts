@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   calls: [] as Array<Record<string, unknown>>,
   outcomes: [] as SourceSyncOutcome[],
   tags: [] as Array<[string, unknown]>,
+  digests: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock("@/lib/cron-auth", () => ({
@@ -18,6 +19,12 @@ vi.mock("@/lib/mls/sync", () => ({
   syncAllSources: async (opts: Record<string, unknown>) => {
     h.calls.push(opts);
     return h.outcomes;
+  },
+}));
+vi.mock("@/lib/leads/digest", () => ({
+  runLeadDigests: async (opts: Record<string, unknown>) => {
+    h.digests.push(opts);
+    return { ok: true, emailed: 0 };
   },
 }));
 vi.mock("next/cache", () => ({
@@ -53,6 +60,7 @@ const call = (query = "", auth = "Bearer secret") =>
 beforeEach(() => {
   h.calls.length = 0;
   h.tags.length = 0;
+  h.digests.length = 0;
   h.outcomes = [{ source: "gamls", ok: true, result: result() }];
 });
 
@@ -101,6 +109,16 @@ describe("GET /api/cron/sync", () => {
     expect(res.status).toBe(500);
     expect(h.tags).toEqual([[LISTINGS_TAG, "max"]]);
     expect(await res.json()).toMatchObject({ results: [{ ok: false }] });
+  });
+
+  it("tries the morning summary after the sync, within the function's limit, and reports it", async () => {
+    const before = Date.now();
+    const res = await call("?purge=1");
+    expect(h.digests).toHaveLength(1);
+    const deadline = h.digests[0].deadline as number;
+    expect(deadline).toBeGreaterThanOrEqual(before + (maxDuration - 15) * 1000);
+    expect(deadline).toBeLessThanOrEqual(Date.now() + (maxDuration - 15) * 1000);
+    expect(await res.json()).toMatchObject({ digests: { ok: true } });
   });
 
   it("answers 200 for a skipped incremental sync (recorded; the next run carries on)", async () => {

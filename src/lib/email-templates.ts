@@ -535,9 +535,19 @@ export function leadNotificationEmail(input: {
    */
   listingPlace?: string | null;
   source: string;
+  /** The lead's own page in the dashboard (/dashboard/leads/<id>), where Call and Text are. */
   dashboardUrl: string;
   /** Null when the lead went to the brokerage inbox for routing. */
   assignedAgentName?: string | null;
+  /**
+   * Who this copy is for: the person it was sent to (default); the broker's
+   * copy of a lead that went to someone else; or an agent a lead was just
+   * assigned to by `assignedByName`.
+   */
+  audience?: "recipient" | "copy" | "assigned";
+  assignedByName?: string | null;
+  /** Dashboard → Email settings, where the broker turns copies off. */
+  settingsUrl?: string;
 }): RenderedEmail {
   const where = input.listingPlace;
   const heading =
@@ -570,18 +580,125 @@ export function leadNotificationEmail(input: {
   if (input.message) blocks.push(quote(input.message));
   if (input.listing) blocks.push(sectionTitle("Home"), listingRow(input.listing));
 
+  const first = input.name.split(" ")[0];
+  const audience = input.audience ?? "recipient";
+  const intro =
+    audience === "assigned"
+      ? `${input.assignedByName ?? "Your broker"} assigned this lead to you. Reply to this email to answer ${first} directly.`
+      : audience === "copy"
+        ? input.assignedAgentName
+          ? `Your copy: this lead went to ${input.assignedAgentName}.`
+          : "Your copy: this lead went to the office inbox and isn't assigned to an agent yet. Route it from the dashboard."
+        : input.assignedAgentName
+          ? `Assigned to ${input.assignedAgentName}. Reply to this email to answer ${first} directly.`
+          : "This lead isn't assigned to an agent yet — route it from the dashboard.";
+
   return renderEmail({
-    subject: input.subject,
+    subject: audience === "assigned" ? `Assigned to you: ${input.subject}` : input.subject,
     preheader: [input.name, input.tourLabel, input.message?.slice(0, 80)]
       .filter(Boolean)
       .join(" · "),
-    eyebrow: LEAD_EYEBROW[input.type] ?? "New lead",
+    eyebrow: audience === "assigned" ? "Assigned to you" : (LEAD_EYEBROW[input.type] ?? "New lead"),
     heading,
-    intro: input.assignedAgentName
-      ? `Assigned to ${input.assignedAgentName}. Reply to this email to answer ${input.name.split(" ")[0]} directly.`
-      : "This lead isn't assigned to an agent yet — route it from the dashboard.",
+    intro,
     blocks,
-    cta: { label: "Open lead in dashboard", href: input.dashboardUrl },
+    cta: { label: "Open this lead", href: input.dashboardUrl },
+    afterCta:
+      audience === "copy" && input.settingsUrl
+        ? [
+            paragraph(
+              "You get a copy of every new lead because “Copy me on every new lead” is on.",
+              "muted",
+            ),
+            textLink("Turn copies off in Email settings", input.settingsUrl),
+          ]
+        : undefined,
+    reason: `Leads are private to ${site.legalName} — please don't forward them outside the company.`,
+  });
+}
+
+/** One lead in the morning summary. */
+export type DigestLead = {
+  name: string;
+  /** e.g. "Tour · 123 Main St, Royston · Daniel Reyes". */
+  detail: string;
+  /** Shown in red, e.g. "Waiting 4 days" or "Was due Sep 27". */
+  alert?: string | null;
+  /** The lead's own page in the dashboard. */
+  href: string;
+};
+
+/** A list of leads, each a link to its page, with an optional red note. */
+function leadList(items: DigestLead[]): EmailBlock {
+  const cells = items
+    .map(
+      (l, i) => `<tr><td style="padding:12px 0;${i ? `border-top:1px solid ${C.line};` : ""}">
+<a href="${esc(l.href)}" style="font-size:16px;font-weight:600;color:${C.brand};text-decoration:none;">${esc(l.name)}</a>${
+        l.alert
+          ? ` <span style="display:inline-block;margin-left:6px;padding:2px 8px;border-radius:999px;background:${C.clayTint};color:${C.clay};font-size:12px;font-weight:700;">${esc(l.alert)}</span>`
+          : ""
+      }
+<div style="margin-top:2px;font-size:14px;line-height:1.5;color:${C.muted};">${esc(l.detail)}</div></td></tr>`,
+    )
+    .join("");
+  return {
+    html: row(
+      `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">${cells}</table>`,
+      "4px 40px",
+    ),
+    text: items
+      .map((l) => `- ${l.name}${l.alert ? ` (${l.alert})` : ""}\n  ${l.detail}\n  ${l.href}`)
+      .join("\n"),
+  };
+}
+
+export type DigestSection = {
+  title: string;
+  items: DigestLead[];
+  /** All matching leads; more than `items.length` adds a "see all" line. */
+  total: number;
+};
+
+/**
+ * The 7 a.m. "needs attention" summary (src/lib/leads/digest.ts): one agent's
+ * leads, or the whole office's for the broker. Only sent when a section has
+ * something in it.
+ */
+export function leadDigestEmail(input: {
+  /** "Daniel" for an agent, "Andrea" for the broker. */
+  firstName: string;
+  office: boolean;
+  /** e.g. "Tuesday, September 29". */
+  dateLabel: string;
+  waiting: DigestSection;
+  tours: DigestSection;
+  followUps: DigestSection;
+  waitRule: string;
+  dashboardUrl: string;
+  settingsUrl: string;
+}): RenderedEmail {
+  const sections = [input.waiting, input.tours, input.followUps];
+  const counts = [
+    input.waiting.total && plural(input.waiting.total, "lead") + " waiting",
+    input.tours.total && plural(input.tours.total, "tour"),
+    input.followUps.total && plural(input.followUps.total, "follow-up"),
+  ].filter(Boolean) as string[];
+  const blocks: EmailBlock[] = [];
+  for (const s of sections) {
+    if (!s.total) continue;
+    blocks.push(sectionTitle(s.title, s.total), leadList(s.items));
+    if (s.total > s.items.length)
+      blocks.push(textLink(`See all ${s.total} in the dashboard`, input.dashboardUrl));
+  }
+  return renderEmail({
+    subject: `Today: ${counts.join(", ")}`,
+    preheader: counts.join(" · "),
+    eyebrow: input.office ? "Office summary" : "Your morning summary",
+    heading: `Good morning, ${input.firstName}`,
+    intro: `${input.office ? "What needs attention across the office" : "What needs your attention"} on ${input.dateLabel}. A new lead is waiting too long after ${input.waitRule}.`,
+    blocks,
+    cta: { label: "Open the dashboard", href: input.dashboardUrl },
+    afterCta: [textLink("Change which emails you get", input.settingsUrl)],
     reason: `Leads are private to ${site.legalName} — please don't forward them outside the company.`,
   });
 }

@@ -121,6 +121,15 @@ export function defaultTypesCondition(): SQL {
   return ne(listings.propertyType, DEFAULT_EXCLUDED_TYPES[0]);
 }
 
+/**
+ * Listed in the last `days` days: the "Days on market" filter, and the home
+ * page's "New this week" count, which must match what its link lists.
+ */
+export function listedWithin(days: number, now: Date = new Date()): SQL {
+  const since = new Date(now.getTime() - days * 86_400_000).toISOString().slice(0, 10);
+  return gte(listings.listDate, since);
+}
+
 /** Monthly-equivalent HOA fee, so "max HOA $300/mo" compares like with like. */
 const monthlyHoa = sql`(case ${listings.hoaFrequency}
   when 'quarterly' then ${listings.hoaFee} / 3.0
@@ -169,12 +178,7 @@ export function buildConditions(
   if (c.maxYear !== undefined) conds.push(lte(listings.yearBuilt, c.maxYear));
   if (c.maxHoa !== undefined)
     conds.push(or(isNull(listings.hoaFee), sql`${monthlyHoa} <= ${c.maxHoa}`));
-  if (c.maxDaysOnMarket !== undefined) {
-    const since = new Date(now.getTime() - c.maxDaysOnMarket * 86_400_000)
-      .toISOString()
-      .slice(0, 10);
-    conds.push(gte(listings.listDate, since));
-  }
+  if (c.maxDaysOnMarket !== undefined) conds.push(listedWithin(c.maxDaysOnMarket, now));
 
   if (c.garage) conds.push(gte(listings.garageSpaces, 1));
   if (c.pool) conds.push(eq(listings.hasPool, true));

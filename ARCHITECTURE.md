@@ -12,7 +12,8 @@ Browser ──► Next.js (App Router, React Server Components)
               ├─ proxy.ts ............ listing rate limits, account-page cookie check, demo noindex
               ├─ server actions ...... mutations (save home, lead forms, dashboard edits)
               ├─ /api/auth/* ......... Better Auth (sessions, password reset, OAuth)
-              ├─ /api/cron/sync ...... scheduled MLS sync (Vercel Cron, bearer secret)
+              ├─ /api/cron/sync ...... scheduled MLS sync (Vercel Cron, bearer secret) + 7 a.m. lead summary
+              ├─ /api/cron/alerts .... saved-search and saved-home emails + 7 a.m. lead summary
               └─ /api/locations/* .... search autocomplete
                         │
                         ▼
@@ -316,6 +317,43 @@ with zod and routes to the listing agent, the chosen agent, or the brokerage inb
 answered by the office (see "Coverage and the firm's area"). The lead is saved first; the
 email notification is best-effort. Leads are never shared outside the company.
 
+**Lead emails** (`src/lib/leads/notify.ts`, site review #3):
+
+- A new lead goes to its agent (or `LEADS_INBOX`, or the corrections contact for a listing
+  problem report). Every admin with `users.lead_copies` on (the default; owner decision:
+  Andrea sees every lead) gets a copy, unless it already went to them; spam and reports get
+  none. When an admin assigns or reassigns a lead (or clears one from Spam back to its
+  agent), that agent is emailed, unless they assigned it to themselves.
+- Every email's button opens the lead itself, `/dashboard/leads/<id>` (Call and Text are
+  there); signed out, sign-in brings them back to it.
+- Server actions send with `afterResponse` (`src/lib/leads/deliver.ts`), i.e. Next's
+  `after()`: on Vercel the function stays alive (`waitUntil`) until every email is sent,
+  and the visitor doesn't wait for the mail provider. Each send is separate, so one failure
+  doesn't stop the others; failures are logged. Without `RESEND_API_KEY` emails are logged.
+
+**Follow-up** (`src/lib/leads/attention.ts`, `working-hours.ts`, site review #9):
+
+- Office time is Mon–Fri 9–5 America/New_York. A new lead is **waiting too long** after 2
+  office hours (owner decision): `workingCutoff(now)` turns that into a plain
+  `created_at <= cutoff`, so the database picks them.
+- **Needs attention** (top of the dashboard overview, scoped like the leads: an agent's own,
+  the whole office for admins): new leads waiting too long (red, "Waiting 4 days"), tours in
+  the next 48 hours, and open leads whose **Follow up on** date (`inquiries.follow_up_on`, a
+  market-calendar day; Tomorrow / In 3 days / Next week, counted on the server) is today or
+  earlier. The leads list flags the same.
+- **First contact** (`inquiries.first_contacted_at`) is stamped the first time a lead moves to
+  contacted or qualified (a status change or a note with "Mark as contacted") and never
+  moves. Admins see each agent's average reply time over the last 90 days, in office time
+  (`getReplyTimes`). Leads handled before it was recorded have none and don't count. Status
+  changes are audited (`inquiry.status`), as are follow-up dates (`inquiry.follow_up`).
+- **Morning summary** (`src/lib/leads/digest.ts`): at 7 a.m. Eastern each agent with a login
+  gets their own Needs attention lists and each admin the office's; nothing to report, no
+  email; `users.lead_digest` turns it off (Dashboard → Email settings). Hobby allows daily
+  crons only, so it has no cron of its own: `/api/cron/sync` (11:00 UTC, 7 a.m. EDT) and
+  `/api/cron/alerts` (12:00 UTC, 7 a.m. EST) both call it; before 7 a.m. local it does
+  nothing, and a row in `lead_digests` (recipient, day) claims each summary, so the later
+  run never sends twice. A failed send deletes the claim for the next run.
+
 **Spam** (`src/lib/spam.ts`, `src/lib/form-guard.ts`), on every public form (tour/question,
 contact, agent, listing report, valuation, sign-up, saved searches):
 
@@ -586,7 +624,11 @@ must keep.
   (`limits-spam-suite.ts`, run by `limits-spam.spec.ts` and `mobile/limits-spam.spec.ts`:
   the 429 page in light and dark, a refresh's weight, signed-in buyers and staff, preview
   robots, unverified crawlers, the honeypot, the timer, SEO pitches, the per-address limit,
-  sign-up and saved searches). Forms in e2e tests wait like a person (`waitLikeAPerson`)
+  sign-up and saved searches), and lead follow-up (`lead-followup-suite.ts`, run by
+  `lead-followup.spec.ts` and `mobile/lead-followup.spec.ts`: Needs attention, the follow-up
+  date, first contact and reply times, email settings, the emails' lead link). Lead emails
+  and the morning summary are tested against the test database with the mailer swapped for
+  a list (`src/lib/leads/*.db.test.ts`). Forms in e2e tests wait like a person (`waitLikeAPerson`)
   before sending. Runs against a seeded database.
 - **Phones (`e2e/mobile/`):** the `pixel7` and `iphone13` projects run every
   spec there; `iphone13-landscape` and `ipad-mini` run `sweep` and

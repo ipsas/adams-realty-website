@@ -9,9 +9,20 @@ import { closeDb, resetDb } from "@/test/db/helpers";
 // Suspected spam in the dashboard: out of the counts, in the Spam tab with its
 // reasons, and back to its agent when staff clear it.
 
-const h = vi.hoisted(() => ({ actor: null as Actor | null }));
+const h = vi.hoisted(() => ({
+  actor: null as Actor | null,
+  later: [] as Array<() => Promise<unknown>>,
+  sent: [] as Array<{ to: string | string[]; subject: string }>,
+}));
 vi.mock("@/lib/auth/session", () => ({ getActor: async () => h.actor }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {}, updateTag: () => {} }));
+// Emails run after the response (after()); here they're collected and run by hand.
+vi.mock("@/lib/leads/deliver", () => ({
+  afterResponse: (_label: string, task: () => Promise<unknown>) => void h.later.push(task),
+}));
+vi.mock("@/lib/email", () => ({
+  sendEmail: async (e: { to: string | string[]; subject: string }) => void h.sent.push(e),
+}));
 
 const { updateInquiryStatus } = await import("./dashboard");
 
@@ -29,6 +40,8 @@ beforeEach(async () => {
     .values({ slug: "pat", name: "Pat Agent", email: "pat@x.com" })
     .returning({ id: agents.id });
   h.actor = admin;
+  h.later = [];
+  h.sent = [];
 });
 afterAll(closeDb);
 
@@ -79,8 +92,16 @@ describe("suspected spam in the dashboard", () => {
     expect(after.status).toBe("new");
     expect(after.agentId).toBe(agentId);
     const logs = await db.select().from(auditLogs).where(eq(auditLogs.entityId, spam.id));
-    expect(logs).toHaveLength(1);
-    expect(logs[0].changes).toMatchObject({ agentId, reason: "cleared from spam" });
+    expect(logs.map((l) => l.action).sort()).toEqual(["inquiry.assign", "inquiry.status"]);
+    expect(logs.find((l) => l.action === "inquiry.assign")!.changes).toMatchObject({
+      agentId,
+      reason: "cleared from spam",
+    });
+    // It never reached the agent while held back: they're emailed now, after the response.
+    expect(h.sent).toHaveLength(0);
+    await Promise.all(h.later.map((t) => t()));
+    expect(h.sent.map((e) => e.to)).toEqual(["pat@x.com"]);
+    expect(h.sent[0].subject).toMatch(/^Assigned to you: /);
   });
 
   it("leaves routing alone when it was never routed, the agent is gone, or an admin already assigned it", async () => {

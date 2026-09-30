@@ -26,6 +26,11 @@ const ALLOW_WHITE: { file: string; classes: RegExp }[] = [
     file: "src/components/account/account-forms.tsx",
     classes: /\bsize-5\.5 rounded-full bg-white\b/,
   },
+  // The same switch knob on Dashboard → Email settings.
+  {
+    file: "src/components/dashboard/email-settings.tsx",
+    classes: /\bsize-5\.5 rounded-full bg-white\b/,
+  },
   // Carousel dots on photos.
   {
     file: "src/components/listings/listing-card.tsx",

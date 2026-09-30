@@ -69,6 +69,17 @@ describe("lead permissions", () => {
     expect(can.viewAllInquiries(agent)).toBe(false);
     expect(can.assignInquiry(agent)).toBe(false);
   });
+
+  it("gives only admins lead copies and the office's reply times; every staff member their email settings", () => {
+    expect(can.copyOnAllLeads(admin)).toBe(true);
+    expect(can.copyOnAllLeads(agent)).toBe(false);
+    expect(can.viewReplyTimes(admin)).toBe(true);
+    expect(can.viewReplyTimes(agent)).toBe(false);
+    expect(can.manageEmailSettings(agent)).toBe(true);
+    expect(can.manageEmailSettings(admin)).toBe(true);
+    expect(can.manageEmailSettings(shopper)).toBe(false);
+    expect(can.manageEmailSettings(null)).toBe(false);
+  });
 });
 
 describe("account and admin permissions", () => {

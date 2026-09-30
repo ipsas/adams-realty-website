@@ -7,6 +7,7 @@ import { clientIp } from "@/lib/anti-scraping";
 import { getSession } from "@/lib/auth/session";
 import { sendEmail } from "@/lib/email";
 import { env } from "@/lib/env";
+import { afterResponse } from "@/lib/leads/deliver";
 import { submitInquiry, type InquiryState } from "@/lib/leads/submit";
 
 export type { InquiryState };
@@ -14,7 +15,8 @@ export type { InquiryState };
 /**
  * Public lead form handler (tour requests, questions, valuations, listing
  * reports). Validation, spam checks, storage and the notification live in
- * `submitInquiry` (src/lib/leads/submit.ts); this adds the request's details.
+ * `submitInquiry` (src/lib/leads/submit.ts); this adds the request's details
+ * and sends the emails after the response (`afterResponse`, Next's `after()`).
  */
 export async function createInquiry(_prev: InquiryState, form: FormData): Promise<InquiryState> {
   const raw = Object.fromEntries(
@@ -35,6 +37,8 @@ export async function createInquiry(_prev: InquiryState, form: FormData): Promis
       send: sendEmail,
       siteUrl: env.NEXT_PUBLIC_SITE_URL,
       inbox: env.LEADS_INBOX ?? site.email,
+      // The emails finish after the thank-you is sent, and the function waits for them.
+      defer: (task) => afterResponse("inquiry emails", task),
     },
   );
   return { ok, message, errors };

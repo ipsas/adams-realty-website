@@ -10,6 +10,7 @@ import {
   Td,
   Th,
 } from "@/components/dashboard/ui";
+import { AlertPill } from "@/components/dashboard/needs-attention";
 import { ReturnSource } from "@/components/layout/return-link";
 import { buttonClasses } from "@/components/ui/button";
 import { site } from "@/config/site";
@@ -18,6 +19,8 @@ import { requirePermission } from "@/lib/auth/session";
 import { cn } from "@/lib/cn";
 import { getAgentOptions, getLeads, getSpamCount } from "@/lib/dashboard/queries";
 import { formatRelative } from "@/lib/format";
+import { followUpOverdue } from "@/lib/leads/attention";
+import { formatDay, marketToday, waitingLabel, workingCutoff } from "@/lib/leads/working-hours";
 
 export const metadata = { title: "Leads" };
 
@@ -52,6 +55,30 @@ export default async function LeadsPage(props: PageProps<"/dashboard/leads">) {
   ]);
   const admin = can.assignInquiry(actor);
   const tabLabel = TABS.find(([value]) => value === current)![1];
+  const now = new Date();
+  const cutoff = workingCutoff(now);
+  const today = marketToday(now);
+  /** Red pills: a new lead waiting too long, a follow-up past its date; the follow-up date. */
+  const flags = (l: (typeof leads)[number]) => {
+    const waiting = l.status === "new" && l.createdAt <= cutoff;
+    const open = l.status === "new" || l.status === "contacted" || l.status === "qualified";
+    const overdue = open ? followUpOverdue(l.followUpOn, today) : null;
+    return (
+      <>
+        {waiting && <AlertPill testId="waiting-label">{waitingLabel(l.createdAt, now)}</AlertPill>}
+        {overdue ? (
+          <AlertPill>Follow-up {overdue.replace("Was due", "was due")}</AlertPill>
+        ) : (
+          open &&
+          l.followUpOn && (
+            <span className="text-xs whitespace-nowrap text-ink-soft" data-testid="follow-up-on">
+              Follow up {l.followUpOn === today ? "today" : formatDay(l.followUpOn)}
+            </span>
+          )
+        )}
+      </>
+    );
+  };
 
   return (
     <>
@@ -131,6 +158,7 @@ export default async function LeadsPage(props: PageProps<"/dashboard/leads">) {
                   <div className="mt-2.5 flex min-w-0 flex-wrap items-center gap-2">
                     <LeadTypeBadge type={l.type} />
                     <SpamFlag reasons={l.spamReasons} status={l.status} />
+                    {flags(l)}
                     {l.listingAddress && (
                       <span className="truncate text-sm text-ink-soft">{l.listingAddress}</span>
                     )}
@@ -211,6 +239,7 @@ export default async function LeadsPage(props: PageProps<"/dashboard/leads">) {
                     <div className="flex flex-wrap items-center gap-2">
                       <LeadTypeBadge type={l.type} />
                       <SpamFlag reasons={l.spamReasons} status={l.status} />
+                      {flags(l)}
                       {l.listingSlug && (
                         <Link
                           href={`/homes/${l.listingSlug}`}

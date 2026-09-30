@@ -123,6 +123,7 @@ export async function getLeads(actor: Actor, opts: { status?: string; limit?: nu
       tourAt: inquiries.tourAt,
       tourType: inquiries.tourType,
       createdAt: inquiries.createdAt,
+      followUpOn: inquiries.followUpOn,
       agentId: inquiries.agentId,
       agentName: agents.name,
       listingSlug: listings.slug,

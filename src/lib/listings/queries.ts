@@ -12,7 +12,7 @@ import {
   savedListings,
 } from "@/db/schema";
 import { firmAreaCondition } from "@/lib/areas/firm-area";
-import { defaultTypesCondition } from "@/lib/search/query";
+import { defaultTypesCondition, listedWithin } from "@/lib/search/query";
 import { MAX_AREA_SUGGESTIONS, shapeAreaSuggestions, type Suggestion } from "@/lib/search/suggest";
 import { cardColumns, selectCards, withPhotos } from "./card";
 import { canShowDetails, primaryPhotoOnly, publicListing } from "./visibility";
@@ -297,7 +297,9 @@ const forSaleNow = () =>
 
 /**
  * Headline numbers for the homepage. Every count is over public listings only
- * (`publicListing()`), so none counts a home the site won't show. "Open houses
+ * (`publicListing()`), so none counts a home the site won't show. "New this
+ * week" counts what its link, `/homes?maxDaysOnMarket=7`, lists (the for-sale
+ * set listed in the last 7 days; not pending or sold homes). "Open houses
  * this week" counts the homes its link, `/homes?openHouse=1`, lists (the
  * for-sale set with an open house that hasn't ended) whose next open house
  * starts within 7 days.
@@ -318,7 +320,8 @@ export async function getMarketStats() {
     .select({
       // What /homes lists by default: the for-sale set without commercial property.
       active: sql<number>`count(*) filter (where ${forSaleNow()})::int`,
-      newThisWeek: sql<number>`count(*) filter (where ${listings.listDate} >= current_date - 7 and ${listings.transactionType} = 'sale' and ${defaultTypesCondition()})::int`,
+      // What its link, /homes?maxDaysOnMarket=7, lists: for sale now and listed in the last 7 days.
+      newThisWeek: sql<number>`count(*) filter (where ${and(forSaleNow(), listedWithin(7))})::int`,
       medianPrice: sql<number>`(percentile_cont(0.5) within group (order by ${listings.listPrice}) filter (where ${listings.status} = 'active' and ${listings.transactionType} = 'sale' and ${defaultTypesCondition()}))::int`,
       openHouses: sql<number>`count(*) filter (where ${and(forSaleNow(), inArray(listings.id, openHouseThisWeek))})::int`,
     })

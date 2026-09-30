@@ -62,6 +62,12 @@ export const can = {
   updateInquiry: (a: Actor | null, i: InquirySubject) =>
     isAdmin(a) || ownsAgentRecord(a, i.agentId),
   assignInquiry: (a: Actor | null) => isAdmin(a),
+  /** A copy of every new lead, whoever it goes to (the broker; Dashboard → Email settings). */
+  copyOnAllLeads: (a: Actor | null) => isAdmin(a),
+  /** Each agent's average reply time: the broker's view of the office. */
+  viewReplyTimes: (a: Actor | null) => isAdmin(a),
+  /** Staff choose which lead emails they get (copies, the morning summary). */
+  manageEmailSettings: (a: Actor | null) => isStaff(a),
 
   // --- Administration ---------------------------------------------------
   manageUsers: (a: Actor | null) => isAdmin(a),

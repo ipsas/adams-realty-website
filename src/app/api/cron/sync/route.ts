@@ -1,6 +1,7 @@
 import { revalidateTag } from "next/cache";
 import { NextResponse, type NextRequest } from "next/server";
 import { isCronAuthorized } from "@/lib/cron-auth";
+import { runLeadDigests } from "@/lib/leads/digest";
 import { LISTINGS_TAG } from "@/lib/listings/cache-tags";
 import { syncAllSources } from "@/lib/mls/sync";
 
@@ -26,11 +27,18 @@ const BUDGET_MS = (maxDuration - 45) * 1000;
  * run was still going (recorded in sync_runs); 500 if any failed. A purge
  * that can't start because a sync holds the source waits for it, and fails
  * (500, recorded) if it still can't: it must never go missing quietly.
+ *
+ * Every run also tries the staff's 7 a.m. morning summary
+ * (src/lib/leads/digest.ts), which Vercel's Hobby plan can't give a cron of
+ * its own: before 7 a.m. Eastern it does nothing, and it never sends twice a
+ * day. The 11:00 UTC purge run is 7 a.m. in summer (EDT); in winter the
+ * alerts cron at 12:00 UTC sends it. Its outcome doesn't change the status.
  */
 export async function GET(request: NextRequest) {
   if (!isCronAuthorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const started = Date.now();
   const params = request.nextUrl.searchParams;
   const results = await syncAllSources({
     mode: params.get("purge") === "1" ? "purge" : "incremental",
@@ -40,6 +48,12 @@ export async function GET(request: NextRequest) {
   if (results.some((r) => (r.ok ? r.result.changed : r.changed))) {
     revalidateTag(LISTINGS_TAG, "max");
   }
+  const digests = await runLeadDigests({ deadline: started + (maxDuration - 15) * 1000 }).catch(
+    (e) => {
+      console.error("[cron] morning summary failed", e);
+      return { ok: false as const };
+    },
+  );
   const failed = results.some((r) => !r.ok);
-  return NextResponse.json({ results }, { status: failed ? 500 : 200 });
+  return NextResponse.json({ results, digests }, { status: failed ? 500 : 200 });
 }

@@ -18,6 +18,13 @@ export const users = pgTable("users", {
   phone: text("phone"),
   /** Email me when a saved home changes price or status. */
   homeAlerts: boolean("home_alerts").notNull().default(true),
+  /**
+   * Staff (admins): email me a copy of every new lead, whoever it goes to. On by
+   * default (owner decision: the broker sees every lead); Dashboard → Email settings.
+   */
+  leadCopies: boolean("lead_copies").notNull().default(true),
+  /** Staff: the 7 a.m. "needs attention" summary (src/lib/leads/digest.ts). */
+  leadDigest: boolean("lead_digest").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()

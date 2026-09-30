@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { site } from "@/config/site";
 import {
   escapeHtml,
+  leadDigestEmail,
   leadNotificationEmail,
   listingFacts,
   passwordResetEmail,
@@ -150,7 +151,7 @@ describe("leadNotificationEmail", () => {
       listing: home(),
       listingPlace: "123 Oak St",
       source: "listing",
-      dashboardUrl: "https://adams.example/dashboard/leads?focus=1",
+      dashboardUrl: "https://adams.example/dashboard/leads/1",
       assignedAgentName: "Daniel Brooks",
     });
     expect(email.subject).toBe("Tour request: 123 Oak St, Lavonia, GA 30553");
@@ -159,9 +160,7 @@ describe("leadNotificationEmail", () => {
     expect(email.html).toContain("Saturday works.<br>We&#39;re pre-approved.");
     expect(email.text).toContain("> Saturday works.\n> We're pre-approved.");
     expect(email.text).toContain("Tour type: Video tour");
-    expect(email.text).toContain(
-      "Open lead in dashboard: https://adams.example/dashboard/leads?focus=1",
-    );
+    expect(email.text).toContain("Open this lead: https://adams.example/dashboard/leads/1");
     expect(email.html).not.toContain("Unsubscribe");
   });
 
@@ -174,7 +173,7 @@ describe("leadNotificationEmail", () => {
       listing: home({ street: "Address withheld by seller" }),
       listingPlace: "a home in Lavonia, GA 30553",
       source: "listing",
-      dashboardUrl: "https://adams.example/dashboard/leads?focus=2",
+      dashboardUrl: "https://adams.example/dashboard/leads/2",
     });
     expect(email.text).toContain("Jane Doe wants to tour a home in Lavonia, GA 30553");
     const question = leadNotificationEmail({
@@ -184,9 +183,109 @@ describe("leadNotificationEmail", () => {
       email: "jane@example.com",
       listingPlace: "a home in Lavonia, GA 30553",
       source: "listing",
-      dashboardUrl: "https://adams.example/dashboard/leads?focus=3",
+      dashboardUrl: "https://adams.example/dashboard/leads/3",
     });
     expect(question.text).toContain("Jane Doe asked about a home in Lavonia, GA 30553");
+  });
+
+  const base = {
+    subject: "New question from Jane Doe",
+    type: "question",
+    name: "Jane Doe",
+    email: "jane@example.com",
+    source: "listing",
+    dashboardUrl: "https://adams.example/dashboard/leads/abc",
+  };
+
+  it("tells the broker it's her copy, says who has the lead and how to turn copies off", () => {
+    const copy = leadNotificationEmail({
+      ...base,
+      assignedAgentName: "Daniel Brooks",
+      audience: "copy",
+      settingsUrl: "https://adams.example/dashboard/settings",
+    });
+    expect(copy.subject).toBe("New question from Jane Doe");
+    expect(copy.text).toContain("Your copy: this lead went to Daniel Brooks.");
+    expect(copy.text).toContain("Open this lead: https://adams.example/dashboard/leads/abc");
+    expect(copy.text).toContain(
+      "Turn copies off in Email settings: https://adams.example/dashboard/settings",
+    );
+    expect(copy.text).not.toContain("Reply to this email");
+    const unassigned = leadNotificationEmail({ ...base, audience: "copy" });
+    expect(unassigned.text).toContain("went to the office inbox and isn't assigned");
+  });
+
+  it("tells an agent who assigned them the lead", () => {
+    const email = leadNotificationEmail({
+      ...base,
+      assignedAgentName: "Daniel Brooks",
+      audience: "assigned",
+      assignedByName: "Andrea Anderegg",
+    });
+    expect(email.subject).toBe("Assigned to you: New question from Jane Doe");
+    expect(email.text).toContain(
+      "Andrea Anderegg assigned this lead to you. Reply to this email to answer Jane directly.",
+    );
+    expect(email.html).toContain('href="https://adams.example/dashboard/leads/abc"');
+    expect(email.text).not.toContain("Email settings");
+  });
+});
+
+describe("leadDigestEmail", () => {
+  const section = (title: string, n: number, alert?: string) => ({
+    title,
+    total: n,
+    items: Array.from({ length: Math.min(n, 2) }, (_, i) => ({
+      name: `${title} ${i + 1}`,
+      detail: "Question · 12 Oak St, Royston",
+      alert: alert ?? null,
+      href: `https://adams.example/dashboard/leads/${title[0]}${i}`,
+    })),
+  });
+  const input = {
+    firstName: "Andrea",
+    office: true,
+    dateLabel: "Tuesday, September 29",
+    waitRule: "2 office hours (Mon–Fri, 9–5)",
+    dashboardUrl: "https://adams.example/dashboard",
+    settingsUrl: "https://adams.example/dashboard/settings",
+  };
+
+  it("lists only the sections with something in them, each lead linked, with its red note", () => {
+    const email = leadDigestEmail({
+      ...input,
+      waiting: section("Waiting too long", 3, "Waiting 4 days"),
+      tours: section("Tours in the next 48 hours", 0),
+      followUps: section("Follow-ups due", 1),
+    });
+    expect(email.subject).toBe("Today: 3 leads waiting, 1 follow-up");
+    expect(email.text).toContain("Good morning, Andrea");
+    expect(email.text).toContain("across the office");
+    expect(email.text).toContain("WAITING TOO LONG (3)");
+    expect(email.text).toContain(
+      "- Waiting too long 1 (Waiting 4 days)\n  Question · 12 Oak St, Royston\n  https://adams.example/dashboard/leads/W0",
+    );
+    // Two shown of three: a link to the rest.
+    expect(email.text).toContain("See all 3 in the dashboard: https://adams.example/dashboard");
+    expect(email.text).not.toContain("TOURS IN THE NEXT 48 HOURS");
+    expect(email.text).toContain("FOLLOW-UPS DUE (1)");
+    expect(email.html).toContain("Waiting 4 days");
+    expect(email.text).toContain(
+      "Change which emails you get: https://adams.example/dashboard/settings",
+    );
+  });
+
+  it("speaks to one agent about their own leads", () => {
+    const email = leadDigestEmail({
+      ...input,
+      firstName: "Daniel",
+      office: false,
+      waiting: section("Waiting too long", 0),
+      tours: section("Tours in the next 48 hours", 1),
+      followUps: section("Follow-ups due", 0),
+    });
+    expect(email.subject).toBe("Today: 1 tour");
+    expect(email.text).toContain("What needs your attention on Tuesday, September 29.");
   });
 });
 
