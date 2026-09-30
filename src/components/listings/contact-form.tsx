@@ -4,6 +4,7 @@ import { CalendarCheck, CheckCircle2, MessageSquare, Video } from "lucide-react"
 import { useActionState, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, FormMessage, Input, Select, Textarea } from "@/components/ui/form";
+import { Honeypot, useFormTimer } from "@/components/ui/spam-guard";
 import { site } from "@/config/site";
 import { cn } from "@/lib/cn";
 import { upcomingDays } from "@/lib/time";
@@ -51,6 +52,7 @@ export function ContactForm({
   const days = useMemo(() => upcomingDays(7), []);
   const [day, setDay] = useState(days[0]);
   const [tourType, setTourType] = useState<"in_person" | "video">("in_person");
+  const stamp = useFormTimer();
 
   if (state.ok) {
     return (
@@ -65,17 +67,12 @@ export function ContactForm({
   }
 
   return (
-    <form action={action} className="space-y-4" noValidate>
+    <form action={(form) => action(stamp(form))} className="space-y-4" noValidate>
       <input type="hidden" name="source" value={source} />
       <input type="hidden" name="type" value={mode} />
       {listingId && <input type="hidden" name="listingId" value={listingId} />}
       {agentId && <input type="hidden" name="agentId" value={agentId} />}
-      <div aria-hidden className="absolute -left-[9999px] h-0 overflow-hidden">
-        <label>
-          Website
-          <input name="website" tabIndex={-1} autoComplete="off" />
-        </label>
-      </div>
+      <Honeypot />
 
       {allowTour && (
         <div role="tablist" className="grid grid-cols-2 gap-1 rounded-xl bg-sunken p-1">

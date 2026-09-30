@@ -1,5 +1,7 @@
+import { ShieldAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { parseSpamReasons, SPAM_REASON_LABELS } from "@/lib/spam";
 
 export function PageHeader({
   title,
@@ -97,6 +99,25 @@ export function StatusDot({ status }: { status: string }) {
       className={cn("rounded-full px-2 py-0.5 text-xs font-medium capitalize", LEAD_TONES[status])}
     >
       {status}
+    </span>
+  );
+}
+
+/**
+ * Marks a lead the spam check flagged (src/lib/spam.ts) while it sits in Spam, with
+ * the reasons. Moving it to another status clears the badge.
+ */
+export function SpamFlag({ reasons, status }: { reasons: string | null; status: string }) {
+  const parsed = parseSpamReasons(reasons);
+  if (status !== "spam" || parsed.length === 0) return null;
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-full bg-clay-50 px-2 py-0.5 text-xs font-medium text-clay-600"
+      title={parsed.map((r) => SPAM_REASON_LABELS[r]).join("; ")}
+      data-testid="spam-flag"
+    >
+      <ShieldAlert className="size-3.5" aria-hidden />
+      Flagged automatically
     </span>
   );
 }

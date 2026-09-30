@@ -9,7 +9,7 @@ of Georgia (see "Coverage and the firm's area").
 Browser ──► Next.js (App Router, React Server Components)
               │  pages render on the server from Postgres; client components only where
               │  interaction needs them (map, filters, forms, gallery)
-              ├─ proxy.ts ............ fast cookie check for /dashboard, /saved, /account
+              ├─ proxy.ts ............ listing rate limits, account-page cookie check, demo noindex
               ├─ server actions ...... mutations (save home, lead forms, dashboard edits)
               ├─ /api/auth/* ......... Better Auth (sessions, password reset, OAuth)
               ├─ /api/cron/sync ...... scheduled MLS sync (Vercel Cron, bearer secret)
@@ -262,11 +262,33 @@ governs every listing that came from the feed. Adams Realty, Inc. is the license
 - **Unbiased sort (§12):** only the default "Recommended" order looks at `is_featured`; every
   other sort ranks by the chosen field and id (`query.test.ts`, `idx-rules.db.test.ts`).
 - **Anti-scraping (§3):** `proxy.ts` guards `/homes`, `/homes/*` and `/api/locations/*`
-  (sitemaps excepted) with `src/lib/anti-scraping.ts`: self-declared HTTP libraries get a
-  403, and each client IP (Vercel's `x-forwarded-for`) is limited per minute, hour and day in
-  Postgres (`rate_limits`, `src/lib/rate-limit-db.ts`), with link prefetches and the API in
-  their own buckets. Requests without an IP (local dev) aren't limited; a database error lets
-  the request through. The alerts cron prunes old counters.
+  (sitemaps excepted) with `src/lib/listing-guard.ts` (policy in `src/lib/anti-scraping.ts`,
+  unit-tested; counting in Postgres, `rate_limits`, `src/lib/rate-limit-db.ts`, so the
+  limits hold across serverless instances):
+  - Self-declared HTTP libraries get a 403. Link-preview robots (LinkedIn, whose user agent
+    names Apache-HttpClient, Facebook/iMessage, X, Slack, WhatsApp, Telegram, Discord)
+    may GET pages, in their own per-IP bucket, but not the API.
+  - Not limited: staff (agents and admins), the office's addresses (`OFFICE_IPS`, comma-
+    separated, IPv4 CIDR allowed, empty by default), loopback outside production (`next dev`,
+    e2e runs), and Google/Bing crawlers confirmed by reverse + forward DNS
+    (`src/lib/crawler-verify.ts`, cached per IP a day; a crawler name alone proves nothing).
+  - Signed-in buyers count per account (`account:*`, well above the per-IP limits), never per
+    IP, so a shared address (office Wi-Fi, a library, a phone carrier) can't lock them out.
+    The proxy verifies the session (Better Auth's signed cookie cache, else the `sessions`
+    table; `src/lib/auth/proxy-session.ts`); a cookie's presence proves nothing.
+  - Everyone else: per client IP (Vercel's `x-forwarded-for`), per minute, hour and day, in
+    units: a full page load costs `PAGE_UNITS` (4), the site's own client refreshes (map
+    moves, filters, link taps, server actions) cost 1. Next strips its flight headers (`rsc`,
+    `next-router-prefetch`) and `_rsc` before the proxy runs, so a refresh is recognized by
+    the router's `next-url` header, `next-action`, a non-GET method or `Sec-Fetch-Dest:
+empty`; those can be forged, which is why a refresh still counts against the same windows.
+  - Over a limit: the branded 429 page (`src/lib/busy-page.ts`, self-contained HTML in the
+    site's light and dark palettes and the visitor's theme choice): "One moment, please", Try
+    again, Back, "Sign in and keep browsing" and the office phone, with `Retry-After`. The
+    API and labelled prefetches get plain text. A client refresh that gets the page makes the
+    router load the URL, which shows it too.
+  - Requests without an IP aren't limited; a database error lets the request through. The
+    alerts cron prunes old counters.
 
 ## Accounts and permissions
 
@@ -287,12 +309,36 @@ governs every listing that came from the feed. Adams Realty, Inc. is the license
 
 ## Leads
 
-Tour requests, questions and valuations go through one server action
-(`createInquiry`). It validates with zod, has a honeypot field and a per-IP rate
-limit, and routes to the listing agent, the chosen agent, or the brokerage inbox
+Tour requests, questions, valuations and listing reports go through one server action
+(`createInquiry`, which calls `submitInquiry` in `src/lib/leads/submit.ts`). It validates
+with zod and routes to the listing agent, the chosen agent, or the brokerage inbox
 (unassigned, for an admin to route). Homes outside the firm's area take questions only,
 answered by the office (see "Coverage and the firm's area"). The lead is saved first; the
 email notification is best-effort. Leads are never shared outside the company.
+
+**Spam** (`src/lib/spam.ts`, `src/lib/form-guard.ts`), on every public form (tour/question,
+contact, agent, listing report, valuation, sign-up, saved searches):
+
+- A honeypot field (`website`) and a timer: `<Honeypot />` and `useFormTimer()`
+  (`src/components/ui/spam-guard.tsx`) add them; the timer sends how long the form was open
+  (`formElapsed`, on the visitor's own clock). Too fast (`MIN_FILL_MS`: 3 s for messages,
+  2 s for sign-up and saved searches, the latter timed from when the search page opened) or
+  no timer at all (posted straight to the server) is suspect.
+- Per-IP and per-email submission limits (per account for saved searches) in the same
+  Postgres limiter; emails are hashed in the counter keys. Over a limit the sender is asked
+  to wait (with the office phone) and nothing is stored.
+- A content filter for SEO pitches ("Google's index", "search visibility", "SEO"…) with a
+  link, or two such phrases, from someone who isn't a customer (not signed in, no account
+  under that email, no earlier non-spam lead).
+- A suspect lead is stored with status `spam`, its reasons in `metadata.spam`, unassigned
+  (the agent it would have gone to in `metadata.routedAgentId`) and never emailed; the
+  sender sees the usual thank-you. It sits in Dashboard → Leads → Spam (with a count),
+  flagged "Flagged automatically" with its reasons; it's left out of the dashboard's counts.
+  Setting it to any other status gives it back its agent (audited). A suspect sign-up or
+  saved search is refused with a "try again" message instead (a person passes a moment
+  later); sign-up's checks run in a Better Auth `before` hook
+  (`src/lib/auth/sign-up-guard.ts`), so posts straight to `/api/auth/sign-up/email` get
+  them too.
 
 ## Frontend
 
@@ -308,6 +354,12 @@ email notification is best-effort. Leads are never shared outside the company.
     build needs a database (`sitemap-build.test.ts` fails if a sitemap or robots imports it).
   - Canonical URLs for searches.
   - `noindex` on map-bounded and paginated search variants.
+  - **Demo-data mode** (`src/lib/demo-mode.ts`): while the site shows the sample listings
+    and agents, `proxy.ts` sends `X-Robots-Tag: noindex, nofollow` on `/homes`, `/areas`,
+    `/places` and `/agents` (and everything under them), `robots.txt` disallows them and
+    lists only `sitemap.xml`, and the sitemaps leave them out. `DEMO_DATA_MODE=on|off`;
+    unset, it follows `SEED_DEMO_DATA` (ON wherever the build loads demo data). Switched
+    off on launch day (HANDOFF.md, launch checklist).
 - **Caching:** listing-derived data that only changes with the listings (home page stats,
   popular towns and featured homes, area guide stats, the top cities behind the home page
   chips and footer, and the `/places` index) goes through `src/lib/listings/cached.ts`: `unstable_cache` with the `listings`
@@ -516,8 +568,10 @@ must keep.
 ## Testing
 
 - **Unit (Vitest):** permissions, RESO mapper, event diffing and slugs, search
-  parsing and SQL, formatting, mortgage math, time zones, geocoder, rate
-  limiter; for mobile, device storage and recents, the PWA protocol and purge,
+  parsing and SQL, formatting, mortgage math, time zones, geocoder, the
+  anti-scraping policy and guard, crawler DNS checks, the 429 page, demo-data mode,
+  spam signals; the rate limiter, form limits and lead spam handling against the test
+  database; for mobile, device storage and recents, the PWA protocol and purge,
   the dialog's keyboard and swipe math, the toast store, deep links and idle
   scheduling.
 - **End-to-end (Playwright, `e2e/`):** searches and land (`search-land-suite.ts`,
@@ -528,7 +582,12 @@ must keep.
   creation, the statewide feed (`statewide.spec.ts`), and GA-A's coverage copy, towns,
   places index, out-of-area questions and map view (`georgia.spec.ts`,
   `mobile/georgia-map.spec.ts`), and the Georgia MLS display rules against the seed's
-  `IDX_FIXTURES` (`gamls.spec.ts`). Runs against a seeded database.
+  `IDX_FIXTURES` (`gamls.spec.ts`), and the listing rate limiter and form spam checks
+  (`limits-spam-suite.ts`, run by `limits-spam.spec.ts` and `mobile/limits-spam.spec.ts`:
+  the 429 page in light and dark, a refresh's weight, signed-in buyers and staff, preview
+  robots, unverified crawlers, the honeypot, the timer, SEO pitches, the per-address limit,
+  sign-up and saved searches). Forms in e2e tests wait like a person (`waitLikeAPerson`)
+  before sending. Runs against a seeded database.
 - **Phones (`e2e/mobile/`):** the `pixel7` and `iphone13` projects run every
   spec there; `iphone13-landscape` and `ipad-mini` run `sweep` and
   `*landscape*` specs plus tests tagged `@landscape`. The `desktop` project

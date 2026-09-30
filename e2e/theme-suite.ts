@@ -204,6 +204,14 @@ const firstLeadPath = (page: Page) =>
     "main a[href^='/dashboard/leads/']:visible:not([href*='export'])",
     /^\/dashboard\/leads\/[0-9a-f-]{36}$/,
   );
+/** The seed's SEO pitch, held back by the spam check. */
+const spamLeadPath = (page: Page) =>
+  firstLink(
+    page,
+    "/dashboard/leads?status=spam",
+    "main a[href^='/dashboard/leads/']:visible:not([href*='export'])",
+    /^\/dashboard\/leads\/[0-9a-f-]{36}$/,
+  );
 const firstEditorPath = (page: Page) =>
   firstLink(
     page,
@@ -287,6 +295,21 @@ const PAGES = {
     name: "a listing's editor",
     path: firstEditorPath,
     ready: "main h1",
+    role: "staff",
+  },
+  // Site review #6/#7 and form spam: sign-up's spam fields, the Spam tab and a flagged lead.
+  signUp: { name: "/sign-up", path: "/sign-up", ready: "#email" },
+  spamTab: {
+    name: "the leads' Spam tab",
+    path: "/dashboard/leads?status=spam",
+    // The seed's SEO pitch is flagged in both the phone cards and the desktop table.
+    ready: "main h1",
+    role: "staff",
+  },
+  spamLead: {
+    name: "a lead held back as spam",
+    path: spamLeadPath,
+    ready: "[data-testid=spam-notice]",
     role: "staff",
   },
 } satisfies Record<string, AxePage>;

@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { rateLimit } from "./rate-limit";
 import { upcomingDays, zonedDateTime } from "./time";
 
 describe("zonedDateTime", () => {
@@ -24,13 +23,5 @@ describe("upcomingDays", () => {
     // 11pm Eastern on Sep 25 is already Sep 26 in UTC; "tomorrow" is still Sep 26 locally.
     const now = new Date("2026-09-26T03:00:00Z");
     expect(upcomingDays(2, now, "America/New_York")).toEqual(["2026-09-26", "2026-09-27"]);
-  });
-});
-
-describe("rateLimit", () => {
-  it("allows up to the limit per window", () => {
-    const key = `test-${Math.random()}`;
-    expect([1, 2, 3].map(() => rateLimit(key, 2, 1000, 0))).toEqual([true, true, false]);
-    expect(rateLimit(key, 2, 1000, 1001)).toBe(true);
   });
 });

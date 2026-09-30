@@ -300,6 +300,14 @@ Keep these when editing the files that hold them:
   `useResolvedTheme`, `useClientTheme`; `map-setup.ts`: `mapStyleUrl`.
 - `search-map.tsx`: `installOverlays` on `style.load`, the theme `setStyle` with
   `carryOverlays`, and the dev-only `window.__searchMap`.
+- Form spam checks (`src/components/ui/spam-guard.tsx`, `src/lib/spam.ts`): every public
+  form (`ContactForm`, `ValuationForm`, `SignUpForm`, the save-search dialog) renders
+  `<Honeypot />` (field `website`) and passes its FormData through `useFormTimer()`'s
+  `stamp` (field `formElapsed`); sign-up sends both as the `x-form-hp` /
+  `x-form-elapsed` headers. A form that moves into a sheet keeps the timer on something
+  that mounts with the page.
+- The 429 page (`src/lib/busy-page.ts`): `data-testid="busy-retry"`, `"busy-back"` and
+  `"busy-phone"`.
 
 Which package may edit which file is set out in `docs/mobile-spec/foundation.md`
 ("Ownership after the foundation"). This file is part of ARCHITECTURE.md's

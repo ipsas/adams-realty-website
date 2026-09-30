@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { areas } from "@/config/areas";
+import { demoDataMode } from "@/lib/demo-mode";
 import { env } from "@/lib/env";
 
 // Served at /areas/sitemap.xml (robots.ts lists it). Rendered per request so
@@ -8,6 +9,8 @@ import { env } from "@/lib/env";
 export const dynamic = "force-dynamic";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  // Demo data (src/lib/demo-mode.ts): the guides show sample listings and stats.
+  if (demoDataMode()) return [];
   const base = env.NEXT_PUBLIC_SITE_URL;
   // The guides themselves are config, so the sitemap still lists them if the
   // database is unreachable; only the freshness dates depend on it.

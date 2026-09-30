@@ -548,13 +548,37 @@ export async function updateInquiryStatus(id: string, status: string) {
   const parsed = inquiryStatus.safeParse(status);
   if (!parsed.success) return { ok: false as const };
   const [lead] = await db
-    .select({ agentId: inquiries.agentId })
+    .select({ agentId: inquiries.agentId, status: inquiries.status, metadata: inquiries.metadata })
     .from(inquiries)
     .where(eq(inquiries.id, id))
     .limit(1);
   if (!lead) return { ok: false as const };
   authorize(can.updateInquiry(actor, lead));
-  await db.update(inquiries).set({ status: parsed.data }).where(eq(inquiries.id, id));
+  // A lead the spam check held back (src/lib/leads/submit.ts) and staff now clear gets
+  // the agent it would have gone to, if it has none yet and that agent still exists.
+  const routed = lead.metadata.routedAgentId;
+  const restore =
+    lead.status === "spam" && parsed.data !== "spam" && !lead.agentId && routed
+      ? await db
+          .select({ id: agents.id })
+          .from(agents)
+          .where(eq(agents.id, routed))
+          .limit(1)
+          .then((r) => r[0]?.id ?? null)
+      : null;
+  await db
+    .update(inquiries)
+    .set({ status: parsed.data, ...(restore ? { agentId: restore } : {}) })
+    .where(eq(inquiries.id, id));
+  if (restore) {
+    await audit(db, {
+      actorId: actor.userId,
+      action: "inquiry.assign",
+      entityType: "inquiry",
+      entityId: id,
+      changes: { agentId: restore, reason: "cleared from spam" },
+    });
+  }
   revalidatePath("/dashboard/leads");
   revalidatePath("/dashboard");
   return { ok: true as const };

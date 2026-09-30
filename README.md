@@ -74,7 +74,9 @@ in `src/config/site.ts` (firm name, office address and phone, Georgia MLS office
 3. **Your team.** Remove the fictional sample agents. Invite each real agent to sign up,
    then in _Dashboard → Users & roles_ set their role to Agent and link their profile.
 4. **Your MLS feed** (see below). Until then the site shows fictional demo listings.
-   Launch on a fresh database without `SEED_DEMO_DATA`, so no demo data goes live.
+   Launch on a fresh database without `SEED_DEMO_DATA`, so no demo data goes live. While
+   `SEED_DEMO_DATA=1`, demo-data mode keeps search engines off the sample listings, guides,
+   places and agents; `DEMO_DATA_MODE=off` switches it off (HANDOFF.md, launch checklist).
 5. **Photos.** The demo uses Unsplash images; real listings bring MLS photos.
 
 ## Connecting your MLS (IDX)
@@ -132,7 +134,7 @@ Vercel plus Neon (or Supabase) Postgres is the simplest setup:
 1. Import the repo into Vercel and add the environment variables from `.env.example`.
 2. Deploys run `npm run vercel-build`, which applies migrations before building. For a
    preview with demo data, set `SEED_DEMO_DATA=1` and `SEED_PASSWORD`; it seeds only an
-   empty database.
+   empty database, and search engines are told to stay off the sample pages.
 3. The crons in `vercel.json` run the MLS sync, the off-market purge (`?purge=1`, a separate
    purge-only run) and email alerts once a day, which is what Vercel's free (Hobby) plan
    allows; a sub-daily schedule fails the deployment there. On Vercel Pro, set the sync to

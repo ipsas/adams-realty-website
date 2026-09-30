@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { demoDataMode } from "@/lib/demo-mode";
 import { env } from "@/lib/env";
 import {
   LISTING_SITEMAP_CHUNK_SIZE,
@@ -20,7 +21,8 @@ export default async function sitemap(props: {
   id: Promise<string>;
 }): Promise<MetadataRoute.Sitemap> {
   const chunk = parseChunkId(await props.id);
-  if (chunk === null) return [];
+  // Demo data (src/lib/demo-mode.ts): sample listings are never offered to crawlers.
+  if (chunk === null || demoDataMode()) return [];
   // Imported here, not at the top: this module (and generateSitemaps) must load without a database.
   const { getListingSitemapChunk } = await import("@/lib/listings/sitemap-query");
   const homes = await getListingSitemapChunk(chunk);

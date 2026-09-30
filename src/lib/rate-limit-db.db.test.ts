@@ -48,6 +48,32 @@ describe("hitRateLimits", () => {
     expect(results[5].exceeded).toBe("t:1h");
   });
 
+  it("charges each request its units: a heavy request uses up the window faster than a light one", async () => {
+    const WEIGHTED: LimitWindow = { name: "t:w", limit: 8, ms: 60_000 };
+    // Two page loads at 4 units fill the window; a third is over.
+    const pages = [];
+    for (let i = 0; i < 3; i++)
+      pages.push(await hitRateLimits(db, "203.0.113.7", [WEIGHTED], at(i), 4));
+    expect(pages.map((r) => r.ok)).toEqual([true, true, false]);
+    // Eight light refreshes at 1 unit fit in the same window.
+    const refreshes = [];
+    for (let i = 0; i < 9; i++)
+      refreshes.push(await hitRateLimits(db, "203.0.113.8", [WEIGHTED], at(i), 1));
+    expect(refreshes.filter((r) => r.ok)).toHaveLength(8);
+    // A new window starts from the request's own units, not from 1.
+    const [row] = await db
+      .select({ count: rateLimits.count })
+      .from(rateLimits)
+      .where(sql`${rateLimits.key} = 't:w:203.0.113.7'`);
+    expect(row.count).toBe(12);
+    await hitRateLimits(db, "203.0.113.7", [WEIGHTED], at(60_000), 4);
+    const [fresh] = await db
+      .select({ count: rateLimits.count })
+      .from(rateLimits)
+      .where(sql`${rateLimits.key} = 't:w:203.0.113.7'`);
+    expect(fresh.count).toBe(4);
+  });
+
   it("holds up under concurrent requests (one statement, no lost updates)", async () => {
     const results = await Promise.all(
       Array.from({ length: 20 }, () => hitRateLimits(db, "203.0.113.6", [MINUTE], at(1))),

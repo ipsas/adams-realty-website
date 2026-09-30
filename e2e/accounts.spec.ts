@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
-import { signIn } from "./helpers";
+import { signIn, waitLikeAPerson } from "./helpers";
+import { withDb } from "./mobile/helpers";
 
 test("anonymous save prompts sign-in", async ({ page }) => {
   await page.goto("/homes");
@@ -30,8 +31,20 @@ test("tour requests reach the listing agent", async ({ page }) => {
   await page.locator("article a").first().click();
   await page.fill("#c-name", "E2E Tester");
   await page.fill("#c-email", "e2e@example.com");
+  await waitLikeAPerson(page);
   await page.getByRole("button", { name: "Send tour request" }).click();
   await expect(page.getByText(/Request sent!/)).toBeVisible();
+  // A person's request: a new lead routed to the agent, not held back as spam.
+  const [lead] = await withDb((db) =>
+    db
+      .query<{ status: string; agent_id: string | null }>(
+        "select status, agent_id from inquiries where email = $1 order by created_at desc limit 1",
+        ["e2e@example.com"],
+      )
+      .then((r) => r.rows),
+  );
+  expect(lead.status).toBe("new");
+  expect(lead.agent_id).not.toBeNull();
 });
 
 test("buyers are kept out of the dashboard", async ({ page }) => {

@@ -6,7 +6,9 @@ import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, FormMessage, Input, Select } from "@/components/ui/form";
+import { Honeypot, useFormTimer } from "@/components/ui/spam-guard";
 import { describeCriteria, type SearchCriteria } from "@/lib/search/params";
+import { ELAPSED_FIELD, HONEYPOT_FIELD } from "@/lib/spam";
 import { saveSearch } from "@/server/actions/saved";
 
 /**
@@ -43,6 +45,8 @@ export function SaveSearchButton({
   const { open, setOpen, saved, setSaved, query } = save;
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  // Timed from when the search page opened: the dialog itself comes pre-filled.
+  const stamp = useFormTimer();
 
   return (
     <>
@@ -66,17 +70,24 @@ export function SaveSearchButton({
         <form
           className="space-y-5 px-6 py-6"
           action={(form) => {
+            stamp(form);
             startTransition(async () => {
               const res = await saveSearch({
                 query,
                 name: String(form.get("name") ?? ""),
                 alertFrequency: String(form.get("alertFrequency") ?? "daily"),
+                website: String(form.get(HONEYPOT_FIELD) ?? ""),
+                formElapsed: String(form.get(ELAPSED_FIELD) ?? ""),
               });
               if (res.ok) {
                 setSaved(true);
                 setOpen(false);
               } else {
-                setError("We couldn't save that search. Please try again.");
+                setError(
+                  res.error === "unauthenticated"
+                    ? "Please sign in again to save this search."
+                    : res.error,
+                );
               }
             });
           }}
@@ -84,6 +95,7 @@ export function SaveSearchButton({
           <p className="text-sm text-muted">
             We&apos;ll email you when new homes match — and when prices drop.
           </p>
+          <Honeypot />
           <Field label="Name" htmlFor="search-name">
             <Input
               id="search-name"

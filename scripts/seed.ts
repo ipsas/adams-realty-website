@@ -954,6 +954,20 @@ async function main() {
     }),
   );
 
+  // A fictional SEO pitch the spam check held back (src/lib/spam.ts), so the Spam tab
+  // and its flag have something to show.
+  await db.insert(inquiries).values({
+    type: "general",
+    status: "spam",
+    name: "Rank Rocket Team",
+    email: "outreach@rankrocket.example",
+    message:
+      "Hi! Your website isn't showing up in Google's index for key searches. We can improve your search visibility within 30 days. Free audit: https://rankrocket.example/audit",
+    source: "contact",
+    metadata: { referer: "", userAgent: "", spam: "seo-pitch", routedAgentId: "" },
+    createdAt: daysAgo(1.5),
+  });
+
   await db
     .insert(savedListings)
     .values(

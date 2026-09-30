@@ -1,58 +1,60 @@
 import { getSessionCookie } from "better-auth/cookies";
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/db";
-import { clientIp, isListingDataPath, isScraperUserAgent, limitsFor } from "@/lib/anti-scraping";
+import { isListingDataPath, parseIpList } from "@/lib/anti-scraping";
+import { proxyUser } from "@/lib/auth/proxy-session";
+import { crawlerVerifier } from "@/lib/crawler-verify";
+import { DEMO_ROBOTS_HEADER, demoDataMode, isDemoContentPath } from "@/lib/demo-mode";
+import { env } from "@/lib/env";
+import { guardListingData, type GuardDeps } from "@/lib/listing-guard";
 import { hitRateLimits } from "@/lib/rate-limit-db";
 
 /**
- * Two jobs, by path:
+ * Three jobs, by path:
  *
  * - Listing data (search, listing pages, the location API): anti-scraping
- *   (src/lib/anti-scraping.ts). Self-declared HTTP libraries get a 403, and
- *   each client IP is rate limited in Postgres, so the limits hold across
- *   serverless instances. If the database can't be reached the request goes
- *   through: the limiter must never take the site down.
+ *   (src/lib/listing-guard.ts, policy in src/lib/anti-scraping.ts).
+ *   Self-declared HTTP libraries get a 403; each client IP (or signed-in
+ *   buyer) is rate limited in Postgres, so the limits hold across serverless
+ *   instances, and gets a branded 429 page when over. Staff, the office's
+ *   addresses and DNS-verified Google/Bing crawlers aren't limited. If the
+ *   database can't be reached the request goes through: the limiter must
+ *   never take the site down.
  * - Account pages: a fast, optimistic gate that bounces visitors with no
  *   session cookie to sign-in. It only checks that a cookie exists; real
  *   authorization happens in each page and server action via
  *   `src/lib/auth/session.ts` and `src/lib/auth/permissions.ts`.
+ * - Demo-data mode (src/lib/demo-mode.ts): `X-Robots-Tag: noindex` on the
+ *   pages that show sample data.
  */
+
+const deps: GuardDeps = {
+  hit: (subject, windows, units) => hitRateLimits(db, subject, windows, new Date(), units),
+  user: (request) => proxyUser(request, db, env.BETTER_AUTH_SECRET),
+  verifyCrawler: (ip, engine) => crawlerVerifier.verify(ip, engine),
+  officeIps: parseIpList(env.OFFICE_IPS),
+  production: process.env.NODE_ENV === "production",
+};
+
+const ACCOUNT_PATHS = ["/dashboard", "/saved", "/account"];
+
 export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
-  if (isListingDataPath(path)) return guardListingData(request, path);
-  if (path.startsWith("/homes") || path.startsWith("/api/")) return NextResponse.next();
+  const response = await route(request, path);
+  if (demoDataMode() && isDemoContentPath(path)) {
+    response.headers.set("X-Robots-Tag", DEMO_ROBOTS_HEADER);
+  }
+  return response;
+}
 
-  if (getSessionCookie(request)) return NextResponse.next();
+async function route(request: NextRequest, path: string): Promise<NextResponse> {
+  if (isListingDataPath(path))
+    return (await guardListingData(request, deps)) ?? NextResponse.next();
+  const account = ACCOUNT_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
+  if (!account || getSessionCookie(request)) return NextResponse.next();
   const url = new URL("/sign-in", request.url);
   url.searchParams.set("next", request.nextUrl.pathname + request.nextUrl.search);
   return NextResponse.redirect(url);
-}
-
-async function guardListingData(request: NextRequest, path: string) {
-  if (isScraperUserAgent(request.headers.get("user-agent"))) {
-    return new NextResponse(
-      "Automated access to listing data isn't allowed. Listings are provided for consumers' personal use.",
-      { status: 403, headers: { "Content-Type": "text/plain; charset=utf-8" } },
-    );
-  }
-  const ip = clientIp(request.headers);
-  if (!ip) return NextResponse.next();
-  try {
-    const result = await hitRateLimits(db, ip, limitsFor(path, request.headers));
-    if (!result.ok) {
-      return new NextResponse("Too many requests. Please wait a moment and try again.", {
-        status: 429,
-        headers: {
-          "Content-Type": "text/plain; charset=utf-8",
-          "Retry-After": String(result.retryAfter),
-          "Cache-Control": "no-store",
-        },
-      });
-    }
-  } catch (e) {
-    console.error("[proxy] rate limit check failed; letting the request through", e);
-  }
-  return NextResponse.next();
 }
 
 export const config = {
@@ -63,5 +65,9 @@ export const config = {
     "/homes",
     "/homes/:path*",
     "/api/locations/:path*",
+    // Demo-data mode's noindex header (the listing pages are above).
+    "/areas/:path*",
+    "/places/:path*",
+    "/agents/:path*",
   ],
 };

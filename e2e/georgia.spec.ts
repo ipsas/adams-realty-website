@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { areas } from "../src/config/areas";
 import { site } from "../src/config/site";
+import { waitLikeAPerson } from "./helpers";
 import { withDb } from "./mobile/helpers";
 
 /*
@@ -236,6 +237,7 @@ test.describe("homes outside the firm's area take questions, not tours", () => {
 
     await contact.locator("#c-name").fill("Sam Tester");
     await contact.locator("#c-email").fill("sam.tester@example.com");
+    await waitLikeAPerson(page);
     await contact.getByRole("button", { name: "Send message" }).click();
     await expect(contact).toContainText(
       "Thanks, Sam! Your question went to the Adams Realty office, and we'll get back to you soon.",
@@ -245,13 +247,13 @@ test.describe("homes outside the firm's area take questions, not tours", () => {
     // Saved as a question for the office, with no agent and no tour time.
     const [lead] = await withDb((db) =>
       db
-        .query<{ type: string; agent_id: string | null; tour_at: Date | null }>(
-          "select type, agent_id, tour_at from inquiries where email = $1 order by created_at desc limit 1",
+        .query<{ type: string; agent_id: string | null; tour_at: Date | null; status: string }>(
+          "select type, agent_id, tour_at, status from inquiries where email = $1 order by created_at desc limit 1",
           ["sam.tester@example.com"],
         )
         .then((r) => r.rows),
     );
-    expect(lead).toEqual({ type: "question", agent_id: null, tour_at: null });
+    expect(lead).toEqual({ type: "question", agent_id: null, tour_at: null, status: "new" });
   });
 
   test("a Royston listing keeps tour requests", async ({ page }) => {

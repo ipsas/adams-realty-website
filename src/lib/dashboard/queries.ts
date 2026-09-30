@@ -60,8 +60,9 @@ export async function getOverview(actor: Actor) {
     db
       .select({
         newLeads: sql<number>`count(*) filter (where ${inquiries.status} = 'new')::int`,
-        thisWeek: sql<number>`count(*) filter (where ${inquiries.createdAt} >= ${weekAgo})::int`,
-        tours: sql<number>`count(*) filter (where ${inquiries.type} = 'tour' and ${inquiries.tourAt} >= now())::int`,
+        // Suspected spam (src/lib/spam.ts) is no lead: it waits in the Spam tab.
+        thisWeek: sql<number>`count(*) filter (where ${inquiries.createdAt} >= ${weekAgo} and ${inquiries.status} <> 'spam')::int`,
+        tours: sql<number>`count(*) filter (where ${inquiries.type} = 'tour' and ${inquiries.tourAt} >= now() and ${inquiries.status} <> 'spam')::int`,
       })
       .from(inquiries)
       .where(leadScope(actor)),
@@ -98,7 +99,7 @@ export async function getDashboardListings(actor: Actor) {
       sourceKind: dataSources.kind,
       listAgentId: listings.listAgentId,
       saves: sql<number>`(select count(*)::int from saved_listings s where s.listing_id = "listings"."id")`,
-      leads: sql<number>`(select count(*)::int from inquiries i where i.listing_id = "listings"."id")`,
+      leads: sql<number>`(select count(*)::int from inquiries i where i.listing_id = "listings"."id" and i.status <> 'spam')`,
     })
     .from(listings)
     .innerJoin(dataSources, eq(listings.sourceId, dataSources.id))
@@ -127,6 +128,8 @@ export async function getLeads(actor: Actor, opts: { status?: string; limit?: nu
       listingSlug: listings.slug,
       listingAddress: listings.addressLine1,
       notesCount,
+      /** Why the spam check flagged it (src/lib/spam.ts), comma-separated; null if it didn't. */
+      spamReasons: sql<string | null>`"inquiries"."metadata"->>'spam'`,
     })
     .from(inquiries)
     .leftJoin(agents, eq(inquiries.agentId, agents.id))
@@ -134,6 +137,15 @@ export async function getLeads(actor: Actor, opts: { status?: string; limit?: nu
     .where(and(leadStatusFilter(opts.status), leadScope(actor)))
     .orderBy(desc(inquiries.createdAt))
     .limit(opts.limit ?? 200);
+}
+
+/** Leads in the Spam tab the actor may see, for its label. */
+export async function getSpamCount(actor: Actor): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(inquiries)
+    .where(and(eq(inquiries.status, "spam"), leadScope(actor)));
+  return row?.count ?? 0;
 }
 
 /**

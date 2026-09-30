@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, FormMessage, Input } from "@/components/ui/form";
+import { Honeypot, useFormTimer } from "@/components/ui/spam-guard";
 import { authClient } from "@/lib/auth/client";
+import { ELAPSED_FIELD, HONEYPOT_FIELD } from "@/lib/spam";
 
 function GoogleButton({ next }: { next: string }) {
   return (
@@ -115,6 +117,7 @@ export function SignUpForm({ next, googleEnabled }: { next: string; googleEnable
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const stamp = useFormTimer();
   return (
     <>
       {googleEnabled && <GoogleButton next={next} />}
@@ -128,10 +131,18 @@ export function SignUpForm({ next, googleEnabled }: { next: string; googleEnable
               setError("Use at least 8 characters for your password.");
               return;
             }
+            stamp(form);
             const { error } = await authClient.signUp.email({
               name: String(form.get("name")).trim(),
               email: String(form.get("email")).trim(),
               password,
+              // Spam checks (src/lib/auth/sign-up-guard.ts): Better Auth owns the body.
+              fetchOptions: {
+                headers: {
+                  "x-form-hp": String(form.get(HONEYPOT_FIELD) ?? ""),
+                  "x-form-elapsed": String(form.get(ELAPSED_FIELD) ?? ""),
+                },
+              },
             });
             if (error) {
               setError(
@@ -147,6 +158,7 @@ export function SignUpForm({ next, googleEnabled }: { next: string; googleEnable
           })
         }
       >
+        <Honeypot />
         <Field label="Full name" htmlFor="name">
           <Input id="name" name="name" autoComplete="name" required minLength={2} autoFocus />
         </Field>

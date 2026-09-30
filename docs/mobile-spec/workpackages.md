@@ -145,6 +145,11 @@ ALREADY BUILT (site review #1, before the packages; keep it):
 - The results list comes back where it was after the sign-in round trip: the heart tap saves the list's place (search-view.tsx), and `save=` doesn't change its key.
 - back-button.tsx (standalone Back) should follow the same rule as `ReturnLink` (`src/components/layout/return-link.tsx`): router.back() only when the previous entry is this site's.
 
+ALREADY BUILT (site review #6 and form spam, before the packages; keep it):
+
+- `src/proxy.ts` (WP2 owns it) now runs the listing rate limiter (`src/lib/listing-guard.ts`: preview robots, DNS-verified crawlers, staff and `OFFICE_IPS` exempt, signed-in buyers per account, client refreshes at 1 unit, the branded 429 page) and demo-data mode's `X-Robots-Tag` on `/homes`, `/areas`, `/places` and `/agents`. Its matcher and `route()` must keep all three jobs.
+- The sign-up form renders `<Honeypot />` and sends `stamp(form)`'s `formElapsed` and the honeypot as the `x-form-elapsed` / `x-form-hp` headers (`fetchOptions.headers`); the Better Auth hook (`src/lib/auth/sign-up-guard.ts`) refuses sign-ups without them. A restyled sign-up keeps both, and `e2e/limits-spam-suite.ts` ("sign-up refuses a robot…") must keep passing.
+
 STEPS:
 
 - Set up the worktree with `scripts/mobile-worktree.sh 2` (port 3102, database adams_wp2). This package starts only after G0, because site-footer.tsx, the account files, (site)/page.tsx and the content/area pages are #10 paths.
@@ -398,6 +403,10 @@ ALREADY BUILT (site review #5 and #8, before the packages; keep it):
 - SORTS include `lot_desc` ("Acreage (most first)") and `price_per_acre_asc` ("Price per acre"); the sheet's Sort radiogroup lists them.
 - `clearedFilters()` (params.ts) is the patch "Reset all" applies.
 
+ALREADY BUILT (form spam, before the packages; keep it):
+
+- The save-search dialog renders `<Honeypot />` and sends `website` and `formElapsed` (`useFormTimer` in `SaveSearchButton`, timed from when the search page opened, since the dialog comes pre-filled) to `saveSearch`, which also limits saves per account and IP. The phone sheet keeps both, with the timer on the always-mounted button, not the sheet.
+
 STEPS:
 
 - Set up the worktree with `scripts/mobile-worktree.sh 4` (port 3104, database adams_wp4).
@@ -520,6 +529,11 @@ ALREADY BUILT (site review #8, before the packages; keep it):
 
 - Bare land (`isBareLand`, `src/lib/listings/land.ts`) says "About this property" (commercial and other property too), shows Acreage and Price per acre (`data-testid="big-facts"`) and no Year built, Garage, Price per sq ft, beds or baths. Its estimate has no home or mortgage insurance and carries "Land loan: terms vary; check with your lender" under the pill (`data-testid="estimate-pill"`) and in the calculator (`PaymentCalculator land`, `data-testid="land-loan-note"`). The action bar's summary reads "Land · X acres" for it, and the 'est. $X/mo all-in' pill follows the same estimate (no insurance) with the land-loan line.
 - `e2e/search-land-suite.ts` covers it on desktop, pixel7 and iphone13 and must keep passing.
+
+ALREADY BUILT (form spam, before the packages; keep it):
+
+- `ContactForm` renders `<Honeypot />` and sends `action(stamp(form))` (`src/components/ui/spam-guard.tsx`); `createInquiry` flags a lead sent within 3 s of the form mounting, or without the stamp. The tour sheet mounts `ContactForm` only while open, so it must start the timer when the listing page mounts (call `useFormTimer` in the sheet's host and pass `stamp` down), or a quick autofill in the sheet could be held back as spam.
+- e2e tests that send a lead wait first (`waitLikeAPerson` in `e2e/helpers.ts`).
 
 STEPS:
 
@@ -657,6 +671,10 @@ ALREADY BUILT (site review #1, before the packages; keep it):
 ALREADY BUILT (site review #8, before the packages; keep it):
 
 - The listing form's lot size is `LotSizeField` (`name="lotSize"`, a radio pair `lotSizeUnit` Acres / Sq ft, Acres first and checked); switching converts the number and the server stores square feet (`lotSizeToSqft`). Phone layouts keep the switch at 44px and the input at 16px.
+
+ALREADY BUILT (form spam, before the packages; keep it):
+
+- Suspected spam is stored with status `spam`, unassigned, with its reasons in `metadata.spam`; `getLeads` returns `spamReasons`, the Spam tab label carries a count (`data-testid="spam-count"`), a flagged lead shows `<SpamFlag>` ("Flagged automatically", `data-testid="spam-flag"`) and its page a notice (`data-testid="spam-notice"`). Lead cards show `SpamFlag` next to the type badge; setting any other status restores its agent (`updateInquiryStatus`).
 
 STEPS:
 

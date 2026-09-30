@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { site } from "@/config/site";
 import { db } from "@/db";
@@ -7,6 +8,7 @@ import { accounts, sessions, users, verifications } from "@/db/schema";
 import { sendEmail } from "@/lib/email";
 import { passwordResetEmail } from "@/lib/email-templates";
 import { env, vercelOrigins } from "@/lib/env";
+import { checkSignUp } from "./sign-up-guard";
 
 export const auth = betterAuth({
   appName: site.name,
@@ -56,6 +58,17 @@ export const auth = betterAuth({
     // Signed cookie cache avoids a DB hit on every request. Role changes
     // therefore take up to this long to apply to an existing session.
     cookieCache: { enabled: true, maxAge: 5 * 60 },
+  },
+  hooks: {
+    // Spam checks on email sign-up (honeypot, timer, per-IP and per-email limits).
+    // Only for HTTP requests: server-side calls (none today) aren't forms.
+    before: createAuthMiddleware(async (ctx) => {
+      if (ctx.path !== "/sign-up/email" || !ctx.request) return;
+      const body = ctx.body as { email?: unknown } | undefined;
+      const email = typeof body?.email === "string" ? body.email : null;
+      const verdict = await checkSignUp(db, ctx.request.headers, email);
+      if (!verdict.ok) throw new APIError(verdict.status, { message: verdict.message });
+    }),
   },
   plugins: [nextCookies()],
 });

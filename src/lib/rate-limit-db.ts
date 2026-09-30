@@ -25,19 +25,25 @@ export type LimitResult = {
   exceeded: string | null;
 };
 
-/** Counts one request by `subject` (a client IP) against every window. */
+/**
+ * Counts one request by `subject` (a client IP, an account, a hashed email)
+ * against every window. `units` is what this request costs (the page limiter
+ * charges a full page load more than a client-side refresh); a window is
+ * exceeded once its count passes its limit.
+ */
 export async function hitRateLimits(
   db: Executor,
   subject: string,
   windows: LimitWindow[],
   now: Date = new Date(),
+  units: number = 1,
 ): Promise<LimitResult> {
   if (!windows.length) return { ok: true, retryAfter: 0, exceeded: null };
   const t = now.getTime();
   const rows = windows.map((w) => ({
     key: `${w.name}:${subject}`,
     windowStart: new Date(Math.floor(t / w.ms) * w.ms),
-    count: 1,
+    count: units,
   }));
   const counts = await db
     .insert(rateLimits)
@@ -46,7 +52,7 @@ export async function hitRateLimits(
       target: rateLimits.key,
       set: {
         count: sql`case when ${rateLimits.windowStart} = excluded.window_start
-          then ${rateLimits.count} + 1 else 1 end`,
+          then ${rateLimits.count} + excluded.count else excluded.count end`,
         windowStart: sql`excluded.window_start`,
       },
     })

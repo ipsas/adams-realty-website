@@ -1,14 +1,22 @@
 import { CalendarDays, ChevronRight, Download, MessageSquareText } from "lucide-react";
 import Link from "next/link";
 import { LeadAgentSelect, LeadStatusSelect } from "@/components/dashboard/lead-controls";
-import { LeadTypeBadge, PageHeader, StatusDot, Table, Td, Th } from "@/components/dashboard/ui";
+import {
+  LeadTypeBadge,
+  PageHeader,
+  SpamFlag,
+  StatusDot,
+  Table,
+  Td,
+  Th,
+} from "@/components/dashboard/ui";
 import { ReturnSource } from "@/components/layout/return-link";
 import { buttonClasses } from "@/components/ui/button";
 import { site } from "@/config/site";
 import { can } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { cn } from "@/lib/cn";
-import { getAgentOptions, getLeads } from "@/lib/dashboard/queries";
+import { getAgentOptions, getLeads, getSpamCount } from "@/lib/dashboard/queries";
 import { formatRelative } from "@/lib/format";
 
 export const metadata = { title: "Leads" };
@@ -37,9 +45,10 @@ export default async function LeadsPage(props: PageProps<"/dashboard/leads">) {
   const actor = await requirePermission("/dashboard/leads", can.viewDashboard);
   const { status, focus } = await props.searchParams;
   const current = TABS.some(([value]) => value === status) ? (status as string) : "";
-  const [leads, agents] = await Promise.all([
+  const [leads, agents, spamCount] = await Promise.all([
     getLeads(actor, { status: current || undefined }),
     getAgentOptions(),
+    getSpamCount(actor),
   ]);
   const admin = can.assignInquiry(actor);
   const tabLabel = TABS.find(([value]) => value === current)![1];
@@ -81,9 +90,20 @@ export default async function LeadsPage(props: PageProps<"/dashboard/leads">) {
             )}
           >
             {label}
+            {value === "spam" && spamCount > 0 && (
+              <span className="ml-1.5 tabular" data-testid="spam-count">
+                {spamCount}
+              </span>
+            )}
           </Link>
         ))}
       </nav>
+      {current === "spam" && (
+        <p className="mb-5 max-w-2xl text-sm text-muted">
+          Messages the spam check held back: they reached no agent and sent no email. If one is
+          real, change its status and it rejoins the open leads with its routing.
+        </p>
+      )}
       {leads.length === 0 ? (
         <p className="rounded-2xl bg-sunken px-5 py-10 text-center text-sm text-muted">
           Nothing here.
@@ -108,8 +128,9 @@ export default async function LeadsPage(props: PageProps<"/dashboard/leads">) {
                     </div>
                     <StatusDot status={l.status} />
                   </div>
-                  <div className="mt-2.5 flex min-w-0 items-center gap-2">
+                  <div className="mt-2.5 flex min-w-0 flex-wrap items-center gap-2">
                     <LeadTypeBadge type={l.type} />
+                    <SpamFlag reasons={l.spamReasons} status={l.status} />
                     {l.listingAddress && (
                       <span className="truncate text-sm text-ink-soft">{l.listingAddress}</span>
                     )}
@@ -189,6 +210,7 @@ export default async function LeadsPage(props: PageProps<"/dashboard/leads">) {
                   <Td>
                     <div className="flex flex-wrap items-center gap-2">
                       <LeadTypeBadge type={l.type} />
+                      <SpamFlag reasons={l.spamReasons} status={l.status} />
                       {l.listingSlug && (
                         <Link
                           href={`/homes/${l.listingSlug}`}

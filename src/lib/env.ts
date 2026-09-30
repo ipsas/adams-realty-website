@@ -57,6 +57,16 @@ const makeSchema = (strict: boolean) =>
     EMAIL_FROM: z.string().default("Adams Realty <hello@example.com>"),
     /** Where new-lead notifications go when a lead has no assigned agent. */
     LEADS_INBOX: optional,
+    /**
+     * The office's internet addresses, comma-separated (IPv4 CIDR ranges allowed).
+     * The anti-scraping limiter never limits them. Empty by default.
+     */
+    OFFICE_IPS: optional,
+    /**
+     * Demo-data mode (noindex on sample listings, guides, places and agents): `on`/`off`.
+     * Unset, it follows SEED_DEMO_DATA. Read per request by src/lib/demo-mode.ts.
+     */
+    DEMO_DATA_MODE: optional,
   });
 
 export type Env = z.infer<ReturnType<typeof makeSchema>>;

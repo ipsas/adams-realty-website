@@ -172,6 +172,21 @@ Use your model table: Opus High for the work packages, and Xhigh if one gets stu
       See README → "Connecting your MLS".
 - [ ] **Production database without demo data.** Use a fresh database with `SEED_DEMO_DATA` unset,
       run migrations, and create Andrea's real login by signing up; an admin can then set roles.
+- [ ] **Launch day: switch off demo-data mode, then invite Google and Bing.** While the site shows
+      sample listings and agents, it tells search engines to stay away from search, listing, area,
+      places and agent pages (`noindex`, `robots.txt` and the sitemaps; `src/lib/demo-mode.ts`).
+      It is on wherever `SEED_DEMO_DATA=1`. Once the real MLS listings are live: set
+      `DEMO_DATA_MODE=off` in Vercel (or remove `SEED_DEMO_DATA`) and redeploy. Check that
+      `/robots.txt` lists the `/homes/sitemap/…` chunks again and that a listing page no longer
+      sends `X-Robots-Tag: noindex`. Then submit `/robots.txt`'s sitemaps in
+      [Google Search Console](https://search.google.com/search-console) and
+      [Bing Webmaster Tools](https://www.bing.com/webmasters) (check whether Search Console is
+      already set up for the domain). If any sample page was indexed before this mode existed,
+      use Search Console's Removals tool for it.
+- [ ] **The office's internet address.** So the office never meets the listing rate limit, set
+      `OFFICE_IPS` in Vercel to the office's public IP address (several can be separated by commas;
+      ranges like `203.0.113.0/28` work). Empty by default. Staff who are signed in are never
+      limited anyway.
 - [ ] **Postal address in emails.** It's already set from the office address; confirm it's correct.
 
 ## 7. Where to look in the code

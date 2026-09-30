@@ -51,6 +51,7 @@ import {
   telHref,
   TOUR_TYPE_LABELS,
 } from "./lead-format";
+import { parseSpamReasons, SPAM_REASON_LABELS } from "@/lib/spam";
 import { canDeleteLeadNote } from "./note-policy";
 
 // Static on purpose: a title built from the lead would put the contact's name
@@ -98,6 +99,7 @@ export default async function LeadDetailPage(props: PageProps<"/dashboard/leads/
     can.editListing(actor, { sourceKind: listing.sourceKind, listAgentId: listing.listAgentId });
   const from = refererPath(lead.metadata.referer);
   const tourPassed = lead.tourAt ? lead.tourAt <= now : false;
+  const spamReasons = lead.status === "spam" ? parseSpamReasons(lead.metadata.spam) : [];
 
   return (
     <>
@@ -123,6 +125,30 @@ export default async function LeadDetailPage(props: PageProps<"/dashboard/leads/
           </span>
         }
       />
+
+      {spamReasons.length > 0 && (
+        <section
+          aria-labelledby="spam-heading"
+          className="mb-6 rounded-2xl border border-line bg-clay-50 p-5"
+          data-testid="spam-notice"
+        >
+          <h2 id="spam-heading" className="font-semibold text-ink">
+            Held back as suspected spam
+          </h2>
+          <p className="mt-1 text-sm text-ink-soft">
+            It reached no agent and sent no email. The spam check found:
+          </p>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-ink-soft">
+            {spamReasons.map((r) => (
+              <li key={r}>{SPAM_REASON_LABELS[r]}</li>
+            ))}
+          </ul>
+          <p className="mt-2 text-sm text-ink-soft">
+            If it&apos;s a real person, set its status to New: it rejoins the open leads, routed as
+            it would have been.
+          </p>
+        </section>
+      )}
 
       {/* Phones: contact and status first, then the request. Desktop: request and
           notes on the left, contact / status / home in a sidebar. */}

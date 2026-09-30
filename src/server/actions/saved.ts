@@ -2,13 +2,17 @@
 
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { z } from "zod";
 import { db } from "@/db";
 import { listings, savedListings, savedSearches } from "@/db/schema";
+import { clientIp } from "@/lib/anti-scraping";
 import { can } from "@/lib/auth/permissions";
 import { getActor } from "@/lib/auth/session";
+import { hitFormLimits, retryPhrase } from "@/lib/form-guard";
 import { canShowDetails } from "@/lib/listings/visibility";
 import { describeCriteria, parseSearchParams } from "@/lib/search/params";
+import { formSignals, MIN_FILL_MS } from "@/lib/spam";
 
 const uuid = z.string().uuid();
 
@@ -45,14 +49,41 @@ const frequency = z.enum(["instant", "daily", "weekly", "off"]);
 
 export type SaveSearchResult = { ok: true; id: string } | { ok: false; error: string };
 
-/** Saves the search described by a query string (the same one the search page uses). */
+/**
+ * Saves the search described by a query string (the same one the search page uses).
+ * Spam checks (src/lib/spam.ts): the dialog's honeypot and timer, and per-account
+ * and per-IP limits, since a saved search sends email. A suspect save isn't stored.
+ */
 export async function saveSearch(input: {
   query: string;
   name?: string;
   alertFrequency?: string;
+  /** The honeypot's value. */
+  website?: string;
+  /** Milliseconds since the search page opened. */
+  formElapsed?: string;
 }): Promise<SaveSearchResult> {
   const actor = await getActor();
   if (!actor) return { ok: false, error: "unauthenticated" };
+  const limited = await hitFormLimits(db, "saved-search", {
+    ip: clientIp(await headers()),
+    userId: actor.userId,
+  });
+  if (!limited.ok) {
+    return {
+      ok: false,
+      error: `You've saved a lot of searches in a row. Please try again in ${retryPhrase(limited.retryAfter)}.`,
+    };
+  }
+  const spam = formSignals({
+    honeypot: input.website,
+    elapsed: input.formElapsed,
+    minMs: MIN_FILL_MS.saveSearch,
+  });
+  if (spam.length) {
+    console.warn(`[saved search] refused as suspected spam (${spam.join(", ")})`);
+    return { ok: false, error: "We couldn't save that search. Please try again." };
+  }
   const criteria = parseSearchParams(new URLSearchParams(input.query));
   // Saved searches should follow the market, not a specific results page.
   criteria.page = 1;

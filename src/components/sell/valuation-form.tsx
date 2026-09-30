@@ -4,12 +4,14 @@ import { CheckCircle2 } from "lucide-react";
 import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, FormMessage, Input, Select, Textarea } from "@/components/ui/form";
+import { Honeypot, useFormTimer } from "@/components/ui/spam-guard";
 import { createInquiry, type InquiryState } from "@/server/actions/inquiries";
 
 export function ValuationForm() {
   const [state, action, pending] = useActionState<InquiryState, FormData>(createInquiry, {
     ok: false,
   });
+  const stamp = useFormTimer();
   if (state.ok) {
     return (
       <div className="flex flex-col items-center py-10 text-center">
@@ -22,12 +24,10 @@ export function ValuationForm() {
     );
   }
   return (
-    <form action={action} className="space-y-4" noValidate>
+    <form action={(form) => action(stamp(form))} className="space-y-4" noValidate>
       <input type="hidden" name="type" value="valuation" />
       <input type="hidden" name="source" value="sell" />
-      <div aria-hidden className="absolute -left-[9999px] h-0 overflow-hidden">
-        <input name="website" tabIndex={-1} autoComplete="off" />
-      </div>
+      <Honeypot />
       <Field label="Property address" htmlFor="v-address" error={state.errors?.address}>
         <Input
           id="v-address"
