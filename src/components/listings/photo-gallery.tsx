@@ -72,7 +72,16 @@ export function PhotoGallery({ photos, alt }: { photos: GalleryPhoto[]; alt: str
               src={p.url}
               alt={i === 0 ? alt : (p.caption ?? `${alt} — photo ${i + 1}`)}
               priority={i === 0}
-              sizes={i === 0 ? "(min-width: 768px) 50vw, 100vw" : "25vw"}
+              // Phones load only the first photo: the other tiles are hidden there (a lazy
+              // <img> that isn't displayed never loads). Photos past the mosaic load one at a
+              // time in the viewer (site review #10).
+              sizes={
+                i === 0 && tiles.length > 1
+                  ? "(min-width: 768px) 50vw, 100vw"
+                  : i === 0
+                    ? "100vw"
+                    : "25vw"
+              }
               className="size-full transition-transform duration-500 group-hover:scale-[1.03]"
             />
             <span className="absolute inset-0 bg-shade/0 transition-colors group-hover:bg-shade/10" />

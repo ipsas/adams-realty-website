@@ -1,6 +1,7 @@
 import { site } from "@/config/site";
 import { env } from "@/lib/env";
 import { formatBaths, formatNumber, formatPrice } from "@/lib/format";
+import { photoRoute, photoUrl } from "@/lib/photos";
 
 /**
  * Branded transactional and alert emails. Email clients ignore most CSS, so
@@ -183,19 +184,20 @@ export function listingFacts(
     .join(" · ");
 }
 
-/** Smaller photos for email where the CDN can resize (3× the 168×112 slot). */
+/**
+ * Smaller photos for email (3× the 168×112 slot): the sample CDN crops to size; MLS photos
+ * come from the site's image optimizer (src/lib/photos.ts), never full size.
+ */
 function emailPhotoUrl(src: string): string {
-  try {
+  const route = photoRoute(src);
+  if (route === "self") {
     const url = new URL(src);
-    if (url.hostname === "images.unsplash.com") {
-      url.searchParams.set("w", "504");
-      url.searchParams.set("h", "336");
-      url.searchParams.set("fit", "crop");
-      return url.toString();
-    }
-  } catch {
-    // Not an absolute URL; use as-is.
+    url.searchParams.set("w", "504");
+    url.searchParams.set("h", "336");
+    url.searchParams.set("fit", "crop");
+    return url.toString();
   }
+  if (route === "optimize") return absoluteUrl(photoUrl(src, 504));
   return src;
 }
 

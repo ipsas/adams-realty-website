@@ -637,13 +637,19 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
           </div>
 
           {similar.length > 0 && (
-            <section className="mt-20">
+            <section className="mt-20" data-testid="similar-homes">
               <h2 className="mb-6 font-display-tight text-3xl font-medium text-ink">
                 {home ? "Similar homes nearby" : "Similar properties nearby"}
               </h2>
+              {/* First photo only, and not until the buyer scrolls near (site review #10). */}
               <div className="grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
                 {similar.map((s) => (
-                  <ListingCard key={s.id} listing={s} />
+                  <ListingCard
+                    key={s.id}
+                    listing={s}
+                    sizes="(min-width: 1024px) 22vw, (min-width: 640px) 45vw, 92vw"
+                    photoNearPx={SIMILAR_PHOTOS_NEAR_PX}
+                  />
                 ))}
               </div>
             </section>
@@ -728,6 +734,9 @@ function Section({ title, id, children }: { title: string; id?: string; children
     </section>
   );
 }
+
+/** Similar homes' photos wait until the section is this close to the screen (site review #10). */
+const SIMILAR_PHOTOS_NEAR_PX = 300;
 
 const FEATURE_GROUPS: [keyof ListingFeatures, string][] = [
   ["interior", "Interior"],

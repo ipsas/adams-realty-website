@@ -1,34 +1,16 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element --
- * Listing photos come from MLS/vendor CDNs that already serve sized images.
- * Routing tens of thousands of them through the Next image optimizer adds
- * cost without much benefit, so we render plain <img> with srcset/lazy
- * loading and a graceful fallback instead. */
+/*
+ * A plain <picture>/<img> built from src/lib/photos.ts rather than next/image: MLS photos go
+ * through Next's image optimizer (the same /_next/image URLs next/image would use), the
+ * sample photos' CDN resizes on its own, and phones get their own srcset capped at
+ * PHONE_MAX_WIDTH, which next/image can't express (site review #10). */
 
 import { House } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { PHONE_MEDIA } from "@/config/images";
 import { cn } from "@/lib/cn";
-
-const WIDTHS = [480, 800, 1200, 1600, 2000];
-
-/** Resizes images on CDNs that support a width parameter; returns others untouched. */
-export function sizedUrl(src: string, width: number): string {
-  try {
-    const url = new URL(src);
-    if (url.hostname === "images.unsplash.com") {
-      url.searchParams.set("w", String(width));
-      return url.toString();
-    }
-  } catch {
-    // Not an absolute URL — fall through.
-  }
-  return src;
-}
-
-function supportsResize(src: string) {
-  return src.startsWith("https://images.unsplash.com/");
-}
+import { photoSources } from "@/lib/photos";
 
 export function Photo({
   src,
@@ -37,16 +19,28 @@ export function Photo({
   className,
   priority = false,
   fallbackClassName,
+  nearPx,
 }: {
   src: string | null | undefined;
   alt: string;
   sizes?: string;
   className?: string;
+  /** Above the fold: load now, ahead of other images. Everything else loads near the viewport. */
   priority?: boolean;
   fallbackClassName?: string;
+  /**
+   * Hold the photo back until its box is within this many px of the screen (an empty frame
+   * until then, and nothing in the server HTML). For photos far down a page, such as
+   * similar homes: the browser's own lazy loading starts 1,250–2,500 px ahead.
+   */
+  nearPx?: number;
 }) {
   const [failed, setFailed] = useState(false);
+  const [near, setNear] = useState(nearPx === undefined);
+  // Once shown, a photo stays; a card that moves up the list (no nearPx now) shows at once.
+  const shown = near || nearPx === undefined;
   const ref = useRef<HTMLImageElement>(null);
+  const frame = useRef<HTMLDivElement>(null);
 
   // If the image errored before hydration, onError never fired — check now.
   useEffect(() => {
@@ -54,22 +48,47 @@ export function Photo({
     if (img && img.complete && img.naturalWidth === 0) setFailed(true);
   }, [src]);
 
-  if (!src || failed) return <PhotoFallback className={cn(className, fallbackClassName)} />;
+  useEffect(() => {
+    const el = frame.current;
+    if (shown || !el) return;
+    if (typeof IntersectionObserver === "undefined") {
+      const t = setTimeout(() => setNear(true));
+      return () => clearTimeout(t);
+    }
+    const margin = `${nearPx}px 0px`;
+    // scrollMargin (Chromium) grows scroll panes' clip too, like the desktop results list;
+    // elsewhere a photo in a pane waits until the pane shows it.
+    const io = new IntersectionObserver(([entry]) => entry.isIntersecting && setNear(true), {
+      rootMargin: margin,
+      scrollMargin: margin,
+    } as IntersectionObserverInit);
+    io.observe(el);
+    return () => io.disconnect();
+  }, [shown, nearPx]);
 
-  const resizable = supportsResize(src);
+  if (!src || failed) return <PhotoFallback className={cn(className, fallbackClassName)} />;
+  if (!shown) return <div ref={frame} aria-hidden className={cn("bg-sunken", className)} />;
+
+  const sources = photoSources(src, sizes);
   return (
-    <img
-      ref={ref}
-      src={resizable ? sizedUrl(src, 1200) : src}
-      srcSet={resizable ? WIDTHS.map((w) => `${sizedUrl(src, w)} ${w}w`).join(", ") : undefined}
-      sizes={resizable ? sizes : undefined}
-      alt={alt}
-      loading={priority ? "eager" : "lazy"}
-      fetchPriority={priority ? "high" : undefined}
-      decoding="async"
-      onError={() => setFailed(true)}
-      className={cn("object-cover", className)}
-    />
+    // `contents`: the <picture> adds no box, so the <img> sizes and positions as before.
+    <picture className="contents">
+      {sources.phoneSrcSet && (
+        <source media={PHONE_MEDIA} srcSet={sources.phoneSrcSet} sizes={sizes} />
+      )}
+      <img
+        ref={ref}
+        src={sources.src}
+        srcSet={sources.srcSet}
+        sizes={sources.srcSet ? sizes : undefined}
+        alt={alt}
+        loading={priority ? "eager" : "lazy"}
+        fetchPriority={priority ? "high" : undefined}
+        decoding="async"
+        onError={() => setFailed(true)}
+        className={cn("object-cover", className)}
+      />
+    </picture>
   );
 }
 

@@ -45,6 +45,11 @@ import { Pagination } from "./pagination";
 import { SaveSearchButton, useSaveSearch, type SaveSearchState } from "./save-search-button";
 import { buildSearchHref, currentView, useSearchNav } from "./use-search-nav";
 
+/** Cards whose photo loads with the page (the first rows; site review #10). */
+const EAGER_CARDS = 4;
+/** How close (px) a later card must come to the screen before its photo loads. */
+const CARD_PHOTOS_NEAR_PX = 400;
+
 /** What a search with no results offers (computed on the server; site review #5). */
 export type EmptyHelp = {
   /** Where the searched place is, so the map goes there; null when it's unknown. */
@@ -219,7 +224,10 @@ export function SearchView({
                   <ListingCard
                     key={l.id}
                     listing={l}
-                    priority={i < 4}
+                    priority={i < EAGER_CARDS}
+                    // Below the first rows, a photo waits until its card is near the screen:
+                    // on a slow signal the browser's own lazy loading reaches ~2,500 px ahead.
+                    photoNearPx={i < EAGER_CARDS ? undefined : CARD_PHOTOS_NEAR_PX}
                     highlighted={highlighted === l.id}
                     onHover={setHighlighted}
                     sizes="(min-width: 1536px) 22vw, (min-width: 1024px) 26vw, (min-width: 640px) 45vw, 92vw"

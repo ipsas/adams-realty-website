@@ -57,6 +57,13 @@ in `src/config/site.ts` (firm name, office address and phone, Georgia MLS office
 | `npm run db:seed`     | Reset and seed demo data (refuses in production)      |
 | `npm run mls:sync`    | Sync MLS feeds now (see _Connecting your MLS_)        |
 
+`npm run test:e2e` also starts a fake MLS photo host on 127.0.0.1:4010
+(`e2e/fixtures/photo-host.mjs`, full-size 2.5 MB photos) for the photo tests. To measure
+photo weight on a phone with a slow signal, start it, run a production build with
+`E2E_PHOTO_HOST=http://127.0.0.1:4010 npx next start -p 3100`, then
+`npx tsx scripts/perf/photo-weight.ts --base http://localhost:3100` (it moves some
+listings' photos to the fake host in your local database and puts them back).
+
 ## Before launch: things only Adams Realty can provide
 
 1. **Company details** in `src/config/site.ts` still marked `PLACEHOLDER`:

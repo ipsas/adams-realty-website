@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { FIXTURE_PHOTO_HOST } from "./src/config/images";
 
 /**
  * End-to-end tests against a seeded database (`npm run db:reset`).
@@ -78,10 +79,19 @@ export default defineConfig({
       grep: LANDSCAPE_GREP,
     },
   ],
-  webServer: {
-    command: `npx next dev -p ${PORT}`,
-    url: baseURL,
-    reuseExistingServer: true,
-    timeout: 120_000,
-  },
+  webServer: [
+    {
+      command: `npx next dev -p ${PORT}`,
+      url: baseURL,
+      reuseExistingServer: true,
+      timeout: 120_000,
+    },
+    {
+      // The fake MLS photo host (full-size originals) for e2e/photos-suite.ts.
+      command: "node e2e/fixtures/photo-host.mjs",
+      url: `${FIXTURE_PHOTO_HOST}/`,
+      reuseExistingServer: true,
+      timeout: 30_000,
+    },
+  ],
 });

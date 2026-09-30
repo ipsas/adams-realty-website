@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { initials } from "@/lib/format";
-import { sizedUrl } from "./photo";
+import { photoUrl } from "@/lib/photos";
 
 export function Avatar({
   src,
@@ -40,7 +40,7 @@ export function Avatar({
   return (
     <img
       ref={ref}
-      src={sizedUrl(src, 400)}
+      src={photoUrl(src, 384)}
       alt={name}
       loading="lazy"
       decoding="async"

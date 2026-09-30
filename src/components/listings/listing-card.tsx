@@ -30,12 +30,15 @@ export function ListingCard({
   onHover,
   priority = false,
   sizes = "(min-width: 1536px) 22vw, (min-width: 1024px) 30vw, (min-width: 640px) 45vw, 92vw",
+  photoNearPx,
 }: {
   listing: ListingCardData;
   highlighted?: boolean;
   onHover?: (id: string | null) => void;
   priority?: boolean;
   sizes?: string;
+  /** Hold the first photo back until the card is this close to the screen (`Photo nearPx`). */
+  photoNearPx?: number;
 }) {
   const sold = l.status === "closed";
   // A saved feed listing Georgia MLS rules now keep off the site: only its
@@ -72,6 +75,7 @@ export function ListingCard({
             alt={formatStreet(l)}
             sizes={sizes}
             priority={priority}
+            nearPx={photoNearPx}
           />
           <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start gap-1.5 p-3">
             {cardBadges(l).slice(0, 2)}
@@ -229,19 +233,31 @@ function cardBadges(l: ListingCardData): ReactNode[] {
   return out;
 }
 
+/**
+ * A card's swipeable photos. Only the first photo loads with the page; the next one is
+ * added when the buyer starts to swipe (touch, drag or the arrow), and each swipe adds the
+ * one after the one showing (site review #10). The other slides are empty frames that keep
+ * the track its full width, so swiping and the dots behave the same.
+ */
 function PhotoCarousel({
   photos,
   alt,
   sizes,
   priority,
+  nearPx,
 }: {
   photos: string[];
   alt: string;
   sizes: string;
   priority: boolean;
+  nearPx?: number;
 }) {
   const track = useRef<HTMLDivElement>(null);
   const [index, setIndex] = useState(0);
+  // How many photos from the start have their <img>: the one showing and the next.
+  const [loaded, setLoaded] = useState(1);
+  const loadNext = (from = index) =>
+    setLoaded((n) => Math.min(photos.length, Math.max(n, from + 2)));
 
   if (photos.length <= 1) {
     return (
@@ -250,6 +266,7 @@ function PhotoCarousel({
         alt={alt}
         sizes={sizes}
         priority={priority}
+        nearPx={nearPx}
         className="size-full transition-transform duration-700 ease-out group-hover:scale-[1.03]"
       />
     );
@@ -261,6 +278,7 @@ function PhotoCarousel({
     const el = track.current;
     if (!el) return;
     const next = Math.max(0, Math.min(photos.length - 1, index + dir));
+    loadNext(next);
     el.scrollTo({ left: next * el.clientWidth, behavior: "smooth" });
   };
 
@@ -268,25 +286,46 @@ function PhotoCarousel({
     <>
       <div
         ref={track}
+        data-card-photos
         className="scrollbar-none flex size-full snap-x snap-mandatory overflow-x-auto overscroll-x-contain"
+        // A finger on the photo is the start of a swipe (a mouse press is a click).
+        onPointerDown={(e) => e.pointerType !== "mouse" && loadNext()}
+        onTouchStart={() => loadNext()}
         onScroll={(e) => {
           const el = e.currentTarget;
-          setIndex(Math.round(el.scrollLeft / el.clientWidth));
+          const i = Math.round(el.scrollLeft / el.clientWidth);
+          setIndex(i);
+          loadNext(i);
         }}
       >
-        {photos.map((src, i) => (
-          <Photo
-            key={src + i}
-            src={src}
-            alt={i === 0 ? alt : `${alt} — photo ${i + 1}`}
-            sizes={sizes}
-            priority={priority && i === 0}
-            className="size-full shrink-0 snap-center"
-          />
-        ))}
+        {photos.map((src, i) =>
+          i < loaded ? (
+            <Photo
+              key={src + i}
+              src={src}
+              alt={i === 0 ? alt : `${alt} — photo ${i + 1}`}
+              sizes={sizes}
+              priority={priority && i === 0}
+              nearPx={i === 0 ? nearPx : undefined}
+              className="size-full shrink-0 snap-center"
+            />
+          ) : (
+            <div key={src + i} aria-hidden className="size-full shrink-0 snap-center bg-sunken" />
+          ),
+        )}
       </div>
-      <CarouselArrow side="left" hidden={index === 0} onClick={(e) => go(e, -1)} />
-      <CarouselArrow side="right" hidden={index === photos.length - 1} onClick={(e) => go(e, 1)} />
+      <CarouselArrow
+        side="left"
+        hidden={index === 0}
+        onClick={(e) => go(e, -1)}
+        onPointerEnter={() => loadNext()}
+      />
+      <CarouselArrow
+        side="right"
+        hidden={index === photos.length - 1}
+        onClick={(e) => go(e, 1)}
+        onPointerEnter={() => loadNext()}
+      />
       <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center gap-1">
         {photos.map((_, i) => (
           <span
@@ -306,10 +345,12 @@ function CarouselArrow({
   side,
   hidden,
   onClick,
+  onPointerEnter,
 }: {
   side: "left" | "right";
   hidden: boolean;
   onClick: (e: React.MouseEvent) => void;
+  onPointerEnter: () => void;
 }) {
   const Icon = side === "left" ? ChevronLeft : ChevronRight;
   return (
@@ -317,7 +358,9 @@ function CarouselArrow({
       type="button"
       tabIndex={-1}
       aria-hidden
+      data-carousel-arrow={side}
       onClick={onClick}
+      onPointerEnter={onPointerEnter}
       className={cn(
         "absolute top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full bg-surface/90 text-ink opacity-0 shadow transition-opacity group-hover:opacity-100 hover:bg-surface",
         side === "left" ? "left-2.5" : "right-2.5",

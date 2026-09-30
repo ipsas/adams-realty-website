@@ -127,6 +127,8 @@ test.describe("a sold Georgia MLS listing", () => {
     const card = page.locator("article").first();
     await expect(card).toContainText("305 Sycamore Place");
     await expect(card.locator("img")).toHaveCount(1);
+    // One photo, not a swipeable set (whose later slides mount only on a swipe).
+    await expect(card.locator("[data-card-photos]")).toHaveCount(0);
   });
 
   test("sold after it was listed, in its price and status history", async ({ page }) => {

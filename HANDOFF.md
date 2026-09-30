@@ -192,6 +192,18 @@ Use your model table: Opus High for the work packages, and Xhigh if one gets stu
       ranges like `203.0.113.0/28` work). Empty by default. Staff who are signed in are never
       limited anyway.
 - [ ] **Postal address in emails.** It's already set from the office address; confirm it's correct.
+- [ ] **Photo resizing (may carry a small monthly cost).** Georgia MLS photos arrive full size
+      (often 1–3 MB each), so the site sends them through Vercel's image optimization, which
+      makes phone-sized copies (at most 800 px wide on phones) and keeps each copy for a week
+      (`src/lib/photos.ts`, `next.config.ts`). Vercel counts every new copy (one photo at one
+      width) as a transformation: plans include an allowance and Pro bills beyond it, so check
+      [Vercel's pricing](https://vercel.com/pricing) and the Usage tab after the first week of
+      real listings. Most photos are seen at two or three widths. If the cost ever matters,
+      the allowed hosts in `next.config.ts` (`images.remotePatterns`, today any host, because
+      agents paste photo links from anywhere) can be narrowed to the MLS photo host. When the
+      feed is connected, open a few real listings in Chrome with DevTools' phone view and its
+      Network tab, and check that their photos load from `/_next/image` at 800 px or less,
+      never straight from the MLS host.
 
 ## 7. Where to look in the code
 

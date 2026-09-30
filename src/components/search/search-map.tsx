@@ -24,6 +24,7 @@ import { useMapTheme } from "@/components/theme/use-theme";
 import { readResolvedTheme } from "@/lib/theme";
 import { formatBaths, formatNumber, formatPrice, formatPriceShort } from "@/lib/format";
 import { landSummary } from "@/lib/listings/land";
+import { photoUrl } from "@/lib/photos";
 import type { Bounds } from "@/lib/search/params";
 import type { MapPin } from "@/lib/search/service";
 
@@ -327,7 +328,8 @@ function popupNode(p: MapPin): HTMLElement {
   a.className = "block w-60 text-ink no-underline";
   if (p.photo) {
     const img = document.createElement("img");
-    img.src = p.photo.replace(/w=\d+/, "w=480");
+    // 240 px wide at 2×; MLS photos come resized (src/lib/photos.ts).
+    img.src = photoUrl(p.photo, 480);
     img.alt = "";
     img.className = "h-32 w-full object-cover bg-sunken";
     img.onerror = () => img.remove();

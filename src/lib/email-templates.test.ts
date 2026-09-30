@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { site } from "@/config/site";
+import { env } from "@/lib/env";
 import {
   escapeHtml,
   leadDigestEmail,
@@ -112,6 +113,17 @@ describe("savedSearchAlertEmail", () => {
     expect(text).toContain("3 bd · 2.5 ba · 1,850 sqft\n123 Oak St, Lavonia, GA 30553");
     const noPhoto = alert({ newListings: [home({ photoUrl: null })] });
     expect(noPhoto.html).toContain("Photo coming soon");
+  });
+
+  it("sends an MLS photo resized by the site's optimizer, never full size", () => {
+    const mls = "https://media.mls.example/p/1.jpg?x=1";
+    const { html } = alert({ newListings: [home({ photoUrl: mls })] });
+    const src = /<img src="([^"]+)" width="168"/.exec(html)![1].replace(/&amp;/g, "&");
+    const url = new URL(src);
+    expect(url.origin).toBe(new URL(env.NEXT_PUBLIC_SITE_URL).origin);
+    expect(url.pathname).toBe("/_next/image");
+    expect(url.searchParams.get("url")).toBe(mls);
+    expect(Number(url.searchParams.get("w"))).toBeLessThanOrEqual(640);
   });
 });
 

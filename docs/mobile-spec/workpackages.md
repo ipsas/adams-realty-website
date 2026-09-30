@@ -286,6 +286,11 @@ ALREADY BUILT (site review #5 and #8, before the packages; keep it):
 - Bare land on cards reads "Land · X acres · $Y/acre" (`landSummary`, `data-testid="card-land"`); the map preview does too (`pinFacts`; `MapPin` has `propertyType`, `lotSqft` and `rent`). The strip's cards use `landSummary` in place of beds, baths and sqft, and bare land shows no 'all-in' line (its estimate has no home insurance and a land loan's terms vary; the listing page explains it).
 - The sort select has "Acreage (most first)" and "Price per acre" (SORTS), each backed by a partial index per mode.
 
+ALREADY BUILT (site review #10, photos on a weak signal; keep it):
+
+- Cards mount only their first photo; the next is mounted when the buyer starts a swipe (touch, pointer down, a scroll of the track, or hovering an arrow), then the one after the photo showing (`PhotoCarousel` in listing-card.tsx; the other slides are `bg-sunken` frames). Cards after the first four (`EAGER_CARDS` in search-view.tsx) pass `photoNearPx` (400 px), so their photo waits until the card is near; the sheet body must keep that working (IntersectionObserver `scrollMargin` covers scroll panes in Chromium). The strip's cards reuse `ListingCard` or the same rule; `e2e/photos-suite.ts` fails if a card loads a second photo before a swipe. The photo-count chip for coarse pointers counts `photos.length`, not mounted slides.
+- Every listing photo is a `<Photo>` (a `<picture>` capped at 800 px on phones, MLS photos through the image optimizer) or `photoUrl()` (the map preview already uses it); see docs/mobile-contracts.md, "Exports other modules rely on".
+
 STEPS:
 
 - Set up the worktree with `scripts/mobile-worktree.sh 3` (port 3103, database adams_wp3).
@@ -534,6 +539,13 @@ ALREADY BUILT (form spam, before the packages; keep it):
 
 - `ContactForm` renders `<Honeypot />` and sends `action(stamp(form))` (`src/components/ui/spam-guard.tsx`); `createInquiry` flags a lead sent within 3 s of the form mounting, or without the stamp. The tour sheet mounts `ContactForm` only while open, so it must start the timer when the listing page mounts (call `useFormTimer` in the sheet's host and pass `stamp` down), or a quick autofill in the sheet could be held back as spam.
 - e2e tests that send a lead wait first (`waitLikeAPerson` in `e2e/helpers.ts`).
+
+ALREADY BUILT (site review #10, photos on a weak signal; keep it):
+
+- F28's lazy map is built: `LocationMapLazy` mounts the dynamic `LocationMap` when its box is within `MAP_NEAR_PX` (300 px, as F28 says) or on `beforeprint`, with a `bg-sunken` placeholder until then (`data-location-map="waiting|loaded"`). The WP adds the 'Show map' button to the placeholder and the offline overlay.
+- `<Photo>` is a `<picture className="contents">`: phones (`PHONE_MEDIA`) get a srcset that stops at 800 px, larger screens every width up to 1,920, and MLS photos come through Next's image optimizer (`src/lib/photos.ts`). The phone gallery's slides 1..N must not be plain lazy `<img>`s in the scroller (native lazy loading fetches slides beside a visible one): mount each slide's `<Photo>` when the buyer swipes toward it, as the cards do. `zoomSizes` should add a larger source only once the viewer zooms in, so the 800 px cap holds until then.
+- The hero loads eagerly with high priority; tiles 2–5 are hidden on phones and never load there; the viewer loads one photo at a time (its thumbnail strip loads thumbnails of at most 256 px). Similar homes are lazy, first-photo-only cards (`data-testid="similar-homes"`).
+- `e2e/photos-suite.ts` (desktop, pixel7, iphone13) holds the byte budgets for a home's page before scrolling and must keep passing.
 
 STEPS:
 

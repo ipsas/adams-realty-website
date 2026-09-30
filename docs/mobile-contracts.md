@@ -315,6 +315,19 @@ Keep these when editing the files that hold them:
   (`data-testid="setting-<name>"`), and on a lead's page `"lead-waiting"` and
   `"first-contact"`. Status changes go through `updateInquiryStatus`, which stamps the
   first contact and emails a restored agent after the response.
+- Photos (site review #10): every listing photo renders through `<Photo>`
+  (`src/components/ui/photo.tsx`, a `<picture className="contents">` whose phone
+  `<source media={PHONE_MEDIA}>` stops at `PHONE_MAX_WIDTH`, 800 px) or, outside React,
+  `photoUrl(src, width)` from `src/lib/photos.ts`. Never put a listing photo's own URL in
+  an `<img>`: MLS photos must go through the optimizer. New sizes go in
+  `src/config/images.ts` (next.config.ts reads it). A carousel mounts a slide's `<Photo>`
+  only when the buyer swipes toward it (native lazy loading still fetches slides beside a
+  visible one), and a photo far down a page takes `nearPx` (`ListingCard photoNearPx`:
+  /homes after the first four cards, similar homes); the card's track is
+  `[data-card-photos]` and its arrows
+  `[data-carousel-arrow=left|right]`. `LocationMapLazy` exposes
+  `data-location-map="waiting|loaded"` and `MAP_NEAR_PX`; the similar homes section is
+  `data-testid="similar-homes"`. `e2e/photos-suite.ts` holds the byte budgets.
 
 Which package may edit which file is set out in `docs/mobile-spec/foundation.md`
 ("Ownership after the foundation"). This file is part of ARCHITECTURE.md's

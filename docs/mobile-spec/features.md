@@ -413,7 +413,7 @@ The desktop inline form keeps its behavior, except for the honest success copy.
 ## F28 [P0] Lazy listing map
 
 Value: Listings load faster because the 200KB+ map library loads only when the Location section is near.
-LocationMapLazy is currently a next/dynamic component with ssr:false, so it loads the maplibre chunk right after hydration. It now waits for an IntersectionObserver (rootMargin 300px) before mounting the dynamic LocationMap.
+ALREADY BUILT (site review #10): LocationMapLazy waits for an IntersectionObserver (rootMargin 300px, `MAP_NEAR_PX`) or `beforeprint` before mounting the dynamic LocationMap; before that it was a next/dynamic component with ssr:false that loaded the maplibre chunk right after hydration. WP5 adds the 'Show map' button.
 
 Until then it shows a same-size placeholder with a 'Show map' button, which mounts the map immediately when tapped. A map error shows 'Map unavailable offline'. The release performance gate depends on this.
 

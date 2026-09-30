@@ -382,7 +382,36 @@ contact, agent, listing report, valuation, sign-up, saved searches):
 
 - Server Components by default. Client components only where there's interaction.
 - Design tokens are defined in `globals.css` (`@theme`): warm neutrals, evergreen brand, brass accent. Type is Fraunces for display and Inter for UI.
-- Photos use a small `<Photo>` component (plain `<img>`, srcset for CDNs that resize, lazy loading, graceful fallback) rather than the Next image optimizer, which would be costly for tens of thousands of MLS photos.
+- **Photos** (site review #10; much of Northeast Georgia has a weak phone signal):
+  - `<Photo>` (`src/components/ui/photo.tsx`) renders a `<picture>`: a `<source>` for
+    phones (`PHONE_MEDIA`: narrow screens, or short touch screens held sideways) whose
+    srcset stops at `PHONE_MAX_WIDTH` (800 px), and an `<img>` with every width for larger
+    screens. Lazy unless `priority`; a failed photo shows the house placeholder.
+  - Where a photo comes from is decided in `src/lib/photos.ts` (`photoRoute`): Georgia MLS
+    photos and links agents paste (any http(s) host) go through **Next's image optimizer**
+    (`/_next/image`, resized WebP, cached a week); the sample photos' CDN (Unsplash)
+    resizes on its own and is asked for a width; the site's own files, SVGs and data: URLs
+    are used as they are. The URLs are exactly those Next's default loader builds
+    (`photos.test.ts` checks against it), and the widths and the one quality come from
+    `src/config/images.ts`, which `next.config.ts` also reads (`deviceSizes`,
+    `imageSizes`, `qualities`), so the optimizer makes nothing else. A browser never
+    fetches an MLS original. The map preview, avatars and alert emails (absolute
+    optimizer URLs) use `photoUrl` too.
+  - `images.remotePatterns` allows any http(s) host because agents paste photos from
+    anywhere; `dangerouslyAllowLocalIP` stays off in production (the tests' fake MLS host
+    is on 127.0.0.1, allowed in development or with `E2E_PHOTO_HOST` on a local
+    `next start`). On Vercel each new (photo, width) pair is a billed transformation;
+    HANDOFF.md has the numbers.
+  - Cards load only their first photo; a swipe (touch, drag or the arrow) adds the next
+    one (`PhotoCarousel` in `listing-card.tsx`). On /homes the first four cards' photos
+    load with the page and later ones wait until the card is within 400 px of the screen
+    (`Photo nearPx`: the browser's own lazy loading reaches up to 2,500 px ahead on a slow
+    signal). A home's page loads its first photo eagerly (desktop: the five-tile mosaic);
+    the rest load one at a time in the viewer. Similar homes' photos wait until the
+    section is within 300 px. The location map (`LocationMapLazy`) mounts MapLibre
+    only when its box comes within `MAP_NEAR_PX` of the screen, or on `beforeprint`.
+  - `scripts/perf/photo-weight.ts` measures a phone on Chrome's Slow 3G profile;
+    `e2e/photos-suite.ts` holds the byte budgets.
 - **SEO:**
   - Metadata per page.
   - `RealEstateListing` JSON-LD on property pages.
@@ -628,7 +657,13 @@ must keep.
   `lead-followup.spec.ts` and `mobile/lead-followup.spec.ts`: Needs attention, the follow-up
   date, first contact and reply times, email settings, the emails' lead link). Lead emails
   and the morning summary are tested against the test database with the mailer swapped for
-  a list (`src/lib/leads/*.db.test.ts`). Forms in e2e tests wait like a person (`waitLikeAPerson`)
+  a list (`src/lib/leads/*.db.test.ts`), and photos (`photos-suite.ts`, run by
+  `photos.spec.ts` and `mobile/photos.spec.ts`: listings' photos are moved to a fake MLS
+  host serving 2.5 MB originals, `e2e/fixtures/photo-host.mjs` on 127.0.0.1:4010, which
+  `playwright.config.ts` starts; byte budgets for images before scrolling on /homes and a
+  home's page, one photo per card and the next on a swipe, nothing wider than 800 px on
+  phones, no request straight to the MLS host, similar homes and the map waiting for a
+  scroll). Forms in e2e tests wait like a person (`waitLikeAPerson`)
   before sending. Runs against a seeded database.
 - **Phones (`e2e/mobile/`):** the `pixel7` and `iphone13` projects run every
   spec there; `iphone13-landscape` and `ipad-mini` run `sweep` and
