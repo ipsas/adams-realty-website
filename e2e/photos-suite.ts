@@ -68,7 +68,10 @@ async function watchImages(page: Page) {
       await page.waitForLoadState("networkidle");
       await page.waitForTimeout(750);
       await expect
-        .poll(() => all().every((s) => s.done), { timeout: 30_000, message: "images still loading" })
+        .poll(() => all().every((s) => s.done), {
+          timeout: 30_000,
+          message: "images still loading",
+        })
         .toBe(true);
     },
   };
@@ -183,8 +186,7 @@ export function photosSuite(test: typeof baseTest, { phone }: { phone: boolean }
       const slug = (await first.locator("> a").getAttribute("href"))!.slice("/homes/".length);
       const [firstId] = await listingIds([slug]);
       const second = moved.photos.find((p) => p.listingId === firstId && p.rank === 2)!;
-      const asked = (p: { id: string }) =>
-        images.all().some((s) => fixtureMediaId(s.url) === p.id);
+      const asked = (p: { id: string }) => images.all().some((s) => fixtureMediaId(s.url) === p.id);
       expect(asked(second)).toBe(false);
       if (phone) {
         await touchDrag(page, first.locator("[data-card-photos]"), { dx: -160, dy: 0 });
@@ -275,11 +277,16 @@ export function photosSuite(test: typeof baseTest, { phone }: { phone: boolean }
       expect(styles.length).toBeGreaterThan(0);
 
       await similar.scrollIntoViewIfNeeded();
-      await expect.poll(similarAsked, { message: "similar photos load on scroll" }).toBeGreaterThan(0);
+      await expect
+        .poll(similarAsked, { message: "similar photos load on scroll" })
+        .toBeGreaterThan(0);
 
       // The viewer loads the photo it shows, resized, and nothing straight from the MLS host.
       await page.evaluate(() => window.scrollTo(0, 0));
-      await page.getByRole("button", { name: /photos?$/ }).first().click();
+      await page
+        .getByRole("button", { name: /photos?$/ })
+        .first()
+        .click();
       const dialog = page.locator("dialog[open]");
       await page.keyboard.press("ArrowRight");
       await expect(dialog).toContainText("2 /");
@@ -291,5 +298,49 @@ export function photosSuite(test: typeof baseTest, { phone }: { phone: boolean }
       expect(await pixelWidth(shown)).toBeLessThanOrEqual(maxWidth);
       expect(images.direct).toEqual([]);
     });
+
+    if (!phone) {
+      test("the desktop mosaic leaves no empty cell, whatever the number of photos", async ({
+        page,
+      }) => {
+        // Active homes with 2, 3, 4 and 5 photos (a sold one shows only its first).
+        const slugs = await withDb((db) =>
+          db
+            .query<{ n: number; slug: string }>(
+              `select distinct on (n) n, slug from (
+                 select l.slug, count(m.id)::int as n from listings l
+                   join listing_media m on m.listing_id = l.id and m.kind = 'photo'
+                  where l.removed_at is null and not l.idx_hidden and l.status = 'active'
+                  group by l.slug) t
+                where n between 2 and 5 order by n, slug`,
+            )
+            .then((r) => r.rows),
+        );
+        expect(slugs.map((r) => r.n)).toEqual([2, 3, 4, 5]);
+        for (const { n, slug } of slugs) {
+          await gotoHydrated(page, `/homes/${slug}`, "main p.tabular");
+          await expect(page.getByRole("button", { name: `${n} photos` })).toBeVisible();
+          // Every corner of the right half (the hero is the left half) is a photo tile, not
+          // the empty grid behind them.
+          const misses = await page.evaluate(() => {
+            const tile = document.querySelector("button[aria-label^='Open photo 1 ']")!;
+            const grid = tile.parentElement!.getBoundingClientRect();
+            const inset = 12;
+            const points = [
+              [grid.left + grid.width * 0.5 + inset, grid.top + inset],
+              [grid.right - inset, grid.top + inset],
+              [grid.left + grid.width * 0.5 + inset, grid.bottom - inset],
+              // Above the "N photos" button in the bottom-right corner.
+              [grid.right - inset, grid.bottom - 72],
+            ];
+            return points.filter(([x, y]) => {
+              const hit = document.elementFromPoint(x, y);
+              return !hit?.closest("button[aria-label^='Open photo']");
+            }).length;
+          });
+          expect(misses, `${n} photos: points with no photo`).toBe(0);
+        }
+      });
+    }
   });
 }

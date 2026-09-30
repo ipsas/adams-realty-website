@@ -78,21 +78,27 @@ export async function hitFormLimits(
 }
 
 /**
- * Someone the office already knows: signed in, or with an account under
- * this email, or who has sent a lead before that wasn't spam. The content
- * filter never flags them.
+ * Someone the office has actually worked with: an earlier lead from this email,
+ * or from this signed-in account, that staff moved on from "new" (contacted,
+ * qualified or closed). The content filter never flags them.
+ *
+ * Nothing the sender controls alone counts (review fix round 1): not an
+ * account under the typed email (sign-up checks no email, and agents' emails
+ * are on their public pages), not being signed in (anyone can make an
+ * account), and not an earlier message that nobody has answered yet (one
+ * harmless note would clear the way for a pitch).
  */
 export async function isKnownCustomer(
   db: Executor,
   email: string,
   userId: string | null,
 ): Promise<boolean> {
-  if (userId) return true;
   const { rows } = await db.execute<{ known: boolean }>(sql`
-    select exists (select 1 from users u where lower(u.email) = lower(${email}))
-        or exists (
-          select 1 from inquiries i where lower(i.email) = lower(${email}) and i.status <> 'spam'
-        ) as known`);
+    select exists (
+      select 1 from inquiries i
+       where i.status in ('contacted', 'qualified', 'closed')
+         and (lower(i.email) = lower(${email}) or (${userId}::text is not null and i.user_id = ${userId}))
+    ) as known`);
   const [row] = rows;
   return !!row?.known;
 }

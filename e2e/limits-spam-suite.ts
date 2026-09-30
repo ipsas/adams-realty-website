@@ -25,6 +25,7 @@ const LINKEDIN =
   "LinkedInBot/1.0 (compatible; Mozilla/5.0; Apache-HttpClient +http://www.linkedin.com)";
 const GOOGLEBOT = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)";
 const BUSY = "One moment, please";
+const LONG_PAUSE = "Listings are paused for now";
 
 const testIp = () =>
   `198.18.${Math.floor(Math.random() * 250) + 1}.${Math.floor(Math.random() * 250) + 1}`;
@@ -41,8 +42,29 @@ async function setDailyCounter(name: string, subject: string, count: number) {
   );
 }
 
-/** The whole day's page allowance for `ip` is used up. */
+/** The whole day's page allowance for `ip` is used up: a long pause. */
 const pagesUsedUp = (ip: string) => setDailyCounter("page:1d", ip, 5_000 * PAGE_UNITS);
+
+/**
+ * This minute's page allowance for `ip` is used up: a short pause ("One moment, please").
+ * Waits out the end of a minute first, so the window can't roll over mid-test.
+ */
+async function burstUsedUp(page: Page, ip: string) {
+  const intoMinute = await withDb((db) =>
+    db
+      .query<{ s: number }>("select extract(second from now())::float as s")
+      .then((r) => Number(r.rows[0].s)),
+  );
+  if (intoMinute > 30) await page.waitForTimeout((61 - intoMinute) * 1_000);
+  await withDb((db) =>
+    db.query(
+      `insert into rate_limits (key, window_start, count)
+       values ($1, to_timestamp(floor(extract(epoch from now()) / 60) * 60), $2)
+       on conflict (key) do update set window_start = excluded.window_start, count = excluded.count`,
+      [`page:1m:${ip}`, 120 * PAGE_UNITS],
+    ),
+  );
+}
 
 const counter = (key: string) =>
   withDb((db) =>
@@ -84,10 +106,11 @@ export function limitsSpamSuite(test: typeof baseTest, { phone }: { phone: boole
     test("over the limit: a branded 'One moment, please' page with Back, Try again and the office phone", async ({
       page,
     }) => {
+      test.setTimeout(90_000);
       const ip = testIp();
       await page.setExtraHTTPHeaders({ "x-forwarded-for": ip });
       await gotoHydrated(page, "/about", "main h1");
-      await pagesUsedUp(ip);
+      await burstUsedUp(page, ip);
 
       const res = await page.goto("/homes?q=Royston");
       expect(res?.status()).toBe(429);
@@ -128,14 +151,51 @@ export function limitsSpamSuite(test: typeof baseTest, { phone }: { phone: boole
     }) => {
       const ip = testIp();
       await page.setExtraHTTPHeaders({ "x-forwarded-for": ip });
+      test.setTimeout(90_000);
       await gotoHydrated(page, "/homes?q=Carnesville&mode=rent", "[data-testid=no-results]");
-      await pagesUsedUp(ip);
+      await burstUsedUp(page, ip);
       await page
         .getByTestId("no-results")
         .getByRole("link", { name: "See all rentals in Georgia" })
         .click();
       await expect(page.getByRole("heading", { level: 1, name: BUSY })).toBeVisible();
       await expect(page.getByTestId("busy-retry")).toHaveAttribute("href", "/homes?mode=rent");
+      await clearCounters(ip);
+    });
+
+    test("a long pause says so, and offers signing in instead of a Try again that can't work", async ({
+      page,
+    }) => {
+      const ip = testIp();
+      await page.setExtraHTTPHeaders({ "x-forwarded-for": ip });
+      await gotoHydrated(page, "/about", "main h1");
+      await pagesUsedUp(ip);
+      const res = await page.goto("/homes?q=Royston");
+      expect(res?.status()).toBe(429);
+      expect(Number(res?.headers()["retry-after"])).toBeGreaterThan(120);
+      await expect(page.getByRole("heading", { level: 1 })).toHaveText(LONG_PAUSE);
+      await expect(page.locator("main")).not.toContainText(/one moment|for a moment/i);
+      await expect(page.locator("main")).toContainText(
+        /Listings open again here in about \d+ (hours?|minutes)\./,
+      );
+      await expect(page.getByTestId("busy-retry")).toHaveCount(0);
+      const signInLink = page.getByTestId("busy-sign-in");
+      await expect(signInLink).toHaveAttribute(
+        "href",
+        `/sign-in?next=${encodeURIComponent("/homes?q=Royston")}`,
+      );
+      await expect(page.getByTestId("busy-phone")).toHaveText(site.phone);
+      if (phone) {
+        await expectTapTargets(page, "[data-testid=busy-sign-in], [data-testid=busy-back]", 44);
+        await expectNoHorizontalOverflow(page);
+      }
+      // Signing in is the way through: buyers count per account.
+      await signInLink.click();
+      await page.fill("#email", "buyer@example.com");
+      await page.fill("#password", process.env.SEED_PASSWORD ?? "adams-demo-2026");
+      await page.click("button[type=submit]");
+      await expect(page).toHaveURL(/\/homes\?q=Royston$/);
+      await expect(page.getByRole("heading", { level: 1 })).toHaveText("Homes for sale in Royston");
       await clearCounters(ip);
     });
 
@@ -250,6 +310,59 @@ export function limitsSpamSuite(test: typeof baseTest, { phone }: { phone: boole
           headers: { "user-agent": LINKEDIN, "x-forwarded-for": ip },
         });
         expect(api.status()).toBe(403);
+        await clearCounters(ip);
+      });
+
+      test("forged refresh headers get no more than the quick cap; the page allowance stays", async ({
+        request,
+      }) => {
+        const ip = testIp();
+        const forged = { "next-url": "/homes", "x-forwarded-for": ip };
+        const res = await request.get("/homes", { headers: forged });
+        // A full page came back, as it would for a scraper...
+        expect(res.status()).toBe(200);
+        expect(res.headers()["content-type"]).toContain("text/html");
+        // ...counted as a quick request against both windows.
+        expect(await counter(`page:1d:${ip}`)).toBe(1);
+        expect(await counter(`quick:1d:${ip}`)).toBe(1);
+        await setDailyCounter("quick:1d", ip, 6_000);
+        expect((await request.get("/homes", { headers: forged })).status()).toBe(429);
+        // A plain page load still has its own allowance.
+        expect((await request.get("/homes", { headers: { "x-forwarded-for": ip } })).status()).toBe(
+          200,
+        );
+        await clearCounters(ip);
+      });
+
+      test("a link-preview name has a small allowance of its own", async ({ request }) => {
+        const ip = testIp();
+        await setDailyCounter("preview:1d", ip, 500);
+        const res = await request.get("/homes", {
+          headers: { "user-agent": LINKEDIN, "x-forwarded-for": ip },
+        });
+        expect(res.status()).toBe(429);
+        await clearCounters(ip);
+      });
+
+      test("signed-in buyers on one address share one allowance, however many accounts", async ({
+        page,
+      }) => {
+        const ip = testIp();
+        await page.setExtraHTTPHeaders({ "x-forwarded-for": ip });
+        await signIn(page, "buyer@example.com", "/");
+        expect(await counter(`members:1d:${ip}`)).toBe(0);
+        expect((await page.goto("/homes?q=Royston"))?.status()).toBe(200);
+        expect(await counter(`members:1d:${ip}`)).toBeGreaterThanOrEqual(PAGE_UNITS);
+        // Every buyer on this address together has used up the day: a fresh account (or
+        // this one) is paused, without being told to sign in.
+        await setDailyCounter("members:1d", ip, 5_000 * PAGE_UNITS);
+        const res = await page.goto("/homes?q=Royston");
+        expect(res?.status()).toBe(429);
+        await expect(page.getByRole("heading", { level: 1 })).toHaveText(LONG_PAUSE);
+        await expect(page.locator("main")).toContainText("from your account");
+        await expect(
+          page.locator("main a[href^='/sign-in'], main a[href^='/sign-up']"),
+        ).toHaveCount(0);
         await clearCounters(ip);
       });
 
@@ -438,7 +551,7 @@ export function limitsSpamSuite(test: typeof baseTest, { phone }: { phone: boole
             .then((r) => r.rows),
         );
       await gotoHydrated(page, "/homes?q=Carnesville&mode=rent", "[data-testid=no-results]");
-      await page.getByRole("button", { name: "Email me when homes list here" }).click();
+      await page.getByRole("button", { name: "Email me when rentals list here" }).click();
       const dialog = page.getByRole("dialog", { name: "Save this search" });
       await dialog.locator("#search-name").fill("E2E spam check");
       await dialog.locator("input[name=website]").evaluate((el: HTMLInputElement) => {

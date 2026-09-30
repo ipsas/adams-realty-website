@@ -49,6 +49,11 @@ export function PhotoGallery({ photos, alt }: { photos: GalleryPhoto[]; alt: str
   }
 
   const tiles = photos.slice(0, 5);
+  // On md+ the hero takes the left half and the rest fill the right half's four cells, so with
+  // fewer than five photos some tiles widen to leave no empty cell: 2 → one tall tile,
+  // 3 → two wide ones, 4 → two small ones over a wide one.
+  const wide = (i: number) =>
+    i > 0 && (tiles.length === 3 || (tiles.length === 4 && i === 3) || tiles.length === 2);
   return (
     <>
       <div className="relative grid h-[42vh] min-h-72 grid-cols-4 grid-rows-2 gap-2 overflow-hidden rounded-[var(--radius-card)] sm:h-[56vh] sm:max-h-[560px]">
@@ -63,8 +68,8 @@ export function PhotoGallery({ photos, alt }: { photos: GalleryPhoto[]; alt: str
               i === 0
                 ? cn("col-span-4 row-span-2", tiles.length > 1 && "md:col-span-2")
                 : "hidden md:block",
-              tiles.length === 2 && i === 1 && "md:col-span-2 md:row-span-2",
-              tiles.length === 3 && i > 0 && "md:col-span-2",
+              wide(i) && "md:col-span-2",
+              tiles.length === 2 && i === 1 && "md:row-span-2",
             )}
             aria-label={`Open photo ${i + 1} of ${photos.length}`}
           >
@@ -80,7 +85,9 @@ export function PhotoGallery({ photos, alt }: { photos: GalleryPhoto[]; alt: str
                   ? "(min-width: 768px) 50vw, 100vw"
                   : i === 0
                     ? "100vw"
-                    : "25vw"
+                    : wide(i)
+                      ? "50vw"
+                      : "25vw"
               }
               className="size-full transition-transform duration-500 group-hover:scale-[1.03]"
             />

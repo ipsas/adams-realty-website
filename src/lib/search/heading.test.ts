@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { lakeName, searchHeading } from "./heading";
 import {
+  noResultsCopy,
   clearedFilters,
   countActiveFilters,
   describeCriteria,
@@ -103,5 +104,30 @@ describe("land sorts (site review #8)", () => {
     expect(SORT_LABELS.price_per_acre_asc).toBe("Price per acre");
     expect(c("sort=lot_desc").sort).toBe("lot_desc");
     expect(c("sort=price_per_acre_asc").sort).toBe("price_per_acre_asc");
+  });
+});
+
+describe("noResultsCopy (site review #5)", () => {
+  it("speaks of rentals on a rentals search, and claims only what the search checked", () => {
+    const rent = noResultsCopy({ mode: "rent" }, "in Carnesville");
+    expect(rent.heading).toBe("No rentals match — yet");
+    expect(rent.alert).toBe("Email me when rentals list here");
+    expect(rent.none).toBe("No rentals in Carnesville right now.");
+    for (const text of Object.values(rent)) {
+      expect(text).not.toMatch(/\bhomes\b/i);
+      expect(text).not.toMatch(/nothing is listed/i);
+    }
+  });
+
+  it("keeps home words for homes, and names the type on a typed search", () => {
+    expect(noResultsCopy({ mode: "buy" }, "in Royston")).toEqual({
+      heading: "No homes match — yet",
+      alert: "Email me when homes list here",
+      none: "No homes for sale in Royston right now.",
+    });
+    expect(noResultsCopy({ mode: "buy", types: ["land"] }, "in this map area").none).toBe(
+      "No land for sale in this map area right now.",
+    );
+    expect(noResultsCopy({ mode: "sold" }, "in Georgia").none).toBe("No recent sales in Georgia.");
   });
 });

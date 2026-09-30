@@ -50,7 +50,7 @@ describe("the listing guard", () => {
     expect(hits).toEqual([{ subject: IP, windows: LIMITS.page, units: PAGE_UNITS }]);
   });
 
-  it("counts the site's own map, filter and form refreshes at a quarter of a page", async () => {
+  it("counts the site's own map, filter and form refreshes at a quarter of a page, and against the quick cap", async () => {
     const { deps, hits } = setup();
     await guardListingData(
       req("/homes?bounds=1,2,3,4", { headers: { "next-url": "/homes" } }),
@@ -62,8 +62,25 @@ describe("the listing guard", () => {
     );
     expect(hits.map((h) => [h.windows, h.units])).toEqual([
       [LIMITS.page, 1],
+      [LIMITS.quick, 1],
       [LIMITS.page, 1],
+      [LIMITS.quick, 1],
     ]);
+  });
+
+  it("a forged refresh header past the quick cap is paused, though page units remain", async () => {
+    const deps: GuardDeps = {
+      ...setup().deps,
+      hit: async (_subject, windows) =>
+        windows === LIMITS.quick
+          ? { ok: false, retryAfter: 3_000, exceeded: "quick:1h" }
+          : { ok: true, retryAfter: 0, exceeded: null },
+    };
+    const res = await guardListingData(req("/homes", { headers: { "next-url": "/homes" } }), deps);
+    expect(res?.status).toBe(429);
+    expect(res?.headers.get("retry-after")).toBe("3000");
+    // A plain page load still has page units: it isn't a quick request.
+    expect(await guardListingData(req("/homes"), deps)).toBeNull();
   });
 
   it("refuses HTTP libraries with a 403 and counts nothing", async () => {
@@ -73,7 +90,7 @@ describe("the listing guard", () => {
     expect(hits).toEqual([]);
   });
 
-  it("lets LinkedIn's preview robot fetch a listing page, in its own bucket, but not the API", async () => {
+  it("lets LinkedIn's preview robot fetch a listing page, in its own small bucket, but not the API", async () => {
     const { deps, hits } = setup();
     expect(await guardListingData(req("/homes/123-main-st", { ua: LINKEDIN }), deps)).toBeNull();
     expect(hits).toEqual([{ subject: IP, windows: LIMITS.preview, units: 1 }]);
@@ -81,7 +98,7 @@ describe("the listing guard", () => {
     expect(api?.status).toBe(403);
   });
 
-  it("doesn't limit staff, and limits signed-in buyers per account instead of per IP", async () => {
+  it("doesn't limit staff, and limits signed-in buyers per account and, together, per address", async () => {
     const staff = setup({
       user: async (): Promise<ProxyUser> => ({ userId: "a1", role: "agent" }),
     });
@@ -100,7 +117,10 @@ describe("the listing guard", () => {
     expect(await guardListingData(req("/homes"), buyer.deps)).toBeNull();
     expect(buyer.hits).toEqual([
       { subject: "user:b1", windows: LIMITS.account, units: PAGE_UNITS },
+      { subject: IP, windows: LIMITS.members, units: PAGE_UNITS },
     ]);
+    // Their address's anonymous allowance is not theirs: a buyer isn't paused by it.
+    expect(buyer.hits.some((h) => h.windows === LIMITS.page)).toBe(false);
   });
 
   it("doesn't limit the office's addresses", async () => {

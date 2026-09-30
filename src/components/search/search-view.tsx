@@ -27,12 +27,14 @@ import {
   countActiveFilters,
   describeCriteria,
   listingNoun,
+  noResultsCopy,
   parseViewParam,
   searchHref,
   serializeCriteria,
   SORTS,
   sortLabel,
   type SearchCriteria,
+  type SearchMode,
   type SortValue,
 } from "@/lib/search/params";
 import { markReturn } from "@/lib/return-nav";
@@ -56,6 +58,11 @@ export type EmptyHelp = {
   placeBounds: Bounds | null;
   /** The nearest towns with homes for this search. */
   nearby: NearbyTown[];
+  /**
+   * For a place (a town, lake or map area): the other modes with listings there, same
+   * property type, other filters dropped ("Homes for sale in Carnesville" for rentals).
+   */
+  elsewhere?: { mode: SearchMode; count: number }[];
 };
 
 // MapLibre touches `window` at import time, so the map only renders on the client.
@@ -191,12 +198,15 @@ export function SearchView({
                   {countActiveFilters(criteria) > 0 && ` · ${describeCriteria(criteria)}`}
                 </p>
               </div>
-              <div className="flex items-center gap-2">
-                <label className="flex items-center gap-2 text-sm text-muted">
+              {/* On a phone the row takes the full width and the sort menu shrinks to what's
+                  left (its longest label, "Acreage (most first)", would push Save search off
+                  the screen); from sm up it sizes to its label. */}
+              <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
+                <label className="flex min-w-0 flex-1 items-center gap-2 text-sm text-muted sm:flex-none">
                   Sort
                   <Select
                     aria-label="Sort results"
-                    className="h-9 w-auto rounded-full py-0 text-sm"
+                    className="h-9 w-full min-w-0 rounded-full py-0 text-sm sm:w-auto"
                     value={criteria.sort}
                     onChange={(e) => update({ sort: e.target.value as SortValue })}
                   >
@@ -474,17 +484,20 @@ function EmptyState({
   const hasBounds = !!criteria.bounds;
   const everywhere = listingNoun({ mode: criteria.mode, types: criteria.types }, { bare: true });
   const nearby = help?.nearby ?? [];
+  const elsewhere = help?.elsewhere ?? [];
+  const where = place ? `in ${place}` : hasBounds ? "in this map area" : `in ${site.coverage.name}`;
+  const copy = noResultsCopy(criteria, where);
   return (
     <div
       className="flex flex-col items-center rounded-3xl border border-dashed border-line-strong px-6 py-12 text-center"
       data-testid="no-results"
     >
       <SearchX className="size-10 text-faint" strokeWidth={1.5} />
-      <h2 className="mt-4 text-lg font-semibold text-ink">No homes match — yet</h2>
+      <h2 className="mt-4 text-lg font-semibold text-ink">{copy.heading}</h2>
       <p className="mt-1 max-w-sm text-sm text-muted">
         {filters
           ? `Try fewer filters${hasBounds ? " or a bigger map area" : ""}, or look nearby.`
-          : `Nothing is listed ${place ? `in ${place}` : hasBounds ? "in this map area" : `in ${site.coverage.name}`} right now.`}{" "}
+          : copy.none}{" "}
         We can email you as soon as something lists.
       </p>
       <div className="mt-6 flex flex-wrap justify-center gap-2">
@@ -494,8 +507,24 @@ function EmptyState({
           disabled={save.saved}
         >
           {save.saved ? <Check /> : <BellPlus />}
-          {save.saved ? "We’ll email you" : "Email me when homes list here"}
+          {save.saved ? "We’ll email you" : copy.alert}
         </Button>
+        {elsewhere.map((e) => (
+          <Link
+            key={e.mode}
+            href={searchHref({
+              mode: e.mode,
+              q: criteria.q,
+              bounds: criteria.bounds,
+              types: criteria.types,
+            })}
+            className="inline-flex h-11 items-center gap-1 rounded-full border border-line-strong bg-surface px-5 text-sm font-medium text-ink hover:border-faint pointer-fine:h-10"
+            data-testid="other-mode"
+          >
+            {listingNoun({ mode: e.mode, types: criteria.types })} {where}{" "}
+            <span className="text-muted tabular">({formatNumber(e.count)})</span>
+          </Link>
+        ))}
         <Link
           href={searchHref({ mode: criteria.mode, types: criteria.types })}
           className="inline-flex h-11 items-center rounded-full border border-line-strong bg-surface px-5 text-sm font-medium text-ink hover:border-faint pointer-fine:h-10"

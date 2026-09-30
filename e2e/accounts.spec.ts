@@ -27,24 +27,30 @@ test("buyer can save a home and see it on the saved page", async ({ page }) => {
 });
 
 test("tour requests reach the listing agent", async ({ page }) => {
-  await page.goto("/homes?ourListings=1");
-  await page.locator("article a").first().click();
-  await page.fill("#c-name", "E2E Tester");
-  await page.fill("#c-email", "e2e@example.com");
-  await waitLikeAPerson(page);
-  await page.getByRole("button", { name: "Send tour request" }).click();
-  await expect(page.getByText(/Request sent!/)).toBeVisible();
-  // A person's request: a new lead routed to the agent, not held back as spam.
-  const [lead] = await withDb((db) =>
-    db
-      .query<{ status: string; agent_id: string | null }>(
-        "select status, agent_id from inquiries where email = $1 order by created_at desc limit 1",
-        ["e2e@example.com"],
-      )
-      .then((r) => r.rows),
-  );
-  expect(lead.status).toBe("new");
-  expect(lead.agent_id).not.toBeNull();
+  // A throwaway address, removed afterwards so test leads never crowd the broker's dashboard.
+  const email = `e2e-tour-${Date.now()}@example.com`;
+  try {
+    await page.goto("/homes?ourListings=1");
+    await page.locator("article a").first().click();
+    await page.fill("#c-name", "E2E Tester");
+    await page.fill("#c-email", email);
+    await waitLikeAPerson(page);
+    await page.getByRole("button", { name: "Send tour request" }).click();
+    await expect(page.getByText(/Request sent!/)).toBeVisible();
+    // A person's request: a new lead routed to the agent, not held back as spam.
+    const [lead] = await withDb((db) =>
+      db
+        .query<{ status: string; agent_id: string | null }>(
+          "select status, agent_id from inquiries where email = $1 order by created_at desc limit 1",
+          [email],
+        )
+        .then((r) => r.rows),
+    );
+    expect(lead.status).toBe("new");
+    expect(lead.agent_id).not.toBeNull();
+  } finally {
+    await withDb((db) => db.query("delete from inquiries where email = $1", [email]));
+  }
 });
 
 test("buyers are kept out of the dashboard", async ({ page }) => {

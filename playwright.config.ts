@@ -30,6 +30,9 @@ const IPAD_UA =
 
 export default defineConfig({
   testDir: "./e2e",
+  // Removes leads that tests sent through the forms (and one that a stopped run left).
+  globalSetup: "./e2e/global-setup.ts",
+  globalTeardown: "./e2e/global-cleanup.ts",
   fullyParallel: false,
   workers: 1,
   retries: process.env.CI ? 1 : 0,

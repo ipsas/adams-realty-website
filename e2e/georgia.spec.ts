@@ -235,8 +235,10 @@ test.describe("homes outside the firm's area take questions, not tours", () => {
     // The phone CTA (hidden on desktop) says the same.
     await expect(page.locator("a[href='#contact']")).toHaveText("Ask a question");
 
+    // A throwaway address, removed at the end so test leads never crowd the dashboard.
+    const email = `e2e-sam-${Date.now()}@example.com`;
     await contact.locator("#c-name").fill("Sam Tester");
-    await contact.locator("#c-email").fill("sam.tester@example.com");
+    await contact.locator("#c-email").fill(email);
     await waitLikeAPerson(page);
     await contact.getByRole("button", { name: "Send message" }).click();
     await expect(contact).toContainText(
@@ -249,10 +251,11 @@ test.describe("homes outside the firm's area take questions, not tours", () => {
       db
         .query<{ type: string; agent_id: string | null; tour_at: Date | null; status: string }>(
           "select type, agent_id, tour_at, status from inquiries where email = $1 order by created_at desc limit 1",
-          ["sam.tester@example.com"],
+          [email],
         )
         .then((r) => r.rows),
     );
+    await withDb((db) => db.query("delete from inquiries where email = $1", [email]));
     expect(lead).toEqual({ type: "question", agent_id: null, tour_at: null, status: "new" });
   });
 

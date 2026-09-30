@@ -96,6 +96,20 @@ describe("widthsFor", () => {
 });
 
 describe("photoSources", () => {
+  it("never sends a phone a photo wider than 800 px (site review #10's data budget)", () => {
+    // A number, not PHONE_MAX_WIDTH: raising the constant must fail here, since each step up
+    // roughly doubles what a phone downloads on a weak signal. 800 px covers a 390 px-wide
+    // phone at 2x; the e2e byte budgets (e2e/photos-suite.ts) check the bytes themselves.
+    expect(PHONE_MAX_WIDTH).toBeLessThanOrEqual(800);
+    for (const sizes of ["100vw", "(min-width: 768px) 50vw, 100vw", "92vw", "25vw"]) {
+      for (const src of [MLS, UNSPLASH]) {
+        const phone = candidates(photoSources(src, sizes).phoneSrcSet);
+        expect(phone.length, `${sizes} ${src}`).toBeGreaterThan(0);
+        expect(Math.max(...phone.map(([, w]) => w)), `${sizes} ${src}`).toBeLessThanOrEqual(800);
+      }
+    }
+  });
+
   it("caps the phone srcset at PHONE_MAX_WIDTH and keeps larger widths for bigger screens", () => {
     const s = photoSources(MLS, "(min-width: 768px) 50vw, 100vw");
     const phone = candidates(s.phoneSrcSet);
@@ -130,9 +144,7 @@ describe("photoSources", () => {
 describe("next.config.ts images", () => {
   const images = nextConfig.images!;
   it("makes only the widths and quality <Photo> asks for", () => {
-    expect([...(images.imageSizes ?? []), ...(images.deviceSizes ?? [])]).toEqual([
-      ...ALL_WIDTHS,
-    ]);
+    expect([...(images.imageSizes ?? []), ...(images.deviceSizes ?? [])]).toEqual([...ALL_WIDTHS]);
     expect(images.qualities).toEqual([PHOTO_QUALITY]);
     expect(images.formats).toEqual(["image/webp"]);
   });
@@ -157,7 +169,9 @@ describe("next.config.ts images", () => {
     };
 
     it("are refused in production", async () => {
-      expect((await load({ NODE_ENV: "production", E2E_PHOTO_HOST: "" })).dangerouslyAllowLocalIP).toBe(false);
+      expect(
+        (await load({ NODE_ENV: "production", E2E_PHOTO_HOST: "" })).dangerouslyAllowLocalIP,
+      ).toBe(false);
     });
 
     it("are allowed in development, and in a local production run only with E2E_PHOTO_HOST", async () => {

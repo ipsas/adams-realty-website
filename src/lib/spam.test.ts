@@ -12,21 +12,17 @@ describe("form signals", () => {
   const min = MIN_FILL_MS.message;
 
   it("passes a person: honeypot empty, form open a while", () => {
-    expect(formSignals({ honeypot: "", elapsed: "8400", minMs: min })).toEqual([]);
-    expect(formSignals({ honeypot: undefined, elapsed: String(min), minMs: min })).toEqual([]);
+    expect(formSignals({ honeypot: "", elapsedMs: 8_400, minMs: min })).toEqual([]);
+    expect(formSignals({ honeypot: undefined, elapsedMs: min, minMs: min })).toEqual([]);
   });
 
-  it("flags the honeypot, a form sent too fast, and one sent with no timer", () => {
-    expect(formSignals({ honeypot: "https://spam.example", elapsed: "9000", minMs: min })).toEqual([
-      "honeypot",
-    ]);
-    expect(formSignals({ honeypot: "", elapsed: "400", minMs: min })).toEqual(["too-fast"]);
-    for (const elapsed of [undefined, null, "", "abc", "-5", "1e9"]) {
-      expect(formSignals({ honeypot: "", elapsed, minMs: min }), String(elapsed)).toEqual([
-        "no-timer",
-      ]);
-    }
-    expect(formSignals({ honeypot: "x", elapsed: "10", minMs: min })).toEqual([
+  it("flags the honeypot, a form sent too fast, and one sent with no valid timer token", () => {
+    expect(formSignals({ honeypot: "https://spam.example", elapsedMs: 9_000, minMs: min })).toEqual(
+      ["honeypot"],
+    );
+    expect(formSignals({ honeypot: "", elapsedMs: 400, minMs: min })).toEqual(["too-fast"]);
+    expect(formSignals({ honeypot: "", elapsedMs: null, minMs: min })).toEqual(["no-timer"]);
+    expect(formSignals({ honeypot: "x", elapsedMs: 10, minMs: min })).toEqual([
       "honeypot",
       "too-fast",
     ]);

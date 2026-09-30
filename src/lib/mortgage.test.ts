@@ -4,6 +4,7 @@ import {
   estimateMonthlyCost,
   financeFor,
   type FinanceDefaults,
+  listingMonthlyCost,
   monthlyCostModel,
   monthlyHoaAmount,
   quickMonthlyCost,
@@ -123,5 +124,67 @@ describe("financeFor (regional insurance and tax fallbacks)", () => {
     expect(financeFor(null)).toEqual(royston);
     expect(financeFor(undefined)).toEqual(royston);
     expect(financeFor("Atlantis")).toEqual(royston);
+  });
+});
+
+describe("listingMonthlyCost (the listing page's estimate and the calculator's start)", () => {
+  const f: FinanceDefaults = {
+    interestRate: 6,
+    downPaymentPct: 10,
+    loanTermYears: 30,
+    insuranceRatePct: 0.5,
+    propertyTaxRatePct: 1,
+  };
+  // $200,000 at 10% down: a $180,000 loan at 6% over 30 years is $1,079.19 a month.
+  const pAndI = 1_079.19;
+
+  it("charges bare land no home insurance and no mortgage insurance", () => {
+    const land = listingMonthlyCost({
+      price: 200_000,
+      annualTax: 1_200,
+      monthlyHoa: 0,
+      finance: f,
+      land: true,
+    });
+    expect(land.insurance).toBe(0);
+    expect(land.pmi).toBe(0);
+    expect(land.taxes).toBe(100);
+    expect(land.total).toBeCloseTo(pAndI + 100, 1);
+  });
+
+  it("charges a house the county's insurance and, below 20% down, mortgage insurance", () => {
+    const house = listingMonthlyCost({
+      price: 200_000,
+      annualTax: 1_200,
+      monthlyHoa: 50,
+      finance: f,
+      land: false,
+    });
+    // 0.5% of $200,000 a year; PMI 0.5% of the $180,000 loan a year.
+    expect(house.insurance).toBeCloseTo(1_000 / 12, 6);
+    expect(house.pmi).toBeCloseTo(900 / 12, 6);
+    expect(house.total).toBeCloseTo(pAndI + 100 + 1_000 / 12 + 50 + 75, 1);
+  });
+
+  it("uses the county's tax rate when the listing has none, and scales the listed tax with price", () => {
+    const untaxed = listingMonthlyCost({
+      price: 200_000,
+      annualTax: null,
+      monthlyHoa: 0,
+      finance: f,
+      land: true,
+    });
+    expect(untaxed.taxes).toBeCloseTo(2_000 / 12, 6);
+    const explored = listingMonthlyCost({
+      price: 200_000,
+      annualTax: 1_200,
+      monthlyHoa: 0,
+      finance: f,
+      land: true,
+      homePrice: 100_000,
+      downPaymentPct: 20,
+    });
+    expect(explored.taxes).toBe(50);
+    expect(explored.loanAmount).toBe(80_000);
   });
 });

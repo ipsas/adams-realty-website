@@ -89,40 +89,75 @@ describe("anti-scraping policy", () => {
     expect(requestKind("GET", "/api/locations/suggest", headers({ "next-url": "/" }))).toBe("api");
   });
 
-  it("charges a page load PAGE_UNITS and a client refresh 1, against the same per-IP windows", () => {
+  it("charges a page load PAGE_UNITS; a refresh or prefetch 1, and 1 against the quick cap", () => {
     const anon = { kind: "anonymous" } as const;
-    expect(limitPlan(anon, "page", "203.0.113.9")).toEqual({
-      subject: "203.0.113.9",
-      windows: LIMITS.page,
-      units: PAGE_UNITS,
-    });
-    expect(limitPlan(anon, "refresh", "203.0.113.9")).toEqual({
-      subject: "203.0.113.9",
-      windows: LIMITS.page,
-      units: 1,
-    });
+    const ip = "203.0.113.9";
+    expect(limitPlan(anon, "page", ip)).toEqual([
+      { subject: ip, windows: LIMITS.page, units: PAGE_UNITS },
+    ]);
+    for (const kind of ["refresh", "prefetch"] as const) {
+      expect(limitPlan(anon, kind, ip), kind).toEqual([
+        { subject: ip, windows: LIMITS.page, units: 1 },
+        { subject: ip, windows: LIMITS.quick, units: 1 },
+      ]);
+    }
     expect(PAGE_UNITS).toBeGreaterThanOrEqual(4);
-    expect(limitPlan(anon, "prefetch", "203.0.113.9")?.windows).toBe(LIMITS.prefetch);
-    expect(limitPlan(anon, "api", "203.0.113.9")?.windows).toBe(LIMITS.api);
+    expect(limitPlan(anon, "api", ip)).toEqual([{ subject: ip, windows: LIMITS.api, units: 1 }]);
   });
 
-  it("limits signed-in buyers per account, never per IP, and not staff, the office, local dev or verified crawlers", () => {
-    const member = limitPlan({ kind: "member", userId: "u1" }, "page", "203.0.113.9");
-    expect(member).toEqual({ subject: "user:u1", windows: LIMITS.account, units: PAGE_UNITS });
-    expect(limitPlan({ kind: "member", userId: "u1" }, "refresh", "x")?.units).toBe(1);
-    expect(limitPlan({ kind: "member", userId: "u1" }, "api", "x")?.subject).toBe("user:u1");
-    // The account ceiling is well above the per-IP one.
+  it("caps what forged refresh or prefetch headers can get at twice the pages a day and an hour", () => {
+    // The most full pages one address can load: every quick request it may make (each a
+    // forged full page), then plain pages with the units left over.
+    const most = (ms: number) => {
+      const units = LIMITS.page.find((w) => w.ms === ms)!.limit;
+      const quick = LIMITS.quick.find((w) => w.ms === ms)!.limit;
+      return quick + (units - quick) / PAGE_UNITS;
+    };
+    const pagesPer = (ms: number) => LIMITS.page.find((w) => w.ms === ms)!.limit / PAGE_UNITS;
+    for (const ms of [3_600_000, 86_400_000]) {
+      expect(most(ms), String(ms)).toBeLessThanOrEqual(2 * pagesPer(ms));
+    }
+    // Still room for a person: a busy hour (60 results pages with 24 prefetches each and
+    // 100 listings opened).
+    expect(LIMITS.quick.find((w) => w.ms === 3_600_000)!.limit).toBeGreaterThanOrEqual(
+      60 * 24 + 100,
+    );
+    // A link-preview name adds a tenth at most, with an hourly window too.
+    const previewDay = LIMITS.preview.find((w) => w.ms === 86_400_000)!.limit;
+    expect(previewDay).toBeLessThanOrEqual(pagesPer(86_400_000) / 10);
+    expect(LIMITS.preview.some((w) => w.ms === 3_600_000)).toBe(true);
+  });
+
+  it("limits signed-in buyers per account and, together, per address; not staff, the office, local dev or verified crawlers", () => {
+    const member = { kind: "member", userId: "u1" } as const;
+    const ip = "203.0.113.9";
+    expect(limitPlan(member, "page", ip)).toEqual([
+      { subject: "user:u1", windows: LIMITS.account, units: PAGE_UNITS },
+      { subject: ip, windows: LIMITS.members, units: PAGE_UNITS },
+    ]);
+    expect(limitPlan(member, "refresh", ip)).toEqual([
+      { subject: "user:u1", windows: LIMITS.account, units: 1 },
+      { subject: "user:u1", windows: LIMITS.accountQuick, units: 1 },
+      { subject: ip, windows: LIMITS.members, units: 1 },
+      { subject: ip, windows: LIMITS.membersQuick, units: 1 },
+    ]);
+    expect(limitPlan(member, "api", ip)).toEqual([
+      { subject: "user:u1", windows: LIMITS.api, units: 1 },
+      { subject: ip, windows: LIMITS.membersApi, units: 1 },
+    ]);
+    // The account ceiling is well above the per-IP one; the address's members together get
+    // an allowance the size of the anonymous one, whatever the number of accounts.
     const perDay = (ws: { ms: number; limit: number }[]) =>
       ws.find((w) => w.ms === 86_400_000)!.limit;
     expect(perDay(LIMITS.account)).toBeGreaterThan(perDay(LIMITS.page) * 2);
+    expect(perDay(LIMITS.members)).toBe(perDay(LIMITS.page));
+    expect(perDay(LIMITS.membersQuick)).toBe(perDay(LIMITS.quick));
     for (const why of ["staff", "office", "local", "crawler"] as const) {
-      expect(limitPlan({ kind: "exempt", why }, "page", "203.0.113.9"), why).toBeNull();
+      expect(limitPlan({ kind: "exempt", why }, "page", ip), why).toEqual([]);
     }
-    expect(limitPlan({ kind: "preview" }, "page", "203.0.113.9")).toEqual({
-      subject: "203.0.113.9",
-      windows: LIMITS.preview,
-      units: 1,
-    });
+    expect(limitPlan({ kind: "preview" }, "page", ip)).toEqual([
+      { subject: ip, windows: LIMITS.preview, units: 1 },
+    ]);
   });
 
   it("recognizes link-preview robots, including LinkedIn's (which names an HTTP library)", () => {
@@ -157,6 +192,10 @@ describe("anti-scraping policy", () => {
     expect(isCrawlerHost("google", "rate-limited-proxy-66-249-90-77.google.com.")).toBe(true);
     expect(isCrawlerHost("google", "googlebot.com.evil.example")).toBe(false);
     expect(isCrawlerHost("google", "notgooglebot.com")).toBe(false);
+    // Any Google Cloud VM resolves to *.bc.googleusercontent.com (and back): not a crawler.
+    expect(isCrawlerHost("google", "67.45.123.34.bc.googleusercontent.com")).toBe(false);
+    expect(isCrawlerHost("google", "10.20.70.34.bc.googleusercontent.com.")).toBe(false);
+    expect(isCrawlerHost("google", "x.gae.googleusercontent.com")).toBe(false);
     expect(isCrawlerHost("bing", "msnbot-157-55-39-1.search.msn.com")).toBe(true);
     expect(isCrawlerHost("bing", "crawl-66-249-66-1.googlebot.com")).toBe(false);
   });

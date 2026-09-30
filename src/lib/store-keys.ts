@@ -23,9 +23,13 @@ export type StoreKey = (typeof STORE_KEYS)[keyof typeof STORE_KEYS];
  * - returnTo + "<scope>": the list a detail page was opened from, so its "Back to …" link can
  *   act like Back (search, leads, dashboard listings).
  * - lastList + "<scope>": the last list URL of a dashboard scope, for that link's fallback.
+ * - saveIntent (a whole key): the home a signed-out heart tap asked to save, as
+ *   `{ id, at }`, so the `save=<id>` it adds to the sign-in return address saves that home
+ *   only after that tap, in this tab, and only once (a shared `?save=` link saves nothing).
  */
 export const SESSION_KEYS = {
   searchPlace: "ar:search:",
   returnTo: "ar:return:",
   lastList: "ar:list:",
+  saveIntent: "ar:save-intent",
 } as const;

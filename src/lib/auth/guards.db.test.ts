@@ -4,7 +4,8 @@ import { db } from "@/db";
 import { rateLimits, sessions, users } from "@/db/schema";
 import { closeDb } from "@/test/db/helpers";
 import { proxyUser, sessionTokenFromCookie } from "./proxy-session";
-import { checkSignUp, SIGN_UP_ELAPSED_HEADER, SIGN_UP_HONEYPOT_HEADER } from "./sign-up-guard";
+import { formTokenSecret, issueFormToken } from "@/lib/form-token";
+import { checkSignUp, SIGN_UP_HONEYPOT_HEADER, SIGN_UP_TOKEN_HEADER } from "./sign-up-guard";
 
 beforeEach(async () => {
   await db.execute(sql`truncate table rate_limits, users cascade`);
@@ -64,11 +65,12 @@ describe("proxyUser: who is signed in, for the rate limiter", () => {
 });
 
 describe("checkSignUp: spam checks on email sign-up", () => {
+  const openedAgo = (ms: number) => issueFormToken(formTokenSecret(), Date.now() - ms);
   const headers = (over: Record<string, string> = {}) =>
     new Headers({
       "x-forwarded-for": "203.0.113.50",
       [SIGN_UP_HONEYPOT_HEADER]: "",
-      [SIGN_UP_ELAPSED_HEADER]: "6000",
+      [SIGN_UP_TOKEN_HEADER]: openedAgo(6_000),
       ...over,
     });
   const prod = { production: true };
@@ -82,13 +84,19 @@ describe("checkSignUp: spam checks on email sign-up", () => {
     expect(hp).toMatchObject({ ok: false, status: "BAD_REQUEST", spam: ["honeypot"] });
     const fast = await checkSignUp(
       db,
-      headers({ [SIGN_UP_ELAPSED_HEADER]: "300" }),
+      headers({ [SIGN_UP_TOKEN_HEADER]: openedAgo(300) }),
       "b@x.com",
       prod,
     );
     expect(fast).toMatchObject({ ok: false, spam: ["too-fast"] });
     const direct = new Headers({ "x-forwarded-for": "203.0.113.51" });
     expect(await checkSignUp(db, direct, "c@x.com", prod)).toMatchObject({
+      ok: false,
+      spam: ["no-timer"],
+    });
+    // The old header, claiming a long time: no longer a timer at all.
+    const claimed = new Headers({ "x-forwarded-for": "203.0.113.52", "x-form-elapsed": "99999" });
+    expect(await checkSignUp(db, claimed, "d@x.com", prod)).toMatchObject({
       ok: false,
       spam: ["no-timer"],
     });

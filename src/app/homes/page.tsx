@@ -10,10 +10,11 @@ import {
   parseSearchParams,
   serializeCriteria,
   type SearchCriteria,
+  type SearchMode,
 } from "@/lib/search/params";
 import { centerOf, nearbyTowns, placeBounds, resolveScope } from "@/lib/search/place";
 import { hasLocation, type LocationScope } from "@/lib/search/query";
-import { MAX_PINS, searchListings, searchMapPins } from "@/lib/search/service";
+import { countListings, MAX_PINS, searchListings, searchMapPins } from "@/lib/search/service";
 
 export async function generateMetadata(props: PageProps<"/homes">): Promise<Metadata> {
   const c = parseSearchParams(await props.searchParams);
@@ -70,10 +71,27 @@ export default async function SearchPage(props: PageProps<"/homes">) {
 
 /**
  * What a search with no results offers (site review #5): where the place is, so the map
- * goes there, and the nearest towns with homes for this search.
+ * goes there, the nearest towns with homes for this search, and, for a place, what the
+ * other modes have there ("Homes for sale in Carnesville" on an empty rentals search).
  */
 async function emptyHelp(c: SearchCriteria, scope: LocationScope): Promise<EmptyHelp> {
   const bounds = hasLocation(c) ? await placeBounds(db, c.q, scope) : (c.bounds ?? null);
-  const nearby = bounds ? await nearbyTowns(db, c, centerOf(bounds), scope.town ?? c.q) : [];
-  return { placeBounds: hasLocation(c) ? bounds : null, nearby };
+  const place = hasLocation(c) || !!c.bounds;
+  const others: SearchMode[] = c.mode === "buy" ? ["rent"] : ["buy"];
+  const [nearby, elsewhere] = await Promise.all([
+    bounds ? nearbyTowns(db, c, centerOf(bounds), scope.town ?? c.q) : [],
+    place
+      ? Promise.all(
+          others.map(async (mode) => ({
+            mode,
+            // The same place and property type; the other filters don't carry over.
+            count: await countListings(
+              { mode, q: c.q, bounds: c.bounds, types: c.types, sort: "recommended", page: 1 },
+              scope,
+            ),
+          })),
+        ).then((rows) => rows.filter((r) => r.count > 0))
+      : [],
+  ]);
+  return { placeBounds: hasLocation(c) ? bounds : null, nearby, elsewhere };
 }

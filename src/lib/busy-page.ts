@@ -6,9 +6,11 @@ import { THEME_COLORS, THEME_SCRIPT } from "@/lib/theme-script";
  * them: status 429, served straight from the proxy, so it is a self-contained
  * HTML string (no React, no database, no external files). Branded, in the
  * site's light and dark palettes (the same `ar:theme` choice as the site, via
- * THEME_SCRIPT, else the device setting), with Try again, Back, a way to
- * sign in (signed-in buyers are limited per account, not per address) and
- * the office phone.
+ * THEME_SCRIPT, else the device setting), with Back, a way to sign in
+ * (signed-in buyers are limited per account, not per address) and the office
+ * phone. A short pause ("One moment, please") leads with Try again; a long one
+ * (an hourly or daily window) says the listings are paused for a while and
+ * leads with signing in, since Try again would only bring this page back.
  */
 
 const esc = (s: string) =>
@@ -40,9 +42,43 @@ const tel = (phone: string) => `tel:+1${phone.replace(/\D/g, "")}`;
 const LIGHT = `--canvas:${THEME_COLORS.light};--surface:#ffffff;--ink:#15201c;--ink-soft:#3b4843;--muted:#66716c;--line:#e8e4db;--brand:#1a4c39;--brand-hover:#163d2f;--on-brand:#ffffff;--link:#1a4c39;color-scheme:light`;
 const DARK = `--canvas:${THEME_COLORS.dark};--surface:#171e1b;--ink:#ecebe4;--ink-soft:#c9cdc5;--muted:#a0a8a1;--line:#252e2a;--brand:#2f7558;--brand-hover:#1f5d45;--on-brand:#ffffff;--link:#93d0b2;color-scheme:dark`;
 
-export function busyPageHtml(opts: { retryAfter: number; pathname: string; search: string }) {
+/**
+ * Up to this wait (seconds, the per-minute window) the pause is "a moment" and Try again
+ * is the main action. Longer (an hourly or daily window, up to a day), Try again would only
+ * show this page again, so the page says the listings are paused for a while and offers
+ * signing in (buyers are limited per account, not per address) instead.
+ */
+export const SHORT_WAIT_S = 120;
+
+export function busyPageHtml(opts: {
+  retryAfter: number;
+  pathname: string;
+  search: string;
+  /** A signed-in buyer (paused by their account's or address's members' allowance). */
+  signedIn?: boolean;
+}) {
   const again = retryHref(opts.pathname, opts.search);
   const signIn = `/sign-in?next=${encodeURIComponent(again)}`;
+  const short = opts.retryAfter <= SHORT_WAIT_S;
+  const back = (cls: string) =>
+    `<button class="btn ${cls}" type="button" data-testid="busy-back" onclick="if(history.length>1){history.back()}else{location.href='/'}">Back</button>`;
+  const title = short ? "One moment, please" : "Listings are paused for now";
+  const from = opts.signedIn ? "your account" : "your internet connection";
+  const why = short
+    ? `We&#39;ve had a lot of page requests from ${from} in a short time, so we&#39;ve paused listings for a moment. This protects the listing data from automated copying.`
+    : `We&#39;ve had a great many page requests from ${from}, so listings are paused there for a while. This protects the listing data from automated copying.`;
+  const actions = short
+    ? `<a class="btn primary" href="${esc(again)}" data-testid="busy-retry">Try again</a>
+${back("secondary")}`
+    : opts.signedIn
+      ? back("primary")
+      : `<a class="btn primary" href="${esc(signIn)}" data-testid="busy-sign-in">Sign in to keep browsing</a>
+${back("secondary")}`;
+  const signInLine = opts.signedIn
+    ? ""
+    : short
+      ? `<p class="small">Have an account? <a href="${esc(signIn)}">Sign in</a> and keep browsing.</p>`
+      : `<p class="small">Signed-in buyers aren&#39;t affected by this pause. No account? <a href="/sign-up?next=${encodeURIComponent(again)}">Create one</a>; it&#39;s free.</p>`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -51,7 +87,7 @@ export function busyPageHtml(opts: { retryAfter: number; pathname: string; searc
 <meta name="robots" content="noindex">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="${THEME_COLORS.light}">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="${THEME_COLORS.dark}">
-<title>One moment, please | ${esc(site.name)}</title>
+<title>${title} | ${esc(site.name)}</title>
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <script>${THEME_SCRIPT}</script>
 <style>
@@ -84,14 +120,13 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--link);outline-offset:
 <svg viewBox="0 0 32 32" width="32" height="32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#1a4c39"/><path d="M8 23.5 16 8.5l8 15" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M11.4 18h9.2" stroke="#c89b5a" stroke-width="2.4" stroke-linecap="round"/></svg>
 <span>Adams <small>Realty</small></span>
 </a>
-<h1>One moment, please</h1>
-<p>We&#39;ve had a lot of page requests from your internet connection in a short time, so we&#39;ve paused listings for a moment. This protects the listing data from automated copying.</p>
-<p>Please try again ${waitPhrase(opts.retryAfter)}.</p>
+<h1>${title}</h1>
+<p>${why}</p>
+<p>${short ? "Please try again" : "Listings open again here"} ${waitPhrase(opts.retryAfter)}.</p>
 <div class="actions">
-<a class="btn primary" href="${esc(again)}" data-testid="busy-retry">Try again</a>
-<button class="btn secondary" type="button" data-testid="busy-back" onclick="if(history.length>1){history.back()}else{location.href='/'}">Back</button>
+${actions}
 </div>
-<p class="small">Have an account? <a href="${esc(signIn)}">Sign in</a> and keep browsing.</p>
+${signInLine}
 <p class="small">Questions? Call ${esc(site.legalName)} at <a href="${tel(site.phone)}" data-testid="busy-phone">${esc(site.phone)}</a>.</p>
 </main>
 </body>

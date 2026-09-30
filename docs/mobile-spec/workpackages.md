@@ -140,15 +140,15 @@ new: ['src/components/layout/mobile-menu.tsx', 'src/components/layout/use-scroll
 
 ALREADY BUILT (site review #1, before the packages; keep it):
 
-- F08 save-through-sign-in exists: `src/server/actions/save-intent.ts` (`ensureSaved`, idempotent, checks `can.saveListing`, the uuid and that the listing is shown and not removed) and the `?save=` effect in `saved-homes-provider.tsx` (it drops `save=` with a router-synced `history.replaceState`, so no server request, then saves, sets the heart and toasts 'Saved to your homes' with View). A signed-out heart pushes `/sign-in?next=<path + whole query + save=<id>>&reason=save` (`saveIntentNext`). WP2 keeps these and the e2e case in `e2e/back-nav-suite.ts` ("signing in from a heart").
+- F08 save-through-sign-in exists: `src/server/actions/save-intent.ts` (`ensureSaved`, idempotent, checks `can.saveListing`, the uuid and that the listing is shown and not removed) and the `?save=` effect in `saved-homes-provider.tsx` (it drops `save=` with a router-synced `history.replaceState`, so no server request, then saves, sets the heart and toasts 'Saved to your homes' with View). A signed-out heart pushes `/sign-in?next=<path + whole query + save=<id>>&reason=save` (`saveIntentNext`) and leaves a one-time intent in sessionStorage (`rememberSaveIntent`, `src/lib/save-intent.ts`); the effect saves only when `takeSaveIntent(id)` matches, so a `?save=` link someone else made saves nothing (review fix round 1). WP2 keeps these and the e2e cases in `e2e/back-nav-suite.ts` ("signing in from a heart", "a ?save= link someone else made").
 - Sign-in and sign-up `router.replace(next)`, so Back from the page they land on skips the sign-in page (which would bounce forward again).
 - The results list comes back where it was after the sign-in round trip: the heart tap saves the list's place (search-view.tsx), and `save=` doesn't change its key.
 - back-button.tsx (standalone Back) should follow the same rule as `ReturnLink` (`src/components/layout/return-link.tsx`): router.back() only when the previous entry is this site's.
 
 ALREADY BUILT (site review #6 and form spam, before the packages; keep it):
 
-- `src/proxy.ts` (WP2 owns it) now runs the listing rate limiter (`src/lib/listing-guard.ts`: preview robots, DNS-verified crawlers, staff and `OFFICE_IPS` exempt, signed-in buyers per account, client refreshes at 1 unit, the branded 429 page) and demo-data mode's `X-Robots-Tag` on `/homes`, `/areas`, `/places` and `/agents`. Its matcher and `route()` must keep all three jobs.
-- The sign-up form renders `<Honeypot />` and sends `stamp(form)`'s `formElapsed` and the honeypot as the `x-form-elapsed` / `x-form-hp` headers (`fetchOptions.headers`); the Better Auth hook (`src/lib/auth/sign-up-guard.ts`) refuses sign-ups without them. A restyled sign-up keeps both, and `e2e/limits-spam-suite.ts` ("sign-up refuses a robot…") must keep passing.
+- `src/proxy.ts` (WP2 owns it) now runs the listing rate limiter (`src/lib/listing-guard.ts`: preview robots, DNS-verified crawlers, staff and `OFFICE_IPS` exempt, signed-in buyers per account and, together, per address (`members:*`), client refreshes and prefetches at 1 unit plus their own `quick:*` cap, the branded 429 page with its short and long variants) and demo-data mode's `X-Robots-Tag` on `/homes`, `/areas`, `/places` and `/agents`. Its matcher and `route()` must keep all three jobs.
+- The sign-up form renders `<Honeypot />` and sends `await stamp(form)`'s `formToken` and the honeypot as the `x-form-token` / `x-form-hp` headers (`fetchOptions.headers`); the Better Auth hook (`src/lib/auth/sign-up-guard.ts`) refuses sign-ups without them. A restyled sign-up keeps both, and `e2e/limits-spam-suite.ts` ("sign-up refuses a robot…") must keep passing.
 
 STEPS:
 
@@ -162,8 +162,8 @@ STEPS:
 - aria-current follows pathname plus the tab param.
 - Never return null by pathname; visibility is entirely the foundation CSS markers.
 - src/components/listings/saved-homes-provider.tsx: F08.
-- A signed-out toggle builds next from location.pathname plus search, with save=<id> appended, and pushes /sign-in?next=…&reason=save.
-- An effect: when signed in and ?save=<uuid> is present, call ensureSaved(id), then setLocal(id, true), then toast('Saved to your homes', {action: View → /saved}), then router.replace the URL without save.
+- A signed-out toggle builds next from location.pathname plus search, with save=<id> appended, calls rememberSaveIntent(id), and pushes /sign-in?next=…&reason=save.
+- An effect: when signed in and ?save=<uuid> is present and `takeSaveIntent(id)` confirms this tab's heart tap asked for it, call ensureSaved(id), then setLocal(id, true), then toast('Saved to your homes', {action: View → /saved}), then router.replace the URL without save.
 - Keep reconcile, count and setLocal.
 - src/server/actions/save-intent.ts, 'use server' ensureSaved(listingId):
 - getActor plus can.saveListing, else {ok:false, error:'unauthenticated'};
@@ -282,9 +282,9 @@ ALREADY BUILT (site review #5 and #8, before the packages; keep it):
 
 - The h1 is `heading` from the page (`searchHeading`, `src/lib/search/heading.ts`): "Homes for sale in Hartwell" (a town is that town only; `resolveScope` runs once in the page and is passed to `searchListings` and `searchMapPins`), "Homes near Lake Hartwell", "Homes in this map area", and by type "Land for sale in Georgia". results-header.tsx keeps it; don't rebuild it from `criteria.q`.
 - A buyer's map move drops the town: `update({ bounds, q: undefined }, { from: place })`, and the list shows "Back to <town>" (`data-testid="back-to-town"`, 44px on coarse pointers) while `from` is in the URL (docs/mobile-contracts.md, "The `from` param"). The 'Search this area' pill applies bounds the same way. After "Back to <town>" or Reset the map fits the town again (`lastFitKey` is cleared while a map area is the search).
-- No results renders `EmptyState` (`data-testid="no-results"`): "Email me when homes list here" (the same save-search dialog, via `useSaveSearch`, so the page keeps one dialog and one Save search button), "See all … in Georgia", 2–3 nearby towns (`EmptyHelp.nearby`, 44px rows) and "Clear filters" only with filters on. The map shows the searched place (`placeBounds` prop, from `EmptyHelp.placeBounds`), else the state. The sheet shows it at half.
+- No results renders `EmptyState` (`data-testid="no-results"`): the mode's alert button ("Email me when homes list here", "…when rentals list here"; `noResultsCopy`; the same save-search dialog, via `useSaveSearch`, so the page keeps one dialog and one Save search button), "See all … in Georgia", the other mode's listings in the place (`EmptyHelp.elsewhere`, `data-testid="other-mode"`), 2–3 nearby towns (`EmptyHelp.nearby`, 44px rows) and "Clear filters" only with filters on. The map shows the searched place (`placeBounds` prop, from `EmptyHelp.placeBounds`), else the state. The sheet shows it at half.
 - Bare land on cards reads "Land · X acres · $Y/acre" (`landSummary`, `data-testid="card-land"`); the map preview does too (`pinFacts`; `MapPin` has `propertyType`, `lotSqft` and `rent`). The strip's cards use `landSummary` in place of beds, baths and sqft, and bare land shows no 'all-in' line (its estimate has no home insurance and a land loan's terms vary; the listing page explains it).
-- The sort select has "Acreage (most first)" and "Price per acre" (SORTS), each backed by a partial index per mode.
+- The sort select has "Acreage (most first)" and "Price per acre" (SORTS), each backed by a partial index per mode. On a 390px phone the Sort + Save search row takes the full width and the select shrinks (`min-w-0`), so the longest label never pushes Save search past the 16px gutter or makes the list scroll sideways (`e2e/search-land-suite.ts`, "the Sort and Save search row fits the phone"); results-header.tsx keeps that.
 
 ALREADY BUILT (site review #10, photos on a weak signal; keep it):
 
@@ -410,7 +410,7 @@ ALREADY BUILT (site review #5 and #8, before the packages; keep it):
 
 ALREADY BUILT (form spam, before the packages; keep it):
 
-- The save-search dialog renders `<Honeypot />` and sends `website` and `formElapsed` (`useFormTimer` in `SaveSearchButton`, timed from when the search page opened, since the dialog comes pre-filled) to `saveSearch`, which also limits saves per account and IP. The phone sheet keeps both, with the timer on the always-mounted button, not the sheet.
+- The save-search dialog renders `<Honeypot />` and sends `website` and `formToken` (`useFormTimer` in `SaveSearchButton`, timed from when the search page opened, since the dialog comes pre-filled) to `saveSearch`, which also limits saves per account and IP. The phone sheet keeps both, with the timer on the always-mounted button, not the sheet.
 
 STEPS:
 

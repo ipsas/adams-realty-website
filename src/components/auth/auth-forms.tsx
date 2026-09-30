@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Field, FormMessage, Input } from "@/components/ui/form";
 import { Honeypot, useFormTimer } from "@/components/ui/spam-guard";
 import { authClient } from "@/lib/auth/client";
-import { ELAPSED_FIELD, HONEYPOT_FIELD } from "@/lib/spam";
+import { FORM_TOKEN_FIELD, FORM_TOKEN_HEADER, HONEYPOT_FIELD } from "@/lib/spam";
 
 function GoogleButton({ next }: { next: string }) {
   return (
@@ -131,7 +131,7 @@ export function SignUpForm({ next, googleEnabled }: { next: string; googleEnable
               setError("Use at least 8 characters for your password.");
               return;
             }
-            stamp(form);
+            await stamp(form);
             const { error } = await authClient.signUp.email({
               name: String(form.get("name")).trim(),
               email: String(form.get("email")).trim(),
@@ -140,7 +140,7 @@ export function SignUpForm({ next, googleEnabled }: { next: string; googleEnable
               fetchOptions: {
                 headers: {
                   "x-form-hp": String(form.get(HONEYPOT_FIELD) ?? ""),
-                  "x-form-elapsed": String(form.get(ELAPSED_FIELD) ?? ""),
+                  [FORM_TOKEN_HEADER]: String(form.get(FORM_TOKEN_FIELD) ?? ""),
                 },
               },
             });

@@ -276,23 +276,31 @@ Keep these when editing the files that hold them:
 - `params.ts`: `SORT_LABELS`, `sortLabel`, `SORT_HELP`, and `VIEW_PARAMS`,
   `ViewParam`, `parseViewParam` and `setViewParam`, which `use-search-nav.ts`
   and `recent.ts` import; `FROM_PARAM`, `parseFromParam`, `listingNoun`,
-  `typesNoun` and `clearedFilters` (site review #5).
+  `typesNoun`, `clearedFilters` and `noResultsCopy` (site review #5).
 - `homes/page.tsx` computes the results heading (`searchHeading`,
   `src/lib/search/heading.ts`), the searched place's name and, with no results,
-  `EmptyHelp` (the place's bounds and `nearbyTowns`); `SearchView` renders them and
-  keeps `data-testid="no-results"` and `data-testid="back-to-town"`.
+  `EmptyHelp` (the place's bounds, `nearbyTowns` and `elsewhere`, the other mode's count
+  there); `SearchView` renders them and keeps `data-testid="no-results"`,
+  `data-testid="other-mode"` and `data-testid="back-to-town"`. The no-results words come
+  from `noResultsCopy` (mode-aware; never "Nothing is listed"). The results header's Sort
+  menu shrinks on phones (`min-w-0`, full-width row) so Save search keeps its gutter.
 - `src/lib/listings/land.ts`: `isBareLand`, `landSummary` ("Land · X acres ·
   $Y/acre", `data-testid="card-land"` on cards), `LAND_LOAN_NOTE`; every place that
   shows bare land (cards, the map preview, the phone strip, the listing page and its
   bar) uses them.
 - `homes/[slug]/page.tsx`: the `RecordView` mount, "Back to results"
   (`ReturnLink scope="search"`), `data-testid="agent-phone"` (a `tel:` link) and
-  the `ListingCtaBar` rules.
+  the `ListingCtaBar` rules; `data-testid="big-facts"` (as many columns as facts),
+  `"estimate-pill"` (its figure is `listingMonthlyCost`, the calculator's starting total,
+  `data-testid="calculator-total"`).
 - `search-view.tsx`: `usePlaceRestoration` (F13) and the click-capture handler
   that saves the place and calls `markReturn`; `listing-card.tsx`: the
   `data-returned` outline.
 - `return-link.tsx`: `ReturnLink` and `ReturnSource`; `saved-homes-provider.tsx`:
-  `saveIntentNext` and the `?save=` effect.
+  `saveIntentNext` and the `?save=` effect, which saves only with the matching one-time
+  intent the heart tap left (`rememberSaveIntent` / `takeSaveIntent`,
+  `src/lib/save-intent.ts`, `SESSION_KEYS.saveIntent`). Anything that sends a signed-out
+  heart to sign in calls `rememberSaveIntent` too.
 - `pwa-runtime.tsx`, `install-entry.tsx`: their signatures.
 - `src/lib/theme.ts` and `src/lib/theme-script.ts`: `THEME_COLORS`,
   `setChromeColor`, `readResolvedTheme`, `applyTheme`, `writeThemePref`;
@@ -303,11 +311,12 @@ Keep these when editing the files that hold them:
 - Form spam checks (`src/components/ui/spam-guard.tsx`, `src/lib/spam.ts`): every public
   form (`ContactForm`, `ValuationForm`, `SignUpForm`, the save-search dialog) renders
   `<Honeypot />` (field `website`) and passes its FormData through `useFormTimer()`'s
-  `stamp` (field `formElapsed`); sign-up sends both as the `x-form-hp` /
-  `x-form-elapsed` headers. A form that moves into a sheet keeps the timer on something
+  async `stamp` (field `formToken`, the signed token from `GET /api/form-token` fetched
+  when the hook mounts; `src/lib/form-token.ts`); sign-up sends both as the `x-form-hp` /
+  `x-form-token` headers. A form that moves into a sheet keeps the timer on something
   that mounts with the page.
-- The 429 page (`src/lib/busy-page.ts`): `data-testid="busy-retry"`, `"busy-back"` and
-  `"busy-phone"`.
+- The 429 page (`src/lib/busy-page.ts`): `data-testid="busy-retry"` (short pauses only),
+  `"busy-sign-in"` (long pauses, signed out), `"busy-back"` and `"busy-phone"`.
 - Lead follow-up (site review #3, #9): `needs-attention.tsx` (`NeedsAttention`,
   `AlertPill`, `ReplyTimes`; `data-testid="needs-attention"`, `"attention-waiting"`,
   `"attention-tours"`, `"attention-follow-ups"`, `"waiting-label"`), `FollowUpControl`

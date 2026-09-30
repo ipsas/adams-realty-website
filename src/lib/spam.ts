@@ -6,11 +6,12 @@
  *
  * - Honeypot: a field people never see or fill (`website`). Form-filling
  *   robots fill every field.
- * - Time to submit: the browser measures how long the form was open and sends
- *   it (`formElapsed`, milliseconds on the visitor's own clock, so device
- *   clock errors don't matter). A form sent faster than a person can read and
- *   type, or sent with no measurement at all (posted straight to the server,
- *   not from the page), is suspect.
+ * - Time to submit: when the form opens, the page fetches a signed token of
+ *   the server's time (`formToken`, ./form-token.ts) and sends it back with the
+ *   form; the server measures from it on its own clock, so the visitor can't
+ *   claim a time. A form sent faster than a person can read and type, or with
+ *   no valid token (posted straight to the server, not from the page), is
+ *   suspect.
  * - Content: the SEO pitches the office already received through the site
  *   ("your site isn't in Google's index", "improve your search visibility",
  *   with a link). Only from senders who aren't customers.
@@ -19,7 +20,10 @@
  */
 
 export const HONEYPOT_FIELD = "website";
-export const ELAPSED_FIELD = "formElapsed";
+/** The form's timer token (./form-token.ts), from GET /api/form-token. */
+export const FORM_TOKEN_FIELD = "formToken";
+/** The header sign-up sends the token in, since Better Auth's body is its own. */
+export const FORM_TOKEN_HEADER = "x-form-token";
 
 /** Minimum time, in ms, a person needs between the form appearing and sending it. */
 export const MIN_FILL_MS = {
@@ -38,7 +42,7 @@ export const SPAM_REASON_LABELS: Record<SpamReason, string> = {
   honeypot: "Filled in a hidden field that people never see",
   "too-fast": "Sent seconds after the form opened, faster than a person types",
   "no-timer": "Sent straight to the server, not from the form on the page",
-  "seo-pitch": "An SEO or search-ranking sales pitch from someone who isn't a customer",
+  "seo-pitch": "An SEO or search-ranking sales pitch from someone the office hasn't worked with",
 };
 
 export const isSpamReason = (v: string): v is SpamReason => v in SPAM_REASON_LABELS;
@@ -51,18 +55,19 @@ export function parseSpamReasons(value: string | null | undefined): SpamReason[]
     .filter(isSpamReason);
 }
 
-/** The honeypot and timing reasons for one submission. */
+/**
+ * The honeypot and timing reasons for one submission. `elapsedMs` is what the server
+ * measured from the form's token (`formTokenElapsed`): null when there was no valid one.
+ */
 export function formSignals(input: {
   honeypot: string | null | undefined;
-  elapsed: string | null | undefined;
+  elapsedMs: number | null;
   minMs: number;
 }): SpamReason[] {
   const reasons: SpamReason[] = [];
   if (input.honeypot?.trim()) reasons.push("honeypot");
-  const raw = input.elapsed?.trim();
-  const ms = raw && /^\d{1,12}$/.test(raw) ? Number(raw) : null;
-  if (ms === null) reasons.push("no-timer");
-  else if (ms < input.minMs) reasons.push("too-fast");
+  if (input.elapsedMs === null) reasons.push("no-timer");
+  else if (input.elapsedMs < input.minMs) reasons.push("too-fast");
   return reasons;
 }
 

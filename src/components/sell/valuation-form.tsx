@@ -1,7 +1,7 @@
 "use client";
 
 import { CheckCircle2 } from "lucide-react";
-import { useActionState } from "react";
+import { startTransition, useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, FormMessage, Input, Select, Textarea } from "@/components/ui/form";
 import { Honeypot, useFormTimer } from "@/components/ui/spam-guard";
@@ -24,7 +24,15 @@ export function ValuationForm() {
     );
   }
   return (
-    <form action={(form) => action(stamp(form))} className="space-y-4" noValidate>
+    <form
+      // The timer token is usually in hand already; the dispatch goes back into a transition.
+      action={async (form) => {
+        const stamped = await stamp(form);
+        startTransition(() => action(stamped));
+      }}
+      className="space-y-4"
+      noValidate
+    >
       <input type="hidden" name="type" value="valuation" />
       <input type="hidden" name="source" value="sell" />
       <Honeypot />

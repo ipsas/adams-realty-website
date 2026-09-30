@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { ELAPSED_FIELD, HONEYPOT_FIELD } from "@/lib/spam";
+import { FORM_TOKEN_FIELD, HONEYPOT_FIELD } from "@/lib/spam";
 
 /*
  * The client half of the form spam checks (src/lib/spam.ts): a honeypot field
  * and a timer. Every public form renders <Honeypot /> and passes its FormData
- * through `stamp` before sending, which adds how long the form has been open.
+ * through `stamp` before sending, which adds the timer token the page fetched
+ * when the form opened (src/lib/form-token.ts); the server measures the time.
  */
 
 /** A field people never see or reach; robots that fill every field fill it. */
@@ -21,21 +22,31 @@ export function Honeypot() {
   );
 }
 
+async function fetchToken(): Promise<string | null> {
+  try {
+    const res = await fetch("/api/form-token", { cache: "no-store" });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { token?: unknown };
+    return typeof body.token === "string" ? body.token : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Returns `stamp(formData)`, which records the milliseconds since the form
- * mounted (the visitor's own clock, so a wrong device clock doesn't matter).
- * A form sent before hydration has no stamp, which the server treats as
- * suspect.
+ * Returns `stamp(formData)`, which adds the timer token fetched when the form
+ * mounted, waiting for it if it's still on its way. A form sent before
+ * hydration, or whose token couldn't be fetched, has none, which the server
+ * treats as suspect (the lead is still kept for the office to review).
  */
 export function useFormTimer() {
-  const started = useRef<number | null>(null);
+  const token = useRef<Promise<string | null> | null>(null);
   useEffect(() => {
-    started.current = performance.now();
+    token.current = fetchToken();
   }, []);
-  return useCallback((form: FormData) => {
-    if (started.current !== null) {
-      form.set(ELAPSED_FIELD, String(Math.round(performance.now() - started.current)));
-    }
+  return useCallback(async (form: FormData) => {
+    const t = await token.current;
+    if (t) form.set(FORM_TOKEN_FIELD, t);
     return form;
   }, []);
 }

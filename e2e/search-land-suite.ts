@@ -1,4 +1,5 @@
 import { type Page, expect, type test as baseTest } from "@playwright/test";
+import { financeFor, listingMonthlyCost, monthlyHoaAmount } from "../src/lib/mortgage";
 import { signIn } from "./helpers";
 import {
   expectNoHorizontalOverflow,
@@ -54,6 +55,63 @@ async function biggestTract() {
       .then((r) => r.rows[0]),
   );
 }
+
+/** What the listing page should estimate a month for `slug`, from its database row. */
+async function expectedMonthly(slug: string, land: boolean): Promise<number> {
+  const row = await withDb((db) =>
+    db
+      .query<{
+        price: number;
+        tax: number | null;
+        county: string | null;
+        hoa: number | null;
+        freq: string | null;
+      }>(
+        `select list_price as price, tax_annual_amount as tax, county, hoa_fee as hoa,
+                hoa_frequency as freq from listings where slug = $1`,
+        [slug],
+      )
+      .then((r) => r.rows[0]),
+  );
+  const cost = listingMonthlyCost({
+    price: Number(row.price),
+    annualTax: row.tax === null ? null : Number(row.tax),
+    monthlyHoa: monthlyHoaAmount(row.hoa === null ? null : Number(row.hoa), row.freq),
+    finance: financeFor(row.county),
+    land,
+  });
+  return Math.round(cost.total);
+}
+
+/**
+ * A bare-land page's facts strip leaves no empty cell showing the strip's background (two
+ * columns, or one per row on phones), every icon keeps its 20px and every value fits its
+ * cell, and the monthly estimate lines up with the column's right edge, wrapped under the
+ * price or not.
+ */
+async function expectFactsLayout(page: Page, { phone }: { phone: boolean }) {
+  const facts = page.getByTestId("big-facts");
+  const layout = await facts.evaluate((dl) => ({
+    columns: getComputedStyle(dl).gridTemplateColumns.split(" ").length,
+    cells: dl.children.length,
+    icons: [...dl.querySelectorAll("svg")].map((i) => Math.round(i.getBoundingClientRect().width)),
+    // How far each value pokes past its own cell (the strip clips it).
+    overflow: [...dl.querySelectorAll("dd")].map((dd) => {
+      const cell = dd.closest("dl > *")!.getBoundingClientRect();
+      return Math.max(0, Math.round(dd.getBoundingClientRect().right - cell.right));
+    }),
+  }));
+  expect(layout.cells).toBe(2);
+  expect(layout.columns).toBe(phone ? 1 : 2);
+  expect(layout.icons).toEqual([20, 20]);
+  expect(layout.overflow).toEqual([0, 0]);
+  const pill = (await page.getByTestId("estimate-pill").boundingBox())!;
+  const strip = (await facts.boundingBox())!;
+  expect(Math.abs(pill.x + pill.width - (strip.x + strip.width))).toBeLessThanOrEqual(1);
+}
+
+/** "$8,298/mo" in `text` → 8298 */
+const monthlyIn = (text: string) => Number(/\$([\d,]+)\/mo/.exec(text)![1].replace(/,/g, ""));
 
 const perAcre = (price: number, lot: number) =>
   `$${Math.round(price / (lot / ACRE)).toLocaleString("en-US")}/acre`;
@@ -184,6 +242,45 @@ export function searchLandSuite(test: typeof baseTest, { phone }: { phone: boole
     });
   });
 
+  if (phone) {
+    test("the Sort and Save search row fits the phone, with the longest sort label", async ({
+      page,
+    }) => {
+      for (const url of [
+        "/homes?view=list",
+        "/homes?q=Hartwell&view=list",
+        "/homes?q=Carnesville&mode=rent&view=list",
+        "/homes?bounds=-83.2,34.2,-83.0,34.35&from=Royston&view=list",
+      ]) {
+        await gotoHydrated(page, url, READY);
+        const sort = page.getByRole("combobox", { name: "Sort results" });
+        // The widest label there is.
+        await sort.selectOption("lot_desc");
+        await expect(page).toHaveURL(/sort=lot_desc/);
+        await expect(sort).toHaveValue("lot_desc");
+        const save = page.getByRole("button", { name: "Save search", exact: true });
+        const box = (await save.boundingBox())!;
+        const width = page.viewportSize()!.width;
+        expect(box.x + box.width, `${url}: Save search keeps the 16px gutter`).toBeLessThanOrEqual(
+          width - 16,
+        );
+        const sortBox = (await sort.boundingBox())!;
+        expect(
+          sortBox.x + sortBox.width,
+          `${url}: the sort menu ends before the button`,
+        ).toBeLessThanOrEqual(box.x);
+        const list = await page.locator("[data-results-list]").evaluate((el) => ({
+          scroll: el.scrollWidth,
+          client: el.clientWidth,
+        }));
+        expect(list.scroll, `${url}: the list doesn't scroll sideways`).toBeLessThanOrEqual(
+          list.client,
+        );
+        await expectNoHorizontalOverflow(page);
+      }
+    });
+  }
+
   test.describe("no results is never a dead end", () => {
     test("a town with nothing to rent offers alerts, the state and nearby towns", async ({
       page,
@@ -197,7 +294,18 @@ export function searchLandSuite(test: typeof baseTest, { phone }: { phone: boole
       await expect(heading(page)).toHaveText("Rentals in Carnesville");
       expect(await resultCount(page)).toBe(0);
       const empty = page.getByTestId("no-results");
-      await expect(empty).toContainText("Nothing is listed in Carnesville right now.");
+      // It says rentals, and only what it checked: Carnesville has homes for sale.
+      await expect(empty.getByRole("heading", { name: "No rentals match — yet" })).toBeVisible();
+      await expect(empty).toContainText("No rentals in Carnesville right now.");
+      await expect(empty).not.toContainText(/nothing is listed|homes list here/i);
+      const forSale = await count(
+        `${FOR_SALE} and city = 'Carnesville' and property_type <> 'commercial'`,
+      );
+      expect(forSale, "the seed has homes for sale in Carnesville").toBeGreaterThan(0);
+      const other = empty.getByTestId("other-mode");
+      await expect(other).toHaveCount(1);
+      await expect(other).toHaveText(`Homes for sale in Carnesville (${forSale})`);
+      await expect(other).toHaveAttribute("href", "/homes?q=Carnesville");
       // No filters are on, so there's nothing to clear.
       await expect(empty.getByRole("button", { name: "Clear filters" })).toHaveCount(0);
       await expect(empty.getByRole("link", { name: "See all rentals in Georgia" })).toHaveAttribute(
@@ -205,7 +313,7 @@ export function searchLandSuite(test: typeof baseTest, { phone }: { phone: boole
         "/homes?mode=rent",
       );
       await expect(
-        empty.getByRole("button", { name: "Email me when homes list here" }),
+        empty.getByRole("button", { name: "Email me when rentals list here" }),
       ).toBeVisible();
 
       const nearby = empty.getByRole("navigation", { name: "Nearby towns" }).getByRole("link");
@@ -241,9 +349,9 @@ export function searchLandSuite(test: typeof baseTest, { phone }: { phone: boole
       expect(await resultCount(page)).toBeGreaterThan(0);
     });
 
-    test("'Email me when homes list here' saves the search (sign-in first)", async ({ page }) => {
+    test("'Email me when rentals list here' saves the search (sign-in first)", async ({ page }) => {
       await gotoHydrated(page, "/homes?q=Carnesville&mode=rent", READY);
-      await page.getByRole("button", { name: "Email me when homes list here" }).click();
+      await page.getByRole("button", { name: "Email me when rentals list here" }).click();
       await expect(page).toHaveURL(/\/sign-in\?next=.*Carnesville.*&reason=save-search$/);
     });
 
@@ -329,10 +437,16 @@ export function searchLandSuite(test: typeof baseTest, { phone }: { phone: boole
       const facts = page.getByTestId("big-facts");
       await expect(facts).toContainText("Acreage");
       await expect(facts).toContainText(perAcre(tract.price, tract.lot));
+      await expectFactsLayout(page, { phone });
       // No home insurance on bare land, and a land loan is not a home mortgage.
-      await expect(page.getByTestId("estimate-pill")).toContainText(
-        "Land loan: terms vary; check with your lender",
-      );
+      const pill = page.getByTestId("estimate-pill");
+      await expect(pill).toContainText("Land loan: terms vary; check with your lender");
+      // The amount itself: a land loan's payment and taxes, no home insurance, and the same
+      // figure the calculator starts from.
+      const monthly = monthlyIn((await pill.textContent())!);
+      expect(monthly).toBe(await expectedMonthly(tract.slug, true));
+      expect(monthly).toBeLessThan(await expectedMonthly(tract.slug, false));
+      expect(monthlyIn((await page.getByTestId("calculator-total").textContent())!)).toBe(monthly);
       const costs = page.locator("#costs");
       await expect(costs).not.toContainText("Home insurance");
       await expect(costs).not.toContainText("Mortgage insurance");
@@ -350,6 +464,24 @@ export function searchLandSuite(test: typeof baseTest, { phone }: { phone: boole
         page.locator("main").getByRole("heading", { name: "About this home" }),
       ).toBeVisible();
       await expect(page.locator("#costs")).toContainText("Home insurance");
+    });
+
+    test("the land facts fill their strip, even with the longest price per acre", async ({
+      page,
+    }) => {
+      // The tract with the longest "$/acre" figure squeezed its icon to a speck on phones.
+      const slug = await withDb((db) =>
+        db
+          .query<{ slug: string }>(
+            `select slug from listings
+              where ${FOR_SALE} and property_type = 'land' and lot_size_sqft > 0
+                and coalesce(living_area_sqft, 0) = 0
+              order by list_price / (lot_size_sqft / ${ACRE}.0) desc limit 1`,
+          )
+          .then((r) => r.rows[0].slug),
+      );
+      await gotoHydrated(page, `/homes/${slug}`, "main p.tabular");
+      await expectFactsLayout(page, { phone });
     });
 
     test("area market numbers give land's price per acre", async ({ page }) => {

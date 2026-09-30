@@ -384,6 +384,44 @@ export function listingNoun(
 }
 
 /**
+ * The no-results panel's words (site review #5), in the search's own terms: a rentals
+ * search says rentals, never "homes", and the panel only states what the search checked
+ * (nothing of this kind in this place), never that nothing at all is listed there.
+ * `where` is "in Carnesville", "in this map area" or "in Georgia".
+ */
+export function noResultsCopy(
+  c: Pick<SearchCriteria, "mode" | "types">,
+  where: string,
+): { heading: string; alert: string; none: string } {
+  if (c.types?.length) {
+    return {
+      heading: "No listings match — yet",
+      alert: "Email me about new listings here",
+      none: `No ${listingNoun(c).toLowerCase()} ${where} right now.`,
+    };
+  }
+  if (c.mode === "rent") {
+    return {
+      heading: "No rentals match — yet",
+      alert: "Email me when rentals list here",
+      none: `No rentals ${where} right now.`,
+    };
+  }
+  if (c.mode === "sold") {
+    return {
+      heading: "No sales match — yet",
+      alert: "Email me about sales here",
+      none: `No recent sales ${where}.`,
+    };
+  }
+  return {
+    heading: "No homes match — yet",
+    alert: "Email me when homes list here",
+    none: `No homes for sale ${where} right now.`,
+  };
+}
+
+/**
  * The town a map-area search came from (site review #5). Moving the map drops
  * the town (`q`) and searches every home in view; `from` keeps the town's name
  * in the URL so the page can offer "Back to Royston" after a reload too. UI

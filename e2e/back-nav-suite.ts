@@ -330,6 +330,49 @@ export function backNavSuite(test: typeof baseTest, { phone }: { phone: boolean 
     });
   });
 
+  test.describe("a ?save= link someone else made", () => {
+    test("saves nothing for a signed-in buyer who never tapped the heart", async ({ page }) => {
+      const { id, slug } = await withDb((db) =>
+        db
+          .query<{ id: string; slug: string }>(
+            `select id, slug from listings where removed_at is null and not idx_hidden
+                and status = 'active' and city = 'Royston' order by slug limit 1`,
+          )
+          .then((r) => r.rows[0]),
+      );
+      const saved = () =>
+        withDb((db) =>
+          db
+            .query(
+              `select 1 from saved_listings s join users u on u.id = s.user_id
+                where s.listing_id = $1 and u.email = 'buyer@example.com'`,
+              [id],
+            )
+            .then((r) => r.rowCount),
+        );
+      const unsave = () =>
+        withDb((db) =>
+          db.query(
+            `delete from saved_listings where listing_id = $1
+               and user_id = (select id from users where email = 'buyer@example.com')`,
+            [id],
+          ),
+        );
+      await unsave();
+      try {
+        await signIn(page, "buyer@example.com", "/");
+        await gotoHydrated(page, `/homes/${slug}?save=${id}`, "main p.tabular");
+        // The address is cleaned up, and nothing was saved.
+        await expect(page).toHaveURL(new RegExp(`/homes/${slug}$`));
+        await page.waitForTimeout(1_500);
+        await expect(page.getByText("Saved to your homes")).toHaveCount(0);
+        expect(await saved()).toBe(0);
+      } finally {
+        await unsave();
+      }
+    });
+  });
+
   test.describe("the dashboard", () => {
     test.describe.configure({ timeout: 90_000 });
 

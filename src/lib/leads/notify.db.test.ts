@@ -6,6 +6,7 @@ import type { Email } from "@/lib/email";
 import { closeDb, resetDb } from "@/test/db/helpers";
 import { sendLeadAssignedEmail } from "./notify";
 import { submitInquiry, type SubmitContext, type SubmitDeps } from "./submit";
+import { formTokenSecret, issueFormToken } from "@/lib/form-token";
 
 // Lead emails against the database (site review #3), with the mailer swapped
 // for a list: who gets each new lead, the broker's copies, the assignment
@@ -39,7 +40,7 @@ const form = (over: Record<string, string> = {}) => ({
   email: `jordan${++n}@example.com`,
   message: "Anything near the lake under $300k?",
   website: "",
-  formElapsed: "12000",
+  formToken: issueFormToken(formTokenSecret(), Date.now() - 12_000),
   ...over,
 });
 

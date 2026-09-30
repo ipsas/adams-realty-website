@@ -1,7 +1,7 @@
 "use client";
 
 import { CalendarCheck, CheckCircle2, MessageSquare, Video } from "lucide-react";
-import { useActionState, useMemo, useState } from "react";
+import { startTransition, useActionState, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, FormMessage, Input, Select, Textarea } from "@/components/ui/form";
 import { Honeypot, useFormTimer } from "@/components/ui/spam-guard";
@@ -67,7 +67,15 @@ export function ContactForm({
   }
 
   return (
-    <form action={(form) => action(stamp(form))} className="space-y-4" noValidate>
+    <form
+      // The timer token is usually in hand already; the dispatch goes back into a transition.
+      action={async (form) => {
+        const stamped = await stamp(form);
+        startTransition(() => action(stamped));
+      }}
+      className="space-y-4"
+      noValidate
+    >
       <input type="hidden" name="source" value={source} />
       <input type="hidden" name="type" value={mode} />
       {listingId && <input type="hidden" name="listingId" value={listingId} />}

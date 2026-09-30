@@ -148,7 +148,7 @@ Adding a non-RESO feed means implementing `ListingProvider` (`src/lib/mls/types.
   The map loads its self-hosted web worker from `/vendor/maplibre/<version>/`.
 - **Headings and places (site review #5).** The results heading follows the search (`searchHeading`): "Homes for sale in Hartwell" (the town as the listings spell it), "Homes near Lake Hartwell", "Homes in this map area", and by type "Land for sale in Georgia". Autocomplete folds a lake's rows (one per town) into one "Lake Hartwell (lake area)" suggestion, offers a lake guide whenever a word of its names is typed, and lists towns whose homes have all sold (`shapeAreaSuggestions`, `src/lib/search/suggest.ts`).
 - **Moving the map drops the town.** A buyer's pan or zoom searches every home in view (`bounds`, no `q`), and the town is kept as `from` for "Back to Royston" (UI state like `view`; see `docs/mobile-contracts.md`).
-- **No results is never a dead end.** The page offers "Email me when homes list here" (the save-search dialog), "See all … in Georgia", and 2–3 nearby towns with homes for the search (`nearbyTowns`: filters kept when a town matches them, else the mode alone); "Clear filters" shows only when filters are on. The map goes to the searched place's listings of any status (`placeBounds`), else the state.
+- **No results is never a dead end.** The page offers an email alert (the save-search dialog: "Email me when homes list here", "…when rentals list here"), "See all … in Georgia", 2–3 nearby towns with homes for the search (`nearbyTowns`: filters kept when a town matches them, else the mode alone), and, for a place, the other mode's listings there ("Homes for sale in Carnesville (4)" on an empty rentals search, `EmptyHelp.elsewhere`); "Clear filters" shows only when filters are on. Its words follow the mode (`noResultsCopy`) and state only what the search checked ("No rentals in Carnesville right now", never "Nothing is listed"). The map goes to the searched place's listings of any status (`placeBounds`), else the state.
 - **Scaling path.** Postgres handles a statewide MLS comfortably: `npm run perf:seed` builds
   `adams_perf` (about 220k synthetic listings: 45k for sale, 5k rentals, 160k closed) and
   `npm run perf:measure` times every search against its targets (default /homes page 1 in
@@ -207,8 +207,10 @@ Land is about one listing in five here, and is compared by acreage and price per
   baths; the phone bar reads "Land · X acres".
 - **Its estimate** has no home insurance (there's no house) and no mortgage
   insurance, and says "Land loan: terms vary; check with your lender" next to the
-  figure and in the calculator (`LAND_LOAN_NOTE`). Farms with a house keep the home
-  estimate. The home page still never mentions monthly costs.
+  figure and in the calculator (`LAND_LOAN_NOTE`). The figure at the top of the page and
+  the calculator's starting total are one function (`listingMonthlyCost`), and the land
+  e2e test checks the amount. Farms with a house keep the home estimate. The home page
+  still never mentions monthly costs.
 - **Area guides** add "Median price per acre" (bare land and farms for sale with a lot
   size) when there is any.
 - **The dashboard's lot size** is typed in acres by default, with a switch to square
@@ -268,26 +270,41 @@ governs every listing that came from the feed. Adams Realty, Inc. is the license
   limits hold across serverless instances):
   - Self-declared HTTP libraries get a 403. Link-preview robots (LinkedIn, whose user agent
     names Apache-HttpClient, Facebook/iMessage, X, Slack, WhatsApp, Telegram, Discord)
-    may GET pages, in their own per-IP bucket, but not the API.
+    may GET pages, in their own small per-IP bucket (`preview:*`: 30 a minute, 200 an hour,
+    500 a day, a tenth of a day's pages, since the user agent alone makes one), but not the
+    API.
   - Not limited: staff (agents and admins), the office's addresses (`OFFICE_IPS`, comma-
     separated, IPv4 CIDR allowed, empty by default), loopback outside production (`next dev`,
     e2e runs), and Google/Bing crawlers confirmed by reverse + forward DNS
     (`src/lib/crawler-verify.ts`, cached per IP a day; a crawler name alone proves nothing).
-  - Signed-in buyers count per account (`account:*`, well above the per-IP limits), never per
-    IP, so a shared address (office Wi-Fi, a library, a phone carrier) can't lock them out.
+    The DNS must end in googlebot.com or google.com (Bing: search.msn.com), never
+    googleusercontent.com: every Google Cloud VM resolves there and back, so renting one
+    would pass.
+  - Signed-in buyers count per account (`account:*`, well above the per-IP limits) and, all
+    together, per IP in their own allowance the size of the anonymous one (`members:*`,
+    `members-quick:*`, `members-api:*`), never against the anonymous one, so a shared address
+    (office Wi-Fi, a library, a phone carrier) can't lock them out, and accounts made from
+    one address (sign-up checks no email) add one allowance, not one each.
     The proxy verifies the session (Better Auth's signed cookie cache, else the `sessions`
     table; `src/lib/auth/proxy-session.ts`); a cookie's presence proves nothing.
   - Everyone else: per client IP (Vercel's `x-forwarded-for`), per minute, hour and day, in
-    units: a full page load costs `PAGE_UNITS` (4), the site's own client refreshes (map
-    moves, filters, link taps, server actions) cost 1. Next strips its flight headers (`rsc`,
-    `next-router-prefetch`) and `_rsc` before the proxy runs, so a refresh is recognized by
-    the router's `next-url` header, `next-action`, a non-GET method or `Sec-Fetch-Dest:
-empty`; those can be forged, which is why a refresh still counts against the same windows.
+    units (`page:*`: 120 pages a minute, 1,500 an hour, 5,000 a day): a full page load costs
+    `PAGE_UNITS` (4); the site's own client refreshes (map moves, filters, link taps, server
+    actions) and link prefetches, "quick" requests, cost 1. Next strips its flight headers
+    (`rsc`, `next-router-prefetch`) and `_rsc` before the proxy runs, so a quick request is
+    recognized by the router's `next-url` header, `next-action`, a non-GET method,
+    `Sec-Fetch-Dest: empty` or a prefetch `Purpose`; all can be forged, and a forged one gets
+    a full page. So quick requests also count against their own cap (`quick:*`: 600 a minute,
+    2,000 an hour, 6,000 a day, room for a busy person's prefetches): forged headers can at
+    most double an address's pages an hour or a day (unit-tested).
   - Over a limit: the branded 429 page (`src/lib/busy-page.ts`, self-contained HTML in the
-    site's light and dark palettes and the visitor's theme choice): "One moment, please", Try
-    again, Back, "Sign in and keep browsing" and the office phone, with `Retry-After`. The
-    API and labelled prefetches get plain text. A client refresh that gets the page makes the
-    router load the URL, which shows it too.
+    site's light and dark palettes and the visitor's theme choice), with `Retry-After`. A
+    pause of up to two minutes says "One moment, please" with Try again, Back, "Sign in and
+    keep browsing" and the office phone. A longer one (an hourly or daily window) says
+    "Listings are paused for now" and when they open again, and leads with "Sign in to keep
+    browsing" (or, for a signed-in buyer, just Back), since Try again would only bring the
+    page back. The API and labelled prefetches get plain text. A client refresh that gets the
+    page makes the router load the URL, which shows it too.
   - Requests without an IP aren't limited; a database error lets the request through. The
     alerts cron prunes old counters.
 
@@ -358,16 +375,22 @@ email notification is best-effort. Leads are never shared outside the company.
 contact, agent, listing report, valuation, sign-up, saved searches):
 
 - A honeypot field (`website`) and a timer: `<Honeypot />` and `useFormTimer()`
-  (`src/components/ui/spam-guard.tsx`) add them; the timer sends how long the form was open
-  (`formElapsed`, on the visitor's own clock). Too fast (`MIN_FILL_MS`: 3 s for messages,
-  2 s for sign-up and saved searches, the latter timed from when the search page opened) or
-  no timer at all (posted straight to the server) is suspect.
+  (`src/components/ui/spam-guard.tsx`) add them. When the form mounts, the page fetches
+  `GET /api/form-token`: the server's time, signed with `BETTER_AUTH_SECRET`
+  (`src/lib/form-token.ts`, good for a week). The form sends it back (`formToken`; sign-up in
+  the `x-form-token` header) and the server measures the time on its own clock, so a client
+  can't claim one. Too fast (`MIN_FILL_MS`: 3 s for messages, 2 s for sign-up and saved
+  searches, the latter timed from when the search page opened) or no valid token (posted
+  straight to the server, forged, edited or expired) is suspect.
 - Per-IP and per-email submission limits (per account for saved searches) in the same
   Postgres limiter; emails are hashed in the counter keys. Over a limit the sender is asked
   to wait (with the office phone) and nothing is stored.
 - A content filter for SEO pitches ("Google's index", "search visibility", "SEO"…) with a
-  link, or two such phrases, from someone who isn't a customer (not signed in, no account
-  under that email, no earlier non-spam lead).
+  link, or two such phrases, from anyone the office hasn't worked with (`isKnownCustomer`:
+  an earlier lead from that email or signed-in account that staff moved to contacted,
+  qualified or closed). Nothing the sender controls alone counts: not an account under the
+  typed email (agents' emails are public), not being signed in (sign-up checks no email),
+  not an earlier lead nobody has answered.
 - A suspect lead is stored with status `spam`, its reasons in `metadata.spam`, unassigned
   (the agent it would have gone to in `metadata.routedAgentId`) and never emailed; the
   sender sees the usual thank-you. It sits in Dashboard → Leads → Spam (with a count),
@@ -406,7 +429,8 @@ contact, agent, listing report, valuation, sign-up, saved searches):
     one (`PhotoCarousel` in `listing-card.tsx`). On /homes the first four cards' photos
     load with the page and later ones wait until the card is within 400 px of the screen
     (`Photo nearPx`: the browser's own lazy loading reaches up to 2,500 px ahead on a slow
-    signal). A home's page loads its first photo eagerly (desktop: the five-tile mosaic);
+    signal). A home's page loads its first photo eagerly (desktop: the five-tile mosaic, whose
+    tiles widen when there are two to four photos so no cell is left empty);
     the rest load one at a time in the viewer. Similar homes' photos wait until the
     section is within 300 px. The location map (`LocationMapLazy`) mounts MapLibre
     only when its box comes within `MAP_NEAR_PX` of the screen, or on `beforeprint`.
@@ -512,7 +536,9 @@ storage keys) and marks what is reserved for which work package.
     listings), else the plain list. Dashboard list pages render `ReturnSource`.
   - Signing in from a heart returns to the same URL with `save=<id>`; the saved
     homes provider saves it (`ensureSaved`) and drops the parameter. Sign-in
-    replaces its own history entry.
+    replaces its own history entry. The heart tap also leaves a one-time intent in
+    the tab's sessionStorage (`src/lib/save-intent.ts`, an hour), and only a
+    matching one saves: a `?save=` link someone else made saves nothing.
 - **PWA.** There is no service worker yet. `src/lib/pwa/protocol.ts` is the
   contract the page and the worker will share: which pages may be cached, and
   which requests are never intercepted (anything but GET, so no server action;

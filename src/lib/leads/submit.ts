@@ -8,8 +8,9 @@ import type { Email } from "@/lib/email";
 import { hitFormLimits, isKnownCustomer, retryPhrase } from "@/lib/form-guard";
 import { inquiryReply, withoutTour } from "@/lib/inquiry-reply";
 import { canShowDetails } from "@/lib/listings/visibility";
+import { formTokenElapsed, formTokenSecret } from "@/lib/form-token";
 import {
-  ELAPSED_FIELD,
+  FORM_TOKEN_FIELD,
   formSignals,
   HONEYPOT_FIELD,
   isSeoPitch,
@@ -164,7 +165,11 @@ export async function submitInquiry(
 
   const spam = formSignals({
     honeypot: raw[HONEYPOT_FIELD],
-    elapsed: raw[ELAPSED_FIELD],
+    elapsedMs: formTokenElapsed(
+      raw[FORM_TOKEN_FIELD],
+      formTokenSecret(),
+      (deps.now ?? new Date()).getTime(),
+    ),
     minMs: MIN_FILL_MS.message,
   });
   if (isSeoPitch(message) && !(await isKnownCustomer(db, d.email, ctx.userId)))

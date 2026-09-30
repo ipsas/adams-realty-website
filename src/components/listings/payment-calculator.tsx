@@ -5,7 +5,7 @@ import { site } from "@/config/site";
 import { cn } from "@/lib/cn";
 import { formatPrice } from "@/lib/format";
 import { LAND_LOAN_NOTE } from "@/lib/listings/land";
-import { estimateMonthlyCost } from "@/lib/mortgage";
+import { listingMonthlyCost } from "@/lib/mortgage";
 
 const SEGMENTS = [
   { key: "principalAndInterest", label: "Principal & interest", color: "bg-primary" },
@@ -46,20 +46,22 @@ export function PaymentCalculator({
   const [rate, setRate] = useState<number>(f.interestRate);
   const [term, setTerm] = useState<number>(f.loanTermYears);
 
+  // The listing page's "Est. monthly cost" is the same function at the starting values.
   const cost = useMemo(
     () =>
-      estimateMonthlyCost({
-        price: homePrice,
+      listingMonthlyCost({
+        price,
+        annualTax,
+        monthlyHoa,
+        finance: { ...f, insuranceRatePct, propertyTaxRatePct: taxRatePct },
+        land,
+        homePrice,
         downPaymentPct: downPct,
         interestRatePct: rate,
         loanTermYears: term,
-        // Scale the listed tax with the price the user is exploring.
-        annualTax: annualTax ? annualTax * (homePrice / price) : (homePrice * taxRatePct) / 100,
-        annualInsurance: land ? 0 : (homePrice * insuranceRatePct) / 100,
-        monthlyHoa,
-        noMortgageInsurance: land,
       }),
     [
+      f,
       homePrice,
       downPct,
       rate,
@@ -79,7 +81,10 @@ export function PaymentCalculator({
     <div className="grid grid-cols-1 gap-8 rounded-3xl border border-line bg-surface p-6 sm:p-8 lg:grid-cols-[1fr_1.1fr]">
       <div>
         <p className="text-sm text-muted">Estimated monthly cost</p>
-        <p className="mt-1 text-4xl font-semibold tracking-tight text-ink tabular">
+        <p
+          className="mt-1 text-4xl font-semibold tracking-tight text-ink tabular"
+          data-testid="calculator-total"
+        >
           {formatPrice(Math.round(cost.total))}
           <span className="text-base font-normal text-muted">/mo</span>
         </p>

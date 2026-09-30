@@ -39,6 +39,15 @@ describe("crawler verification (reverse + forward DNS)", () => {
     expect(await v.verify(ip, "google")).toBe(false);
   });
 
+  it("refuses a Google Cloud VM, whose PTR and forward records both check out", async () => {
+    // Every Compute Engine address resolves to <ip>.bc.googleusercontent.com and back, so
+    // anyone who rents a VM and calls themselves Googlebot would pass a googleusercontent check.
+    const ip = "34.123.45.67";
+    const host = "67.45.123.34.bc.googleusercontent.com";
+    const v = createCrawlerVerifier({ resolver: fakeDns({ [ip]: [host] }, { [host]: [ip] }) });
+    expect(await v.verify(ip, "google")).toBe(false);
+  });
+
   it("refuses a PTR that points at Google when Google's host doesn't resolve back (a forged PTR)", async () => {
     const ip = "203.0.113.9";
     const v = createCrawlerVerifier({

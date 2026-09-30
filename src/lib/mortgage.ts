@@ -68,6 +68,42 @@ export function estimateMonthlyCost(a: CostAssumptions): MonthlyCost {
   };
 }
 
+/**
+ * A listing's full monthly estimate: the listing page's "Est. monthly cost" and the
+ * payment calculator's starting figure are both this, so they can't drift apart. Taxes
+ * are the listing's figure (scaled to `homePrice` when the buyer explores another
+ * price), else the county's typical rate; insurance is the county's typical rate.
+ * Bare land (`land`, site review #8) has no house to insure and no mortgage insurance.
+ * The loan terms default to `finance`; the calculator passes the buyer's own.
+ */
+export function listingMonthlyCost(a: {
+  price: number;
+  annualTax: number | null;
+  monthlyHoa: number;
+  finance: FinanceDefaults;
+  land: boolean;
+  homePrice?: number;
+  downPaymentPct?: number;
+  interestRatePct?: number;
+  loanTermYears?: number;
+}): MonthlyCost {
+  const f = a.finance;
+  const price = a.homePrice ?? a.price;
+  return estimateMonthlyCost({
+    price,
+    downPaymentPct: a.downPaymentPct ?? f.downPaymentPct,
+    interestRatePct: a.interestRatePct ?? f.interestRate,
+    loanTermYears: a.loanTermYears ?? f.loanTermYears,
+    annualTax:
+      a.annualTax && a.price > 0
+        ? a.annualTax * (price / a.price)
+        : (price * f.propertyTaxRatePct) / 100,
+    annualInsurance: a.land ? 0 : (price * f.insuranceRatePct) / 100,
+    monthlyHoa: a.monthlyHoa,
+    noMortgageInsurance: a.land,
+  });
+}
+
 export function monthlyHoaAmount(
   fee: number | null | undefined,
   frequency: string | null | undefined,

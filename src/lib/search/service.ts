@@ -46,6 +46,13 @@ export async function searchListings(
   };
 }
 
+/** How many listings match `c` (no page of results). */
+export async function countListings(c: SearchCriteria, scope?: LocationScope): Promise<number> {
+  const where = buildWhere(c, undefined, scope ?? (await resolveScope(db, c)));
+  const [{ total }] = await db.select({ total: count() }).from(listings).where(where);
+  return total;
+}
+
 export type MapPin = {
   id: string;
   slug: string;

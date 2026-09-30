@@ -8,7 +8,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Field, FormMessage, Input, Select } from "@/components/ui/form";
 import { Honeypot, useFormTimer } from "@/components/ui/spam-guard";
 import { describeCriteria, type SearchCriteria } from "@/lib/search/params";
-import { ELAPSED_FIELD, HONEYPOT_FIELD } from "@/lib/spam";
+import { FORM_TOKEN_FIELD, HONEYPOT_FIELD } from "@/lib/spam";
 import { saveSearch } from "@/server/actions/saved";
 
 /**
@@ -52,7 +52,7 @@ export function SaveSearchButton({
     <>
       <Button
         variant={saved ? "subtle" : "primary"}
-        className="rounded-full"
+        className="shrink-0 rounded-full"
         onClick={() => {
           setError(null);
           save.launch();
@@ -70,14 +70,14 @@ export function SaveSearchButton({
         <form
           className="space-y-5 px-6 py-6"
           action={(form) => {
-            stamp(form);
             startTransition(async () => {
+              await stamp(form);
               const res = await saveSearch({
                 query,
                 name: String(form.get("name") ?? ""),
                 alertFrequency: String(form.get("alertFrequency") ?? "daily"),
                 website: String(form.get(HONEYPOT_FIELD) ?? ""),
-                formElapsed: String(form.get(ELAPSED_FIELD) ?? ""),
+                formToken: String(form.get(FORM_TOKEN_FIELD) ?? ""),
               });
               if (res.ok) {
                 setSaved(true);

@@ -12,6 +12,7 @@ import { getActor } from "@/lib/auth/session";
 import { hitFormLimits, retryPhrase } from "@/lib/form-guard";
 import { canShowDetails } from "@/lib/listings/visibility";
 import { describeCriteria, parseSearchParams } from "@/lib/search/params";
+import { formTokenElapsed, formTokenSecret } from "@/lib/form-token";
 import { formSignals, MIN_FILL_MS } from "@/lib/spam";
 
 const uuid = z.string().uuid();
@@ -60,8 +61,8 @@ export async function saveSearch(input: {
   alertFrequency?: string;
   /** The honeypot's value. */
   website?: string;
-  /** Milliseconds since the search page opened. */
-  formElapsed?: string;
+  /** The timer token from when the search page opened (src/lib/form-token.ts). */
+  formToken?: string;
 }): Promise<SaveSearchResult> {
   const actor = await getActor();
   if (!actor) return { ok: false, error: "unauthenticated" };
@@ -77,7 +78,7 @@ export async function saveSearch(input: {
   }
   const spam = formSignals({
     honeypot: input.website,
-    elapsed: input.formElapsed,
+    elapsedMs: formTokenElapsed(input.formToken, formTokenSecret()),
     minMs: MIN_FILL_MS.saveSearch,
   });
   if (spam.length) {

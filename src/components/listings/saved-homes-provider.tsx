@@ -13,6 +13,7 @@ import {
   type ReactNode,
 } from "react";
 import { toast } from "@/components/ui/toast";
+import { rememberSaveIntent, takeSaveIntent } from "@/lib/save-intent";
 import { ensureSaved } from "@/server/actions/save-intent";
 import { toggleSavedListing } from "@/server/actions/saved";
 
@@ -86,6 +87,7 @@ export function SavedHomesProvider({
     (id: string) => {
       if (!signedIn) {
         const next = saveIntentNext(window.location.pathname + window.location.search, id);
+        rememberSaveIntent(id);
         router.push(`/sign-in?next=${encodeURIComponent(next)}&reason=save`);
         return;
       }
@@ -104,6 +106,7 @@ export function SavedHomesProvider({
           flip(wasSaved);
           if (res.error === "unauthenticated") {
             const next = saveIntentNext(window.location.pathname + window.location.search, id);
+            rememberSaveIntent(id);
             router.push(`/sign-in?next=${encodeURIComponent(next)}&reason=save`);
           }
         } else if (res.saved !== !wasSaved) {
@@ -124,7 +127,8 @@ export function SavedHomesProvider({
     });
   }, []);
 
-  // Signed in with a pending heart from before sign-in (?save=<id>): save it, once.
+  // Signed in with a pending heart from before sign-in (?save=<id>): save it, once, and only
+  // when this tab's own heart tap asked for it (a `save=` in a link someone sent saves nothing).
   const handledSave = useRef<string | null>(null);
   useEffect(() => {
     if (!signedIn) return;
@@ -133,6 +137,7 @@ export function SavedHomesProvider({
     dropSaveParam();
     if (handledSave.current === id || !UUID.test(id)) return;
     handledSave.current = id;
+    if (!takeSaveIntent(id)) return;
     void ensureSaved(id).then((res) => {
       if (!res.ok) return;
       setLocal(id, true);

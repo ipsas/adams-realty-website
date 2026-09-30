@@ -66,7 +66,7 @@ import {
   landFacts,
 } from "@/lib/listings/land";
 import { getListingBySlug, getSimilarListings, type ListingDetail } from "@/lib/listings/queries";
-import { estimateMonthlyCost, financeFor, monthlyHoaAmount } from "@/lib/mortgage";
+import { financeFor, listingMonthlyCost, monthlyHoaAmount } from "@/lib/mortgage";
 import { searchHref } from "@/lib/search/params";
 
 export async function generateMetadata(props: PageProps<"/homes/[slug]">): Promise<Metadata> {
@@ -135,15 +135,13 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
       : null;
   // Insurance and the tax fallback follow the county (coastal and metro rates differ).
   const finance = financeFor(l.county);
-  const estimate = estimateMonthlyCost({
+  // The same estimate the calculator (#costs) starts from.
+  const estimate = listingMonthlyCost({
     price: l.listPrice,
-    downPaymentPct: finance.downPaymentPct,
-    interestRatePct: finance.interestRate,
-    loanTermYears: finance.loanTermYears,
-    annualTax: l.taxAnnualAmount || (l.listPrice * finance.propertyTaxRatePct) / 100,
-    annualInsurance: bare ? 0 : (l.listPrice * finance.insuranceRatePct) / 100,
+    annualTax: l.taxAnnualAmount,
     monthlyHoa,
-    noMortgageInsurance: bare,
+    finance,
+    land: bare,
   });
   // Tours only where our agents work (or on our own listings); elsewhere, a question to the office.
   const tours = offersTours(l);
@@ -264,7 +262,13 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                   )}
                 </div>
                 {!rent && !sold && (
-                  <a href="#costs" className="group text-right" data-testid="estimate-pill">
+                  // ml-auto: when the price and this wrap onto two lines (a phone, a long land
+                  // note), it still sits at the right edge instead of floating mid-screen.
+                  <a
+                    href="#costs"
+                    className="group ml-auto flex flex-col items-end text-right"
+                    data-testid="estimate-pill"
+                  >
                     <p className="text-sm text-muted">Est. monthly cost</p>
                     <p className="text-xl font-semibold text-ink tabular group-hover:text-brand-700">
                       {formatPrice(Math.round(estimate.total))}/mo
@@ -282,8 +286,18 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                 </p>
               )}
 
+              {/* No empty cell may show the strip's line color: a home's four facts are two
+                  by two on phones, a row from sm up; bare land's two (one with no price per
+                  acre) are stacked on phones, where "$276,000/acre" needs the full width. */}
               <dl
-                className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-4"
+                className={cn(
+                  "mt-6 grid gap-px overflow-hidden rounded-2xl border border-line bg-line",
+                  !bare
+                    ? "grid-cols-2 sm:grid-cols-4"
+                    : perAcre
+                      ? "grid-cols-1 sm:grid-cols-2"
+                      : "grid-cols-1",
+                )}
                 data-testid="big-facts"
               >
                 {bare ? (
@@ -698,10 +712,10 @@ function StatusPill({ status, transactionType }: { status: string; transactionTy
 
 function BigFact({ icon, label, value }: { icon: ReactNode; label: string; value: ReactNode }) {
   return (
-    <div className="flex items-center gap-3 bg-surface px-5 py-4 [&_svg]:size-5 [&_svg]:text-brand-600">
+    <div className="flex items-center gap-3 bg-surface px-5 py-4 [&_svg]:size-5 [&_svg]:shrink-0 [&_svg]:text-brand-600">
       {icon}
-      <div>
-        <dd className="text-lg font-semibold text-ink tabular">{value}</dd>
+      <div className="min-w-0">
+        <dd className="text-lg font-semibold [overflow-wrap:anywhere] text-ink tabular">{value}</dd>
         <dt className="text-xs text-muted">{label}</dt>
       </div>
     </div>

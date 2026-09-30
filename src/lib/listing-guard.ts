@@ -61,11 +61,12 @@ export async function guardListingData(
   const ip = normalizeIp(raw);
 
   const visitor = await identify(request, ip, ua, preview, deps);
-  const plan = limitPlan(visitor, kind, ip);
-  if (!plan) return null;
+  const plans = limitPlan(visitor, kind, ip);
+  if (!plans.length) return null;
   try {
-    const result = await deps.hit(plan.subject, plan.windows, plan.units);
-    if (!result.ok) return tooMany(request, kind, result.retryAfter);
+    const results = await Promise.all(plans.map((p) => deps.hit(p.subject, p.windows, p.units)));
+    const over = results.filter((r) => !r.ok).sort((a, b) => b.retryAfter - a.retryAfter)[0];
+    if (over) return tooMany(request, kind, over.retryAfter, visitor.kind === "member");
   } catch (e) {
     // The limiter must never take the site down.
     console.error("[proxy] rate limit check failed; letting the request through", e);
@@ -98,7 +99,7 @@ async function identify(
   return preview ? { kind: "preview" } : { kind: "anonymous" };
 }
 
-function tooMany(request: NextRequest, kind: RequestKind, retryAfter: number) {
+function tooMany(request: NextRequest, kind: RequestKind, retryAfter: number, signedIn: boolean) {
   const headers = {
     "Retry-After": String(retryAfter),
     "Cache-Control": "no-store",
@@ -116,6 +117,7 @@ function tooMany(request: NextRequest, kind: RequestKind, retryAfter: number) {
     retryAfter,
     pathname: request.nextUrl.pathname,
     search: request.nextUrl.search,
+    signedIn,
   });
   return new NextResponse(html, {
     status: 429,

@@ -3,6 +3,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { agents, inquiries, users } from "@/db/schema";
 import type { Email } from "@/lib/email";
+import { formTokenSecret, issueFormToken } from "@/lib/form-token";
 import { closeDb, resetDb } from "@/test/db/helpers";
 import { submitInquiry, type SubmitContext } from "./submit";
 
@@ -30,6 +31,9 @@ const ctx = (over: Partial<SubmitContext> = {}): SubmitContext => ({
   ...over,
 });
 
+/** A timer token for a form that opened `ms` ago, signed by this server. */
+const openedAgo = (ms: number) => issueFormToken(formTokenSecret(), Date.now() - ms);
+
 const form = (over: Record<string, string> = {}) => ({
   type: "question",
   source: "agent",
@@ -38,7 +42,7 @@ const form = (over: Record<string, string> = {}) => ({
   email: `jordan${++ipCounter}@example.com`,
   message: "Do you have anything near the lake under $300k?",
   website: "",
-  formElapsed: "12000",
+  formToken: openedAgo(12_000),
   ...over,
 });
 
@@ -87,47 +91,98 @@ describe("submitInquiry", () => {
   });
 
   it("flags a form sent faster than a person types, or posted without the page's timer", async () => {
-    const fast = await submitInquiry(form({ formElapsed: "900" }), ctx(), deps());
+    const fast = await submitInquiry(form({ formToken: openedAgo(900) }), ctx(), deps());
     expect((await row(fast.id!)).metadata.spam).toBe("too-fast");
     const direct: Record<string, string> = form();
-    delete direct.formElapsed;
+    delete direct.formToken;
     const bot = await submitInquiry(direct, ctx(), deps());
     expect((await row(bot.id!)).metadata.spam).toBe("no-timer");
     expect(sent).toEqual([]);
   });
 
-  it("flags an SEO pitch from a stranger, but not the same words from a customer", async () => {
+  it("can't be told a time: a claimed elapsed time or a forged token counts as no timer", async () => {
+    // What used to pass: the old field, set by a script.
+    const claimed: Record<string, string> = { ...form(), formElapsed: "99999" };
+    delete claimed.formToken;
+    const a = await submitInquiry(claimed, ctx({ userAgent: "python-requests/2.32" }), deps());
+    expect((await row(a.id!)).metadata.spam).toBe("no-timer");
+    // A token signed with another key, and a real one with its time moved back.
+    const other = issueFormToken("not-this-servers-secret-not-this-servers", Date.now() - 60_000);
+    const b = await submitInquiry(form({ formToken: other }), ctx(), deps());
+    expect((await row(b.id!)).metadata.spam).toBe("no-timer");
+    const real = openedAgo(0);
+    const [v, , nonce, mac] = real.split(".");
+    const moved = [v, String(Date.now() - 60_000), nonce, mac].join(".");
+    const c = await submitInquiry(form({ formToken: moved }), ctx(), deps());
+    expect((await row(c.id!)).metadata.spam).toBe("no-timer");
+    expect(sent).toEqual([]);
+  });
+
+  it("flags an SEO pitch from a stranger, but not the same words from someone the office works with", async () => {
     const stranger = await submitInquiry(form({ message: PITCH }), ctx(), deps());
     expect((await row(stranger.id!)).status).toBe("spam");
     expect((await row(stranger.id!)).metadata.spam).toBe("seo-pitch");
     expect(sent).toEqual([]);
 
-    // Signed in when sending.
-    await db.insert(users).values({ id: "u-cust", name: "Casey", email: "casey@example.com" });
-    const signedIn = await submitInquiry(
-      form({ message: PITCH, email: "casey@example.com" }),
-      ctx({ userId: "u-cust" }),
-      deps(),
-    );
-    expect((await row(signedIn.id!)).status).toBe("new");
-
-    // Has an account under that email, though not signed in.
-    const known = await submitInquiry(
+    // An earlier lead from this email that an agent has contacted.
+    const first = await submitInquiry(form({ email: "casey@example.com" }), ctx(), deps());
+    await db.update(inquiries).set({ status: "contacted" }).where(eq(inquiries.id, first.id!));
+    sent = [];
+    const byEmail = await submitInquiry(
       form({ message: PITCH, email: "CASEY@example.com" }),
       ctx(),
       deps(),
     );
-    expect((await row(known.id!)).status).toBe("new");
+    expect((await row(byEmail.id!)).status).toBe("new");
 
-    // Has sent a real lead before.
-    await submitInquiry(form({ email: "repeat@example.com" }), ctx(), deps());
-    const repeat = await submitInquiry(
-      form({ message: PITCH, email: "repeat@example.com" }),
+    // Signed in to an account whose earlier lead an agent qualified (sent under another email).
+    await db.insert(users).values({ id: "u-cust", name: "Robin", email: "robin@example.com" });
+    const earlier = await submitInquiry(
+      form({ email: "robin.work@example.com" }),
+      ctx({ userId: "u-cust" }),
+      deps(),
+    );
+    await db.update(inquiries).set({ status: "qualified" }).where(eq(inquiries.id, earlier.id!));
+    sent = [];
+    const byAccount = await submitInquiry(
+      form({ message: PITCH, email: "robin@example.com" }),
+      ctx({ userId: "u-cust" }),
+      deps(),
+    );
+    expect((await row(byAccount.id!)).status).toBe("new");
+    expect(sent).toHaveLength(1);
+  });
+
+  it("doesn't let a pitch through on anything the sender controls alone", async () => {
+    const flagged = async (id: string) => (await row(id)).metadata.spam;
+    // An agent's email, published on their profile, that has a login.
+    await db.insert(users).values({ id: "u-agent", name: "Pat", email: "pat@adams.example" });
+    const asAgent = await submitInquiry(
+      form({ message: PITCH, email: "pat@adams.example" }),
       ctx(),
       deps(),
     );
-    expect((await row(repeat.id!)).status).toBe("new");
-    expect(sent).toHaveLength(4);
+    expect(await flagged(asAgent.id!)).toBe("seo-pitch");
+
+    // Signed in to a brand-new account (sign-up checks no email).
+    await db.insert(users).values({ id: "u-new", name: "Growth", email: "growth@example.com" });
+    const signedIn = await submitInquiry(
+      form({ message: PITCH, email: "growth@example.com" }),
+      ctx({ userId: "u-new" }),
+      deps(),
+    );
+    expect(await flagged(signedIn.id!)).toBe("seo-pitch");
+
+    // A harmless first note nobody has answered yet, then the pitch.
+    await submitInquiry(form({ email: "warmup@example.com" }), ctx(), deps());
+    sent = [];
+    const second = await submitInquiry(
+      form({ message: PITCH, email: "warmup@example.com" }),
+      ctx(),
+      deps(),
+    );
+    expect(await flagged(second.id!)).toBe("seo-pitch");
+    expect(sent).toEqual([]);
   });
 
   it("over the per-IP limit: the sender is asked to wait, and nothing is stored or sent", async () => {

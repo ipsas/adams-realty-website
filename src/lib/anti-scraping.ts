@@ -14,15 +14,25 @@ import type { LimitWindow } from "./rate-limit-db";
  *   confirm them. A crawler name alone proves nothing: unconfirmed, it is
  *   limited like anyone else.
  * - Staff (agents and admins) and the office's own addresses (`OFFICE_IPS`)
- *   are not limited. Signed-in buyers are limited per account, not per IP,
- *   so a shared address (office Wi-Fi, a library, a phone carrier) never
- *   locks them out.
+ *   are not limited. Signed-in buyers are limited per account and, all
+ *   together, per address, apart from the anonymous allowance, so a busy
+ *   shared address (office Wi-Fi, a library, a phone carrier) never locks
+ *   them out.
  * - Everyone else is rate limited per client IP, well above what a person
  *   browsing does: bursts per minute, sustained use per hour and per day.
  *   A full page load costs `PAGE_UNITS`; the site's own client-side refreshes
- *   (map moves, filters, other RSC fetches and server actions) cost 1.
- *   Next.js link prefetches get their own, looser bucket, since one results
- *   page can prefetch a couple of dozen listings.
+ *   (map moves, filters, other RSC fetches and server actions) and Next.js
+ *   link prefetches ("quick" requests) cost 1, against the same windows.
+ * - A quick request is recognized by headers a scraper can send too, and a
+ *   forged one gets a full page. So quick requests also have their own cap
+ *   (`LIMITS.quick`), sized for people (a results page prefetches a couple of
+ *   dozen listings): headers can at most double an address's pages a day.
+ * - Signed-in buyers on one address share a second allowance of the same size
+ *   (`LIMITS.members`), besides each account's own ceiling, so accounts made
+ *   from one address (sign-up needs no email check) add one allowance, not
+ *   one per account.
+ * - Link-preview robots are named by their user agent alone, so their bucket
+ *   is small (a preview is one fetch per shared link).
  */
 
 const MINUTE = 60_000;
@@ -40,23 +50,56 @@ export const LIMITS = {
     { name: "page:1h", limit: pages(1_500), ms: HOUR },
     { name: "page:1d", limit: pages(5_000), ms: DAY },
   ],
+  /**
+   * Per IP, in requests: refreshes and prefetches, which cost 1 unit above, capped here
+   * too so claiming to be one can't turn the page allowance into 4x the pages. A busy
+   * hour of browsing (60 results pages, their prefetches, 100 listings) is about 1,600.
+   */
+  quick: [
+    { name: "quick:1m", limit: 600, ms: MINUTE },
+    { name: "quick:1h", limit: 2_000, ms: HOUR },
+    { name: "quick:1d", limit: 6_000, ms: DAY },
+  ],
   /** Per signed-in buyer, in units: well above any person, still a ceiling for a scraper with an account. */
   account: [
     { name: "account:1m", limit: pages(300), ms: MINUTE },
     { name: "account:1d", limit: pages(20_000), ms: DAY },
   ],
-  prefetch: [
-    { name: "prefetch:1m", limit: 600, ms: MINUTE },
-    { name: "prefetch:1d", limit: 20_000, ms: DAY },
+  accountQuick: [
+    { name: "account-quick:1h", limit: 4_000, ms: HOUR },
+    { name: "account-quick:1d", limit: 20_000, ms: DAY },
+  ],
+  /**
+   * Per IP, every signed-in buyer on it together: the same size as the anonymous
+   * allowance, so accounts made from one address can't multiply it.
+   */
+  members: [
+    { name: "members:1m", limit: pages(300), ms: MINUTE },
+    { name: "members:1h", limit: pages(1_500), ms: HOUR },
+    { name: "members:1d", limit: pages(5_000), ms: DAY },
+  ],
+  membersQuick: [
+    { name: "members-quick:1m", limit: 1_200, ms: MINUTE },
+    { name: "members-quick:1h", limit: 2_000, ms: HOUR },
+    { name: "members-quick:1d", limit: 6_000, ms: DAY },
   ],
   api: [
     { name: "api:1m", limit: 300, ms: MINUTE },
     { name: "api:1h", limit: 5_000, ms: HOUR },
   ],
-  /** Link-preview robots, per IP: they fetch one page per shared link. */
+  /** The location API for the signed-in buyers on one IP, together. */
+  membersApi: [
+    { name: "members-api:1m", limit: 300, ms: MINUTE },
+    { name: "members-api:1h", limit: 5_000, ms: HOUR },
+  ],
+  /**
+   * Link-preview robots, per IP: one page per shared link. Small, since the user agent
+   * alone says it's a preview: it adds a tenth to an address's pages at most.
+   */
   preview: [
-    { name: "preview:1m", limit: 120, ms: MINUTE },
-    { name: "preview:1d", limit: 5_000, ms: DAY },
+    { name: "preview:1m", limit: 30, ms: MINUTE },
+    { name: "preview:1h", limit: 200, ms: HOUR },
+    { name: "preview:1d", limit: 500, ms: DAY },
   ],
 } satisfies Record<string, LimitWindow[]>;
 
@@ -97,11 +140,18 @@ export function claimedCrawler(ua: string | null | undefined): SearchEngine | nu
 }
 
 /**
- * Hostnames each engine's crawlers reverse-resolve to (Google: "Verifying
- * Googlebot"; Bing: "Verifying Bingbot").
+ * Hostnames the crawlers we recognize (`claimedCrawler`) reverse-resolve to
+ * (Google: "Verifying Googlebot"; Bing: "Verifying Bingbot"). Google's common
+ * crawlers (Googlebot, GoogleOther, Google-InspectionTool, Storebot) use
+ * googlebot.com, its special-case crawlers google.com.
+ *
+ * Never googleusercontent.com: every Google Cloud VM's address reverse-resolves
+ * to `<ip>.bc.googleusercontent.com` and back, so anyone renting a VM would
+ * pass (Google lists it only for fetchers that users trigger, which we don't
+ * exempt).
  */
 export const CRAWLER_DOMAINS: Record<SearchEngine, readonly string[]> = {
-  google: ["googlebot.com", "google.com", "googleusercontent.com"],
+  google: ["googlebot.com", "google.com"],
   bing: ["search.msn.com"],
 };
 
@@ -213,22 +263,39 @@ export type Visitor =
 /** A counter to bump: `subject` (IP or account) against `windows`, `units` at a time. */
 export type LimitPlan = { subject: string; windows: LimitWindow[]; units: number };
 
-/** The counters a request counts against, or null when it isn't limited. */
-export function limitPlan(visitor: Visitor, kind: RequestKind, ip: string): LimitPlan | null {
+/**
+ * The counters a request counts against (all must have room), or none when it
+ * isn't limited. A page costs PAGE_UNITS against the unit windows; a quick
+ * request (refresh or prefetch) costs 1 there and 1 against its quick cap.
+ */
+export function limitPlan(visitor: Visitor, kind: RequestKind, ip: string): LimitPlan[] {
+  const spend = (subject: string, units: LimitWindow[], quick: LimitWindow[]): LimitPlan[] =>
+    kind === "page"
+      ? [{ subject, windows: units, units: PAGE_UNITS }]
+      : [
+          { subject, windows: units, units: 1 },
+          { subject, windows: quick, units: 1 },
+        ];
   switch (visitor.kind) {
     case "exempt":
-      return null;
+      return [];
     case "member": {
-      const subject = `user:${visitor.userId}`;
-      if (kind === "api") return { subject, windows: LIMITS.api, units: 1 };
-      if (kind === "prefetch") return { subject, windows: LIMITS.prefetch, units: 1 };
-      return { subject, windows: LIMITS.account, units: kind === "page" ? PAGE_UNITS : 1 };
+      const user = `user:${visitor.userId}`;
+      if (kind === "api") {
+        return [
+          { subject: user, windows: LIMITS.api, units: 1 },
+          { subject: ip, windows: LIMITS.membersApi, units: 1 },
+        ];
+      }
+      return [
+        ...spend(user, LIMITS.account, LIMITS.accountQuick),
+        ...spend(ip, LIMITS.members, LIMITS.membersQuick),
+      ];
     }
     case "preview":
-      return { subject: ip, windows: LIMITS.preview, units: 1 };
+      return [{ subject: ip, windows: LIMITS.preview, units: 1 }];
     case "anonymous":
-      if (kind === "api") return { subject: ip, windows: LIMITS.api, units: 1 };
-      if (kind === "prefetch") return { subject: ip, windows: LIMITS.prefetch, units: 1 };
-      return { subject: ip, windows: LIMITS.page, units: kind === "page" ? PAGE_UNITS : 1 };
+      if (kind === "api") return [{ subject: ip, windows: LIMITS.api, units: 1 }];
+      return spend(ip, LIMITS.page, LIMITS.quick);
   }
 }

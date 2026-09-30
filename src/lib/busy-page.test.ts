@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { site } from "@/config/site";
-import { busyPageHtml, retryHref, waitPhrase } from "./busy-page";
+import { busyPageHtml, retryHref, SHORT_WAIT_S, waitPhrase } from "./busy-page";
 
 describe("the 429 page", () => {
   const html = busyPageHtml({ retryAfter: 45, pathname: "/homes", search: "?q=Royston&_rsc=abc" });
@@ -16,6 +16,41 @@ describe("the 429 page", () => {
     expect(html).toContain(`/sign-in?next=${encodeURIComponent("/homes?q=Royston")}`);
     expect(html).toContain("Please try again in a minute.");
     expect(html).toContain('<meta name="robots" content="noindex">');
+  });
+
+  it("for a long pause, says so and leads with signing in instead of a Try again that can't work", () => {
+    const long = busyPageHtml({ retryAfter: 66_116, pathname: "/homes", search: "?q=Royston" });
+    expect(long).toContain("<h1>Listings are paused for now</h1>");
+    expect(long).toContain(`<title>Listings are paused for now | ${site.name}</title>`);
+    expect(long).toContain("Listings open again here in about 18 hours.");
+    expect(long).not.toContain("One moment");
+    expect(long).not.toContain("for a moment");
+    expect(long).not.toContain("busy-retry");
+    expect(long).not.toContain("Try again");
+    expect(long).toContain(
+      `href="/sign-in?next=${encodeURIComponent("/homes?q=Royston")}" data-testid="busy-sign-in">Sign in to keep browsing</a>`,
+    );
+    expect(long).toContain(`href="/sign-up?next=${encodeURIComponent("/homes?q=Royston")}"`);
+    expect(long).toContain('data-testid="busy-back"');
+    expect(long).toContain(site.phone);
+    // The boundary: a per-minute pause is short, an hourly one is long.
+    expect(busyPageHtml({ retryAfter: SHORT_WAIT_S, pathname: "/homes", search: "" })).toContain(
+      "busy-retry",
+    );
+    expect(
+      busyPageHtml({ retryAfter: SHORT_WAIT_S + 1, pathname: "/homes", search: "" }),
+    ).not.toContain("busy-retry");
+    expect(SHORT_WAIT_S).toBeGreaterThanOrEqual(60);
+  });
+
+  it("doesn't tell a signed-in buyer to sign in", () => {
+    for (const retryAfter of [30, 5_000]) {
+      const html = busyPageHtml({ retryAfter, pathname: "/homes", search: "", signedIn: true });
+      expect(html).not.toContain("/sign-in");
+      expect(html).not.toContain("/sign-up");
+      expect(html).toContain("page requests from your account");
+      expect(html).toContain('data-testid="busy-back"');
+    }
   });
 
   it("follows the site's theme choice and the device setting, in both palettes", () => {
