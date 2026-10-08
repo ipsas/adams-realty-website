@@ -39,3 +39,4 @@ statements about the firm stay Northeast Georgia. See README.md for setup and AR
 - Drizzle renders column refs unqualified inside `select({...})` fields — use explicit
   `"listings"."id"` in correlated subqueries there.
 - Responsive grids need an explicit `grid-cols-1` base so long nowrap text can't widen the page on mobile.
+- Preview gate: while `PREVIEW_PASSWORD` is set, `src/proxy.ts` shows the public only `/preview` (`src/lib/preview-gate.ts`).

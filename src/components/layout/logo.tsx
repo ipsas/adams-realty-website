@@ -20,6 +20,29 @@ export function LogoMark({ className }: { className?: string }) {
   );
 }
 
+function Wordmark({ inverse }: { inverse: boolean }) {
+  return (
+    <span className="flex items-baseline gap-1.5">
+      <span
+        className={cn(
+          "font-display-tight text-[1.35rem] leading-none font-semibold",
+          inverse ? "text-white" : "text-ink",
+        )}
+      >
+        Adams
+      </span>
+      <span
+        className={cn(
+          "text-[0.65rem] font-semibold tracking-[0.22em] uppercase",
+          inverse ? "text-white/70" : "text-muted",
+        )}
+      >
+        Realty
+      </span>
+    </span>
+  );
+}
+
 export function Logo({ className, inverse = false }: { className?: string; inverse?: boolean }) {
   return (
     <Link
@@ -28,24 +51,23 @@ export function Logo({ className, inverse = false }: { className?: string; inver
       aria-label={`${site.name} home`}
     >
       <LogoMark className="shrink-0 transition-transform duration-300 group-hover:-rotate-3" />
-      <span className="flex items-baseline gap-1.5">
-        <span
-          className={cn(
-            "font-display-tight text-[1.35rem] leading-none font-semibold",
-            inverse ? "text-white" : "text-ink",
-          )}
-        >
-          Adams
-        </span>
-        <span
-          className={cn(
-            "text-[0.65rem] font-semibold tracking-[0.22em] uppercase",
-            inverse ? "text-white/70" : "text-muted",
-          )}
-        >
-          Realty
-        </span>
-      </span>
+      <Wordmark inverse={inverse} />
     </Link>
+  );
+}
+
+/** The logo without the link home, for pages that stand alone (the coming-soon page). */
+export function LogoLockup({
+  className,
+  inverse = false,
+}: {
+  className?: string;
+  inverse?: boolean;
+}) {
+  return (
+    <span className={cn("flex items-center gap-2.5", className)}>
+      <LogoMark className="shrink-0" />
+      <Wordmark inverse={inverse} />
+    </span>
   );
 }

@@ -94,6 +94,42 @@ listings' photos to the fake host in your local database and puts them back).
    (HANDOFF.md, launch checklist).
 5. **Photos.** The demo uses Unsplash images; real listings bring MLS photos.
 
+## The preview password (until launch)
+
+Until the real Georgia MLS listings are connected, the live site stays private behind one
+shared password, so the public never sees the sample listings:
+
+- **Set `PREVIEW_PASSWORD`** in Vercel (_Project → Settings → Environment Variables_, for
+  Production and, if you use them, Preview deployments) and redeploy. Environment changes
+  only reach new deployments.
+- **Visitors without it** see only the coming-soon page, `/preview`: the firm's name, phone,
+  email, address, office hours and GREC license, and a small "Have a preview password?" form.
+  Any other page sends them there (and back where they were going once they unlock), and so
+  do the links in account emails (password reset, email verification); form posts, the API,
+  sign-in and sitemaps answer 401. `robots.txt` says `Disallow: /`, and every response
+  carries `noindex` and `Cache-Control: private, no-store`.
+- **Andrea and testers** enter the password on `/preview`. That browser stays unlocked for 60
+  days (an `adams_preview` cookie holding a signature of the password, never the password
+  itself), and opening `/preview` again goes straight to the site. Sign-in and the dashboard
+  work as usual behind it. Each address gets 10 tries per 15 minutes.
+- **To change the password**, edit `PREVIEW_PASSWORD` in Vercel and redeploy. Every unlocked
+  browser is locked out at once and needs the new one. (Rotating `BETTER_AUTH_SECRET` does
+  that too, and also signs everyone out of their accounts.)
+- **Still running behind it:** the Vercel Cron jobs (`/api/cron/*`, which check `CRON_SECRET`
+  themselves), so saved-search and saved-home alert emails keep going out, and their
+  unsubscribe links (`/alerts/one-click`, the mail app's button, and `/alerts/unsubscribe`,
+  the link in the email), which check their own signed token and work for anyone. The
+  unsubscribe page then shows only the firm's name, phone and license around it, without
+  the site's menus and footer.
+- **Launch day:** remove `PREVIEW_PASSWORD` and set `DEMO_DATA_MODE=off` together, then
+  redeploy (HANDOFF.md, launch checklist). Unset or empty, the gate is off and the site
+  behaves exactly as without it, which is also how the tests and local development run.
+  To try it locally, put `PREVIEW_PASSWORD=…` in `.env.local` and restart `npm run dev`.
+
+The gate is `src/lib/preview-gate.ts`, run first by `src/proxy.ts`; the coming-soon page is
+`src/app/preview/`. While the sample listings are showing (demo-data mode), every other page
+also has a slim "Preview: the homes on this site are samples" bar at the top.
+
 ## Connecting your MLS (IDX)
 
 Adams Realty is a Georgia MLS member (office ID `ADAM01`), so the IDX feed comes from

@@ -193,17 +193,35 @@ Use your model table: Opus High for the work packages, and Xhigh if one gets stu
 - [ ] **Production database without demo data.** Use a fresh database with `SEED_DEMO_DATA` unset,
       run migrations, and create Andrea's real login by signing up; an admin can then set roles.
       Add the five agent profiles in Dashboard → Agents, from `AGENTS` in `scripts/seed-data.ts`.
-- [ ] **Launch day: switch off demo-data mode, then invite Google and Bing.** While the site shows
-      sample listings, it tells search engines to stay away from search, listing, area,
-      places and agent pages (`noindex`, `robots.txt` and the sitemaps; `src/lib/demo-mode.ts`).
-      It is on wherever `SEED_DEMO_DATA=1`. Once the real MLS listings are live: set
-      `DEMO_DATA_MODE=off` in Vercel (or remove `SEED_DEMO_DATA`) and redeploy. Check that
-      `/robots.txt` lists the `/homes/sitemap/…` chunks again and that a listing page no longer
+- [ ] **Until launch: keep the site behind the preview password.** Set `PREVIEW_PASSWORD` in
+      Vercel (Production, and Preview if you use it) and redeploy, then give the password to
+      Andrea and the testers. Everyone else sees only the coming-soon page (`/preview`) with
+      the office's phone, email, address, hours and license. To change the password, edit it
+      and redeploy: every browser has to enter the new one. See README → "The preview
+      password".
+- [ ] **Launch day: open the site, switch off demo-data mode, then invite Google and Bing.**
+      While the site shows sample listings, it tells search engines to stay away from search,
+      listing, area, places and agent pages (`noindex`, `robots.txt` and the sitemaps;
+      `src/lib/demo-mode.ts`), and the preview password keeps the public out altogether.
+      Demo-data mode is on wherever `SEED_DEMO_DATA=1`. Once the real MLS listings are live,
+      do both together in Vercel: **remove `PREVIEW_PASSWORD`** and **set
+      `DEMO_DATA_MODE=off`** (or remove `SEED_DEMO_DATA`), then redeploy. Check, in a private
+      window, that `/` opens the home page instead of the coming-soon page, that no page shows
+      the "Preview: the homes on this site are samples" bar, that `/robots.txt` lists the
+      `/homes/sitemap/…` chunks again (not `Disallow: /`) and that a listing page no longer
       sends `X-Robots-Tag: noindex`. Then submit `/robots.txt`'s sitemaps in
       [Google Search Console](https://search.google.com/search-console) and
       [Bing Webmaster Tools](https://www.bing.com/webmasters) (check whether Search Console is
       already set up for the domain). If any sample page was indexed before this mode existed,
       use Search Console's Removals tool for it.
+- [ ] **After launch (optional): run the proxy on fewer requests again.** To gate every page,
+      `src/proxy.ts` runs on every request, also with the gate off: each page view, link
+      prefetch and form post is one more proxy call on Vercel (a little latency and cost).
+      Once you're sure the preview password won't be needed again, remove the gate
+      (`src/lib/preview-gate.ts` and its tests, `src/app/preview/`, the gate step in
+      `src/proxy.ts`) and put back the narrow `config.matcher` listed in ARCHITECTURE.md →
+      "Preview gate", updating the matcher test. Do both or neither: with the narrow matcher
+      a later `PREVIEW_PASSWORD` would cover only some pages.
 - [ ] **The office's internet address.** So the office never meets the listing rate limit, set
       `OFFICE_IPS` in Vercel to the office's public IP address (several can be separated by commas;
       ranges like `203.0.113.0/28` work; if the office has IPv6, add its block, such as

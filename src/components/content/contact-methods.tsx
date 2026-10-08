@@ -1,4 +1,5 @@
 import { Clock, Mail, MapPin, Phone, type LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import { site } from "@/config/site";
 import { cn } from "@/lib/cn";
 import { addressLines, directionsHref, hasStreetAddress, mailtoHref, telHref } from "./contact";
@@ -48,6 +49,22 @@ function methods(subject?: string): Method[] {
     },
   ];
   return all.filter((m): m is Method => m !== null);
+}
+
+/**
+ * An email address that wraps after its "@" when it must ("local@" / "domain") instead of
+ * mid-word; `overflow-wrap: anywhere` stays as the fallback, so it never overflows.
+ */
+function breakableEmail(email: string): ReactNode {
+  const at = email.indexOf("@");
+  if (at < 0) return email;
+  return (
+    <>
+      {email.slice(0, at + 1)}
+      <wbr />
+      {email.slice(at + 1)}
+    </>
+  );
 }
 
 /**
@@ -110,7 +127,7 @@ export function ContactMethods({
                     dark ? "text-white" : "text-ink",
                   )}
                 >
-                  {m.lines.join(" ")}
+                  {m.key === "email" ? breakableEmail(m.lines.join(" ")) : m.lines.join(" ")}
                 </span>
               )}
               {m.hint && (

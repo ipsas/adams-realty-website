@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Fraunces, Inter } from "next/font/google";
 import { SavedHomesProvider } from "@/components/listings/saved-homes-provider";
+import { SiteChrome } from "@/components/layout/site-chrome";
 import { SiteHeader, type HeaderUser } from "@/components/layout/site-header";
 import { TabBar } from "@/components/layout/tab-bar";
 import { InlineScript } from "@/components/theme/inline-script";
@@ -9,8 +10,10 @@ import { PwaRuntime } from "@/components/pwa/pwa-runtime";
 import { Toaster } from "@/components/ui/toast";
 import { site } from "@/config/site";
 import { getSession } from "@/lib/auth/session";
+import { demoDataMode } from "@/lib/demo-mode";
 import { env } from "@/lib/env";
 import { getSavedListingIds } from "@/lib/listings/queries";
+import { previewPassword } from "@/lib/preview-gate";
 import { THEME_COLORS, THEME_SCRIPT } from "@/lib/theme-script";
 import "./globals.css";
 
@@ -63,6 +66,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
         role: (session.user.role ?? "user") as NonNullable<HeaderUser>["role"],
       }
     : null;
+  const gated = previewPassword() !== null;
 
   return (
     // The head script sets data-theme before first paint; React must keep it.
@@ -79,12 +83,18 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           Skip to content
         </a>
         <SavedHomesProvider initialIds={savedIds} signedIn={!!session}>
-          <SiteHeader user={user} />
+          {/* Not on the coming-soon page (/preview), nor while gated on the alert emails' pages
+              (src/app/(alerts)). The sample-listings notice rides with the header. */}
+          <SiteChrome gated={gated}>
+            <SiteHeader user={user} demoBar={demoDataMode()} />
+          </SiteChrome>
           <div id="main" className="flex flex-1 flex-col">
             {children}
           </div>
-          {/* Always rendered; visibility is CSS-only (phone:/wide: and chrome markers). */}
-          <TabBar user={user} />
+          {/* Wherever the header is; visibility is CSS-only (phone:/wide: and chrome markers). */}
+          <SiteChrome gated={gated}>
+            <TabBar user={user} />
+          </SiteChrome>
           <Toaster />
           <PwaRuntime userId={user?.id ?? null} />
         </SavedHomesProvider>

@@ -9,7 +9,7 @@ of Georgia (see "Coverage and the firm's area").
 Browser ──► Next.js (App Router, React Server Components)
               │  pages render on the server from Postgres; client components only where
               │  interaction needs them (map, filters, forms, gallery)
-              ├─ proxy.ts ............ listing rate limits, account-page cookie check, demo noindex
+              ├─ proxy.ts ............ preview gate, listing rate limits, account-page cookie check, demo noindex
               ├─ server actions ...... mutations (save home, lead forms, dashboard edits)
               ├─ /api/auth/* ......... Better Auth (sessions, password reset, OAuth)
               ├─ /api/cron/sync ...... scheduled MLS sync (Vercel Cron, bearer secret) + 7 a.m. lead summary
@@ -466,6 +466,26 @@ contact, agent, listing report, valuation, sign-up, saved searches):
     disallows them and lists only `sitemap.xml`, and the sitemaps leave them out. `DEMO_DATA_MODE=on|off`;
     unset, it follows `SEED_DEMO_DATA` (ON wherever the build loads demo data). Switched
     off on launch day (HANDOFF.md, launch checklist).
+  - **Preview gate** (`src/lib/preview-gate.ts`, the proxy's first step): while
+    `PREVIEW_PASSWORD` is set, the whole site is private. Browsers that entered the password
+    on `/preview` carry an HMAC cookie; everyone else is redirected to the coming-soon page
+    (page loads, and browsers opening `/api/auth/*` links from account emails) or gets a 401
+    (actions, `/api/*`, sitemaps). `/api/cron/*`, `/robots.txt` (then `Disallow: /`), public
+    images and the alert emails' token-checked unsubscribe routes (`/alerts/one-click`,
+    `/alerts/unsubscribe`) stay reachable, and every response says `noindex` and
+    `Cache-Control: private, no-store`. Like `/preview`, the unsubscribe page then stands
+    alone, without the site's header, tab bar and footer (the `src/app/(alerts)` layout and
+    `SiteChrome`), so the public sees no links into the site and nothing taken from the sample
+    listings (the footer's towns, the sample-listings notices). `next` destinations go through `safeNext`
+    (`src/lib/safe-redirect.ts`), which checks and returns the path as a browser resolves it.
+    The proxy's matcher covers everything except `_next/` and the public images, so a new
+    route is gated without a matcher change. The cost: the proxy now runs on every request,
+    gate on or off (no database work outside its own paths, but one more proxy call per
+    page view and prefetch on Vercel). Before the gate it was `/dashboard/:path*`,
+    `/saved/:path*`, `/account/:path*`, `/homes`, `/homes/:path*`,
+    `/api/locations/:path*`, `/areas/:path*`, `/places/:path*` and `/agents/:path*`;
+    restore that only together with removing the gate (HANDOFF.md, after launch). The
+    password is removed on launch day (README → "The preview password").
 - **Caching:** listing-derived data that only changes with the listings (home page stats,
   popular towns and featured homes, area guide stats, the top cities behind the home page
   chips and footer, and the `/places` index) goes through `src/lib/listings/cached.ts`: `unstable_cache` with the `listings`

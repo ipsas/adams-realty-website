@@ -159,7 +159,11 @@ export function SearchView({
   const backToTown = () => update({ q: from, bounds: undefined });
 
   return (
-    <div className="flex h-[calc(100dvh-4rem)] flex-col" onClickCapture={onClickCapture}>
+    // Fills the viewport under the header (and the sample-listings notice, while it shows).
+    <div
+      className="flex h-[calc(100dvh-4rem-var(--demo-bar-h,0px))] flex-col"
+      onClickCapture={onClickCapture}
+    >
       <FilterBar criteria={criteria} update={update} signedIn={signedIn} />
 
       <div className="relative flex min-h-0 flex-1">

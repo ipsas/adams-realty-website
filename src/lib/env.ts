@@ -68,6 +68,13 @@ const makeSchema = (strict: boolean) =>
      * Unset, it follows SEED_DEMO_DATA. Read per request by src/lib/demo-mode.ts.
      */
     DEMO_DATA_MODE: optional,
+    /**
+     * Preview gate (src/lib/preview-gate.ts): while set, only visitors who have entered this
+     * shared password on /preview see the site; everyone else gets the coming-soon page.
+     * Unset or empty, the site is open. Changing it signs every browser out of the preview.
+     * Read per request by the gate, like DEMO_DATA_MODE.
+     */
+    PREVIEW_PASSWORD: optional,
   });
 
 export type Env = z.infer<ReturnType<typeof makeSchema>>;

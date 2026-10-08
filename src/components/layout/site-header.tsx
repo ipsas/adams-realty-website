@@ -11,6 +11,7 @@ import { initials } from "@/lib/format";
 import { AppearanceControl } from "../theme/appearance-control";
 import { ThemeMenuButton } from "../theme/theme-menu-button";
 import { Popover } from "../ui/popover";
+import { DemoBar } from "./demo-bar";
 import { Logo } from "./logo";
 
 export type HeaderUser = {
@@ -21,7 +22,12 @@ export type HeaderUser = {
   role: "user" | "agent" | "admin";
 } | null;
 
-export function SiteHeader({ user }: { user: HeaderUser }) {
+/**
+ * `demoBar`: show the sample-listings notice (demo-data mode) above the header, where it
+ * scrolls away on every page. Over the home page's hero the header is fixed, so until the
+ * page scrolls it starts below the notice instead of covering it.
+ */
+export function SiteHeader({ user, demoBar = false }: { user: HeaderUser; demoBar?: boolean }) {
   const pathname = usePathname();
   const overHero = pathname === "/";
   const [scrolled, setScrolled] = useState(false);
@@ -51,115 +57,120 @@ export function SiteHeader({ user }: { user: HeaderUser }) {
   };
 
   return (
-    <header
-      data-site-header
-      className={cn(
-        "z-50 w-full transition-[background-color,border-color,box-shadow] duration-300",
-        overHero ? "fixed top-0" : "sticky top-0",
-        transparent
-          ? "border-b border-transparent bg-transparent"
-          : "border-b border-line bg-canvas/85 backdrop-blur-xl backdrop-saturate-150",
-      )}
-    >
-      <div className="mx-auto flex h-16 max-w-[1600px] items-center gap-3 pr-safe-4 pl-safe-4 sm:gap-8 sm:pr-safe-6 sm:pl-safe-6 lg:pr-safe-8 lg:pl-safe-8">
-        <Logo inverse={transparent} className="min-w-0 shrink overflow-hidden" />
-        <nav className="hidden items-center gap-1 md:flex" aria-label="Main">
-          {nav.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "rounded-full px-3.5 py-2 text-sm font-medium transition-colors",
-                transparent
-                  ? "text-white/85 hover:bg-white/10 hover:text-white"
-                  : isActive(item.href)
-                    ? "text-ink"
-                    : "text-muted hover:bg-sunken hover:text-ink",
-              )}
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+    <>
+      {demoBar && <DemoBar />}
+      <header
+        data-site-header
+        className={cn(
+          "z-50 w-full transition-[top,background-color,border-color,box-shadow] duration-300",
+          overHero
+            ? cn("fixed", demoBar && !scrolled ? "top-(--demo-bar-h)" : "top-0")
+            : "sticky top-0",
+          transparent
+            ? "border-b border-transparent bg-transparent"
+            : "border-b border-line bg-canvas/85 backdrop-blur-xl backdrop-saturate-150",
+        )}
+      >
+        <div className="mx-auto flex h-16 max-w-[1600px] items-center gap-3 pr-safe-4 pl-safe-4 sm:gap-8 sm:pr-safe-6 sm:pl-safe-6 lg:pr-safe-8 lg:pl-safe-8">
+          <Logo inverse={transparent} className="min-w-0 shrink overflow-hidden" />
+          <nav className="hidden items-center gap-1 md:flex" aria-label="Main">
+            {nav.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "rounded-full px-3.5 py-2 text-sm font-medium transition-colors",
+                  transparent
+                    ? "text-white/85 hover:bg-white/10 hover:text-white"
+                    : isActive(item.href)
+                      ? "text-ink"
+                      : "text-muted hover:bg-sunken hover:text-ink",
+                )}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
 
-        <div className="ml-auto flex shrink-0 items-center gap-2">
-          {/* Wide screens only (the shell's `wide`, not md:): a phone in landscape is
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            {/* Wide screens only (the shell's `wide`, not md:): a phone in landscape is
               past md but gets the menu's segmented control instead. */}
-          <ThemeMenuButton transparent={transparent} className="hidden wide:block" />
-          {pathname !== "/homes" && (
-            <Link
-              href="/homes"
-              aria-label="Search homes"
-              className={cn(
-                "hidden size-10 items-center justify-center rounded-full transition-colors sm:flex md:hidden",
-                transparent ? "text-white hover:bg-white/10" : "text-ink-soft hover:bg-sunken",
-              )}
-            >
-              <Search className="size-5" />
-            </Link>
-          )}
-          <Link
-            href="/saved"
-            className={cn(
-              "hidden h-10 items-center gap-2 rounded-full px-3.5 text-sm font-medium transition-colors sm:flex",
-              transparent
-                ? "text-white hover:bg-white/10"
-                : "text-ink-soft hover:bg-sunken hover:text-ink",
+            <ThemeMenuButton transparent={transparent} className="hidden wide:block" />
+            {pathname !== "/homes" && (
+              <Link
+                href="/homes"
+                aria-label="Search homes"
+                className={cn(
+                  "hidden size-10 items-center justify-center rounded-full transition-colors sm:flex md:hidden",
+                  transparent ? "text-white hover:bg-white/10" : "text-ink-soft hover:bg-sunken",
+                )}
+              >
+                <Search className="size-5" />
+              </Link>
             )}
-          >
-            <Heart className="size-[18px]" />
-            <span className="hidden lg:inline">Saved</span>
-          </Link>
-          {user ? (
-            <UserMenu user={user} transparent={transparent} />
-          ) : (
             <Link
-              href={`/sign-in?next=${encodeURIComponent(pathname)}`}
+              href="/saved"
               className={cn(
-                "flex h-10 items-center rounded-full px-4 text-sm font-semibold transition-colors",
+                "hidden h-10 items-center gap-2 rounded-full px-3.5 text-sm font-medium transition-colors sm:flex",
                 transparent
-                  ? "bg-surface text-ink hover:bg-surface/90"
-                  : "bg-ink text-on-ink hover:bg-ink-soft",
+                  ? "text-white hover:bg-white/10"
+                  : "text-ink-soft hover:bg-sunken hover:text-ink",
               )}
             >
-              Sign in
+              <Heart className="size-[18px]" />
+              <span className="hidden lg:inline">Saved</span>
             </Link>
-          )}
-          <button
-            type="button"
-            className={cn(
-              // `phone:flex`: a phone in landscape is past md but still needs the menu.
-              "flex size-10 items-center justify-center rounded-full md:hidden phone:flex",
-              transparent ? "text-white hover:bg-white/10" : "text-ink hover:bg-sunken",
+            {user ? (
+              <UserMenu user={user} transparent={transparent} />
+            ) : (
+              <Link
+                href={`/sign-in?next=${encodeURIComponent(pathname)}`}
+                className={cn(
+                  "flex h-10 items-center rounded-full px-4 text-sm font-semibold transition-colors",
+                  transparent
+                    ? "bg-surface text-ink hover:bg-surface/90"
+                    : "bg-ink text-on-ink hover:bg-ink-soft",
+                )}
+              >
+                Sign in
+              </Link>
             )}
-            aria-label={mobileOpen ? "Close menu" : "Open menu"}
-            aria-expanded={mobileOpen}
-            onClick={() => setMobileOpen((o) => !o)}
-          >
-            {mobileOpen ? <X className="size-5" /> : <Menu className="size-5" />}
-          </button>
-        </div>
-      </div>
-
-      {mobileOpen && (
-        <nav
-          className="max-h-[calc(100dvh-var(--header-h))] animate-rise overflow-y-auto overscroll-contain border-t border-line bg-canvas px-4 pt-2 pb-6 md:hidden phone:block"
-          aria-label="Mobile"
-        >
-          {[...nav, { label: "Saved homes", href: "/saved" }].map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="block rounded-xl px-3 py-3 text-base font-medium text-ink hover:bg-sunken"
+            <button
+              type="button"
+              className={cn(
+                // `phone:flex`: a phone in landscape is past md but still needs the menu.
+                "flex size-10 items-center justify-center rounded-full md:hidden phone:flex",
+                transparent ? "text-white hover:bg-white/10" : "text-ink hover:bg-sunken",
+              )}
+              aria-label={mobileOpen ? "Close menu" : "Open menu"}
+              aria-expanded={mobileOpen}
+              onClick={() => setMobileOpen((o) => !o)}
             >
-              {item.label}
-            </Link>
-          ))}
-          <div className="mx-3 mt-3 mb-4 h-px bg-line" />
-          <AppearanceControl variant="segmented" className="px-3" />
-        </nav>
-      )}
-    </header>
+              {mobileOpen ? <X className="size-5" /> : <Menu className="size-5" />}
+            </button>
+          </div>
+        </div>
+
+        {mobileOpen && (
+          <nav
+            className="max-h-[calc(100dvh-var(--header-h)-var(--demo-bar-h,0px))] animate-rise overflow-y-auto overscroll-contain border-t border-line bg-canvas px-4 pt-2 pb-6 md:hidden phone:block"
+            aria-label="Mobile"
+          >
+            {[...nav, { label: "Saved homes", href: "/saved" }].map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="block rounded-xl px-3 py-3 text-base font-medium text-ink hover:bg-sunken"
+              >
+                {item.label}
+              </Link>
+            ))}
+            <div className="mx-3 mt-3 mb-4 h-px bg-line" />
+            <AppearanceControl variant="segmented" className="px-3" />
+          </nav>
+        )}
+      </header>
+    </>
   );
 }
 

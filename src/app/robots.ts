@@ -2,14 +2,18 @@ import type { MetadataRoute } from "next";
 import { DEMO_CONTENT_PATHS, demoDataMode } from "@/lib/demo-mode";
 import { env } from "@/lib/env";
 import { listingSitemapUrls } from "@/lib/listings/sitemap-chunks";
+import { previewPassword } from "@/lib/preview-gate";
 
-// Per request, so demo-data mode (src/lib/demo-mode.ts) follows the running
-// deployment's environment. Still no database.
+// Per request, so the preview gate (src/lib/preview-gate.ts) and demo-data mode
+// (src/lib/demo-mode.ts) follow the running deployment's environment. Still no database.
 export const dynamic = "force-dynamic";
 
 const PRIVATE = ["/dashboard", "/api/", "/saved", "/account", "/sign-in", "/sign-up"];
 
 export default function robots(): MetadataRoute.Robots {
+  // Preview gate: the whole site is private until launch, so nothing is crawled, and no
+  // sitemaps are listed (they answer 401 while gated).
+  if (previewPassword()) return { rules: { userAgent: "*", disallow: "/" } };
   const base = env.NEXT_PUBLIC_SITE_URL;
   // Demo data: keep crawlers off the sample listings and the guides, places and agent
   // pages that show them, and list only the main sitemap (which leaves them out too).

@@ -20,7 +20,7 @@ const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
-export type FormKind = "inquiry" | "signup" | "saved-search";
+export type FormKind = "inquiry" | "signup" | "saved-search" | "preview-unlock";
 
 export const FORM_LIMITS: Record<
   FormKind,
@@ -49,6 +49,10 @@ export const FORM_LIMITS: Record<
       { name: "saved-search-user:1h", limit: 20, ms: HOUR },
       { name: "saved-search-user:1d", limit: 60, ms: DAY },
     ],
+  },
+  /** Preview password attempts on /preview (src/lib/preview-unlock.ts): right or wrong. */
+  "preview-unlock": {
+    ip: [{ name: "preview-unlock-ip:15m", limit: 10, ms: 15 * MINUTE }],
   },
 };
 
