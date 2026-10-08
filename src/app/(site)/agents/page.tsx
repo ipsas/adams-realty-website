@@ -5,6 +5,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Container } from "@/components/ui/section";
 import { site } from "@/config/site";
 import { getAgents } from "@/lib/agents/queries";
+import { demoDataMode } from "@/lib/demo-mode";
 
 export const metadata: Metadata = {
   title: "Our agents",
@@ -13,6 +14,8 @@ export const metadata: Metadata = {
 
 export default async function AgentsPage() {
   const agents = await getAgents();
+  // On the demo site the counts would be of sample listings: they wait for the real feed.
+  const showCounts = !demoDataMode();
   return (
     <Container className="py-14">
       <div className="max-w-2xl">
@@ -56,7 +59,7 @@ export default async function AgentsPage() {
                   <span className="line-clamp-2">{a.languages.join(", ")}</span>
                 </p>
               )}
-              {a.activeListings > 0 && (
+              {showCounts && a.activeListings > 0 && (
                 <p className="font-medium text-brand-700">{a.activeListings} active listings</p>
               )}
             </div>

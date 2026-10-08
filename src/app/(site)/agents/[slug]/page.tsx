@@ -53,8 +53,13 @@ export default async function AgentPage(props: PageProps<"/agents/[slug]">) {
     getSession(),
   ]);
   // Only figures we actually have: years in the business is left off until the agent supplies it.
-  const tiles: [string, number][] = [["Active listings", stats.active]];
-  if (!demo) tiles.push(["Recent sales", stats.sold]);
+  // Listing counts wait for the real feed too: on the demo site they'd count sample listings.
+  const tiles: [string, number][] = demo
+    ? []
+    : [
+        ["Active listings", stats.active],
+        ["Recent sales", stats.sold],
+      ];
   if (a.yearsExperience !== null) tiles.unshift(["Years in real estate", a.yearsExperience]);
   // Everything below is optional: a profile shows only what the agent has supplied.
   const bio = bioParagraphs(a.bio);
@@ -107,19 +112,21 @@ export default async function AgentPage(props: PageProps<"/agents/[slug]">) {
             </div>
           </div>
 
-          <dl
-            className={cn(
-              "mt-10 grid gap-px overflow-hidden rounded-2xl border border-line bg-line",
-              TILE_COLUMNS[tiles.length],
-            )}
-          >
-            {tiles.map(([label, value]) => (
-              <div key={label} className="bg-surface px-5 py-4">
-                <dd className="text-2xl font-semibold text-ink tabular">{value}</dd>
-                <dt className="text-xs text-muted">{label}</dt>
-              </div>
-            ))}
-          </dl>
+          {tiles.length > 0 && (
+            <dl
+              className={cn(
+                "mt-10 grid gap-px overflow-hidden rounded-2xl border border-line bg-line",
+                TILE_COLUMNS[tiles.length],
+              )}
+            >
+              {tiles.map(([label, value]) => (
+                <div key={label} className="bg-surface px-5 py-4">
+                  <dd className="text-2xl font-semibold text-ink tabular">{value}</dd>
+                  <dt className="text-xs text-muted">{label}</dt>
+                </div>
+              ))}
+            </dl>
+          )}
 
           {bio.length > 0 && (
             <div
