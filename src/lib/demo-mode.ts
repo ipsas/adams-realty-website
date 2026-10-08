@@ -1,9 +1,10 @@
 /**
- * Demo-data mode: while the site runs on the fictional sample listings and
- * agents (the seed), search engines must not index them. In this mode:
+ * Demo-data mode: while the site runs on the fictional sample listings (the
+ * seed), search engines must not index them. The agents are real, but their
+ * pages list sample listings and stats. In this mode:
  *
  * - `proxy.ts` sends `X-Robots-Tag: noindex` on the pages that show sample
- *   data: search and listing pages, area guides, places and agents
+ *   data: search and listing pages, area guides, places and agent pages
  *   (`isDemoContentPath`);
  * - `robots.txt` disallows those paths and lists only the main sitemap;
  * - the sitemaps leave them out (the listing chunks and the areas sitemap are
@@ -31,7 +32,7 @@ export function demoDataMode(e: EnvLike = process.env): boolean {
   return e.SEED_DEMO_DATA?.trim() === "1";
 }
 
-/** The sections that show sample data: listings and search, area guides, places, agents. */
+/** The sections that show sample data: listings and search, area guides, places, agent pages. */
 export const DEMO_CONTENT_PATHS = ["/homes", "/areas", "/places", "/agents"] as const;
 
 export function isDemoContentPath(path: string): boolean {

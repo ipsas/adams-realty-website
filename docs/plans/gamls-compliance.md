@@ -10,7 +10,7 @@ Required before real feed data goes public. This belongs to GA-A, or to its own 
 - **Traffic stats:** listing page views have to be made available to GAMLS on request (§9). Plan a simple per-listing view counter or an analytics export.
 - **Unbiased sort:** once the user picks a sort, results are ranked organically (§12). This already holds, since there's no paid placement.
 - **Anti-scraping:** commercially reasonable protection against data mining (Agreement §3): rate limiting and bot protection on the search/API routes.
-- **DMCA:** the licensee registers a DMCA agent (§11). This is the owner's step: copyright.gov/dmca-directory.
+- **DMCA:** the licensee registers a DMCA agent (§11). Done by the owner: see "As built" below.
 - **Use restriction:** data is for consumers with a bona fide interest in buying, selling or renting, and may not be re-syndicated or redistributed without GAMLS's written consent (Exhibit A §§2, 5). This matters for any future plans to sell ads or leads.
 - **Refresh:** at least daily, 7 days a week, including photos; use the most frequent schedule the source allows (Exhibit A §§1, 6). The 15-minute sync on Vercel Pro satisfies this.
 - **Feed access:** RETS credentials within 5 business days. Bridge Web API (RESO) access requires the paid RETS subscription (§20). The site's provider targets RESO Web API (Bridge).
@@ -35,6 +35,12 @@ Owner decisions since, now built:
   is no separate On Hold status: the mapper stores it as `withdrawn`, so it is hidden already.
   Staff still see and manage these listings in the dashboard. Undo: a migration restoring
   `from_feed and` in the column (and `isIdxHidden`).
+- **DMCA designated agent (§11).** Registered by Adams Realty with the U.S. Copyright Office:
+  Andrea A. Anderegg for Adams Realty, Inc., registration DMCA-1081724, effective 2026-10-02,
+  (850) 572-3287, contracts.adamsrealty@gmail.com, mail to the office (69 Mill Street,
+  Royston, GA 30662). The details are `site.dmca` in `src/config/site.ts`; the public notice
+  is `/terms#copyright` ("Copyright complaints (DMCA)", with what a notice must include under
+  17 U.S.C. §512(c)(3)), linked from every page's footer.
 
-Still with the owner: a dedicated corrections email if wanted, the DMCA agent and confirming
-the feed's field names. HANDOFF.md section 6 lists these.
+Still with the owner: a dedicated corrections email if wanted, and confirming the feed's field
+names. HANDOFF.md section 6 lists these.

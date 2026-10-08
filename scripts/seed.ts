@@ -1,7 +1,8 @@
 /**
  * Seeds a development database with a realistic sample market: Adams Realty's
- * real office and broker, a few sample agents, open houses, price history,
- * leads and demo logins, and about 431 FICTIONAL listings:
+ * real office and its five real agents (scripts/seed-data.ts AGENTS), open
+ * houses, price history, leads and demo logins, and about 431 FICTIONAL
+ * listings:
  * - 180 in Northeast Georgia, the towns and lakes the firm serves: Adams
  *   Realty's own listings plus a demo MLS feed. Adams listings are only here.
  * - 226 statewide (Atlanta and its suburbs, the regional cities, the
@@ -18,16 +19,18 @@
  *
  *   npm run db:seed
  *
- * Only the office and Andrea Anderegg's profile are real. Every listing, every
- * other agent and every other brokerage is a sample for demonstration, and
- * both demo data sources carry a disclaimer saying so (shown in the footer).
+ * The office and the agents are real; their profiles hold only what Adams
+ * Realty provided. Every listing (the ones credited to our agents too), lead
+ * and saved search, and every other brokerage, is a sample for demonstration,
+ * and both demo data sources carry a disclaimer saying so (shown in the
+ * footer).
  *
  * Listings are written through the same `upsertListing` pipeline the MLS
  * sync uses, so seeded data exercises the production code path.
  */
 import "dotenv/config";
 import { hashPassword } from "better-auth/crypto";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   accounts,
@@ -35,12 +38,13 @@ import {
   dataSources,
   inquiries,
   listingEvents,
+  listings,
   offices,
   savedListings,
   savedSearches,
   users,
 } from "@/db/schema";
-import { addDays, addOfficeTime, marketToday } from "@/lib/leads/working-hours";
+import { addDays, marketToday } from "@/lib/leads/working-hours";
 import { upsertListing, type PersistSource } from "@/lib/listings/persist";
 import { refreshPlaces } from "@/lib/listings/places";
 import {
@@ -48,6 +52,7 @@ import {
   getFeaturedListings,
   getLocationSuggestions,
   getPlacesIndex,
+  getSimilarListings,
   getTopCities,
 } from "@/lib/listings/queries";
 import { slugify } from "@/lib/listings/slug";
@@ -102,8 +107,17 @@ if (process.env.NODE_ENV === "production" && !process.argv.includes("--force")) 
 
 /** Adams Realty's Georgia MLS office ID (matches `site.mls.officeId`). */
 const OFFICE_MLS_ID = "ADAM01";
+/** Our agents are real; the listings, including the ones credited to them, are not. */
 const DEMO_DISCLAIMER =
-  "Demo data: every listing on this site, and every agent profile except Andrea Anderegg's, is a fictional sample for demonstration only. In production this notice is replaced by the IDX disclaimer Georgia MLS requires.";
+  "Demo data: every listing on this site, including those credited to our agents, is a fictional sample for demonstration only. In production this notice is replaced by the IDX disclaimer Georgia MLS requires.";
+/**
+ * Demo-only logins for AGENTS[1] and AGENTS[2] (tests and docs use them). Not
+ * the agents' emails: their profiles use the shared office inbox (their direct
+ * emails aren't known), and a login's email is unique. Their morning summaries
+ * are off: an agent's summary goes to the profile's email, here the office's
+ * real inbox, and would describe the seed's fictional leads.
+ */
+const DEMO_AGENT_LOGINS = ["agent@adamsrealty.example", "agent2@adamsrealty.example"] as const;
 
 // Deterministic PRNG so every developer gets the same data.
 let state = 20260925;
@@ -717,11 +731,18 @@ async function createLogin(input: {
   email: string;
   role: "user" | "agent" | "admin";
   password: string;
+  /** The morning lead summary (default on, like a new staff login's). */
+  leadDigest?: boolean;
 }) {
   const id = crypto.randomUUID();
-  await db
-    .insert(users)
-    .values({ id, name: input.name, email: input.email, emailVerified: true, role: input.role });
+  await db.insert(users).values({
+    id,
+    name: input.name,
+    email: input.email,
+    emailVerified: true,
+    role: input.role,
+    leadDigest: input.leadDigest ?? true,
+  });
   await db.insert(accounts).values({
     id: crypto.randomUUID(),
     accountId: id,
@@ -748,7 +769,7 @@ async function main() {
       slug: "main-office",
       name: "Adams Realty, Inc.",
       phone: "(706) 246-0053",
-      // PLACEHOLDER: the firm's public inbox isn't known yet (see src/config/site.ts).
+      // The firm's public inbox (Andrea's; see src/config/site.ts).
       email: "contracts.adamsrealty@gmail.com",
       addressLine1: "69 Mill Street",
       city: "Royston",
@@ -766,11 +787,13 @@ async function main() {
     role: "admin",
     password,
   });
-  const agentUserIds = [
-    adminId,
-    await createLogin({ name: AGENTS[1].name, email: AGENTS[1].email, role: "agent", password }),
-    await createLogin({ name: AGENTS[2].name, email: AGENTS[2].email, role: "agent", password }),
-  ];
+  const agentUserIds = [adminId];
+  for (const [n, email] of DEMO_AGENT_LOGINS.entries()) {
+    const agent = AGENTS[n + 1];
+    agentUserIds.push(
+      await createLogin({ name: agent.name, email, role: "agent", password, leadDigest: false }),
+    );
+  }
   const buyerId = await createLogin({
     name: "Jordan Buyer",
     email: "buyer@example.com",
@@ -791,7 +814,7 @@ async function main() {
         phone: a.phone,
         bio: a.bio,
         photoUrl: a.photoUrl,
-        // Never invent license numbers: unknown for Andrea, meaningless for samples.
+        // Never invent license numbers: none has been provided.
         licenseNumber: null,
         mlsAgentId: a.mlsAgentId,
         specialties: a.specialties,
@@ -802,7 +825,6 @@ async function main() {
       })),
     )
     .returning();
-  const broker = agentRows[0];
   const agentIdsByMlsId = new Map(agentRows.map((a) => [a.mlsAgentId!, a.id]));
 
   const [manualSource, demoSource] = await db
@@ -835,37 +857,46 @@ async function main() {
   });
 
   const areaBySlug = new Map(AREAS.map((a) => [a.slug, a]));
-  const areaNamed = (name: string) => AREAS.find((a) => a.name === name)!;
+  const areaAt = (slug: string) => areaBySlug.get(slug)!;
   /**
-   * Our listings. Each sample agent starts with two in their own areas (one
-   * showing off their specialty); the rest follow the office's footprint and
-   * mostly go to Andrea, sometimes to a sample agent who works the area.
+   * Our listings, all in the Northeast Georgia areas the firm serves. The
+   * first eight show the range of property it handles (land near Carnesville,
+   * a house in Braselton, one on Lake Hartwell's shore, a commercial building
+   * in Gainesville, each followed by a listing in a town nearby); the rest
+   * follow the office's footprint (`ourWeight`). They're credited to the five
+   * agents in turn, broker first, so every profile and both demo agent logins
+   * have listings. No agent is picked by area: the seed never gives an agent
+   * service areas Adams Realty didn't provide (only Andrea's counties).
    */
-  const starters: Array<{
-    agent: (typeof agentRows)[number];
-    area: SeedArea;
-    type?: SeedPropertyType;
-    onWater?: boolean;
-  }> = agentRows.slice(1).flatMap((agent, n) => {
-    const specialty = [
-      { area: areaBySlug.get("carnesville")!, type: "land" as const },
-      { area: areaBySlug.get("braselton")!, type: "single_family" as const },
-      { area: areaBySlug.get("lake-hartwell")!, type: "single_family" as const, onWater: true },
-      { area: areaBySlug.get("gainesville")!, type: "commercial" as const },
-    ][n];
-    return [
-      { agent, ...specialty },
-      { agent, area: areaNamed(agent.serviceAreas[1] ?? agent.serviceAreas[0]) },
-    ];
-  });
+  const showcase: GenerateOptions[] = [
+    { area: areaAt("carnesville"), type: "land" },
+    { area: areaAt("danielsville") },
+    { area: areaAt("braselton"), type: "single_family" },
+    { area: areaAt("jefferson") },
+    { area: areaAt("lake-hartwell"), type: "single_family", onWater: true },
+    { area: areaAt("hartwell") },
+    { area: areaAt("gainesville"), type: "commercial" },
+    { area: areaAt("flowery-branch") },
+  ];
   const total = 180;
   const ourCount = 36;
-  const ourAreas = allocateAreas(ourCount - starters.length, (a) => a.ourWeight);
+  const ourAreas = allocateAreas(ourCount - showcase.length, (a) => a.ourWeight);
   const feedAreas = allocateAreas(total - ourCount, (a) => a.weight);
-  function agentFor(area: SeedArea) {
-    const local = agentRows.slice(1).filter((a) => a.serviceAreas.includes(area.name));
-    return local.length && chance(0.35) ? pick(local) : broker;
-  }
+  /** The agent credited with our `n`th listing: each of the five in turn. */
+  const agentFor = (n: number) => agentRows[n % agentRows.length];
+  /**
+   * The listings themselves are the same as before the team was real: the e2e
+   * suites are written against them (Royston's 10+ homes, Carnesville with
+   * nothing to rent, ...; assertStatewideFixtures checks those). The old seed
+   * picked the agent for each of our listings after the showcase with one
+   * PRNG draw, or two when a sample agent got it, in every area but Royston,
+   * Franklin Springs and Toccoa. Those draws stay, their results unused, so
+   * the sequence, and every listing after them, doesn't move.
+   */
+  const OLD_BROKER_ONLY_AREAS = new Set(["royston", "franklin-springs", "toccoa"]);
+  const keepOldAgentDraws = (area: SeedArea) => {
+    if (!OLD_BROKER_ONLY_AREAS.has(area.slug) && chance(0.35)) rand();
+  };
 
   console.info("Generating listings…");
   const listingIds: string[] = [];
@@ -874,24 +905,26 @@ async function main() {
 
   for (let i = 0; i < total; i++) {
     const ours = i < ourCount;
-    const starter = starters[i];
-    const plan = starter ?? {
-      area: ours ? ourAreas[i - starters.length] : feedAreas[i - ourCount],
-    };
+    const plan = ours
+      ? (showcase[i] ?? { area: ourAreas[i - showcase.length] })
+      : { area: feedAreas[i - ourCount] };
     const { listing, area, priceDropFrom } = generateListing(i + 1, plan);
     perArea.set(area.slug, (perArea.get(area.slug) ?? 0) + 1);
-    const agent = starter?.agent ?? (ours ? agentFor(area) : null);
+    // A sale credited to a real person would be an invented record: our sold demo
+    // listings credit only the office.
+    const agent = ours && listing.status !== "closed" ? agentFor(i) : null;
+    if (ours && i >= showcase.length) keepOldAgentDraws(area);
     // Most of our listings arrive through the MLS feed like they would in
     // production (matched by office and agent MLS IDs); the rest are manual
     // (pocket listings, rentals, coming soon).
     const viaFeed = ours && i % 3 !== 0;
-    if (agent) {
-      listing.listAgentName = agent.name;
-      listing.listAgentEmail = agent.email;
-      listing.listAgentPhone = agent.phone;
+    if (ours) {
       listing.listOfficeName = "Adams Realty, Inc.";
       listing.listOfficeMlsId = OFFICE_MLS_ID;
-      listing.listAgentMlsId = agent.mlsAgentId;
+      listing.listAgentName = agent?.name ?? null;
+      listing.listAgentEmail = agent?.email ?? null;
+      listing.listAgentPhone = agent?.phone ?? null;
+      listing.listAgentMlsId = agent?.mlsAgentId ?? null;
     }
     const { id } = await db.transaction((tx) =>
       upsertListing(
@@ -899,7 +932,7 @@ async function main() {
         toSource(ours && !viaFeed ? manualSource : demoSource),
         listing,
         ours && !viaFeed
-          ? { listAgentId: agent!.id, isFeatured: listing.status === "active" && i % 3 === 0 }
+          ? { listAgentId: agent?.id ?? null, isFeatured: listing.status === "active" && i % 3 === 0 }
           : { agentIdsByMlsId, isFeatured: ours && listing.status === "active" && i % 4 === 1 },
       ),
     );
@@ -917,8 +950,9 @@ async function main() {
   }
 
   console.info("Adding leads and saved homes…");
+  // Fictional shoppers. None shares a name with anyone on the (real) team.
   const leadNames = [
-    "Avery Thompson",
+    "Hannah Price",
     "Luis Hernandez",
     "Grace Kim",
     "Noah Williams",
@@ -952,18 +986,10 @@ async function main() {
         tourType: type === "tour" ? ("in_person" as const) : null,
         source: type === "valuation" ? "sell" : "listing",
         createdAt: daysAgo(i * 0.7),
-        // The contacted and qualified leads were answered 40 minutes and 3 hours (of
-        // office time) after they arrived, for the broker's reply-time table. Never on Andrea's own leads:
-        // a reply time is a statistic about her, and hers must be real.
-        firstContactedAt:
-          (i === 2 || i === 3) && agentId !== broker.id
-            ? new Date(
-                Math.min(
-                  addOfficeTime(daysAgo(i * 0.7), (i === 2 ? 40 : 180) * 60_000).getTime(),
-                  NOW.getTime(),
-                ),
-              )
-            : null,
+        // No first-contact times, so the broker's reply-time table starts empty: a
+        // reply time is a statistic about an agent, every agent is real, and theirs
+        // must be real too. Marking a lead contacted records one.
+        firstContactedAt: null,
         // A follow-up due today and one tomorrow ("Needs attention", the morning email).
         followUpOn: i === 3 ? marketToday(NOW) : i === 2 ? addDays(marketToday(NOW), 1) : null,
       };
@@ -1132,7 +1158,8 @@ async function main() {
   }
   // The firm's own listings in each hidden status (FIRM_HIDDEN_FIXTURES): entered
   // by hand, so only the dashboard shows them. Last, so no other row's draw moves.
-  const daniel = agentRows.find((a) => a.email === "daniel@adamsrealty.example")!;
+  // Credited to AGENTS[1], whose demo login (agent@) the dashboard tests use.
+  const demoAgent = agentRows[1];
   const carnesville = areaBySlug.get("carnesville")!;
   for (const [k, f] of FIRM_HIDDEN_FIXTURES.entries()) {
     const key =
@@ -1162,17 +1189,17 @@ async function main() {
       sourceModifiedAt: changed,
       addressLine1: f.street,
       unitNumber: null,
-      listAgentName: daniel.name,
-      listAgentEmail: daniel.email,
-      listAgentPhone: daniel.phone,
+      listAgentName: demoAgent.name,
+      listAgentEmail: demoAgent.email,
+      listAgentPhone: demoAgent.phone,
       listOfficeName: "Adams Realty, Inc.",
       listOfficeMlsId: OFFICE_MLS_ID,
-      listAgentMlsId: daniel.mlsAgentId,
+      listAgentMlsId: demoAgent.mlsAgentId,
       openHouses: [],
     } satisfies Partial<typeof listing>);
     await db.transaction((tx) =>
       upsertListing(tx, toSource(manualSource), listing, {
-        listAgentId: daniel.id,
+        listAgentId: demoAgent.id,
         isFeatured: false,
       }),
     );
@@ -1200,8 +1227,9 @@ async function main() {
   );
   console.info("Demo logins (password: %s)", password);
   console.info("  admin   admin@adamsrealty.example   (Andrea Anderegg, broker)");
-  console.info("  agent   daniel@adamsrealty.example  (sample agent)");
-  console.info("  agent   priya@adamsrealty.example   (sample agent)");
+  for (const [n, email] of DEMO_AGENT_LOGINS.entries()) {
+    console.info("  agent   %s (%s)", email.padEnd(27), AGENTS[n + 1].name);
+  }
   console.info("  buyer   buyer@example.com\n");
 }
 
@@ -1374,6 +1402,37 @@ async function assertStatewideFixtures() {
       (await buy({ q: f.query, minPrice: f.price, maxPrice: f.price })) === 1,
     ]);
   }
+  // Northeast Georgia fixtures the e2e suites rely on: Royston fills a results list
+  // (e2e/back-nav-suite.ts scrolls to its 10th card), Carnesville has homes for sale and
+  // nothing to rent (the no-results tests), and the home e2e/photos-suite.ts opens, the
+  // newest company home for sale with 6+ photos, has similar homes.
+  const [photoHome] = await db
+    .execute<{ id: string }>(
+      sql`select l.id from listings l
+           where l.status = 'active' and l.removed_at is null and not l.idx_hidden
+             and l.transaction_type = 'sale' and l.property_type = 'single_family'
+             and l.latitude is not null and not l.hide_address and l.is_company_listing
+             and (select count(*) from listing_media m
+                   where m.listing_id = l.id and m.kind = 'photo') >= 6
+           order by l.list_date desc, l.id limit 1`,
+    )
+    .then((r) => r.rows);
+  const [photoRow] = photoHome
+    ? await db.select().from(listings).where(eq(listings.id, photoHome.id))
+    : [];
+  checks.push(
+    ["/homes?q=Royston has at least 10 results", (await buy({ q: "Royston" })) >= 10],
+    [
+      "/homes?q=Royston&beds=2 has at least 10 results",
+      (await buy({ q: "Royston", beds: 2 })) >= 10,
+    ],
+    ["Carnesville has homes for sale", (await buy({ q: "Carnesville" })) > 0],
+    ["Carnesville has nothing to rent", (await buy({ q: "Carnesville", mode: "rent" })) === 0],
+    [
+      "the photos test's home has similar homes",
+      !!photoRow && (await getSimilarListings(photoRow)).length > 0,
+    ],
+  );
   const failed = checks.filter(([, ok]) => !ok).map(([label]) => label);
   if (failed.length) throw new Error(`Seed fixtures missing:\n- ${failed.join("\n- ")}`);
 }

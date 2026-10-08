@@ -33,14 +33,19 @@ Demo logins (password `adams-demo-2026`, override with `SEED_PASSWORD`):
 | Role  | Email                        | Who                                  | Can…                                                 |
 | ----- | ---------------------------- | ------------------------------------ | ---------------------------------------------------- |
 | admin | `admin@adamsrealty.example`  | Andrea Anderegg (broker), demo login | everything: all listings, lead routing, roles, feeds |
-| agent | `daniel@adamsrealty.example` | a fictional sample agent             | manage own listings and leads                        |
+| agent | `agent@adamsrealty.example`  | Emily Cooper (agent), demo login     | manage own listings and leads                        |
+| agent | `agent2@adamsrealty.example` | Avery McGarity (agent), demo login   | manage own listings and leads                        |
 | buyer | `buyer@example.com`          | a fictional home shopper             | save homes and searches, request tours               |
 
-**What's real in the demo data.** Andrea Anderegg's agent profile holds only facts from her
-public profiles: name, title, phone, Georgia MLS agent ID and listed specialties. Everything else
-in the seed (the other agents, every listing, lead and saved search) is fictional sample data
-for demonstration only; the demo feed's disclaimer in the footer says so. The company details
-in `src/config/site.ts` (firm name, office address and phone, Georgia MLS office ID) are real.
+**What's real in the demo data.** The team: Adams Realty, Inc.'s five agents (Andrea Anderegg,
+broker; Emily Cooper; Avery McGarity; Erika Lane; Anitra Thompson) are real people, and their
+profiles hold only what Adams Realty provided (for Andrea, also facts from her public profiles).
+Where an agent's direct phone or email isn't known, the office's is shown; a missing bio, photo,
+area or language is left out, never filled in. The demo login addresses are demo-only. Everything
+else in the seed (every listing, including the ones credited to our agents, and every lead and
+saved search) is fictional sample data for demonstration only; the demo feed's disclaimer in the
+footer says so. The company details in `src/config/site.ts` (firm name, office address, phone and
+email, office hours, GREC firm license, Georgia MLS office ID and DMCA designated agent) are real.
 
 ## Scripts
 
@@ -66,24 +71,27 @@ listings' photos to the fake host in your local database and puts them back).
 
 ## Before launch: things only Adams Realty can provide
 
-1. **Company details** in `src/config/site.ts` still marked `PLACEHOLDER`:
-   - the company email (shown on every page, and where unassigned leads go unless
-     `LEADS_INBOX` is set),
-   - the GREC firm license number (hidden until set),
-   - office hours (hidden until set).
+1. **Company details** in `src/config/site.ts`: done. The firm name, office address
+   (69 Mill Street, Royston), phone ((706) 246-0053) and email are real, and Adams Realty
+   provided the office hours, the GREC firm license number (6079) and the DMCA designated
+   agent (registration DMCA-1081724, published at `/terms#copyright`) on 2026-10-02. Georgia
+   advertising rules require the firm name and phone number, and the footer shows both on
+   every page.
 
-   The firm name, office address (69 Mill Street, Royston) and phone ((706) 246-0053) are
-   already real. Georgia advertising rules require the firm name and phone number, and the
-   footer shows both on every page.
-
-2. **Andrea's profile.** Her bio, headshot, email and years in the business are unknown, so
-   the demo shows a short, neutral bio and her initials. Add them in _Dashboard → Agents_.
-3. **Your team.** Remove the fictional sample agents. Invite each real agent to sign up,
-   then in _Dashboard → Users & roles_ set their role to Agent and link their profile.
+2. **The rest of the team's profiles.** Andrea's headshot is in; the other four agents show
+   their initials until their photos arrive. Emily Cooper and Avery McGarity have no bio yet.
+   The four agents' direct phones and emails aren't known, so their profiles show the
+   office's. No profile sets a years-in-real-estate figure (Erika's and Anitra's bios say when
+   they started; the site doesn't turn that into a number), so that tile stays off. Add what
+   arrives in _Dashboard → Agents_ (and in `scripts/seed-data.ts` for the demo).
+3. **Agent logins.** The demo's agent logins are demo-only. In production, invite each agent
+   to sign up, then in _Dashboard → Users & roles_ set their role to Agent and link their
+   profile.
 4. **Your MLS feed** (see below). Until then the site shows fictional demo listings.
    Launch on a fresh database without `SEED_DEMO_DATA`, so no demo data goes live. While
-   `SEED_DEMO_DATA=1`, demo-data mode keeps search engines off the sample listings, guides,
-   places and agents; `DEMO_DATA_MODE=off` switches it off (HANDOFF.md, launch checklist).
+   `SEED_DEMO_DATA=1`, demo-data mode keeps search engines off the sample listings and the
+   guides, places and agent pages that show them; `DEMO_DATA_MODE=off` switches it off
+   (HANDOFF.md, launch checklist).
 5. **Photos.** The demo uses Unsplash images; real listings bring MLS photos.
 
 ## Connecting your MLS (IDX)
@@ -141,7 +149,11 @@ Vercel plus Neon (or Supabase) Postgres is the simplest setup:
 1. Import the repo into Vercel and add the environment variables from `.env.example`.
 2. Deploys run `npm run vercel-build`, which applies migrations before building. For a
    preview with demo data, set `SEED_DEMO_DATA=1` and `SEED_PASSWORD`; it seeds only an
-   empty database, and search engines are told to stay off the sample pages.
+   empty database, and search engines are told to stay off the sample pages. A demo database
+   seeded before the team became real keeps the old fictional sample agents until you reload
+   it yourself: run `npx tsx scripts/seed.ts --force` with that database's `DATABASE_URL` and
+   the same `SEED_PASSWORD`. That wipes everything on it, including its logins, leads and
+   saved homes, so never point it at a database with real sign-ups or inquiries.
 3. The crons in `vercel.json` run the MLS sync, the off-market purge (`?purge=1`, a separate
    purge-only run) and email alerts once a day, which is what Vercel's free (Hobby) plan
    allows; a sub-daily schedule fails the deployment there. The staff's 7 a.m. lead summary

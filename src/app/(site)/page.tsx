@@ -296,8 +296,8 @@ export default async function HomePage() {
               </LinkButton>
             }
           />
-          <div className="grid grid-cols-2 gap-6 lg:grid-cols-4">
-            {agents.slice(0, 4).map((a) => (
+          <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5">
+            {agents.slice(0, 5).map((a) => (
               <Link key={a.id} href={`/agents/${a.slug}`} className="group">
                 <div className="aspect-[4/5] overflow-hidden rounded-[var(--radius-card)] bg-sunken">
                   <Avatar

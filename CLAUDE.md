@@ -25,13 +25,17 @@ statements about the firm stay Northeast Georgia. See README.md for setup and AR
   uses `market`, never `coverage`. Never hard-code a town list: towns come from the listings
   (`getTopCities`, `/places`). Tours and "our agents" claims only in the firm's area
   (`isFirmArea`/`offersTours`). No "monthly cost" wording on the home page.
-  Placeholders there (email, GREC license, hours) are unknown — never invent them.
+  The company facts in `site.ts` are real (hours, GREC license 6079 and the DMCA agent were
+  provided by Adams Realty on 2026-10-02); anything not there is unknown — never invent it.
 - Georgia MLS IDX rules (ARCHITECTURE.md → "Georgia MLS display rules"): every public listing
   query starts from `publicListing()`/`publicConditions()` (`src/lib/listings/visibility.ts`),
   photos go through `allowedPhotos`, every listing display names the listing firm in `text-sm`,
   and the mapper never reads `EXCLUDED_FIELDS`.
-- Andrea Anderegg (broker) is a real person: her profile holds only facts from her public profiles.
-  Never invent her bio, experience, stats or photo. Other seeded agents and all listings are fictional.
+- All five seeded agents (`AGENTS` in `scripts/seed-data.ts`: Andrea Anderegg, broker; Emily Cooper;
+  Avery McGarity; Erika Lane; Anitra Thompson) are real people. Their profiles hold only facts Adams
+  Realty provided (and, for Andrea, her public profiles): never invent a bio, phone, email, photo,
+  experience, area, language or stat. Missing ones stay empty and the UI leaves them out. All
+  listings are fictional demo data.
 - Drizzle renders column refs unqualified inside `select({...})` fields — use explicit
   `"listings"."id"` in correlated subqueries there.
 - Responsive grids need an explicit `grid-cols-1` base so long nowrap text can't widen the page on mobile.

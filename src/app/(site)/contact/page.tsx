@@ -23,7 +23,7 @@ const SHORTCUTS = [
   {
     icon: UsersRound,
     title: "Find an agent",
-    body: "Browse our team and message an agent directly.",
+    body: "Browse our team and contact an agent from their profile.",
     href: "/agents",
   },
   {
@@ -38,7 +38,7 @@ const SHORTCUTS = [
 const NEXT_STEPS = [
   { title: "It reaches our office", body: "Your message goes to our team, not a call center." },
   { title: "We find the right agent", body: "Someone suited to what you need." },
-  { title: "They reply directly", body: `Your details stay with ${site.name} — never sold.` },
+  { title: "They get back to you", body: `Your details stay with ${site.name} — never sold.` },
 ];
 
 export default async function ContactPage() {

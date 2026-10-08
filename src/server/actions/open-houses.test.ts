@@ -59,16 +59,16 @@ const { addOpenHouse, deleteOpenHouse } = await import("./open-houses");
 
 const LISTING_ID = "3c35a2fa-1318-4963-bb42-42923d5e6a96";
 const OPEN_HOUSE_ID = "446d8255-d590-45b8-9b34-8f00f91a922b";
-const DANIEL = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const AGENT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const admin: Actor = { userId: "u-admin", role: "admin", agentId: null };
-const daniel: Actor = { userId: "u-daniel", role: "agent", agentId: DANIEL };
-const priya: Actor = { userId: "u-priya", role: "agent", agentId: "p" };
+const listingAgent: Actor = { userId: "u-agent", role: "agent", agentId: AGENT_ID };
+const otherAgent: Actor = { userId: "u-other", role: "agent", agentId: "p" };
 
 const listing = (over: Record<string, unknown> = {}) => ({
   id: LISTING_ID,
   slug: "12-oak-st-decatur-ga-30030-abc",
   status: "active",
-  listAgentId: DANIEL,
+  listAgentId: AGENT_ID,
   removedAt: null,
   sourceKind: "manual",
   ...over,
@@ -91,7 +91,7 @@ beforeEach(() => {
   // Friday, Sep 25 2026, 8am Eastern.
   vi.setSystemTime(new Date("2026-09-25T12:00:00Z"));
   Object.assign(h.state, {
-    actor: daniel,
+    actor: listingAgent,
     selects: [],
     inserted: [],
     deleted: 0,
@@ -136,7 +136,7 @@ describe("addOpenHouse", () => {
     await addOpenHouse(LISTING_ID, input());
     expect(h.state.audits).toEqual([
       expect.objectContaining({
-        actorId: "u-daniel",
+        actorId: "u-agent",
         action: "listing.open_house.add",
         entityType: "listing",
         entityId: LISTING_ID,
@@ -222,7 +222,7 @@ describe("addOpenHouse", () => {
   });
 
   it("forbids other agents, MLS listings and signed-out visitors", async () => {
-    h.state.actor = priya;
+    h.state.actor = otherAgent;
     h.state.selects = [[listing()]];
     await expect(addOpenHouse(LISTING_ID, input())).rejects.toThrow("permission");
 
@@ -274,7 +274,7 @@ describe("deleteOpenHouse", () => {
   });
 
   it("forbids other agents", async () => {
-    h.state.actor = priya;
+    h.state.actor = otherAgent;
     h.state.selects = [[row], [listing()]];
     await expect(deleteOpenHouse(OPEN_HOUSE_ID)).rejects.toThrow("permission");
     expect(h.state.deleted).toBe(0);

@@ -107,7 +107,7 @@ const ROUTING = [
     body: "Our agent who listed the home, the agent you picked, or our office, which assigns one of our agents.",
   },
   {
-    title: "That agent replies directly",
+    title: "That agent gets back to you",
     body: `Your details stay inside ${site.name}. They're never sold, and never shared for advertising.`,
   },
 ];
@@ -281,16 +281,16 @@ export default async function AboutPage() {
             <SectionHeading
               eyebrow="Our team"
               title="The people you'll work with"
-              description="Meet the agents behind our listings, and reach any of them directly from their profile."
+              description="Meet the agents behind our listings, and contact any of them from their profile."
               action={
                 <LinkButton href="/agents" variant="secondary">
-                  {agents.length > 4 ? `Meet all ${agents.length} agents` : "Meet the team"}{" "}
+                  {agents.length > 5 ? `Meet all ${agents.length} agents` : "Meet the team"}{" "}
                   <ArrowRight />
                 </LinkButton>
               }
             />
-            <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:gap-6 lg:grid-cols-4">
-              {agents.slice(0, 4).map((a) => (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 sm:gap-6 lg:grid-cols-5">
+              {agents.slice(0, 5).map((a) => (
                 <Link key={a.id} href={`/agents/${a.slug}`} className="group min-w-0">
                   <div className="aspect-[4/5] overflow-hidden rounded-[var(--radius-card)] bg-sunken">
                     <Avatar
@@ -315,7 +315,7 @@ export default async function AboutPage() {
 
       <ContactCta
         title="Questions? Talk to a real person."
-        body={`Whether you're just starting to look or ready to list, a ${site.name} agent is happy to help — no pressure and no obligation.`}
+        body={`Whether you're just starting to look or ready to list, one of our agents is happy to help — no pressure and no obligation.`}
       />
     </>
   );

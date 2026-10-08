@@ -5,14 +5,14 @@ Status as of the end of the cloud session. Everything is on GitHub, on branch
 
 ## 1. Where things stand
 
-| Area                     | Status                                                                                                                                                                                                                                                                                                                                                                                        |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Desktop site**         | ✅ Done. The branch includes: search with map; property pages; saved homes and searches; email alerts; accounts; broker/agent dashboard (listings, open houses, photos, leads with notes and CSV export, agent profiles, users and roles, MLS feed health); about, contact, privacy, terms, accessibility and fair-housing pages; neighborhood guides.                                        |
-| **Real company details** | ✅ Adams Realty, Inc., 69 Mill Street, Royston, GA 30662, (706) 246-0053, contracts.adamsrealty@gmail.com, Georgia MLS office `ADAM01`.                                                                                                                                                                                                                                                       |
-| **Andrea Anderegg**      | ✅ Broker profile with her headshot (`public/team/andrea-anderegg.webp`), email, direct line (850) 572-3287, and MLS agent ID `ANDEREGGAA`. Her bio is a neutral placeholder until she provides one.                                                                                                                                                                                          |
-| **Sample market**        | ✅ Fictional listings across Georgia: Adams Realty's own in Northeast Georgia (Franklin, Hart, Madison, Stephens, Jackson, Hall and Gwinnett counties: homes, Lake Hartwell property, farms and land, and a **Commercial** type), other brokerages' statewide (Atlanta, Savannah, Athens, Macon and more). Every listing, and every agent other than Andrea, is fake, and the footer says so. |
-| **Checks on the branch** | ✅ Lint, typecheck, 298 unit tests, 22 end-to-end tests and the production build all pass.                                                                                                                                                                                                                                                                                                    |
-| **Mobile app (PWA)**     | 🟡 Designed and started, not finished. See section 4.                                                                                                                                                                                                                                                                                                                                         |
+| Area                     | Status                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Desktop site**         | ✅ Done. The branch includes: search with map; property pages; saved homes and searches; email alerts; accounts; broker/agent dashboard (listings, open houses, photos, leads with notes and CSV export, agent profiles, users and roles, MLS feed health); about, contact, privacy, terms, accessibility and fair-housing pages; neighborhood guides.                                                                   |
+| **Real company details** | ✅ Adams Realty, Inc., 69 Mill Street, Royston, GA 30662, (706) 246-0053, contracts.adamsrealty@gmail.com, Georgia MLS office `ADAM01`; office hours (Mon–Fri, 9 a.m.–5 p.m.), GREC firm license 6079 and DMCA designated agent (DMCA-1081724), provided on 2026-10-02.                                                                                                                                                  |
+| **The team**             | ✅ Adams Realty's five real agents. Andrea Anderegg (broker): headshot (`public/team/andrea-anderegg.webp`), email, direct line (850) 572-3287, MLS agent ID `ANDEREGGAA` and her own bio. Emily Cooper, Avery McGarity, Erika Lane and Anitra Thompson: names, titles and MLS agent IDs, plus Erika's and Anitra's bios; they use the office phone and email and show initials until their photos arrive.               |
+| **Sample market**        | ✅ Fictional listings across Georgia: Adams Realty's own in Northeast Georgia (Franklin, Hart, Madison, Stephens, Jackson, Hall and Gwinnett counties: homes, Lake Hartwell property, farms and land, and a **Commercial** type), credited to the five agents in turn, and other brokerages' statewide (Atlanta, Savannah, Athens, Macon and more). Every listing is fake (the agents are real), and the footer says so. |
+| **Checks on the branch** | ✅ Lint, typecheck, 298 unit tests, 22 end-to-end tests and the production build all pass.                                                                                                                                                                                                                                                                                                                               |
+| **Mobile app (PWA)**     | 🟡 Designed and started, not finished. See section 4.                                                                                                                                                                                                                                                                                                                                                                    |
 
 ## 2. Run it on your computer
 
@@ -34,8 +34,10 @@ npm run dev                       # open http://localhost:3000
 Logins (password `adams-demo-2026`):
 
 - `admin@adamsrealty.example` is Andrea's broker login, with the full dashboard.
-- `daniel@adamsrealty.example` is a sample agent.
-- `buyer@example.com` is a home shopper.
+- `agent@adamsrealty.example` and `agent2@adamsrealty.example` are demo logins for Emily Cooper's
+  and Avery McGarity's agent profiles (demo-only addresses: their direct emails aren't known, so
+  their profiles show the office inbox).
+- `buyer@example.com` is a fictional home shopper.
 
 Real photos and the map load on your machine. They were blank in the cloud screenshots only
 because that sandbox blocked those servers.
@@ -50,6 +52,11 @@ because that sandbox blocked those servers.
    - `SEED_PASSWORD`: a password for the test logins
 3. Deploy. Then **Storage → Create Database → Neon** and connect it to the project.
 4. **Redeploy.** The build creates the tables and loads the sample data (`scripts/vercel-build.mjs`).
+   The build seeds only an empty database. A test link set up before the team became real keeps
+   the old seed's fictional agents until its database is reloaded by hand (README → "Deploying":
+   `npx tsx scripts/seed.ts --force` with that database's connection string). Reloading wipes
+   everything on it, test logins, leads and saved homes included, so only do it on a demo
+   database nobody real has signed up to or sent an inquiry through.
 
 Every later push gets its own preview link automatically.
 
@@ -125,9 +132,14 @@ Use your model table: Opus High for the work packages, and Xhigh if one gets stu
 - [ ] **Georgia MLS IDX feed.** Ask Georgia MLS for an IDX data feed (RESO Web API) for office
       `ADAM01`, then follow README → "Connecting your MLS". Andrea's listings then appear
       automatically, credited to her.
-- [ ] **GREC firm license number** and **office hours**. Set them in `src/config/site.ts`.
-- [ ] **Andrea's bio** (a few sentences). Edit it in Dashboard → My profile, or in `scripts/seed-data.ts`.
-- [ ] **Other agents.** Remove the sample agents, or send real names, photos and bios.
+- [x] **GREC firm license number** and **office hours.** Done: license 6079 and Mon–Fri,
+      9 a.m.–5 p.m., provided on 2026-10-02 (`src/config/site.ts`).
+- [x] **Andrea's bio.** Done: the bio she provided (`scripts/seed-data.ts`).
+- [x] **The team.** Done: the fictional sample agents are gone, replaced by the five real agents
+      (`AGENTS` in `scripts/seed-data.ts`). Each profile holds only what Adams Realty provided.
+- [ ] **Agent photos and bios still to come:** photos of Emily Cooper, Avery McGarity, Erika Lane
+      and Anitra Thompson (their profiles show initials until then), and bios for Emily and
+      Avery (their profiles show none). Add them in Dashboard → Agents and `scripts/seed-data.ts`.
 - [ ] **Legal review** of `/privacy` and `/terms` (they are drafts).
 - [ ] **Email sending.** Create a [Resend](https://resend.com) account, verify your domain, and set
       `RESEND_API_KEY`, `EMAIL_FROM` and `LEADS_INBOX`. Until then no emails are sent (the
@@ -165,8 +177,10 @@ Use your model table: Opus High for the work packages, and Xhigh if one gets stu
       agreement asks for a _dedicated_ email: create one (e.g. listings@ your domain) if you
       prefer, and give Georgia MLS the page's address. Fix or remove a reported listing within
       one business day.
-- [ ] **DMCA agent.** Register Adams Realty, Inc.'s DMCA agent at copyright.gov/dmca-directory
-      (IDX agreement §11).
+- [x] **DMCA agent** (IDX agreement §11). Done: Andrea A. Anderegg is Adams Realty, Inc.'s
+      designated agent, U.S. Copyright Office registration **DMCA-1081724** (effective
+      2026-10-02). `site.dmca` holds the details; `/terms#copyright` publishes them with what a
+      notice must include, linked from the footer ("Copyright (DMCA)").
 - [ ] **Check the feed's field names.** When feed access arrives, confirm the attribution
       contact phone/email, Variable Compensation and compensation fields match
       `attribution()` and `compensation()` in `src/lib/mls/reso/mapper.ts`, and that the feed
@@ -176,8 +190,9 @@ Use your model table: Opus High for the work packages, and Xhigh if one gets stu
       See README → "Connecting your MLS".
 - [ ] **Production database without demo data.** Use a fresh database with `SEED_DEMO_DATA` unset,
       run migrations, and create Andrea's real login by signing up; an admin can then set roles.
+      Add the five agent profiles in Dashboard → Agents, from `AGENTS` in `scripts/seed-data.ts`.
 - [ ] **Launch day: switch off demo-data mode, then invite Google and Bing.** While the site shows
-      sample listings and agents, it tells search engines to stay away from search, listing, area,
+      sample listings, it tells search engines to stay away from search, listing, area,
       places and agent pages (`noindex`, `robots.txt` and the sitemaps; `src/lib/demo-mode.ts`).
       It is on wherever `SEED_DEMO_DATA=1`. Once the real MLS listings are live: set
       `DEMO_DATA_MODE=off` in Vercel (or remove `SEED_DEMO_DATA`) and redeploy. Check that

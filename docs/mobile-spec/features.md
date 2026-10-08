@@ -474,7 +474,7 @@ In the phone variant, /dashboard/leads renders cards instead of the table. Each 
 
 ?focus=<id> behavior: getLeads fetches the focused lead even when the status tab excludes it. The lead renders first with a ring and is scrolled into view with {block: 'center'} (cards and the desktop table alike).
 
-Every lead-controls select (status, agent, role, agent-profile link) awaits its action and checks res.ok. The value is controlled, with an optimistic update, rollback plus an error toast on failure, and a success toast ('Assigned to Daniel').
+Every lead-controls select (status, agent, role, agent-profile link) awaits its action and checks res.ok. The value is controlled, with an optimistic update, rollback plus an error toast on failure, and a success toast ('Assigned to Emily').
 
 Sizing: h-8 text-xs on fine pointers; pointer-coarse:h-11 pointer-coarse:text-base on touch.
 

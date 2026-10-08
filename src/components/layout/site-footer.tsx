@@ -52,6 +52,7 @@ const columns = (cities: string[]): { title: string; links: FooterLink[] }[] => 
       { label: "Fair housing", href: "/fair-housing" },
       { label: "Privacy", href: "/privacy" },
       { label: "Terms of use", href: "/terms" },
+      { label: "Copyright (DMCA)", href: "/terms#copyright" },
       { label: "Accessibility", href: "/accessibility" },
     ],
   },

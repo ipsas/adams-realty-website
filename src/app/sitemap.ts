@@ -20,7 +20,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.2,
     })),
   ];
-  // Demo data (src/lib/demo-mode.ts): no search, places or (sample) agents.
+  // Demo data (src/lib/demo-mode.ts): no search, places or agent pages (they list sample listings).
   if (demoDataMode()) return firmPages;
   // Imported here so loading this module never needs a database.
   const { getSitemapAgents } = await import("@/lib/listings/sitemap-query");

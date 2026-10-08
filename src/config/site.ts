@@ -3,10 +3,11 @@
  * lives here, so rebranding or moving markets is a one-file change.
  *
  * The firm name, office address, office phone, broker and MLS IDs below are the
- * company's real, published details. Values marked PLACEHOLDER are not known
- * yet and must come from Adams Realty before launch. Georgia Real Estate
- * Commission rules require the firm name and firm phone number on advertising,
- * and the footer renders both on every page.
+ * company's real, published details; the office hours, GREC firm license and
+ * DMCA designated agent were provided by Adams Realty on 2026-10-02. Anything
+ * not set here is unknown: never invent it. Georgia Real Estate Commission
+ * rules require the firm name and firm phone number on advertising, and the
+ * footer renders both on every page.
  */
 export const site = {
   name: "Adams Realty",
@@ -23,10 +24,27 @@ export const site = {
     state: "GA",
     postalCode: "30662",
   },
-  /** PLACEHOLDER — office hours, e.g. "Mon–Fri 9am–5pm". Hidden everywhere while null. */
-  hours: null as string | null,
-  /** PLACEHOLDER — GREC firm license number, e.g. "H-12345". Hidden while null. */
-  brokerLicense: null as string | null,
+  /**
+   * Office hours, as provided by Adams Realty on 2026-10-02 ("Monday–Friday,
+   * 9 a.m.–5 p.m."). Null would hide them everywhere.
+   */
+  hours: "Mon–Fri, 9 a.m.–5 p.m." as string | null,
+  /** GREC firm license number, provided by Adams Realty on 2026-10-02. Null would hide it. */
+  brokerLicense: "6079" as string | null,
+  /**
+   * The firm's DMCA designated agent (IDX agreement §11), as registered with the
+   * U.S. Copyright Office and provided by Adams Realty on 2026-10-02. Published
+   * on /terms#copyright; the agent's mailing address is the office (`address`).
+   */
+  dmca: {
+    agent: "Andrea A. Anderegg",
+    /** U.S. Copyright Office DMCA Designated Agent Directory registration. */
+    registration: "DMCA-1081724",
+    /** When the designation took effect (YYYY-MM-DD). */
+    effective: "2026-10-02",
+    phone: "(850) 572-3287",
+    email: "contracts.adamsrealty@gmail.com",
+  },
   /** The firm's broker. Their agent profile (bio, photo, contact) lives in the database. */
   broker: { name: "Andrea Anderegg" },
   /**

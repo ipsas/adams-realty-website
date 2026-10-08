@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { signIn } from "./helpers";
 
 test("agents see only their own listings and no admin tools", async ({ page }) => {
-  await signIn(page, "daniel@adamsrealty.example", "/dashboard");
+  await signIn(page, "agent@adamsrealty.example", "/dashboard");
   await page.goto("/dashboard/listings");
   await expect(page.getByRole("link", { name: "Users & roles" })).toHaveCount(0);
   const agentCells = page.locator("tbody tr");

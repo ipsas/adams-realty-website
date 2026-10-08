@@ -104,7 +104,7 @@ ACCEPTANCE:
 - E2E_PROD=1 offline relaunch:
 - After visiting /homes?q=Decatur online and going offline, page.goto('/homes?source=pwa') shows an h1 containing 'Decatur', served from cache.
 - Going offline to an uncached listing shows 'You're offline', with a list that includes the cached listing's title.
-- User isolation: sign in as buyer and open 2 listings, then clear cookies and sign in as daniel@adamsrealty.example in the same context. On the next load the pages cache holds no HTML containing 'buyer@example.com', and a stubbed PushSubscription.unsubscribe was called before the caches were cleared.
+- User isolation: sign in as buyer and open 2 listings, then clear cookies and sign in as agent@adamsrealty.example in the same context. On the next load the pages cache holds no HTML containing 'buyer@example.com', and a stubbed PushSubscription.unsubscribe was called before the caches were cleared.
 - context.setOffline(true) shows 'You're offline' within 2s, and it disappears within 2s of reconnecting. The banner has role=status and no aria-live attribute, and /homes still has exactly one [aria-live=polite].
 - As buyer on pixel7 and iphone13, both /saved tabs are in the first viewport, and tapping Searches shows the saved searches without scrolling. In the phone variant each home row is at most 140px tall, its heart is at least 44x44, and it shows 'Listing by' when the listing has an office.
 - Pending removal:
@@ -223,7 +223,7 @@ Each tab is at least 44x44, the active tab has aria-current='page', and the bar'
 
 - Focusing a text input (the location pill or the /sign-up name) hides the tab bar. Focusing or toggling a checkbox, and focusing a select, does not.
 - After visiting /homes?q=Decatur&beds=3 (recorded by the foundation's recordSearch), going to / and tapping Search lands on /homes?q=Decatur&beds=3.
-- Signed out, tapping Saved lands on /sign-in?next=%2Fsaved&reason=saved, which shows the saved explainer text. Signed in as buyer, the Saved badge equals the number of saved homes and Alerts links to /saved?tab=searches. Signed in as daniel@adamsrealty.example, the third tab is 'Leads' and links to /dashboard/leads.
+- Signed out, tapping Saved lands on /sign-in?next=%2Fsaved&reason=saved, which shows the saved explainer text. Signed in as buyer, the Saved badge equals the number of saved homes and Alerts links to /saved?tab=searches. Signed in as agent@adamsrealty.example, the third tab is 'Leads' and links to /dashboard/leads.
 - At 1280x800 and at 800x1000 with a fine pointer, the tab bar is not visible, and the header shows the Buy/Rent/Sell/Agents links, Saved and the avatar or Sign in exactly as before.
 - Phone menu:
 - The header shows only the logo and the hamburger.
@@ -702,7 +702,7 @@ STEPS:
 - a controlled value with an optimistic update inside startTransition;
 - `const res = await action(...)`, then check res.ok;
 - on failure, roll back and show toast(message, {tone:'error'});
-- on success, show a toast ('Status: Contacted', 'Assigned to Daniel', 'Role updated');
+- on success, show a toast ('Status: Contacted', 'Assigned to Emily', 'Role updated');
 - selectClass becomes 'h-8 text-xs pointer-coarse:h-11 pointer-coarse:text-base' (md keeps its 16px).
   Server actions and authorization are unchanged.
 - P0 src/lib/dashboard/queries.ts: getLeads gains {includeId?}, which fetches that lead regardless of the status filter, within the actor's scope, and returns it first. Add getNewLeadCount(actor), which respects actor scoping; it is used in P1.
@@ -728,18 +728,18 @@ STEPS:
 - P2:
 - users/page.tsx: cards in the phone variant. Demoting an agent requires a confirmation Dialog ('Remove {name}'s agent access? Their listings and leads will be unassigned.') before changeUserRole.
 - listing-form.tsx: after a failed save, focus and scrollIntoView the first aria-invalid field, with scroll-margin that clears both bars.
-- e2e/mobile/staff.spec.ts, as daniel@adamsrealty.example (and admin@ for the selects): lead cards and hrefs, the focus deep link, status chips with persistence (reverted via withDb), offline rollback, select sizes and toasts, the bar, More-sheet history (P1), and a sweep of the dashboard routes (tagged @landscape) with axe.
+- e2e/mobile/staff.spec.ts, as agent@adamsrealty.example (and admin@ for the selects): lead cards and hrefs, the focus deep link, status chips with persistence (reverted via withDb), offline rollback, select sizes and toasts, the bar, More-sheet history (P1), and a sweep of the dashboard routes (tagged @landscape) with axe.
 
 ACCEPTANCE:
 
-- P0: signed in as daniel on pixel7 and iphone13, /dashboard/leads renders no visible table. Each lead card has:
+- P0: signed in as agent@adamsrealty.example on pixel7 and iphone13, /dashboard/leads renders no visible table. Each lead card has:
 - Call, Text and Email links, each at least 44x44, with hrefs starting 'tel:+1', 'sms:+1' and 'mailto:' respectively; the sms body contains 'Adams Realty';
 - the lead's name, type and relative time;
 - a link to /dashboard/leads/<id>.
 - P0: /dashboard/leads?status=contacted&focus=<id of a 'new' lead> renders that lead first with the ring, and after load its bounding box is inside the viewport. The same holds at 1280 for the highlighted table row.
 - P0: tapping 'Contacted' on a card shows the new state within 100ms and a toast with 'Undo', and the change persists after reload (checked with withDb, then reverted by the test). With the network offline, the chip rolls back to the original value and an error toast appears.
 - P0: every lead-controls select (status, agent, role, profile link) on coarse pointers computes a font-size of at least 16px and a height of at least 44px. A forced action failure (offline) resets the select to its previous value and shows an error toast; a success shows a toast. At 1280 with a fine pointer they keep h-8 text-xs. The existing 'admins cannot change their own role' and 'agents see only their own listings' tests pass unchanged.
-- P1: below lg a fixed dashboard bar with Overview, Leads, Listings and More is visible and site nav[data-tabbar] is hidden. The Leads badge equals getNewLeadCount for daniel. More opens a sheet; tapping Profile navigates, and one page.goBack() returns to the originating dashboard page.
+- P1: below lg a fixed dashboard bar with Overview, Leads, Listings and More is visible and site nav[data-tabbar] is hidden. The Leads badge equals getNewLeadCount for that agent. More opens a sheet; tapping Profile navigates, and one page.goBack() returns to the originating dashboard page.
 - P1: /dashboard, /dashboard/leads, /dashboard/leads/<id>, /dashboard/listings, /dashboard/listings/<id>, /dashboard/agents and /dashboard/profile show:
 - no horizontal overflow on pixel7, iphone13, iphone13-landscape and ipad-mini;
 - the editor's sticky save bar bottom at or above the dashboard bar's top;

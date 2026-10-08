@@ -274,13 +274,13 @@ export function limitsSpamSuite(test: typeof baseTest, { phone }: { phone: boole
       const ip = testIp();
       await page.setExtraHTTPHeaders({ "x-forwarded-for": ip });
       await pagesUsedUp(ip);
-      await signIn(page, "daniel@adamsrealty.example", "/dashboard");
+      await signIn(page, "agent@adamsrealty.example", "/dashboard");
       expect((await page.goto("/homes"))?.status()).toBe(200);
       const staffCounters = await withDb((db) =>
         db
           .query(
             "select key from rate_limits where key like 'account:%' and key like '%' || (select id from users where email = $1)",
-            ["daniel@adamsrealty.example"],
+            ["agent@adamsrealty.example"],
           )
           .then((r) => r.rowCount),
       );

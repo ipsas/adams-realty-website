@@ -19,7 +19,9 @@ import {
  * covered by the database tests (src/lib/leads/*.db.test.ts) with the mailer swapped out.
  */
 
-const DANIEL = "daniel@adamsrealty.example";
+/** The seed's demo agent login, linked to Emily Cooper's profile (scripts/seed.ts). */
+const AGENT = "agent@adamsrealty.example";
+const AGENT_NAME = "Emily Cooper";
 const ADMIN = "admin@adamsrealty.example";
 const TZ = "America/New_York";
 
@@ -33,15 +35,15 @@ type LeadRow = {
   followUpOn?: string;
 };
 
-/** Inserts leads for Daniel; returns their ids in order. */
-async function danielLeads(rows: LeadRow[]): Promise<string[]> {
+/** Inserts leads for the demo agent; returns their ids in order. */
+async function agentLeads(rows: LeadRow[]): Promise<string[]> {
   return withDb(async (db) => {
     const ids: string[] = [];
     for (const r of rows) {
       const res = await db.query<{ id: string }>(
         `insert into inquiries (type, status, source, name, email, agent_id, created_at, tour_at, follow_up_on)
          values ($1, $2, 'contact', $3, $4,
-           (select id from agents where email = $5),
+           (select a.id from agents a join users u on u.id = a.user_id where u.email = $5),
            ${r.createdAt ?? "now()"}, ${r.tourAt ?? "null"}, ${r.followUpOn ?? "null"})
          returning id`,
         [
@@ -49,7 +51,7 @@ async function danielLeads(rows: LeadRow[]): Promise<string[]> {
           r.status ?? "new",
           r.name,
           `${r.name.toLowerCase().replace(/\W+/g, ".")}@example.com`,
-          DANIEL,
+          AGENT,
         ],
       );
       ids.push(res.rows[0].id);
@@ -95,7 +97,7 @@ export function leadFollowupSuite(test: typeof baseTest, { phone }: { phone: boo
       page,
     }) => {
       const s = stamp();
-      const ids = await danielLeads([
+      const ids = await agentLeads([
         { name: `E2E Waiting ${s}`, createdAt: "now() - interval '10 days'" },
         { name: `E2E Fresh ${s}` },
         {
@@ -116,7 +118,7 @@ export function leadFollowupSuite(test: typeof baseTest, { phone }: { phone: boo
         },
       ]);
       try {
-        await signIn(page, DANIEL, "/dashboard");
+        await signIn(page, AGENT, "/dashboard");
         await gotoHydrated(page, "/dashboard", "[data-testid=needs-attention]");
         const box = page.getByTestId("needs-attention");
 
@@ -168,9 +170,9 @@ export function leadFollowupSuite(test: typeof baseTest, { phone }: { phone: boo
       page,
     }) => {
       const s = stamp();
-      const [id] = await danielLeads([{ name: `E2E Later ${s}`, status: "contacted" }]);
+      const [id] = await agentLeads([{ name: `E2E Later ${s}`, status: "contacted" }]);
       try {
-        await signIn(page, DANIEL, "/dashboard");
+        await signIn(page, AGENT, "/dashboard");
         await gotoHydrated(page, `/dashboard/leads/${id}`, "[data-testid=follow-up]");
         const control = page.getByTestId("follow-up");
         const status = page.getByTestId("follow-up-status");
@@ -214,11 +216,11 @@ export function leadFollowupSuite(test: typeof baseTest, { phone }: { phone: boo
       page,
     }) => {
       const s = stamp();
-      const [id] = await danielLeads([
+      const [id] = await agentLeads([
         { name: `E2E Reply ${s}`, createdAt: "now() - interval '5 minutes'" },
       ]);
       try {
-        await signIn(page, DANIEL, "/dashboard");
+        await signIn(page, AGENT, "/dashboard");
         await gotoHydrated(page, `/dashboard/leads/${id}`, "#lead-status");
         await page.locator("#lead-status").selectOption("contacted");
         await expect.poll(async () => (await leadRow(id)).first_contacted_at).not.toBeNull();
@@ -228,10 +230,10 @@ export function leadFollowupSuite(test: typeof baseTest, { phone }: { phone: boo
           "of office time after it arrived",
         );
 
-        // Daniel has no other recorded replies in the seed: his row is this lead.
+        // The seed records no replies (every agent is real): the agent's row is this lead.
         await switchUser(page, ADMIN, "/dashboard");
         await gotoHydrated(page, "/dashboard", "[data-testid=reply-times]");
-        const row = page.getByTestId("reply-row").filter({ hasText: "Daniel Reyes" });
+        const row = page.getByTestId("reply-row").filter({ hasText: AGENT_NAME });
         await expect(row).toBeVisible();
         await expect(row.locator("td").nth(1)).not.toHaveText(/—/);
         if (phone) await expectNoHorizontalOverflow(page);
@@ -272,7 +274,7 @@ export function leadFollowupSuite(test: typeof baseTest, { phone }: { phone: boo
         await copySwitch.click();
         await expect.poll(copies).toBe(true);
 
-        await switchUser(page, DANIEL, "/dashboard");
+        await switchUser(page, AGENT, "/dashboard");
         await gotoHydrated(page, "/dashboard/settings", "[data-testid=setting-leadDigest]");
         await expect(page.getByRole("switch")).toHaveCount(1);
         await expect(page.getByRole("switch", { name: /Morning summary/ })).toBeVisible();
@@ -289,11 +291,11 @@ export function leadFollowupSuite(test: typeof baseTest, { phone }: { phone: boo
       page,
     }) => {
       const s = stamp();
-      const [id] = await danielLeads([{ name: `E2E Link ${s}` }]);
+      const [id] = await agentLeads([{ name: `E2E Link ${s}` }]);
       try {
         await page.goto(`/dashboard/leads/${id}`);
         await expect(page).toHaveURL(/\/sign-in\?next=/);
-        await page.fill("#email", DANIEL);
+        await page.fill("#email", AGENT);
         await page.fill("#password", PASSWORD);
         await page.click("button[type=submit]");
         await expect(page).toHaveURL(`/dashboard/leads/${id}`);

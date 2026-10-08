@@ -144,14 +144,19 @@ export async function getSimilarListings(l: typeof listings.$inferSelect, limit 
   return withPhotos(db, rows);
 }
 
-export async function getAgentListings(agentId: string, limit = 12) {
+/**
+ * An agent's public listings, live ones first. `includeClosed: false` leaves out
+ * their sales: on the demo site every listing is a sample, so a "Sold" card on a
+ * real agent's profile would be an invented sales record.
+ */
+export async function getAgentListings(
+  agentId: string,
+  { includeClosed = true, limit = 12 }: { includeClosed?: boolean; limit?: number } = {},
+) {
+  const statuses = includeClosed ? [...LIVE_STATUSES, "closed" as const] : [...LIVE_STATUSES];
   const rows = await selectCards(db)
     .where(
-      and(
-        publicListing(),
-        eq(listings.listAgentId, agentId),
-        inArray(listings.status, [...LIVE_STATUSES, "closed"]),
-      ),
+      and(publicListing(), eq(listings.listAgentId, agentId), inArray(listings.status, statuses)),
     )
     .orderBy(sql`${listings.status} = 'closed'`, sql`${listings.listDate} desc nulls last`)
     .limit(limit);

@@ -89,7 +89,7 @@ test.describe("listings Georgia MLS forbids showing", () => {
   test("the firm's own hidden listings stay in the dashboard, with their status", async ({
     page,
   }) => {
-    await signIn(page, "daniel@adamsrealty.example", "/dashboard");
+    await signIn(page, "agent@adamsrealty.example", "/dashboard");
     await page.goto("/dashboard/listings");
     for (const f of FIRM_HIDDEN) {
       const row = page.getByRole("row", { name: new RegExp(f.street) });
@@ -363,7 +363,7 @@ test.describe("traffic statistics", () => {
     const anonymous = await request.get("/dashboard/traffic/export", { maxRedirects: 0 });
     expect(anonymous.status()).toBe(307);
     expect(anonymous.headers().location).toContain("/sign-in");
-    await signIn(page, "daniel@adamsrealty.example", "/dashboard");
+    await signIn(page, "agent@adamsrealty.example", "/dashboard");
     expect((await page.request.get("/dashboard/traffic/export")).status()).toBe(403);
     const res = await page.goto("/dashboard/traffic");
     expect(res?.status()).toBe(403);

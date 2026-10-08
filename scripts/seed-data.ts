@@ -3,14 +3,13 @@
  * serves, the statewide sample feed, the team, photo pools and copy fragments.
  *
  * Real vs. sample:
- * - The office (Adams Realty, Inc., 69 Mill Street, Royston) and Andrea
- *   Anderegg's agent profile are real, published facts. Don't embellish
- *   them: her bio, photo, experience and email stay unset or placeholder
- *   until she supplies them.
- * - Every listing, every other agent and every other brokerage is a
- *   FICTIONAL SAMPLE for demonstration only, and the demo data sources carry
- *   a disclaimer saying so (shown in the site footer). Sample agents make no
- *   real-world claims; street names are made up.
+ * - The office (Adams Realty, Inc., 69 Mill Street, Royston) and the team
+ *   (AGENTS: all five agents are real people) are real. Their details are
+ *   published facts or what Adams Realty provided; don't embellish them.
+ * - Every listing (including the ones credited to the firm's agents) and
+ *   every other brokerage is a FICTIONAL SAMPLE for demonstration only, and
+ *   the demo data sources carry a disclaimer saying so (shown in the site
+ *   footer). Street names are made up.
  *
  * Coordinates come from `seed-sites.json`: pools of points per area that were
  * checked against USGS hydrography to be on land (and, for "waterfront", on
@@ -18,6 +17,8 @@
  * statewide pools are built, and every row is re-checked, by
  * `scripts/dev/gen-seed-sites.ts` from Census and USGS data (see its header).
  */
+
+import { site } from "../src/config/site";
 
 export type SeedPropertyType =
   | "single_family"
@@ -1169,14 +1170,8 @@ export const INTERIORS: Array<{ url: string; caption: string }> = [
   ["photo-1586023492125-27b2c045efd7", "Living room"],
 ].map(([id, caption]) => ({ url: u(id), caption }));
 
-const photo = (id: string) =>
-  `https://images.unsplash.com/${id}?auto=format&fit=crop&w=600&h=600&q=80`;
-
-/**
- * The team. Index 0 is the broker and the admin login; indexes 1 and 2 get the
- * sample agent logins (daniel@, priya@) that tests and docs use.
- */
-export const AGENTS: Array<{
+/** One member of the team: a real person, as Adams Realty describes them. */
+export type SeedAgent = {
   name: string;
   title: string;
   /** null = initials avatar. */
@@ -1190,16 +1185,36 @@ export const AGENTS: Array<{
   languages: string[];
   /** Area guide names or "<Name> County"; both match guides (src/lib/areas/match.ts). */
   areas: string[];
-  bio: string;
-  /** Real person (true) or fictional sample profile (false). */
+  /**
+   * Word for word as Adams Realty provided it; paragraphs separated by a
+   * blank line. null = none provided yet: the profile shows no bio at all.
+   */
+  bio: string | null;
+  /** Real person (true). The seed has no fictional agents any more. */
   real: boolean;
-}> = [
+};
+
+/**
+ * The team: Adams Realty, Inc.'s five real agents, in display order. Index 0
+ * is the broker and the admin login; indexes 1 and 2 get the demo agent
+ * logins (agent@ and agent2@adamsrealty.example, see scripts/seed.ts) that
+ * tests and docs use.
+ *
+ * All five are real people, and each profile holds only what Adams Realty
+ * provided (Andrea Anderegg's emails of 2026-10-02 and 2026-10-05) or, for
+ * Andrea, what her public profiles say. Never embellish: no invented bios,
+ * phone numbers, emails, photos, years, languages, areas or awards. What isn't
+ * known stays empty (null or []), and the site leaves it out. Where an agent's
+ * direct phone and email aren't known, the office's are used. Specialties are
+ * only what the agent's bio states (Andrea's: her public profiles). Photos of
+ * the other four are added separately; until then the site shows initials.
+ */
+export const AGENTS: SeedAgent[] = [
   {
-    // REAL: Andrea Anderegg, broker. Name, title, brokerage, direct phone, MLS
-    // agent ID, specialties and counties come from her public Georgia MLS and
-    // Homes.com profiles; the headshot and email were provided by Adams Realty.
-    // Don't add a bio, years or awards she hasn't provided; the bio below is
-    // true by construction.
+    // Andrea Anderegg, broker and owner. Name, title, brokerage, direct phone,
+    // MLS agent ID, specialties and counties come from her public Georgia MLS
+    // and Homes.com profiles; the headshot, email and bio were provided by
+    // Adams Realty. Don't add years or awards she hasn't provided.
     name: "Andrea Anderegg",
     title: "Broker",
     photoUrl: "/team/andrea-anderegg.webp",
@@ -1225,65 +1240,86 @@ export const AGENTS: Array<{
       "Hall County",
       "Gwinnett County",
     ],
-    bio: "Andrea Anderegg is the broker at Adams Realty, Inc. in Royston, working with buyers and sellers across Northeast Georgia. The firm handles houses, land, lake property, hunting land, farms and commercial property.",
+    bio: [
+      "Welcome! I’m Andrea Anderegg, broker and owner of Adams Realty, Inc., serving buyers and sellers throughout Northeast Georgia. I believe good real estate service starts with listening. Whether you’re buying your first home, preparing to sell, or looking for an investment property, I take time to understand what matters to you and help you make informed decisions.",
+      "My approach is personal and straightforward: attentive service, honest communication, and guidance through each step of the process. For sellers, that includes thoughtful marketing that highlights what makes a property special. For buyers, it means keeping your needs and goals at the center of the search. I’d love to help you plan your next move.",
+    ].join("\n\n"),
     real: true,
   },
-  // ── FICTIONAL SAMPLE AGENTS (demo only; stock photos; 555 phone numbers) ──
   {
-    name: "Daniel Reyes",
+    // Emily Cooper. Name, title and MLS agent ID only: no bio yet, and no
+    // direct phone or email known, so the office's.
+    name: "Emily Cooper",
     title: "Agent",
-    photoUrl: photo("photo-1560250097-0b93528c311a"),
-    phone: "(706) 555-0151",
-    email: "daniel@adamsrealty.example",
-    mlsAgentId: "SAMPLE-1",
-    years: 11,
-    specialties: ["Land & acreage", "Farms", "Hunting & timber land"],
-    languages: ["English", "Spanish"],
-    areas: ["Carnesville", "Danielsville", "Comer", "Canon"],
-    bio: "Daniel walks every tract before he lists it: pasture, timber, hunting land and small farms, with the survey, road frontage and soil questions answered up front.",
-    real: false,
+    photoUrl: null,
+    phone: site.phone,
+    email: site.email,
+    mlsAgentId: "EC7733",
+    years: null,
+    specialties: [],
+    languages: [],
+    areas: [],
+    bio: null,
+    real: true,
   },
   {
-    name: "Priya Natarajan",
+    // Avery McGarity. Name, title and MLS agent ID only: no bio yet, and no
+    // direct phone or email known, so the office's.
+    name: "Avery McGarity",
     title: "Agent",
-    photoUrl: photo("photo-1580489944761-15a19d654956"),
-    phone: "(470) 555-0152",
-    email: "priya@adamsrealty.example",
-    mlsAgentId: "SAMPLE-2",
-    years: 7,
-    specialties: ["New construction", "First-time buyers", "Relocation"],
-    languages: ["English", "Hindi"],
-    areas: ["Commerce", "Jefferson", "Braselton", "Dacula"],
-    bio: "Priya knows the new subdivisions along I-85 builder by builder, and she reads every contract addendum so her buyers don't have to guess.",
-    real: false,
+    photoUrl: null,
+    phone: site.phone,
+    email: site.email,
+    mlsAgentId: "AM6239",
+    years: null,
+    specialties: [],
+    languages: [],
+    areas: [],
+    bio: null,
+    real: true,
   },
   {
-    name: "Caroline Pruitt",
-    title: "Lake Specialist",
-    photoUrl: photo("photo-1494790108377-be9c29b29330"),
-    phone: "(706) 555-0153",
-    email: "caroline@adamsrealty.example",
-    mlsAgentId: "SAMPLE-3",
-    years: 14,
-    specialties: ["Lake property", "Waterfront", "Second homes"],
-    languages: ["English"],
-    areas: ["Lake Hartwell", "Hartwell", "Lavonia", "Martin"],
-    bio: "Caroline checks dock permits, water depth and Corps of Engineers shoreline rules before anyone falls in love with a lake view.",
-    real: false,
+    // Erika Lane (formerly Erika Norris: her Georgia MLS agent ID still
+    // carries that name). Bio as provided; specialties are the ones it names
+    // (sellers, land, commercial property). The office's phone and email.
+    name: "Erika Lane",
+    title: "Agent",
+    photoUrl: null,
+    phone: site.phone,
+    email: site.email,
+    mlsAgentId: "NORRISERIKA",
+    years: null,
+    specialties: ["Sellers", "Land", "Commercial property"],
+    languages: [],
+    areas: [],
+    bio: [
+      "Erika Lane has been serving real estate clients since 1997, bringing extensive experience and a strong understanding of the Northeast Georgia market to Adams Realty, Inc. She particularly enjoys representing sellers, helping them evaluate their property’s market position, establish a pricing strategy, and prepare for a successful sale.",
+      "Her experience spans residential properties, land, commercial land, and commercial buildings. With knowledge of local communities and market conditions, Erika helps clients understand the factors that influence property value and identify the features that matter to prospective buyers.",
+      "Erika’s approach emphasizes professional service, clear communication, and attention to detail throughout the transaction. From initial planning and marketing through negotiations and closing, she provides practical guidance to help clients make informed decisions and stay focused on their real estate goals.",
+    ].join("\n\n"),
+    real: true,
   },
   {
-    name: "Marcus Bell",
-    title: "Agent",
-    photoUrl: photo("photo-1519085360753-af0119f7cbe7"),
-    phone: "(762) 555-0154",
-    email: "marcus@adamsrealty.example",
-    mlsAgentId: "SAMPLE-4",
-    years: 12,
-    specialties: ["Commercial property", "Investment property", "Lake Lanier"],
-    languages: ["English"],
-    areas: ["Gainesville", "Flowery Branch", "Lake Lanier", "Buford"],
-    bio: "Marcus handles storefronts, small warehouses and investment property, plus the occasional lake house for clients who'd rather be on the water.",
-    real: false,
+    // Anitra Thompson. Her title as given is "Licensed Real Estate Agent &
+    // Investor", shortened for the profile. Bio as provided; specialties are
+    // the ones it names (buyers, investment property). The office's phone
+    // and email.
+    name: "Anitra Thompson",
+    title: "Agent & Investor",
+    photoUrl: null,
+    phone: site.phone,
+    email: site.email,
+    mlsAgentId: "THOMPSONANIT",
+    years: null,
+    specialties: ["Buyers", "Investment property"],
+    languages: [],
+    areas: [],
+    bio: [
+      "With nearly two decades of real estate experience, Anitra Thompson has been a licensed real estate professional since 2006, helping buyers and investors navigate opportunities with confidence.",
+      "As both a real estate agent and investor, she brings a unique perspective to every transaction—combining market knowledge, business strategy, and firsthand investment experience. Anitra holds a Bachelor’s degree in Business Management and a Master’s in Business Administration (MBA).",
+      "Her approach is simple: provide strategic guidance, make the process clear, and help clients make real estate decisions that support their goals.",
+    ].join("\n\n"),
+    real: true,
   },
 ];
 
@@ -1480,8 +1516,9 @@ export const LAKE_FIXTURES = [
  * Listings the firm entered by hand (the manual source), one in each status the
  * public never sees: the firm hides its own Coming Soon, Withdrawn, Expired and
  * Canceled listings like Georgia MLS ones (src/lib/listings/visibility.ts). All
- * in Carnesville, listed by the sample agent Daniel Reyes, so the dashboard
- * shows them to him and to admins. e2e/gamls.spec.ts finds them by MLS number.
+ * in Carnesville, credited to AGENTS[1] (Emily Cooper, the demo agent login
+ * agent@adamsrealty.example), so the dashboard shows them to that login and to
+ * admins. e2e/gamls.spec.ts finds them by MLS number.
  */
 export const FIRM_HIDDEN_FIXTURES = [
   { mlsNumber: "10599101", status: "coming_soon", street: "101 Quail Hollow Rd", price: 402_101 },

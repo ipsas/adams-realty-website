@@ -582,7 +582,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                     <Avatar
                       src={agent.photoUrl}
                       name={agent.name}
-                      className="size-16 rounded-full text-xl"
+                      className="size-16 shrink-0 rounded-full text-xl"
                     />
                     <div className="min-w-0">
                       <p className="text-xs tracking-wide text-muted uppercase">Listing agent</p>
@@ -599,7 +599,9 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                           className="flex min-h-11 items-center text-sm font-medium text-brand-700 hover:underline pointer-fine:mt-0.5 pointer-fine:min-h-0"
                           data-testid="agent-phone"
                         >
-                          Call {agent.phone}
+                          {/* Agents without a direct line take calls at the office: say so. */}
+                          {agent.phone === site.phone ? "Call the office" : "Call"}{" "}
+                          <span className="whitespace-nowrap">{agent.phone}</span>
                         </a>
                       )}
                     </div>

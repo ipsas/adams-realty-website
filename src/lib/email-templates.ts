@@ -622,7 +622,7 @@ export function leadNotificationEmail(input: {
 /** One lead in the morning summary. */
 export type DigestLead = {
   name: string;
-  /** e.g. "Tour · 123 Main St, Royston · Daniel Reyes". */
+  /** e.g. "Tour · 123 Main St, Royston · Emily Cooper". */
   detail: string;
   /** Shown in red, e.g. "Waiting 4 days" or "Was due Sep 27". */
   alert?: string | null;
@@ -667,7 +667,7 @@ export type DigestSection = {
  * something in it.
  */
 export function leadDigestEmail(input: {
-  /** "Daniel" for an agent, "Andrea" for the broker. */
+  /** "Emily" for an agent, "Andrea" for the broker. */
   firstName: string;
   office: boolean;
   /** e.g. "Tuesday, September 29". */

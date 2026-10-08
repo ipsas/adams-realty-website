@@ -63,7 +63,8 @@ const makeSchema = (strict: boolean) =>
      */
     OFFICE_IPS: optional,
     /**
-     * Demo-data mode (noindex on sample listings, guides, places and agents): `on`/`off`.
+     * Demo-data mode (noindex on the sample listings and the guides, places and agent pages
+     * that show them): `on`/`off`.
      * Unset, it follows SEED_DEMO_DATA. Read per request by src/lib/demo-mode.ts.
      */
     DEMO_DATA_MODE: optional,

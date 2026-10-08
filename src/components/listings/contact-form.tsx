@@ -60,7 +60,8 @@ export function ContactForm({
         <CheckCircle2 className="size-12 text-brand-600" strokeWidth={1.5} />
         <p className="mt-4 text-lg font-semibold text-ink">{state.message ?? "Message sent!"}</p>
         <p className="mt-1 text-sm text-muted">
-          We usually reply within the hour during business hours.
+          {/* No reply-time promise: Adams Realty hasn't given one. Office hours are real. */}
+          We&apos;ll get back to you{site.hours ? ` during office hours (${site.hours})` : " soon"}.
         </p>
       </div>
     );

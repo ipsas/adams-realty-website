@@ -67,10 +67,10 @@ const { addLeadNote, deleteLeadNote } = await import("@/server/actions/leads");
 
 const LEAD_ID = "91bb7b79-8a3e-4d3c-81e0-a85bdf032863";
 const NOTE_ID = "446d8255-d590-45b8-9b34-8f00f91a922b";
-const DANIEL = "3c35a2fa-1318-4963-bb42-42923d5e6a96";
+const AGENT_ID = "3c35a2fa-1318-4963-bb42-42923d5e6a96";
 const admin: Actor = { userId: "u-admin", role: "admin", agentId: null };
-const daniel: Actor = { userId: "u-daniel", role: "agent", agentId: DANIEL };
-const priya: Actor = { userId: "u-priya", role: "agent", agentId: "p" };
+const listingAgent: Actor = { userId: "u-agent", role: "agent", agentId: AGENT_ID };
+const otherAgent: Actor = { userId: "u-other", role: "agent", agentId: "p" };
 const shopper: Actor = { userId: "u-shopper", role: "user", agentId: null };
 
 function noteForm(fields: Record<string, string> = {}) {
@@ -86,7 +86,7 @@ function noteForm(fields: Record<string, string> = {}) {
 
 beforeEach(() => {
   Object.assign(h.state, {
-    actor: daniel,
+    actor: listingAgent,
     selects: [],
     updates: [],
     inserted: [],
@@ -99,19 +99,19 @@ beforeEach(() => {
 
 describe("addLeadNote", () => {
   it("saves a trimmed note by the current user and audits it", async () => {
-    h.state.selects = [[{ agentId: DANIEL }]];
+    h.state.selects = [[{ agentId: AGENT_ID }]];
     const res = await addLeadNote(
       { ok: true },
       noteForm({ body: "  Called, left a voicemail.  " }),
     );
     expect(res).toEqual({ ok: true, message: "Note added." });
     expect(h.state.inserted).toEqual([
-      { inquiryId: LEAD_ID, authorId: "u-daniel", body: "Called, left a voicemail." },
+      { inquiryId: LEAD_ID, authorId: "u-agent", body: "Called, left a voicemail." },
     ]);
     expect(h.state.updated).toHaveLength(0);
     expect(h.state.audits).toEqual([
       {
-        actorId: "u-daniel",
+        actorId: "u-agent",
         action: "inquiry.note.add",
         entityType: "inquiry",
         entityId: LEAD_ID,
@@ -124,7 +124,7 @@ describe("addLeadNote", () => {
   });
 
   it("stores line breaks as LF, counting them once toward the limit", async () => {
-    h.state.selects = [[{ agentId: DANIEL }], [{ agentId: DANIEL }]];
+    h.state.selects = [[{ agentId: AGENT_ID }], [{ agentId: AGENT_ID }]];
     await addLeadNote({ ok: true }, noteForm({ body: "Called.\r\nNo answer.\r\n" }));
     expect(h.state.inserted[0]).toMatchObject({ body: "Called.\nNo answer." });
     // 3,999 characters + one CRLF from the browser = 4,000 once normalized.
@@ -133,7 +133,7 @@ describe("addLeadNote", () => {
   });
 
   it("marks a new lead contacted when asked", async () => {
-    h.state.selects = [[{ agentId: DANIEL }]];
+    h.state.selects = [[{ agentId: AGENT_ID }]];
     h.state.updates = [[{ id: LEAD_ID }]];
     const res = await addLeadNote({ ok: true }, noteForm({ markContacted: "on" }));
     expect(res).toEqual({ ok: true, message: "Note added and lead marked as contacted." });
@@ -145,7 +145,7 @@ describe("addLeadNote", () => {
   });
 
   it("leaves a lead that's no longer new alone", async () => {
-    h.state.selects = [[{ agentId: DANIEL }]];
+    h.state.selects = [[{ agentId: AGENT_ID }]];
     // The conditional update (status = 'new') matched nothing.
     h.state.updates = [[]];
     const res = await addLeadNote({ ok: true }, noteForm({ markContacted: "on" }));
@@ -158,7 +158,7 @@ describe("addLeadNote", () => {
     ["   ", "Write a note first."],
     ["x".repeat(4_001), "Keep notes under 4,000 characters."],
   ])("rejects %j and hands the text back", async (body, error) => {
-    h.state.selects = [[{ agentId: DANIEL }]];
+    h.state.selects = [[{ agentId: AGENT_ID }]];
     const res = await addLeadNote({ ok: true }, noteForm({ body }));
     expect(res).toEqual({ ok: false, error, body });
     expect(h.state.inserted).toHaveLength(0);
@@ -177,14 +177,14 @@ describe("addLeadNote", () => {
 
   it("lets admins note any lead", async () => {
     h.state.actor = admin;
-    h.state.selects = [[{ agentId: DANIEL }]];
+    h.state.selects = [[{ agentId: AGENT_ID }]];
     expect((await addLeadNote({ ok: true }, noteForm())).ok).toBe(true);
   });
 
   // Refusals come back as results (not throws) so the form keeps the text.
   it("refuses another agent's lead, handing the text back", async () => {
-    h.state.actor = priya;
-    h.state.selects = [[{ agentId: DANIEL }]];
+    h.state.actor = otherAgent;
+    h.state.selects = [[{ agentId: AGENT_ID }]];
     const res = await addLeadNote({ ok: true }, noteForm());
     expect(res).toEqual({
       ok: false,
@@ -216,10 +216,10 @@ describe("addLeadNote", () => {
 describe("deleteLeadNote", () => {
   const note = (over: Record<string, unknown> = {}) => ({
     inquiryId: LEAD_ID,
-    authorId: "u-daniel",
+    authorId: "u-agent",
     body: "Called, left a voicemail.",
     createdAt: new Date("2026-09-25T12:00:00Z"),
-    agentId: DANIEL,
+    agentId: AGENT_ID,
     ...over,
   });
 
@@ -230,13 +230,13 @@ describe("deleteLeadNote", () => {
     expect(h.state.deleted).toBe(1);
     expect(h.state.audits).toEqual([
       {
-        actorId: "u-daniel",
+        actorId: "u-agent",
         action: "inquiry.note.delete",
         entityType: "inquiry",
         entityId: LEAD_ID,
         changes: {
           noteId: NOTE_ID,
-          authorId: "u-daniel",
+          authorId: "u-agent",
           createdAt: "2026-09-25T12:00:00.000Z",
           body: "Called, left a voicemail.",
         },
@@ -300,17 +300,17 @@ describe("deleteLeadNote", () => {
 });
 
 describe("canDeleteLeadNote", () => {
-  const lead = { agentId: DANIEL };
+  const lead = { agentId: AGENT_ID };
   it("allows authors on their own leads and admins everywhere", () => {
-    expect(canDeleteLeadNote(daniel, lead, { authorId: "u-daniel" })).toBe(true);
-    expect(canDeleteLeadNote(admin, lead, { authorId: "u-daniel" })).toBe(true);
+    expect(canDeleteLeadNote(listingAgent, lead, { authorId: "u-agent" })).toBe(true);
+    expect(canDeleteLeadNote(admin, lead, { authorId: "u-agent" })).toBe(true);
     expect(canDeleteLeadNote(admin, lead, { authorId: null })).toBe(true);
   });
 
   it("refuses everyone else", () => {
-    expect(canDeleteLeadNote(daniel, lead, { authorId: "u-admin" })).toBe(false);
-    expect(canDeleteLeadNote(daniel, lead, { authorId: null })).toBe(false);
-    expect(canDeleteLeadNote(priya, lead, { authorId: "u-priya" })).toBe(false);
+    expect(canDeleteLeadNote(listingAgent, lead, { authorId: "u-admin" })).toBe(false);
+    expect(canDeleteLeadNote(listingAgent, lead, { authorId: null })).toBe(false);
+    expect(canDeleteLeadNote(otherAgent, lead, { authorId: "u-other" })).toBe(false);
     expect(canDeleteLeadNote(shopper, lead, { authorId: "u-shopper" })).toBe(false);
     expect(canDeleteLeadNote(null, lead, { authorId: null })).toBe(false);
   });

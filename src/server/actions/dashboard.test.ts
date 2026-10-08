@@ -74,11 +74,11 @@ const syncSource = vi.mocked(sync.syncSource);
 
 const LISTING_ID = "3c35a2fa-1318-4963-bb42-42923d5e6a96";
 const SOURCE_ID = "b35e5476-2b15-4c16-908b-020063e6a746";
-const DANIEL = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-const daniel: Actor = { userId: "u-daniel", role: "agent", agentId: DANIEL };
+const AGENT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const listingAgent: Actor = { userId: "u-agent", role: "agent", agentId: AGENT_ID };
 
 const source = { id: SOURCE_ID, slug: "adams", kind: "manual", config: {} };
-const agent = { id: DANIEL, name: "Daniel Reyes", phone: null, email: "d@example.com" };
+const agent = { id: AGENT_ID, name: "Pat Agent", phone: null, email: "pat@example.com" };
 const existing = {
   id: LISTING_ID,
   sourceId: SOURCE_ID,
@@ -86,7 +86,7 @@ const existing = {
   listingKey: "ADAMS-1234ABCD",
   mlsNumber: null,
   status: "active",
-  listAgentId: DANIEL,
+  listAgentId: AGENT_ID,
   addressLine1: "12 Oak St",
   postalCode: "30030",
   latitude: 33.77,
@@ -152,7 +152,13 @@ function queueUpdate(opts: { opens?: unknown[]; otherMedia?: unknown[] } = {}) {
 }
 
 beforeEach(() => {
-  Object.assign(h.state, { actor: daniel, selects: [], upserts: [], tags: [], placesRefreshed: 0 });
+  Object.assign(h.state, {
+    actor: listingAgent,
+    selects: [],
+    upserts: [],
+    tags: [],
+    placesRefreshed: 0,
+  });
 });
 
 describe("saveListing", () => {
@@ -290,7 +296,7 @@ describe("saveListing", () => {
   });
 
   it("forbids agents from saving someone else's listing", async () => {
-    h.state.actor = { userId: "u-priya", role: "agent", agentId: "p" };
+    h.state.actor = { userId: "u-other", role: "agent", agentId: "p" };
     queueUpdate();
     await expect(saveListing({ ok: false }, form())).rejects.toThrow("permission");
     expect(h.state.upserts).toHaveLength(0);
@@ -391,7 +397,7 @@ describe("runSourceSync (dashboard Sync now)", () => {
   });
 
   it("is for admins only", async () => {
-    h.state.actor = daniel;
+    h.state.actor = listingAgent;
     await expect(runSourceSync(SOURCE_ID)).rejects.toThrow();
     expect(syncSource).not.toHaveBeenCalled();
   });

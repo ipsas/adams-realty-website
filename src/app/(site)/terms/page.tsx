@@ -13,14 +13,15 @@
 
 import type { Metadata } from "next";
 import Link from "next/link";
-import { formatLongDate, mailtoHref } from "@/components/content/contact";
+import type { ReactNode } from "react";
+import { addressLines, formatLongDate, mailtoHref, telHref } from "@/components/content/contact";
 import { ContactMethods } from "@/components/content/contact-methods";
 import { KeyPoints, LegalLayout, LegalSection, type TocItem } from "@/components/content/legal";
 import { PageIntro } from "@/components/content/page-intro";
 import { site } from "@/config/site";
 
 /** Change whenever the terms change. */
-const LAST_UPDATED = "2026-09-25";
+const LAST_UPDATED = "2026-10-07";
 
 export const metadata: Metadata = {
   title: "Terms of use",
@@ -38,6 +39,7 @@ const TOC: TocItem[] = [
   { id: "estimates", title: "Estimates and valuations" },
   { id: "communications", title: "Messages and alerts" },
   { id: "content", title: "Our content" },
+  { id: "copyright", title: "Copyright complaints (DMCA)" },
   { id: "third-party", title: "Third-party services" },
   { id: "fair-housing", title: "Fair housing" },
   { id: "no-warranty", title: "No warranties" },
@@ -231,6 +233,48 @@ export default function TermsPage() {
           </p>
         </LegalSection>
 
+        <LegalSection id="copyright" title="Copyright complaints (DMCA)">
+          <p>
+            If you believe something on this site infringes your copyright, send a written notice to
+            our designated agent under the Digital Millennium Copyright Act
+            (17&nbsp;U.S.C.&nbsp;§512(c)):
+          </p>
+          <DmcaAgent />
+          <p>Your notice must include:</p>
+          <ul>
+            <li>
+              your physical or electronic signature, or that of someone authorized to act for the
+              copyright owner;
+            </li>
+            <li>
+              the copyrighted work you believe is infringed (for several works, a representative
+              list of them);
+            </li>
+            <li>
+              the material you believe infringes it, with enough detail for us to find it on the
+              site, such as the page&apos;s web address;
+            </li>
+            <li>
+              how to reach you: your name, mailing address, phone number and, if you have one, email
+              address;
+            </li>
+            <li>
+              a statement that you believe in good faith that the use isn&apos;t authorized by the
+              copyright owner, its agent or the law; and
+            </li>
+            <li>
+              a statement that the information in your notice is accurate and, under penalty of
+              perjury, that you&apos;re authorized to act for the copyright owner.
+            </li>
+          </ul>
+          <p>
+            Knowingly misrepresenting that material infringes can make you liable for damages
+            (17&nbsp;U.S.C.&nbsp;§512(f)). If a listing has wrong information rather than a
+            copyright problem, please use our{" "}
+            <Link href="/listing-corrections">listing corrections page</Link>.
+          </p>
+        </LegalSection>
+
         <LegalSection id="third-party" title="Third-party services and links">
           <p>
             The site uses and links to services run by others, such as map providers, virtual tours
@@ -325,5 +369,77 @@ export default function TermsPage() {
         </LegalSection>
       </LegalLayout>
     </>
+  );
+}
+
+/**
+ * The DMCA designated agent as registered with the U.S. Copyright Office
+ * (`site.dmca`, IDX agreement §11). The mailing address is the office's.
+ */
+function DmcaAgent() {
+  const { dmca } = site;
+  const rows: { label: string; value: ReactNode }[] = [
+    {
+      label: "Designated agent",
+      value: (
+        <>
+          <span className="block font-semibold">{dmca.agent}</span>
+          <span className="block">{site.legalName}</span>
+        </>
+      ),
+    },
+    {
+      label: "Mailing address",
+      value: (
+        <address className="not-italic">
+          {addressLines(site.address).map((line) => (
+            <span key={line} className="block">
+              {line}
+            </span>
+          ))}
+        </address>
+      ),
+    },
+    { label: "Phone", value: <a href={telHref(dmca.phone)}>{dmca.phone}</a> },
+    {
+      label: "Email",
+      value: (
+        <a
+          href={mailtoHref(dmca.email, "Copyright complaint (DMCA notice)")}
+          className="[overflow-wrap:anywhere]"
+        >
+          {dmca.email}
+        </a>
+      ),
+    },
+    {
+      label: "Registration",
+      value: (
+        <>
+          <span className="block">{dmca.registration}</span>
+          <span className="block text-sm text-muted">
+            U.S. Copyright Office, DMCA Designated Agent Directory
+          </span>
+        </>
+      ),
+    },
+  ];
+  return (
+    <dl
+      className="divide-y divide-line rounded-2xl bg-surface px-5 ring-1 ring-line ring-inset sm:px-6"
+      data-testid="dmca-agent"
+    >
+      {rows.map(({ label, value }) => (
+        <div
+          key={label}
+          className="grid grid-cols-1 gap-1 py-3.5 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4"
+        >
+          <dt className="text-xs font-semibold tracking-widest text-muted uppercase sm:pt-1">
+            {label}
+          </dt>
+          <dd className="min-w-0 text-ink">{value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }

@@ -11,8 +11,8 @@ const PRIVATE = ["/dashboard", "/api/", "/saved", "/account", "/sign-in", "/sign
 
 export default function robots(): MetadataRoute.Robots {
   const base = env.NEXT_PUBLIC_SITE_URL;
-  // Demo data: keep crawlers off the sample listings, guides, places and agents,
-  // and list only the main sitemap (which leaves them out too).
+  // Demo data: keep crawlers off the sample listings and the guides, places and agent
+  // pages that show them, and list only the main sitemap (which leaves them out too).
   if (demoDataMode()) {
     return {
       rules: { userAgent: "*", allow: "/", disallow: [...PRIVATE, ...DEMO_CONTENT_PATHS] },
