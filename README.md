@@ -78,8 +78,8 @@ listings' photos to the fake host in your local database and puts them back).
    advertising rules require the firm name and phone number, and the footer shows both on
    every page.
 
-2. **The rest of the team's profiles.** Andrea's headshot is in; the other four agents show
-   their initials until their photos arrive. Emily Cooper and Avery McGarity have no bio yet.
+2. **The rest of the team's profiles.** All five headshots are in (`public/team/`, provided by
+   Adams Realty on 2026-10-05). Emily Cooper and Avery McGarity have no bio yet.
    The four agents' direct phones and emails aren't known, so their profiles show the
    office's. No profile sets a years-in-real-estate figure (Erika's and Anitra's bios say when
    they started; the site doesn't turn that into a number), so that tile stays off. Add what

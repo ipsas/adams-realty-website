@@ -1251,7 +1251,7 @@ export const AGENTS: SeedAgent[] = [
     // direct phone or email known, so the office's.
     name: "Emily Cooper",
     title: "Agent",
-    photoUrl: null,
+    photoUrl: "/team/emily-cooper.webp",
     phone: site.phone,
     email: site.email,
     mlsAgentId: "EC7733",
@@ -1267,7 +1267,7 @@ export const AGENTS: SeedAgent[] = [
     // direct phone or email known, so the office's.
     name: "Avery McGarity",
     title: "Agent",
-    photoUrl: null,
+    photoUrl: "/team/avery-mcgarity.webp",
     phone: site.phone,
     email: site.email,
     mlsAgentId: "AM6239",
@@ -1284,7 +1284,7 @@ export const AGENTS: SeedAgent[] = [
     // (sellers, land, commercial property). The office's phone and email.
     name: "Erika Lane",
     title: "Agent",
-    photoUrl: null,
+    photoUrl: "/team/erika-lane.webp",
     phone: site.phone,
     email: site.email,
     mlsAgentId: "NORRISERIKA",
@@ -1306,7 +1306,7 @@ export const AGENTS: SeedAgent[] = [
     // and email.
     name: "Anitra Thompson",
     title: "Agent & Investor",
-    photoUrl: null,
+    photoUrl: "/team/anitra-thompson.webp",
     phone: site.phone,
     email: site.email,
     mlsAgentId: "THOMPSONANIT",
