@@ -15,8 +15,7 @@ export const maxDuration = 300;
  * within ~4 minutes is left for the next run.
  *
  * It also sends the staff's 7 a.m. morning summary (src/lib/leads/digest.ts)
- * if the 11:00 UTC sync run didn't: 12:00 UTC is 7 a.m. Eastern in winter.
- * Never twice a day; its outcome is reported but doesn't change the status.
+ * if a sync run didn't already. Never twice a day; its outcome is reported but doesn't change the status.
  */
 export async function GET(request: NextRequest) {
   if (!isCronAuthorized(request)) {

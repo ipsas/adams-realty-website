@@ -27,11 +27,9 @@ import { waitingLabel, WAIT_RULE } from "./working-hours";
  * Nothing to report, no email. `users.lead_digest` turns it off per person
  * (Dashboard → Email settings).
  *
- * Vercel's Hobby plan allows daily crons only, so there is no cron of its
- * own: /api/cron/sync (11:00 UTC, the purge run) and /api/cron/alerts
- * (12:00 UTC) both call it. 7 a.m. Eastern is 11:00 UTC in summer and 12:00
- * UTC in winter; a run before 7 a.m. local does nothing, and the first run
- * at or after it sends. Each recipient's day is claimed in `lead_digests`
+ * There is no cron of its own: /api/cron/sync (every 15 minutes on Vercel
+ * Pro) and /api/cron/alerts (hourly) both call it. A run before 7 a.m.
+ * Eastern does nothing, and the first run at or after it sends. Each recipient's day is claimed in `lead_digests`
  * before sending, so the later run (or a retry) never sends twice; a failed
  * send gives the claim back for the next run.
  *

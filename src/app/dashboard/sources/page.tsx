@@ -28,7 +28,7 @@ export default async function SourcesPage() {
     <>
       <PageHeader
         title="MLS feeds"
-        description="Listing sources and sync health. Feeds sync on the schedule in vercel.json (daily on Vercel's free plan); off-market listings are purged daily. A run that reaches its time limit stops as “partial” and the next one continues where it left off."
+        description="Listing sources and sync health. Feeds sync every 15 minutes on Vercel Pro (vercel.json); off-market listings are purged daily. A run that reaches its time limit stops as “partial” and the next one continues where it left off."
       />
       <div className="space-y-4">
         {sources.map((s) => (

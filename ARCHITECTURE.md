@@ -377,11 +377,11 @@ email notification is best-effort. Leads are never shared outside the company.
   changes are audited (`inquiry.status`), as are follow-up dates (`inquiry.follow_up`).
 - **Morning summary** (`src/lib/leads/digest.ts`): at 7 a.m. Eastern each agent with a login
   gets their own Needs attention lists and each admin the office's; nothing to report, no
-  email; `users.lead_digest` turns it off (Dashboard → Email settings). Hobby allows daily
-  crons only, so it has no cron of its own: `/api/cron/sync` (11:00 UTC, 7 a.m. EDT) and
-  `/api/cron/alerts` (12:00 UTC, 7 a.m. EST) both call it; before 7 a.m. local it does
-  nothing, and a row in `lead_digests` (recipient, day) claims each summary, so the later
-  run never sends twice. A failed send deletes the claim for the next run.
+  email; `users.lead_digest` turns it off (Dashboard → Email settings). It has no cron of
+  its own: `/api/cron/sync` (every 15 minutes on Vercel Pro) and `/api/cron/alerts`
+  (hourly) both call it, so it goes out by about 7:15 a.m. Eastern; before 7 a.m. local it
+  does nothing, and a row in `lead_digests` (recipient, day) claims each summary, so a
+  later run never sends twice. A failed send deletes the claim for the next run.
 
 **Spam** (`src/lib/spam.ts`, `src/lib/form-guard.ts`), on every public form (tour/question,
 contact, agent, listing report, valuation, sign-up, saved searches):

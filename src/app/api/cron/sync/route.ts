@@ -28,11 +28,10 @@ const BUDGET_MS = (maxDuration - 45) * 1000;
  * that can't start because a sync holds the source waits for it, and fails
  * (500, recorded) if it still can't: it must never go missing quietly.
  *
- * Every run also tries the staff's 7 a.m. morning summary
- * (src/lib/leads/digest.ts), which Vercel's Hobby plan can't give a cron of
- * its own: before 7 a.m. Eastern it does nothing, and it never sends twice a
- * day. The 11:00 UTC purge run is 7 a.m. in summer (EDT); in winter the
- * alerts cron at 12:00 UTC sends it. Its outcome doesn't change the status.
+ * Every run (every 15 minutes on Vercel Pro) also tries the staff's 7 a.m.
+ * morning summary (src/lib/leads/digest.ts), so it goes out by about 7:15
+ * Eastern: before 7 a.m. it does nothing, and it never sends twice a day.
+ * Its outcome doesn't change the status.
  */
 export async function GET(request: NextRequest) {
   if (!isCronAuthorized(request)) {

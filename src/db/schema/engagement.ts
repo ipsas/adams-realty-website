@@ -133,7 +133,7 @@ export const leadNotes = pgTable(
 /**
  * One row per morning summary (src/lib/leads/digest.ts) and market-calendar
  * day: `recipient` is `agent:<agent id>` or `office:<user id>`. Inserting the
- * row claims the day, so the two daily crons that may run it never send twice;
+ * row claims the day, so the sync and alerts crons that may run it never send twice;
  * a failed send deletes it again for the next run.
  */
 export const leadDigests = pgTable(
