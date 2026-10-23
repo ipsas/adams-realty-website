@@ -1,6 +1,7 @@
 import { site } from "@/config/site";
 import { env } from "@/lib/env";
 import { formatBaths, formatNumber, formatPrice } from "@/lib/format";
+import { mlsCopyright } from "@/lib/mls-copyright";
 import { photoRoute, photoUrl } from "@/lib/photos";
 
 /**
@@ -167,7 +168,10 @@ export type EmailListing = {
   badge?: { label: string; tone: BadgeTone };
   /** Short lines under the address, e.g. "Was $665,000". */
   notes?: string[];
-  /** IDX rules: show the listing brokerage wherever MLS listings are displayed. */
+  /**
+   * IDX rules: show the listing brokerage wherever MLS listings are displayed, in type
+   * not smaller than the median listing text (14px in this row).
+   */
   attribution?: string | null;
 };
 
@@ -217,7 +221,7 @@ export function listingRow(l: EmailListing): EmailBlock {
     )
     .join("");
   const attribution = l.attribution
-    ? `<div style="margin-top:8px;font-size:11px;line-height:1.4;color:${C.faint};">${esc(l.attribution)}</div>`
+    ? `<div style="margin-top:8px;font-size:14px;line-height:1.5;color:${C.inkSoft};">${esc(l.attribution)}</div>`
     : "";
 
   const html = row(
@@ -270,6 +274,11 @@ export type EmailLayout = {
   manage?: { label: string; href: string };
   /** MLS disclaimers for any listings shown. */
   disclaimers?: string[];
+  /**
+   * The email shows Georgia MLS listings: credit the MLS by name and logo, its copyright
+   * notice and its IDX disclaimer.
+   */
+  mlsCredit?: boolean;
 };
 
 function button(label: string, href: string): EmailBlock {
@@ -302,7 +311,10 @@ export function renderEmail(o: EmailLayout): RenderedEmail {
   const license = site.brokerLicense
     ? `Georgia real estate firm license ${site.brokerLicense}`
     : null;
-  const disclaimers = [...new Set(o.disclaimers ?? [])];
+  const credit = o.mlsCredit ? `Listings courtesy of ${site.mls.name}. ${mlsCopyright()}` : null;
+  const disclaimers = [
+    ...new Set([...(o.mlsCredit ? [site.mls.disclaimer] : []), ...(o.disclaimers ?? [])]),
+  ];
 
   const html = `<!doctype html>
 <html lang="en">
@@ -355,6 +367,7 @@ ${blocks.map((b) => b.html).join("\n")}
   ${links.length ? `<p style="margin:0 0 14px;">${links.map((l) => `<a href="${esc(l.href)}" style="color:${C.brand};font-weight:600;text-decoration:underline;">${esc(l.label)}</a>`).join(`<span style="color:${C.faint};"> &nbsp;·&nbsp; </span>`)}</p>` : ""}
   <p style="margin:0;color:${C.inkSoft};">${esc(firmLine())}</p>
   ${license ? `<p style="margin:2px 0 0;">${esc(license)}</p>` : ""}
+  ${credit ? `<p style="margin:12px 0 0;">${site.mls.logo ? `<img src="${esc(absoluteUrl(site.mls.logo.src))}" width="81" height="32" alt="${esc(site.mls.name)}" style="display:block;margin:0 auto 6px;height:32px;width:auto;border:0;">` : ""}<span style="font-size:12px;line-height:1.5;color:${C.inkSoft};">${esc(credit)}</span></p>` : ""}
   ${disclaimers.map((d) => `<p style="margin:12px 0 0;font-size:11px;line-height:1.5;color:${C.faint};">${esc(d)}</p>`).join("")}
 </td></tr>
 </table>
@@ -375,6 +388,7 @@ ${blocks.map((b) => b.html).join("\n")}
     ...links.map((l) => `${l.label}: ${l.href}`),
     firmLine(),
     license,
+    credit,
     ...disclaimers,
   ]
     .filter((l) => l !== null)
@@ -470,6 +484,7 @@ export function savedSearchAlertEmail(input: {
     unsubscribe: { label: "Unsubscribe from this search", href: input.unsubscribeUrl },
     manage: { label: "Manage alerts", href: input.manageUrl },
     disclaimers: input.disclaimers,
+    mlsCredit: true,
   });
 }
 
@@ -506,6 +521,7 @@ export function savedHomesUpdateEmail(input: {
     unsubscribe: { label: "Stop saved-home updates", href: input.unsubscribeUrl },
     manage: { label: "Email settings", href: input.manageUrl },
     disclaimers: input.disclaimers,
+    mlsCredit: true,
   });
 }
 

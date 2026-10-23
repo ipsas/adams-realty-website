@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { site } from "@/config/site";
 import { env } from "@/lib/env";
 import {
+  absoluteUrl,
   escapeHtml,
   leadDigestEmail,
   leadNotificationEmail,
@@ -146,6 +147,54 @@ describe("savedHomesUpdateEmail", () => {
       manageUrl: "https://adams.example/account#alerts",
     });
     expect(many.subject).toBe("Updates on 2 of your saved homes");
+  });
+});
+
+describe("Georgia MLS credit", () => {
+  const year = new Date().getFullYear();
+  const disclaimers = [site.mls.disclaimer, "Other MLS text."];
+  const homesUpdate = () =>
+    savedHomesUpdateEmail({
+      homes: [home()],
+      savedUrl: "https://adams.example/saved",
+      unsubscribeUrl: "https://adams.example/alerts/unsubscribe?token=h",
+      manageUrl: "https://adams.example/account#alerts",
+      disclaimers,
+    });
+
+  it("alert emails credit Georgia MLS once: name, logo, copyright and disclaimer", () => {
+    for (const email of [alert({ disclaimers }), homesUpdate()]) {
+      for (const out of [email.html, email.text]) {
+        expect(out).toContain("Listings courtesy of Georgia MLS.");
+        expect(out).toContain(`Listing information © ${year} Georgia MLS. All rights reserved.`);
+      }
+      expect(email.html.split(escapeHtml(site.mls.disclaimer)).length - 1).toBe(1);
+      expect(email.html.split("Other MLS text.").length - 1).toBe(1);
+      expect(email.text.split(site.mls.disclaimer).length - 1).toBe(1);
+      expect(email.html).toContain(`src="${escapeHtml(absoluteUrl("/brand/gamls_idx.png"))}"`);
+      expect(email.html).toContain('alt="Georgia MLS"');
+    }
+  });
+
+  it("lead and password emails carry no MLS credit", () => {
+    const lead = leadNotificationEmail({
+      subject: "New question from Jane Doe",
+      type: "question",
+      name: "Jane Doe",
+      email: "jane@example.com",
+      source: "listing",
+      dashboardUrl: "https://adams.example/dashboard/leads/abc",
+    });
+    const reset = passwordResetEmail({ name: "Casey", url: "https://adams.example/reset" });
+    for (const email of [lead, reset]) {
+      expect(email.html).not.toContain("courtesy of Georgia MLS");
+    }
+  });
+
+  it("shows the listing firm in type as large as the listing text", () => {
+    const { html } = alert();
+    const style = /<div style="([^"]*)">Listed by Example Realty Group<\/div>/.exec(html)?.[1];
+    expect(style).toContain("font-size:14px");
   });
 });
 
