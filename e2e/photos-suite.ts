@@ -264,7 +264,10 @@ export function photosSuite(test: typeof baseTest, { phone }: { phone: boolean }
       expect(similarPhotos.length).toBeGreaterThan(0);
       const similarAsked = () =>
         images.all().filter((s) => similarPhotos.some((p) => s.url.includes(p))).length;
-      await expect(similar.locator("img"), "no similar photo in the page yet").toHaveCount(0);
+      await expect(
+        similar.locator("img:not([data-mls-credit] img)"),
+        "no similar photo in the page yet",
+      ).toHaveCount(0);
       expect(similarAsked(), "similar homes' photos before scrolling").toBe(0);
 
       // The map: nothing map-related until its section is near.

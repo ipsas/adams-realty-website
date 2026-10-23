@@ -105,7 +105,7 @@ test.describe("listings Georgia MLS forbids showing", () => {
     const card = page.locator("article", { has: page.locator(`a[href='/homes/${slug}']`) });
     await expect(card).toContainText("No longer available");
     await expect(card).toContainText("302 Sycamore Place");
-    await expect(card.locator("img")).toHaveCount(0);
+    await expect(card.locator("img:not([data-mls-credit] img)")).toHaveCount(0);
     await expect(card).not.toContainText("$401,002");
     await expect(card).not.toContainText(/\d bd/);
   });
@@ -126,7 +126,7 @@ test.describe("a sold Georgia MLS listing", () => {
     await page.goto(`/homes?mode=sold&q=${SOLD}`);
     const card = page.locator("article").first();
     await expect(card).toContainText("305 Sycamore Place");
-    await expect(card.locator("img")).toHaveCount(1);
+    await expect(card.locator("img:not([data-mls-credit] img)")).toHaveCount(1);
     // One photo, not a swipeable set (whose later slides mount only on a swipe).
     await expect(card.locator("[data-card-photos]")).toHaveCount(0);
   });
@@ -156,28 +156,25 @@ test.describe("a sold Georgia MLS listing", () => {
 });
 
 /**
- * The Georgia MLS mark reads in both themes: the official logo files (`site.mls.logo`), the
- * standard one in light and the "reverse" one in dark, each served (HTTP 200) and loaded, drawn
- * at its own aspect ratio. Both the device setting and the site's own theme choice
- * (`data-theme` on <html>) switch it.
+ * The Georgia MLS mark reads in both themes: the official GAMLS IDX logo (`site.mls.logo`), one
+ * PNG for both (on a white chip in dark), served (HTTP 200) and loaded, drawn at its own aspect
+ * ratio. Checked under both the device setting and the site's own theme choice (`data-theme`
+ * on <html>).
  */
 async function expectMlsMark(page: Page, mark: Locator) {
   const logo = site.mls.logo;
-  expect(logo, "site.mls.logo is set to the official Georgia MLS files").not.toBeNull();
+  expect(logo, "site.mls.logo is set to the official Georgia MLS logo").not.toBeNull();
   if (!logo) return;
-  for (const src of [logo.light, logo.dark]) {
-    const res = await page.request.get(src);
-    expect(res.status(), src).toBe(200);
-    expect(res.headers()["content-type"], src).toContain("image/svg+xml");
-  }
+  const res = await page.request.get(logo.src);
+  expect(res.status(), logo.src).toBe(200);
+  expect(res.headers()["content-type"], logo.src).toContain("image/png");
 
   const expectShown = async (theme: "light" | "dark") => {
     await expect(mark).toHaveAttribute("data-mls-mark", "logo");
-    const shown = mark.locator(`img[src="${theme === "light" ? logo.light : logo.dark}"]`);
-    const other = mark.locator(`img[src="${theme === "light" ? logo.dark : logo.light}"]`);
+    await expect(mark.locator("img"), theme).toHaveCount(1);
+    const shown = mark.locator(`img[src="${logo.src}"]`);
     await expect(shown, theme).toBeVisible();
     await expect(shown).toHaveAttribute("alt", site.mls.name);
-    await expect(other, theme).toBeHidden();
     await expect
       .poll(() => shown.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth))
       .toBeGreaterThan(0);
@@ -257,6 +254,7 @@ test.describe("attribution and required fields", () => {
   test("every card and map popup names the listing firm, as large as the listing text", async ({
     page,
   }) => {
+    const year = new Date().getFullYear();
     await page.goto(`/homes?q=Decatur`);
     const cards = page.locator("article");
     await expect(cards.first()).toBeVisible();
@@ -266,7 +264,34 @@ test.describe("attribution and required fields", () => {
       const office = card.getByTestId("card-office");
       await expect(office, `card ${i}`).toContainText("Listing by ");
       expect(await fontPx(office)).toBeGreaterThanOrEqual(await medianTextPx(card));
+      // Georgia MLS's name (the logo's alt), logo and copyright on every feed card.
+      const credit = card.locator("[data-mls-credit]");
+      await expect(credit, `card ${i}`).toContainText(`© ${year} Georgia MLS`);
+      const img = credit.locator("img");
+      await expect(img).toHaveAttribute("alt", site.mls.name);
+      await expect
+        .poll(() => img.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth))
+        .toBeGreaterThan(0);
     }
+
+    // The pins are drawn on the map's canvas: click the first one where it is drawn.
+    const canvas = page.locator(".maplibregl-canvas");
+    test.skip(!(await canvas.isVisible()), "the map is hidden on this viewport");
+    const point = await page
+      .waitForFunction(() => {
+        const m = (window as unknown as { __searchMap?: import("maplibre-gl").Map }).__searchMap;
+        if (!m || m.isMoving() || !m.loaded()) return null;
+        const [f] = m.queryRenderedFeatures({ layers: ["pins", "pin-dots"] });
+        if (!f) return null;
+        const p = m.project((f.geometry as GeoJSON.Point).coordinates as [number, number]);
+        const r = m.getCanvas().getBoundingClientRect();
+        return { x: r.left + p.x, y: r.top + p.y };
+      })
+      .then((h) => h.jsonValue() as Promise<{ x: number; y: number }>);
+    await page.mouse.click(point.x, point.y);
+    const popup = page.locator(".maplibregl-popup");
+    await expect(popup).toContainText("Listing by");
+    await expect(popup).toContainText(`© ${year} Georgia MLS`);
   });
 
   test("the Georgia MLS name, logo and copyright are on the search page, the footer and the corrections page", async ({

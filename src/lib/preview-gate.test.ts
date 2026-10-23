@@ -104,7 +104,7 @@ describe("what the gate leaves open", () => {
       "/robots.txt",
       "/icon.svg",
       "/favicon.ico",
-      "/brand/gamls_logo.svg",
+      "/brand/gamls_idx.png",
       "/team/andrea-anderegg.webp",
       "/_next/static/chunks/app.js",
       "/alerts/one-click",
@@ -233,7 +233,7 @@ describe("what the gate leaves open", () => {
       "/_next/image?url=%2Fteam%2Fx.webp&w=640&q=75",
       "/favicon.ico",
       "/icon.svg",
-      "/brand/gamls_logo.svg",
+      "/brand/gamls_idx.png",
       "/team/andrea-anderegg.webp",
       "/vendor/maplibre/maplibre-gl-csp-worker.js",
     ]) {

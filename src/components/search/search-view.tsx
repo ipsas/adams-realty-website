@@ -271,8 +271,7 @@ export function SearchView({
             <div className="space-y-2 px-4 pb-6 text-xs text-muted">
               <MlsAttribution className="justify-center" />
               <p className="text-center" data-mls-disclaimer>
-                Listing data comes from {site.mls.name} and is refreshed regularly. Information
-                deemed reliable but not guaranteed.
+                {site.mls.disclaimer}
               </p>
             </div>
           </div>

@@ -25,10 +25,11 @@ rate limiter in `proxy.ts`, and the unbiased-sort tests.
 
 Owner decisions since, now built:
 
-- **Official Georgia MLS logo.** The files from gamls.com/logos are in `public/brand/`
-  (`gamls_logo.svg` for light backgrounds, `gamls_logo_reverse.svg` for dark) and set in
-  `site.mls.logo`; every `MlsAttribution` (footer, `/homes`, feed listing pages,
-  `/listing-corrections`) shows the one that matches the theme.
+- **Official Georgia MLS logo.** The GAMLS IDX logo supplied by Georgia MLS is
+  `public/brand/gamls_idx.png`, set in `site.mls.logo`; every `MlsAttribution` (footer,
+  `/homes`, feed listing pages, `/listing-corrections`) shows it 32 px tall, on a white chip in
+  dark mode. Every feed card, area-guide tile and map popup carries `MlsCredit` (logo at 24 px,
+  "© <year> Georgia MLS"). The disclaimer placeholder is `site.mls.disclaimer`.
 - **The firm's own listings follow the status rule too.** Coming Soon, Withdrawn, Expired and
   Canceled listings entered in the dashboard are hidden from the public like feed ones
   (`drizzle/0011_hide_all_hidden_statuses.sql` drops `from_feed and` from `idx_hidden`). There

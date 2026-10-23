@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { AreaAgents } from "@/components/areas/area-agents";
 import { AreaCta } from "@/components/areas/area-cta";
 import { AreaJsonLd } from "@/components/areas/area-json-ld";
+import { MlsCredit } from "@/components/content/mls-attribution";
 import { MarketSnapshot } from "@/components/areas/market-snapshot";
 import { RecentSales } from "@/components/areas/recent-sales";
 import { ListingCard } from "@/components/listings/listing-card";
@@ -413,6 +414,7 @@ function FeaturedHome({
             {listing.listOfficeName && (
               <p className="truncate text-sm text-muted">Listing by {listing.listOfficeName}</p>
             )}
+            {listing.fromFeed && <MlsCredit className="mt-0.5 text-xs text-muted" />}
           </div>
           <p className="shrink-0 text-lg font-semibold text-ink tabular">
             {formatPrice(listing.listPrice)}

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { MlsCredit } from "@/components/content/mls-attribution";
 import { Photo } from "@/components/ui/photo";
 import {
   formatBaths,
@@ -46,6 +47,7 @@ export function RecentSales({ sales }: { sales: CardRow[] }) {
                     Listing by {s.listOfficeName}
                   </p>
                 )}
+                {s.fromFeed && <MlsCredit className="mt-0.5 text-xs text-muted" />}
               </div>
               <div className="shrink-0 text-right">
                 <p className="font-semibold text-ink tabular">{formatPrice(s.closePrice)}</p>

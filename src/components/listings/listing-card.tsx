@@ -3,6 +3,7 @@
 import { ChevronLeft, ChevronRight, Rotate3d } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState, type ReactNode } from "react";
+import { MlsCredit } from "@/components/content/mls-attribution";
 import { LogoMark } from "@/components/layout/logo";
 import { Photo } from "@/components/ui/photo";
 import { cn } from "@/lib/cn";
@@ -133,6 +134,7 @@ export function ListingCard({
               Listing by {office}
             </p>
           )}
+          {l.fromFeed && !unavailable && <MlsCredit className="mt-1 text-xs text-muted" />}
         </div>
       </Link>
       {!unavailable && (

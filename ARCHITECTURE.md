@@ -246,9 +246,13 @@ governs every listing that came from the feed. Adams Realty, Inc. is the license
   it against the median). `MlsAttribution` (`src/components/content/mls-attribution.tsx`)
   shows the Georgia MLS name and logo and "Listing information © <year> Georgia MLS" in the
   footer, on the search page and in each feed listing's information block. The logo is the
-  official artwork from gamls.com/logos (`site.mls.logo`): `public/brand/gamls_logo.svg`
-  (blue and gold) in the light theme, `gamls_logo_reverse.svg` (white and gold) in the dark
-  one, 32 px tall at its own aspect ratio, with "Georgia MLS" as its alt text.
+  official GAMLS IDX logo supplied by Georgia MLS (`site.mls.logo`,
+  `public/brand/gamls_idx.png`, 300 × 118): one image for both themes, on a white chip in the
+  dark one, 32 px tall at its own aspect ratio, with "Georgia MLS" as its alt text. Every feed
+  card, area-guide tile and map popup also carries `MlsCredit`: the logo at 24 px and
+  "© <year> Georgia MLS" in `text-xs` (below the median, so the firm line stays at or above it).
+  The IDX disclaimer is `site.mls.disclaimer` (a PLACEHOLDER until Georgia MLS gives its exact
+  wording), copied into `data_sources.disclaimer` and shown on `/homes`.
 - **Fields (Exhibit C):** the listing page's "Listing information" block shows Listing office,
   Listing ID, Status, and when the feed sends them the attribution contact phone and email,
   Variable Compensation, and buyer-agency compensation always together with its comments.

@@ -24,6 +24,7 @@ import { useMapTheme } from "@/components/theme/use-theme";
 import { readResolvedTheme } from "@/lib/theme";
 import { formatBaths, formatNumber, formatPrice, formatPriceShort } from "@/lib/format";
 import { landSummary } from "@/lib/listings/land";
+import { mlsCopyrightShort } from "@/lib/mls-copyright";
 import { photoUrl } from "@/lib/photos";
 import type { Bounds } from "@/lib/search/params";
 import type { MapPin } from "@/lib/search/service";
@@ -354,6 +355,24 @@ function popupNode(p: MapPin): HTMLElement {
     office.dataset.testid = "pin-office";
     office.textContent = `Listing by ${p.office}`;
     body.append(office);
+  }
+  if (p.fromFeed) {
+    // IDX: Georgia MLS's name, logo and copyright, as on the cards (MlsCredit).
+    const credit = document.createElement("p");
+    credit.className = "mt-1 flex items-center gap-1.5 text-xs text-muted";
+    credit.dataset.mlsCredit = "";
+    const logo = site.mls.logo;
+    if (logo) {
+      const img = document.createElement("img");
+      img.src = logo.src;
+      img.alt = site.mls.name;
+      img.width = logo.width;
+      img.height = logo.height;
+      img.className = "h-6 w-auto rounded-sm dark:bg-white dark:px-0.5";
+      credit.append(img);
+    }
+    credit.append(mlsCopyrightShort());
+    body.append(credit);
   }
   a.append(body);
   return a;

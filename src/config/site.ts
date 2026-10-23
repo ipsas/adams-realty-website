@@ -61,19 +61,17 @@ export const site = {
     copyrightHolder: "Georgia MLS",
     /**
      * IDX agreement §7: the Georgia MLS name and logo on pages with its
-     * listings. The official files from gamls.com/logos: the standard one
-     * (blue and gold) for the light theme, the "reverse" one (white and gold)
-     * for the dark theme. Both are viewBox 488.87 × 141.29 (3.46:1), so
-     * 173 × 50 keeps the aspect ratio to within a hundredth of a pixel;
-     * `MlsMark` draws them 32 px tall at that ratio. Null would show the name
-     * as a text wordmark instead.
+     * listings. The official GAMLS IDX logo supplied by Georgia MLS (blue and
+     * gold on transparent, 300 × 118 PNG); one image for both themes, drawn on
+     * a white chip in dark mode. `MlsMark` draws it 32 px tall (81 px wide),
+     * 24 px on cards, tiles and map popups. Null would show the name as a text
+     * wordmark instead.
      */
-    logo: {
-      light: "/brand/gamls_logo.svg",
-      dark: "/brand/gamls_logo_reverse.svg",
-      width: 173,
-      height: 50,
-    } as { light: string; dark: string; width: number; height: number } | null,
+    logo: { src: "/brand/gamls_idx.png", width: 300, height: 118 } as {
+      src: string;
+      width: number;
+      height: number;
+    } | null,
     /**
      * IDX agreement Exhibit A §6: how Georgia MLS (or anyone) reports a listing
      * with wrong information. Published on /listing-corrections and linked from

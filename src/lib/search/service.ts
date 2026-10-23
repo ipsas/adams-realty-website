@@ -73,6 +73,8 @@ export type MapPin = {
   featured: boolean;
   /** IDX: the popup names the listing firm, like every card. */
   office: string | null;
+  /** A Georgia MLS listing: the popup also credits the MLS (name, logo, copyright). */
+  fromFeed: boolean;
 };
 
 export const MAX_PINS = 750;
@@ -122,6 +124,7 @@ export async function searchMapPins(c: SearchCriteria, scope?: LocationScope): P
       featured: listings.isFeatured,
       office: listings.listOfficeName,
       company: listings.isCompanyListing,
+      fromFeed: listings.fromFeed,
     })
     .from(listings)
     .where(buildWhere(c, undefined, resolved))
@@ -173,6 +176,7 @@ type PinRow = {
   featured: boolean;
   office: string | null;
   company: boolean;
+  fromFeed: boolean;
 };
 
 /**
@@ -210,7 +214,8 @@ export async function locationPins(
       "listings"."unit_number" as "unitNumber", "listings"."city",
       "listings"."hide_address" as "hideAddress", "listings"."primary_photo_url" as "photo",
       "listings"."is_featured" as "featured",
-      "listings"."list_office_name" as "office", "listings"."is_company_listing" as "company"
+      "listings"."list_office_name" as "office", "listings"."is_company_listing" as "company",
+      "listings"."from_feed" as "fromFeed"
     from top join ${listings} on "listings"."id" = top."id"
     order by ${order}
   `);
@@ -239,5 +244,6 @@ function toPins(rows: PinRow[]): MapPin[] {
       photo: r.photo,
       featured: r.featured,
       office: r.office ?? (r.company ? site.legalName : null),
+      fromFeed: r.fromFeed,
     }));
 }

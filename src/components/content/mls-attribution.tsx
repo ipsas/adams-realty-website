@@ -1,32 +1,35 @@
 import { site } from "@/config/site";
 import { cn } from "@/lib/cn";
+import { mlsCopyright, mlsCopyrightShort } from "@/lib/mls-copyright";
+
+export { mlsCopyright, mlsCopyrightShort } from "@/lib/mls-copyright";
 
 /**
- * Georgia MLS's name and logo (IDX agreement §7). The official logo files when
- * `site.mls.logo` is set, the standard one in light mode and the "reverse" one
- * in dark; until then the name as a text wordmark in the theme's ink color, so
- * it reads in both themes.
+ * Georgia MLS's name and logo (IDX agreement §7). The official GAMLS IDX logo
+ * when `site.mls.logo` is set: one image for both themes, on a white chip in
+ * dark mode so the blue and gold read; 32 px tall (`md`) or 24 px (`sm`, cards
+ * and popups). Until then the name as a text wordmark in the theme's ink
+ * color, so it reads in both themes.
  */
-export function MlsMark({ className }: { className?: string }) {
+export function MlsMark({ className, size = "md" }: { className?: string; size?: "md" | "sm" }) {
   const logo = site.mls.logo;
   if (logo) {
     return (
-      <span className={cn("inline-flex shrink-0", className)} data-mls-mark="logo">
-        {/* eslint-disable-next-line @next/next/no-img-element -- a small static SVG */}
+      <span
+        className={cn(
+          "inline-flex shrink-0 items-center rounded-md dark:bg-white",
+          size === "md" ? "dark:px-1.5 dark:py-1" : "dark:px-1 dark:py-0.5",
+          className,
+        )}
+        data-mls-mark="logo"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element -- a small static PNG */}
         <img
-          src={logo.light}
+          src={logo.src}
           alt={site.mls.name}
           width={logo.width}
           height={logo.height}
-          className="h-8 w-auto dark:hidden"
-        />
-        {/* eslint-disable-next-line @next/next/no-img-element -- a small static SVG */}
-        <img
-          src={logo.dark}
-          alt={site.mls.name}
-          width={logo.width}
-          height={logo.height}
-          className="hidden h-8 w-auto dark:block"
+          className={size === "md" ? "h-8 w-auto" : "h-6 w-auto"}
         />
       </span>
     );
@@ -44,11 +47,6 @@ export function MlsMark({ className }: { className?: string }) {
   );
 }
 
-/** The copyright line (IDX agreement §10): Georgia MLS holds the copyright in its listing content. */
-export function mlsCopyright(year: number = new Date().getFullYear()): string {
-  return `Listing information © ${year} ${site.mls.copyrightHolder}. All rights reserved.`;
-}
-
 /**
  * Source attribution for pages that show Georgia MLS listing data: the name
  * and logo, and the copyright notice. The footer carries it on every site
@@ -62,5 +60,19 @@ export function MlsAttribution({ className }: { className?: string }) {
         Listings courtesy of {site.mls.name}. {mlsCopyright()} Each listing names its listing firm.
       </p>
     </div>
+  );
+}
+
+/**
+ * The compact credit for cards, tiles and popups of Georgia MLS listings: the
+ * name (the logo's alt text and the notice), the logo at 24 px, and the
+ * copyright holder.
+ */
+export function MlsCredit({ className }: { className?: string }) {
+  return (
+    <span className={cn("inline-flex max-w-full items-center gap-1.5", className)} data-mls-credit>
+      <MlsMark size="sm" />
+      <span className="truncate">{mlsCopyrightShort()}</span>
+    </span>
   );
 }

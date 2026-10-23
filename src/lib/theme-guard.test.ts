@@ -38,6 +38,16 @@ const ALLOW_WHITE: { file: string; classes: RegExp }[] = [
   },
   // The inverse button (white on brand panels, with text-shade).
   { file: "src/components/ui/button.tsx", classes: /^bg-white text-shade\b/ },
+  // The Georgia MLS logo's chip in dark mode: the official IDX logo is blue and gold on
+  // transparent, so it sits on white to stay legible (MlsMark and the map popup's credit).
+  {
+    file: "src/components/content/mls-attribution.tsx",
+    classes: /^inline-flex shrink-0 items-center rounded-md dark:bg-white$/,
+  },
+  {
+    file: "src/components/search/search-map.tsx",
+    classes: /^h-6 w-auto rounded-sm dark:bg-white dark:px-0\.5$/,
+  },
 ];
 
 /** String literals and template-literal chunks that look like class lists. */
