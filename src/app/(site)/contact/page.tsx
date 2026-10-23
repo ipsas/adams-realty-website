@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ContactMethods } from "@/components/content/contact-methods";
 import { ContactForm } from "@/components/listings/contact-form";
+import { OrganizationJsonLd } from "@/components/seo/json-ld";
 import { Container } from "@/components/ui/section";
 import { site } from "@/config/site";
 import { getSession } from "@/lib/auth/session";
@@ -46,6 +47,7 @@ export default async function ContactPage() {
 
   return (
     <>
+      <OrganizationJsonLd />
       <section className="relative isolate overflow-hidden bg-brand-900 text-white">
         <div
           aria-hidden

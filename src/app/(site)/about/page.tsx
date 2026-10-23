@@ -12,6 +12,7 @@ import Link from "next/link";
 import { addressLines } from "@/components/content/contact";
 import { ContactCta } from "@/components/content/contact-cta";
 import { PageIntro } from "@/components/content/page-intro";
+import { OrganizationJsonLd } from "@/components/seo/json-ld";
 import { Avatar } from "@/components/ui/avatar";
 import { LinkButton } from "@/components/ui/button";
 import { Container, SectionHeading } from "@/components/ui/section";
@@ -153,6 +154,7 @@ export default async function AboutPage() {
 
   return (
     <>
+      <OrganizationJsonLd />
       <PageIntro
         tone="dark"
         eyebrow={`About ${site.name}`}

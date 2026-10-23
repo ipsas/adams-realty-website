@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ContactForm } from "@/components/listings/contact-form";
 import { ListingCard } from "@/components/listings/listing-card";
+import { AgentJsonLd } from "@/components/seo/json-ld";
 import { Avatar } from "@/components/ui/avatar";
 import { Container } from "@/components/ui/section";
 import { site } from "@/config/site";
@@ -73,6 +74,7 @@ export default async function AgentPage(props: PageProps<"/agents/[slug]">) {
 
   return (
     <Container className="py-12">
+      <AgentJsonLd agent={a} />
       {/* Phones: profile, contact form, listings. Desktop: the listings fill the column under the
           profile, beside the sticky form, so a short profile leaves no gap next to it. */}
       <div className="grid grid-cols-1 gap-12 lg:grid-cols-[minmax(0,1fr)_400px]">

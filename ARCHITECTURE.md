@@ -458,6 +458,9 @@ contact, agent, listing report, valuation, sign-up, saved searches):
 - **SEO:**
   - Metadata per page.
   - `RealEstateListing` JSON-LD on property pages.
+  - `RealEstateAgent` JSON-LD for the firm on `/`, `/about` and `/contact`, and `Person` on
+    `/agents/[slug]` (`src/lib/json-ld.ts`; only facts from `site.ts` and the agents table).
+    `openingHoursSpecification` is parsed from `site.hours` (`parseOfficeHours`), so the two never drift.
   - Sitemaps: `sitemap.xml` (pages including `/places`, agents), `areas/sitemap.xml`, and the listings in 12 fixed
     chunks of up to 10,000 URLs at `/homes/sitemap/<id>.xml` (120k capacity; Georgia MLS has
     about 53k live). The chunk count is a constant, so `robots.txt` lists every chunk and no
