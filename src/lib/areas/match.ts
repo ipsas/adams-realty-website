@@ -14,19 +14,27 @@ import { listings } from "@/db/schema";
  *   so the many rural and small-town listings with no subdivision name still
  *   count. A lake never falls back to its post-office town — that would report
  *   all of Hartwell's market as Lake Hartwell's.
+ * - A guide's `cities` (a neighboring town it covers as a section, e.g.
+ *   Hoschton in Braselton) also match `listings.city`, county-scoped the same way.
  * - A listing with a county must be in one of the area's `counties`. Names
  *   repeat across a statewide feed: a subdivision called "Jefferson" in
  *   Chatham County is not Jefferson, Jackson County.
  * - Comparisons ignore case and punctuation on both sides (`normalizeAreaName`
  *   and its SQL twin below), so "Hartwell-Lake" in a feed still matches.
  */
-export function areaMatchKeys(area: Pick<Area, "name" | "city" | "aliases">): {
+export function areaMatchKeys(area: Pick<Area, "name" | "city" | "aliases" | "cities">): {
   neighborhoods: string[];
   cities: string[];
 } {
   const neighborhoods = unique([area.name, ...(area.aliases ?? [])].map(normalizeAreaName));
   const city = normalizeAreaName(area.city);
-  return { neighborhoods, cities: normalizeAreaName(area.name) === city ? [city] : [] };
+  return {
+    neighborhoods,
+    cities: unique([
+      ...(normalizeAreaName(area.name) === city ? [city] : []),
+      ...(area.cities ?? []).map(normalizeAreaName),
+    ]),
+  };
 }
 
 /**
@@ -82,7 +90,9 @@ export function normalizedMatch(col: AnyColumn, keys: string[]): SQL {
 }
 
 /** WHERE fragment selecting the listings that belong to `area`. */
-export function areaCondition(area: Pick<Area, "name" | "city" | "aliases" | "counties">): SQL {
+export function areaCondition(
+  area: Pick<Area, "name" | "city" | "aliases" | "cities" | "counties">,
+): SQL {
   const keys = areaMatchKeys(area);
   const parts = [
     normalizedMatch(listings.neighborhood, keys.neighborhoods),
@@ -107,7 +117,7 @@ export type AreaKeyRow = {
  * instead of an OR across arrays that forces a nested loop.
  */
 export function areaKeyRows(
-  list: Pick<Area, "slug" | "name" | "city" | "aliases" | "counties">[],
+  list: Pick<Area, "slug" | "name" | "city" | "aliases" | "cities" | "counties">[],
 ): AreaKeyRow[] {
   return list.flatMap((a) => {
     const k = areaMatchKeys(a);
@@ -130,7 +140,7 @@ export function areaKeyRows(
  * in a rural market often describe their territory by county.
  */
 export function serviceAreaKeys(
-  area: Pick<Area, "name" | "city" | "aliases" | "counties">,
+  area: Pick<Area, "name" | "city" | "aliases" | "cities" | "counties">,
 ): string[] {
   const keys = areaMatchKeys(area);
   const counties = area.counties.map((c) => normalizeAreaName(`${c} County`));

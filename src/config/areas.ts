@@ -11,8 +11,9 @@
  * Listings are matched to an area by neighborhood name (plus `aliases` for the
  * spellings MLS feeds use). An area that *is* a town (Royston, Toccoa, …) also
  * matches on city, which picks up the many rural and small-town listings that
- * carry no subdivision name. Lakes match on neighborhood only. See
- * `src/lib/areas/match.ts`.
+ * carry no subdivision name. Lakes match on neighborhood only. A guide that
+ * covers a neighboring town as a section lists it in `cities`, so that town's
+ * listings count too. See `src/lib/areas/match.ts`.
  */
 
 export type AreaRegion = "franklin" | "hartwell" | "stephens" | "madison-jackson" | "hall-gwinnett";
@@ -32,6 +33,8 @@ export type Area = {
   goodToKnow?: string;
   /** Other spellings of the area seen in MLS data. */
   aliases?: string[];
+  /** Other MLS cities whose listings belong to this guide (a town covered as a section, e.g. Hoschton → Braselton). Matched on listings.city, county-scoped like the city itself. */
+  cities?: string[];
   center: { lat: number; lng: number };
 };
 
@@ -283,13 +286,19 @@ export const areas: Area[] = [
     counties: ["Jackson", "Gwinnett", "Hall", "Barrow"],
     region: "madison-jackson",
     description:
-      "Braselton, incorporated in 1916, is a town of about 34 square miles that spreads across Jackson, Gwinnett, Hall and Barrow counties along I-85. It's home to Château Élan Winery & Resort, and Michelin Raceway Road Atlanta, home of the Petit Le Mans endurance race, is just north of town.",
+      "Braselton, incorporated in 1916, is a town of about 34 square miles that spreads across Jackson, Gwinnett, Hall and Barrow counties along I-85. It's home to Château Élan Winery & Resort, and Michelin Raceway Road Atlanta, home of the Petit Le Mans endurance race, is just north of town. Next door, the small city of Hoschton grew up around its 1883 railroad depot, which still stands on GA 53 and is listed on the National Register of Historic Places.",
     highlights: [
       "Château Élan Winery & Resort",
       "Michelin Raceway Road Atlanta, a 2.54-mile road course",
       "Historic downtown Braselton",
+      "The 1883 Hoschton Depot on GA 53, now a community landmark",
+      "GA 53 through Hoschton, northwest to Oakwood and I-985",
       "I-85 at Exits 126 and 129",
     ],
+    goodToKnow:
+      "The Hoschton ZIP code, 30548, reaches well past the City of Hoschton into parts of Jackson, Barrow, Hall and Gwinnett counties, including part of Braselton. A Hoschton mailing address doesn't tell you the city or county, so check both for a specific home; they decide property taxes and local services.",
+    aliases: ["Hoschton"],
+    cities: ["Hoschton"],
     center: { lat: 34.1093, lng: -83.7627 },
   },
 
@@ -309,6 +318,24 @@ export const areas: Area[] = [
       "The Poultry Capital of the World monument",
     ],
     center: { lat: 34.2979, lng: -83.8241 },
+  },
+  {
+    slug: "oakwood",
+    name: "Oakwood",
+    city: "Oakwood",
+    counties: ["Hall"],
+    region: "hall-gwinnett",
+    description:
+      "Oakwood is a Hall County city between Gainesville and Flowery Branch, with I-985 Exits 16 and 17 on its southeastern side. Founded in 1873 as O'Dell's Crossing and renamed Oakwood in 1896, it's home to the University of North Georgia's Gainesville Campus.",
+    highlights: [
+      "The University of North Georgia's Gainesville Campus, with the Ed Cabell Theater and Roy C. Moore Art Gallery",
+      "I-985 at Exits 16 and 17, about 48 miles from downtown Atlanta",
+      "GA 53 southeast toward Hoschton and Braselton",
+      "Incorporated by the Georgia General Assembly in 1903",
+    ],
+    goodToKnow:
+      "Oakwood shares ZIP codes with its neighbors, so a home inside the city can carry a Gainesville or Flowery Branch mailing address, and a home outside it can carry an Oakwood one. Check whether an address is inside the city limits before counting on city services or city property taxes.",
+    center: { lat: 34.2511, lng: -83.8611 },
   },
   {
     slug: "flowery-branch",
@@ -362,6 +389,25 @@ export const areas: Area[] = [
     center: { lat: 34.1207, lng: -84.0044 },
   },
   {
+    slug: "sugar-hill",
+    name: "Sugar Hill",
+    city: "Sugar Hill",
+    counties: ["Gwinnett"],
+    region: "hall-gwinnett",
+    description:
+      "Sugar Hill is a city in northern Gwinnett County, between Buford and Suwanee and close to Lake Lanier. Chartered as a town in 1939, it's named for a local story of a wagonload of sugar spilled on a hill, and its downtown on West Broad Street is home to The Bowl amphitheater and the Art Deco Eagle Theatre.",
+    highlights: [
+      "The Bowl at Sugar Hill, an outdoor amphitheater downtown",
+      "The Eagle Theatre and the E Center on West Broad Street",
+      "Gary Pirkle Park: 67 acres along Richland Creek, with paved, lighted walking trails",
+      "Sugar Hill Golf Club, open since 1992",
+      "GA 20 to I-985 in Buford, about 19 miles from Gainesville",
+    ],
+    goodToKnow:
+      "The City of Sugar Hill runs its own natural gas utility. Ask whether a home is in the city's gas service area, since that decides who you set up gas service with.",
+    center: { lat: 34.086, lng: -84.034 },
+  },
+  {
     slug: "dacula",
     name: "Dacula",
     city: "Dacula",
@@ -388,7 +434,7 @@ export function normalizeAreaName(s: string): string {
 
 const byKey = new Map<string, Area>();
 for (const a of areas) {
-  for (const key of [a.slug, a.name, ...(a.aliases ?? [])]) {
+  for (const key of [a.slug, a.name, ...(a.aliases ?? []), ...(a.cities ?? [])]) {
     byKey.set(normalizeAreaName(key), a);
   }
 }

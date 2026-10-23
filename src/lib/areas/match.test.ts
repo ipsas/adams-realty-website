@@ -157,6 +157,44 @@ describe("areaKeyRows", () => {
   });
 });
 
+describe("section towns (cities)", () => {
+  it("matches a section town's city as well as the guide's own", () => {
+    expect(areaMatchKeys(area("Braselton"))).toEqual({
+      neighborhoods: ["braselton", "hoschton"],
+      cities: ["braselton", "hoschton"],
+    });
+    // The lake rule is untouched: still no city fallback.
+    expect(areaMatchKeys(area("Lake Lanier")).cities).toEqual([]);
+  });
+
+  it("emits a city key row for the section town, with the guide's counties", () => {
+    expect(areaKeyRows([area("Braselton")])).toContainEqual({
+      slug: "braselton",
+      kind: "city",
+      key: "hoschton",
+      counties: ["jackson", "gwinnett", "hall", "barrow"],
+    });
+  });
+
+  it("adds the section town to the city clause", () => {
+    const { sql, params } = dialect.sqlToQuery(areaCondition(area("Braselton")));
+    expect(sql).toContain(`lower("listings"."city")`);
+    expect(params).toContain("hoschton");
+    expect(params).toContain("%hoschton%");
+  });
+
+  it("finds the guide for a section-town listing, county-scoped", () => {
+    expect(guideForLocation(null, "Hoschton", "Jackson")?.slug).toBe("braselton");
+    expect(guideForLocation(null, "Hoschton", "Fulton")).toBeUndefined();
+  });
+
+  it("gives a section town no URL of its own", () => {
+    // Guide routes and the sitemap resolve by slug only (src/lib/listings/cached.ts).
+    expect(areas.map((a) => a.slug)).not.toContain("hoschton");
+    expect(findArea("hoschton")?.slug).toBe("braselton");
+  });
+});
+
 describe("sql helpers", () => {
   it("renders an empty text[] literal", () => {
     expect(dialect.sqlToQuery(textArray([])).sql).toBe("array[]::text[]");

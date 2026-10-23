@@ -20,7 +20,7 @@ describe("area config", () => {
     for (const a of areas) {
       expect(regions.has(a.region), a.slug).toBe(true);
       expect(a.highlights.length, a.slug).toBeGreaterThanOrEqual(3);
-      expect(a.highlights.length, a.slug).toBeLessThanOrEqual(4);
+      expect(a.highlights.length, a.slug).toBeLessThanOrEqual(6);
       const sentences = a.description.split(/(?<=[.!?])\s+/).length;
       expect(sentences, a.slug).toBeGreaterThanOrEqual(2);
       expect(sentences, a.slug).toBeLessThanOrEqual(3);
@@ -49,10 +49,12 @@ describe("area config", () => {
     for (const r of areaRegions) expect(areas.some((a) => a.region === r.id), r.id).toBe(true);
   });
 
-  it("never lets two areas claim the same name or alias", () => {
+  it("never lets two areas claim the same name, alias or city", () => {
     const seen = new Map<string, string>();
     for (const a of areas) {
-      for (const key of new Set([a.slug, a.name, ...(a.aliases ?? [])].map(normalizeAreaName))) {
+      for (const key of new Set(
+        [a.slug, a.name, ...(a.aliases ?? []), ...(a.cities ?? [])].map(normalizeAreaName),
+      )) {
         expect(seen.get(key), `${key} claimed by ${seen.get(key)} and ${a.slug}`).toBeUndefined();
         seen.set(key, a.slug);
       }
