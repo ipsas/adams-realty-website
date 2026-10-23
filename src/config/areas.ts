@@ -40,6 +40,17 @@ export type Area = {
 
 export const areaRegions: { id: AreaRegion; label: string; blurb: string }[] = [
   {
+    id: "hall-gwinnett",
+    label: "Hall & Gwinnett",
+    blurb: "Lake Lanier and the cities around it, from Gainesville to Buford and Dacula.",
+  },
+  {
+    id: "madison-jackson",
+    label: "Madison & Jackson Counties",
+    blurb:
+      "County seats with historic courthouses, rolling farmland, and the I-85 towns of Commerce, Jefferson and Braselton.",
+  },
+  {
     id: "franklin",
     label: "Franklin County",
     blurb:
@@ -55,20 +66,214 @@ export const areaRegions: { id: AreaRegion; label: string; blurb: string }[] = [
     label: "Stephens County",
     blurb: "Toccoa and Martin, in the Blue Ridge foothills near the Tugaloo River.",
   },
-  {
-    id: "madison-jackson",
-    label: "Madison & Jackson Counties",
-    blurb:
-      "County seats with historic courthouses, rolling farmland, and the I-85 towns of Commerce, Jefferson and Braselton.",
-  },
-  {
-    id: "hall-gwinnett",
-    label: "Hall & Gwinnett",
-    blurb: "Lake Lanier and the cities around it, from Gainesville to Buford and Dacula.",
-  },
 ];
 
 export const areas: Area[] = [
+  // ── Hall & Gwinnett ────────────────────────────────────────────────────────
+  {
+    slug: "gainesville",
+    name: "Gainesville",
+    city: "Gainesville",
+    counties: ["Hall"],
+    region: "hall-gwinnett",
+    description:
+      "Gainesville is the Hall County seat, on the eastern shore of Lake Lanier. Lake Lanier Olympic Park hosted the rowing and canoe/kayak events of the 1996 Olympic Games, and the historic downtown square is lined with shops and restaurants.",
+    highlights: [
+      "Lake Lanier Olympic Park",
+      "The historic downtown square",
+      "Brenau University",
+      "The Poultry Capital of the World monument",
+    ],
+    center: { lat: 34.2979, lng: -83.8241 },
+  },
+  {
+    slug: "oakwood",
+    name: "Oakwood",
+    city: "Oakwood",
+    counties: ["Hall"],
+    region: "hall-gwinnett",
+    description:
+      "Oakwood is a Hall County city between Gainesville and Flowery Branch, with I-985 Exits 16 and 17 on its southeastern side. Founded in 1873 as O'Dell's Crossing and renamed Oakwood in 1896, it's home to the University of North Georgia's Gainesville Campus.",
+    highlights: [
+      "The University of North Georgia's Gainesville Campus, with the Ed Cabell Theater and Roy C. Moore Art Gallery",
+      "I-985 at Exits 16 and 17, about 48 miles from downtown Atlanta",
+      "GA 53 southeast toward Hoschton and Braselton",
+      "Incorporated by the Georgia General Assembly in 1903",
+    ],
+    goodToKnow:
+      "Oakwood shares ZIP codes with its neighbors, so a home inside the city can carry a Gainesville or Flowery Branch mailing address, and a home outside it can carry an Oakwood one. Check whether an address is inside the city limits before counting on city services or city property taxes.",
+    center: { lat: 34.2511, lng: -83.8611 },
+  },
+  {
+    slug: "flowery-branch",
+    name: "Flowery Branch",
+    city: "Flowery Branch",
+    counties: ["Hall"],
+    region: "hall-gwinnett",
+    description:
+      "Flowery Branch is a Hall County city on the shore of Lake Lanier, established in 1874 along the new Air-Line railroad. It's home to the Atlanta Falcons' headquarters and training facility, and its historic train depot is now a museum.",
+    highlights: [
+      "The historic train depot museum and caboose",
+      "The Atlanta Falcons' headquarters and training facility",
+      "Lake Lanier parks and marinas nearby",
+      "I-985 access",
+    ],
+    center: { lat: 34.1851, lng: -83.9252 },
+  },
+  {
+    slug: "lake-lanier",
+    name: "Lake Lanier",
+    city: "Gainesville",
+    counties: ["Hall", "Forsyth", "Gwinnett", "Dawson", "Lumpkin"],
+    region: "hall-gwinnett",
+    description:
+      "Lake Sidney Lanier is an Army Corps of Engineers reservoir on the Chattahoochee River, formed by Buford Dam in the 1950s. With hundreds of miles of shoreline, it's the region's big lake for boating and waterfront living, from Lake Lanier Islands to quiet coves in Hall County.",
+    highlights: [
+      "Marinas, boat ramps and swimming beaches in Corps of Engineers parks",
+      "Lake Lanier Islands resort",
+      "Buford Dam and Lower Pool Park",
+      "Lake Lanier Olympic Park in Gainesville",
+    ],
+    goodToKnow:
+      "Lanier's shoreline is federal land managed by the Army Corps of Engineers. A private dock needs a Corps permit, and not every lakefront lot qualifies, so ask us about a home's dock status before you fall for the view.",
+    aliases: ["Lanier", "Lake Sidney Lanier"],
+    center: { lat: 34.19, lng: -83.98 },
+  },
+  {
+    slug: "buford",
+    name: "Buford",
+    city: "Buford",
+    counties: ["Gwinnett", "Hall"],
+    region: "hall-gwinnett",
+    description:
+      "Buford grew up around the railroad in the 1870s and was long home to the Bona Allen Company, whose leather goods sold nationwide. Its former tannery buildings now hold the Tannery Row artist studios downtown, and the Mall of Georgia and Lake Lanier Islands are a short drive away.",
+    highlights: [
+      "Tannery Row artist studios and historic downtown Buford",
+      "The Mall of Georgia",
+      "Lake Lanier Islands resort",
+      "The historic Bona Allen Mansion",
+    ],
+    center: { lat: 34.1207, lng: -84.0044 },
+  },
+  {
+    slug: "sugar-hill",
+    name: "Sugar Hill",
+    city: "Sugar Hill",
+    counties: ["Gwinnett"],
+    region: "hall-gwinnett",
+    description:
+      "Sugar Hill is a city in northern Gwinnett County, between Buford and Suwanee and close to Lake Lanier. Chartered as a town in 1939, it's named for a local story of a wagonload of sugar spilled on a hill, and its downtown on West Broad Street is home to The Bowl amphitheater and the Art Deco Eagle Theatre.",
+    highlights: [
+      "The Bowl at Sugar Hill, an outdoor amphitheater downtown",
+      "The Eagle Theatre and the E Center on West Broad Street",
+      "Gary Pirkle Park: 67 acres along Richland Creek, with paved, lighted walking trails",
+      "Sugar Hill Golf Club, open since 1992",
+      "GA 20 to I-985 in Buford, about 19 miles from Gainesville",
+    ],
+    goodToKnow:
+      "The City of Sugar Hill runs its own natural gas utility. Ask whether a home is in the city's gas service area, since that decides who you set up gas service with.",
+    center: { lat: 34.086, lng: -84.034 },
+  },
+  {
+    slug: "dacula",
+    name: "Dacula",
+    city: "Dacula",
+    counties: ["Gwinnett"],
+    region: "hall-gwinnett",
+    description:
+      "Dacula is a city in eastern Gwinnett County, with Winder Highway (U.S. 29 Business) as its main road. Nearby, the Elisha Winn House, built in 1812, served as Gwinnett's first courthouse and is the county's oldest surviving building.",
+    highlights: [
+      "Little Mulberry Park: 890 acres of trails, pastures and two lakes",
+      "The Elisha Winn House (1812)",
+      "U.S. 29 Business through the center of town",
+    ],
+    center: { lat: 33.9887, lng: -83.898 },
+  },
+
+  // ── Madison & Jackson Counties ─────────────────────────────────────────────
+  {
+    slug: "danielsville",
+    name: "Danielsville",
+    city: "Danielsville",
+    counties: ["Madison"],
+    region: "madison-jackson",
+    description:
+      "Danielsville is the Madison County seat, and its town square is centered on the 1901 Madison County Courthouse. Crawford Long, the first physician to use ether as an anesthetic in surgery, was born here in 1815.",
+    highlights: [
+      "The 1901 Madison County Courthouse, listed on the National Register of Historic Places",
+      "Crawford W. Long's birthplace",
+      "U.S. 29 toward Athens and Royston",
+    ],
+    center: { lat: 34.1243, lng: -83.2213 },
+  },
+  {
+    slug: "comer",
+    name: "Comer",
+    city: "Comer",
+    counties: ["Madison"],
+    region: "madison-jackson",
+    description:
+      "Comer is a small city in eastern Madison County. Nearby Watson Mill Bridge State Park is named for its 229-foot covered bridge, built in 1885 across the South Fork of the Broad River and the longest original-site covered bridge in Georgia.",
+    highlights: [
+      "Watson Mill Bridge State Park and its 1885 covered bridge",
+      "Trails along the South Fork of the Broad River",
+      "GA 72 toward Athens and Elberton",
+    ],
+    center: { lat: 34.0637, lng: -83.1254 },
+  },
+  {
+    slug: "commerce",
+    name: "Commerce",
+    city: "Commerce",
+    counties: ["Jackson"],
+    region: "madison-jackson",
+    description:
+      "Commerce is a Jackson County city on I-85 and U.S. 441, founded in the early 1800s as Harmony Grove and renamed in 1909. Its historic downtown sits on one side of the interstate, with Tanger Outlets across it at Banks Crossing.",
+    highlights: [
+      "Tanger Outlets at Banks Crossing, I-85 Exit 149",
+      "Historic downtown Commerce",
+      "Atlanta Dragway nearby",
+    ],
+    center: { lat: 34.204, lng: -83.4571 },
+  },
+  {
+    slug: "jefferson",
+    name: "Jefferson",
+    city: "Jefferson",
+    counties: ["Jackson"],
+    region: "madison-jackson",
+    description:
+      "Jefferson is the Jackson County seat. Its 1879 courthouse, one of the first built in Georgia after the Civil War, is now a museum and visitor center, and the Crawford W. Long Museum downtown tells the story of the doctor who first used ether as an anesthetic here in 1842.",
+    highlights: [
+      "The historic 1879 Jackson County Courthouse",
+      "The Crawford W. Long Museum",
+      "I-85 access via U.S. 129",
+    ],
+    center: { lat: 34.1171, lng: -83.5724 },
+  },
+  {
+    slug: "braselton",
+    name: "Braselton",
+    city: "Braselton",
+    counties: ["Jackson", "Gwinnett", "Hall", "Barrow"],
+    region: "madison-jackson",
+    description:
+      "Braselton, incorporated in 1916, is a town of about 34 square miles that spreads across Jackson, Gwinnett, Hall and Barrow counties along I-85. It's home to Château Élan Winery & Resort, and Michelin Raceway Road Atlanta, home of the Petit Le Mans endurance race, is just north of town. Next door, the small city of Hoschton grew up around its 1883 railroad depot, which still stands on GA 53 and is listed on the National Register of Historic Places.",
+    highlights: [
+      "Château Élan Winery & Resort",
+      "Michelin Raceway Road Atlanta, a 2.54-mile road course",
+      "Historic downtown Braselton",
+      "The 1883 Hoschton Depot on GA 53, now a community landmark",
+      "GA 53 through Hoschton, northwest to Oakwood and I-985",
+      "I-85 at Exits 126 and 129",
+    ],
+    goodToKnow:
+      "The Hoschton ZIP code, 30548, reaches well past the City of Hoschton into parts of Jackson, Barrow, Hall and Gwinnett counties, including part of Braselton. A Hoschton mailing address doesn't tell you the city or county, so check both for a specific home; they decide property taxes and local services.",
+    aliases: ["Hoschton"],
+    cities: ["Hoschton"],
+    center: { lat: 34.1093, lng: -83.7627 },
+  },
+
   // ── Franklin County ────────────────────────────────────────────────────────
   {
     slug: "royston",
@@ -217,211 +422,6 @@ export const areas: Area[] = [
     ],
     center: { lat: 34.4868, lng: -83.1851 },
   },
-
-  // ── Madison & Jackson Counties ─────────────────────────────────────────────
-  {
-    slug: "danielsville",
-    name: "Danielsville",
-    city: "Danielsville",
-    counties: ["Madison"],
-    region: "madison-jackson",
-    description:
-      "Danielsville is the Madison County seat, and its town square is centered on the 1901 Madison County Courthouse. Crawford Long, the first physician to use ether as an anesthetic in surgery, was born here in 1815.",
-    highlights: [
-      "The 1901 Madison County Courthouse, listed on the National Register of Historic Places",
-      "Crawford W. Long's birthplace",
-      "U.S. 29 toward Athens and Royston",
-    ],
-    center: { lat: 34.1243, lng: -83.2213 },
-  },
-  {
-    slug: "comer",
-    name: "Comer",
-    city: "Comer",
-    counties: ["Madison"],
-    region: "madison-jackson",
-    description:
-      "Comer is a small city in eastern Madison County. Nearby Watson Mill Bridge State Park is named for its 229-foot covered bridge, built in 1885 across the South Fork of the Broad River and the longest original-site covered bridge in Georgia.",
-    highlights: [
-      "Watson Mill Bridge State Park and its 1885 covered bridge",
-      "Trails along the South Fork of the Broad River",
-      "GA 72 toward Athens and Elberton",
-    ],
-    center: { lat: 34.0637, lng: -83.1254 },
-  },
-  {
-    slug: "commerce",
-    name: "Commerce",
-    city: "Commerce",
-    counties: ["Jackson"],
-    region: "madison-jackson",
-    description:
-      "Commerce is a Jackson County city on I-85 and U.S. 441, founded in the early 1800s as Harmony Grove and renamed in 1909. Its historic downtown sits on one side of the interstate, with Tanger Outlets across it at Banks Crossing.",
-    highlights: [
-      "Tanger Outlets at Banks Crossing, I-85 Exit 149",
-      "Historic downtown Commerce",
-      "Atlanta Dragway nearby",
-    ],
-    center: { lat: 34.204, lng: -83.4571 },
-  },
-  {
-    slug: "jefferson",
-    name: "Jefferson",
-    city: "Jefferson",
-    counties: ["Jackson"],
-    region: "madison-jackson",
-    description:
-      "Jefferson is the Jackson County seat. Its 1879 courthouse, one of the first built in Georgia after the Civil War, is now a museum and visitor center, and the Crawford W. Long Museum downtown tells the story of the doctor who first used ether as an anesthetic here in 1842.",
-    highlights: [
-      "The historic 1879 Jackson County Courthouse",
-      "The Crawford W. Long Museum",
-      "I-85 access via U.S. 129",
-    ],
-    center: { lat: 34.1171, lng: -83.5724 },
-  },
-  {
-    slug: "braselton",
-    name: "Braselton",
-    city: "Braselton",
-    counties: ["Jackson", "Gwinnett", "Hall", "Barrow"],
-    region: "madison-jackson",
-    description:
-      "Braselton, incorporated in 1916, is a town of about 34 square miles that spreads across Jackson, Gwinnett, Hall and Barrow counties along I-85. It's home to Château Élan Winery & Resort, and Michelin Raceway Road Atlanta, home of the Petit Le Mans endurance race, is just north of town. Next door, the small city of Hoschton grew up around its 1883 railroad depot, which still stands on GA 53 and is listed on the National Register of Historic Places.",
-    highlights: [
-      "Château Élan Winery & Resort",
-      "Michelin Raceway Road Atlanta, a 2.54-mile road course",
-      "Historic downtown Braselton",
-      "The 1883 Hoschton Depot on GA 53, now a community landmark",
-      "GA 53 through Hoschton, northwest to Oakwood and I-985",
-      "I-85 at Exits 126 and 129",
-    ],
-    goodToKnow:
-      "The Hoschton ZIP code, 30548, reaches well past the City of Hoschton into parts of Jackson, Barrow, Hall and Gwinnett counties, including part of Braselton. A Hoschton mailing address doesn't tell you the city or county, so check both for a specific home; they decide property taxes and local services.",
-    aliases: ["Hoschton"],
-    cities: ["Hoschton"],
-    center: { lat: 34.1093, lng: -83.7627 },
-  },
-
-  // ── Hall & Gwinnett ────────────────────────────────────────────────────────
-  {
-    slug: "gainesville",
-    name: "Gainesville",
-    city: "Gainesville",
-    counties: ["Hall"],
-    region: "hall-gwinnett",
-    description:
-      "Gainesville is the Hall County seat, on the eastern shore of Lake Lanier. Lake Lanier Olympic Park hosted the rowing and canoe/kayak events of the 1996 Olympic Games, and the historic downtown square is lined with shops and restaurants.",
-    highlights: [
-      "Lake Lanier Olympic Park",
-      "The historic downtown square",
-      "Brenau University",
-      "The Poultry Capital of the World monument",
-    ],
-    center: { lat: 34.2979, lng: -83.8241 },
-  },
-  {
-    slug: "oakwood",
-    name: "Oakwood",
-    city: "Oakwood",
-    counties: ["Hall"],
-    region: "hall-gwinnett",
-    description:
-      "Oakwood is a Hall County city between Gainesville and Flowery Branch, with I-985 Exits 16 and 17 on its southeastern side. Founded in 1873 as O'Dell's Crossing and renamed Oakwood in 1896, it's home to the University of North Georgia's Gainesville Campus.",
-    highlights: [
-      "The University of North Georgia's Gainesville Campus, with the Ed Cabell Theater and Roy C. Moore Art Gallery",
-      "I-985 at Exits 16 and 17, about 48 miles from downtown Atlanta",
-      "GA 53 southeast toward Hoschton and Braselton",
-      "Incorporated by the Georgia General Assembly in 1903",
-    ],
-    goodToKnow:
-      "Oakwood shares ZIP codes with its neighbors, so a home inside the city can carry a Gainesville or Flowery Branch mailing address, and a home outside it can carry an Oakwood one. Check whether an address is inside the city limits before counting on city services or city property taxes.",
-    center: { lat: 34.2511, lng: -83.8611 },
-  },
-  {
-    slug: "flowery-branch",
-    name: "Flowery Branch",
-    city: "Flowery Branch",
-    counties: ["Hall"],
-    region: "hall-gwinnett",
-    description:
-      "Flowery Branch is a Hall County city on the shore of Lake Lanier, established in 1874 along the new Air-Line railroad. It's home to the Atlanta Falcons' headquarters and training facility, and its historic train depot is now a museum.",
-    highlights: [
-      "The historic train depot museum and caboose",
-      "The Atlanta Falcons' headquarters and training facility",
-      "Lake Lanier parks and marinas nearby",
-      "I-985 access",
-    ],
-    center: { lat: 34.1851, lng: -83.9252 },
-  },
-  {
-    slug: "lake-lanier",
-    name: "Lake Lanier",
-    city: "Gainesville",
-    counties: ["Hall", "Forsyth", "Gwinnett", "Dawson", "Lumpkin"],
-    region: "hall-gwinnett",
-    description:
-      "Lake Sidney Lanier is an Army Corps of Engineers reservoir on the Chattahoochee River, formed by Buford Dam in the 1950s. With hundreds of miles of shoreline, it's the region's big lake for boating and waterfront living, from Lake Lanier Islands to quiet coves in Hall County.",
-    highlights: [
-      "Marinas, boat ramps and swimming beaches in Corps of Engineers parks",
-      "Lake Lanier Islands resort",
-      "Buford Dam and Lower Pool Park",
-      "Lake Lanier Olympic Park in Gainesville",
-    ],
-    goodToKnow:
-      "Lanier's shoreline is federal land managed by the Army Corps of Engineers. A private dock needs a Corps permit, and not every lakefront lot qualifies, so ask us about a home's dock status before you fall for the view.",
-    aliases: ["Lanier", "Lake Sidney Lanier"],
-    center: { lat: 34.19, lng: -83.98 },
-  },
-  {
-    slug: "buford",
-    name: "Buford",
-    city: "Buford",
-    counties: ["Gwinnett", "Hall"],
-    region: "hall-gwinnett",
-    description:
-      "Buford grew up around the railroad in the 1870s and was long home to the Bona Allen Company, whose leather goods sold nationwide. Its former tannery buildings now hold the Tannery Row artist studios downtown, and the Mall of Georgia and Lake Lanier Islands are a short drive away.",
-    highlights: [
-      "Tannery Row artist studios and historic downtown Buford",
-      "The Mall of Georgia",
-      "Lake Lanier Islands resort",
-      "The historic Bona Allen Mansion",
-    ],
-    center: { lat: 34.1207, lng: -84.0044 },
-  },
-  {
-    slug: "sugar-hill",
-    name: "Sugar Hill",
-    city: "Sugar Hill",
-    counties: ["Gwinnett"],
-    region: "hall-gwinnett",
-    description:
-      "Sugar Hill is a city in northern Gwinnett County, between Buford and Suwanee and close to Lake Lanier. Chartered as a town in 1939, it's named for a local story of a wagonload of sugar spilled on a hill, and its downtown on West Broad Street is home to The Bowl amphitheater and the Art Deco Eagle Theatre.",
-    highlights: [
-      "The Bowl at Sugar Hill, an outdoor amphitheater downtown",
-      "The Eagle Theatre and the E Center on West Broad Street",
-      "Gary Pirkle Park: 67 acres along Richland Creek, with paved, lighted walking trails",
-      "Sugar Hill Golf Club, open since 1992",
-      "GA 20 to I-985 in Buford, about 19 miles from Gainesville",
-    ],
-    goodToKnow:
-      "The City of Sugar Hill runs its own natural gas utility. Ask whether a home is in the city's gas service area, since that decides who you set up gas service with.",
-    center: { lat: 34.086, lng: -84.034 },
-  },
-  {
-    slug: "dacula",
-    name: "Dacula",
-    city: "Dacula",
-    counties: ["Gwinnett"],
-    region: "hall-gwinnett",
-    description:
-      "Dacula is a city in eastern Gwinnett County, with Winder Highway (U.S. 29 Business) as its main road. Nearby, the Elisha Winn House, built in 1812, served as Gwinnett's first courthouse and is the county's oldest surviving building.",
-    highlights: [
-      "Little Mulberry Park: 890 acres of trails, pastures and two lakes",
-      "The Elisha Winn House (1812)",
-      "U.S. 29 Business through the center of town",
-    ],
-    center: { lat: 33.9887, lng: -83.898 },
-  },
 ];
 
 /** Case/punctuation-insensitive key: "Franklin-Springs" and "franklin springs" match. */
@@ -443,6 +443,14 @@ for (const a of areas) {
 export function findArea(nameOrSlug: string | null | undefined): Area | undefined {
   if (!nameOrSlug) return undefined;
   return byKey.get(normalizeAreaName(nameOrSlug));
+}
+
+/** The town-level guide for this very city ("Gainesville" → gainesville); lakes and section towns (Hoschton) have none. */
+export function townGuide(city: string): Area | undefined {
+  const a = findArea(city);
+  if (!a) return undefined;
+  const c = normalizeAreaName(a.city);
+  return c === normalizeAreaName(city) && c === normalizeAreaName(a.name) ? a : undefined;
 }
 
 /** "Franklin County" / "Hart, Franklin and Stephens counties". */

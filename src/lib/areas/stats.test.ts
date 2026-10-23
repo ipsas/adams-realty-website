@@ -136,12 +136,15 @@ describe("sorting and grouping", () => {
   it("groups by region in the configured order", () => {
     const groups = groupByRegion([...list, summary("lavonia", 3, 289_000)]);
     expect(groups.map((g) => g.region.id)).toEqual([
+      "hall-gwinnett",
       "franklin",
       "hartwell",
       "stephens",
-      "hall-gwinnett",
     ]);
-    expect(groups[0].items.map((s) => s.area.slug)).toEqual(["royston", "lavonia"]);
+    expect(groups.find((g) => g.region.id === "franklin")!.items.map((s) => s.area.slug)).toEqual([
+      "royston",
+      "lavonia",
+    ]);
   });
 });
 

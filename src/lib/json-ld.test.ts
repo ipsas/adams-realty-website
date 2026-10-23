@@ -94,7 +94,7 @@ describe("organizationJsonLd", () => {
     expect(json.areaServed).toHaveLength(7);
     expect(json.areaServed?.[0]).toEqual({
       "@type": "AdministrativeArea",
-      name: "Franklin County, Georgia",
+      name: "Hall County, Georgia",
     });
     const none = organizationJsonLd(base, { ...site, market: { ...site.market, counties: [] } });
     expect("areaServed" in none).toBe(false);

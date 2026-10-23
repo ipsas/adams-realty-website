@@ -82,7 +82,7 @@ test.describe("listing coverage copy says Georgia", () => {
 test.describe("towns come from the listings", () => {
   test("the home page shows more than 5 town chips, each finding homes", async ({ page }) => {
     await page.goto("/");
-    const chips = page.locator("[data-top-cities] a[href^='/homes?q=']");
+    const chips = page.locator("[data-top-cities] a:not([href='/places'])");
     const hrefs = await chips.evaluateAll((els) => els.map((e) => e.getAttribute("href")!));
     expect(hrefs.length).toBeGreaterThan(5);
     expect(hrefs.length).toBeLessThanOrEqual(12);
@@ -90,7 +90,8 @@ test.describe("towns come from the listings", () => {
     expect(hrefs).toContain("/homes?q=Atlanta");
     for (const href of hrefs) {
       await page.goto(href);
-      expect(await resultCount(page), href).toBeGreaterThanOrEqual(1);
+      if (href.startsWith("/areas/")) await expect(page.locator("h1"), href).toBeVisible();
+      else expect(await resultCount(page), href).toBeGreaterThanOrEqual(1);
     }
   });
 
@@ -108,7 +109,7 @@ test.describe("towns come from the listings", () => {
         .then((r) => r.rows),
     );
     await page.goto("/");
-    const chips = await page.locator("[data-top-cities] a[href^='/homes?q=']").allTextContents();
+    const chips = await page.locator("[data-top-cities] a:not([href='/places'])").allTextContents();
     expect(chips.length).toBeGreaterThan(5);
     const counts = chips.map((city) => busiest.find((b) => b.city === city)?.n ?? 0);
     // Busiest first: counts never go up along the chips...
@@ -125,7 +126,7 @@ test.describe("towns come from the listings", () => {
 
   test("the footer lists the busiest towns, the same as the home page chips", async ({ page }) => {
     await page.goto("/");
-    const chips = await page.locator("[data-top-cities] a[href^='/homes?q=']").allTextContents();
+    const chips = await page.locator("[data-top-cities] a:not([href='/places'])").allTextContents();
     const places = page.locator("footer [data-footer-column='Places']");
     await expect(places.getByRole("heading")).toHaveText("Places");
     const footerTowns = await places.locator("a[href^='/homes?q=']").allTextContents();

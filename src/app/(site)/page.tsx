@@ -7,6 +7,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { LinkButton } from "@/components/ui/button";
 import { Photo } from "@/components/ui/photo";
 import { Container, SectionHeading } from "@/components/ui/section";
+import { areaHref, townGuide } from "@/config/areas";
 import { site } from "@/config/site";
 import { getAgents } from "@/lib/agents/queries";
 import { formatNumber, formatPriceShort } from "@/lib/format";
@@ -26,6 +27,12 @@ const TOP_CITIES = 12;
 
 const SELL_IMAGE =
   "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1600&q=80";
+
+/** A town's area guide when it has one, otherwise a search for its homes. */
+function townHref(city: string): string {
+  const guide = townGuide(city);
+  return guide ? areaHref(guide) : searchHref({ q: city });
+}
 
 export default async function HomePage() {
   const [featured, newest, areas, stats, agents, topCities] = await Promise.all([
@@ -79,7 +86,7 @@ export default async function HomePage() {
               {topCities.map(({ city }) => (
                 <Link
                   key={city}
-                  href={searchHref({ q: city })}
+                  href={townHref(city)}
                   className="flex h-9 shrink-0 items-center rounded-full border border-white/25 px-3 whitespace-nowrap text-white/90 backdrop-blur-sm transition-colors hover:bg-white/15"
                 >
                   {city}
@@ -220,7 +227,7 @@ export default async function HomePage() {
             {areas.map((a, i) => (
               <Link
                 key={a.city}
-                href={searchHref({ q: a.city })}
+                href={townHref(a.city)}
                 className={`group relative isolate overflow-hidden rounded-[var(--radius-card)] bg-brand-800 ${i === 0 ? "col-span-2 row-span-2 aspect-square sm:aspect-auto" : "aspect-[4/5] sm:aspect-[4/3]"}`}
               >
                 <Photo

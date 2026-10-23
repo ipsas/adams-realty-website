@@ -105,7 +105,7 @@ export const site = {
      * of these (or in an area guide's county) is in the firm's area: see
      * src/lib/areas/firm-area.ts.
      */
-    counties: ["Franklin", "Hart", "Madison", "Stephens", "Jackson", "Hall", "Gwinnett"],
+    counties: ["Hall", "Gwinnett", "Jackson", "Franklin", "Hart", "Madison", "Stephens"],
     /**
      * The seven counties' combined extent (Census TIGERweb, rounded outward).
      * Saved searches with no location made while the site was regional were
@@ -182,5 +182,6 @@ export const nav = [
   { label: "Buy", href: "/homes" },
   { label: "Rent", href: "/homes?mode=rent" },
   { label: "Sell", href: "/sell" },
+  { label: "Area guides", href: "/areas" },
   { label: "Agents", href: "/agents" },
 ] as const;

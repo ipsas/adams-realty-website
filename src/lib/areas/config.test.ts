@@ -6,6 +6,7 @@ import {
   countyLabel,
   findArea,
   normalizeAreaName,
+  townGuide,
 } from "@/config/areas";
 
 describe("area config", () => {
@@ -74,6 +75,18 @@ describe("findArea", () => {
     expect(findArea("Athens")).toBeUndefined();
     expect(findArea("")).toBeUndefined();
     expect(findArea(null)).toBeUndefined();
+  });
+});
+
+describe("townGuide", () => {
+  it("finds the guide for a town that has its own", () => {
+    expect(townGuide("Gainesville")?.slug).toBe("gainesville");
+  });
+
+  it("skips section towns, lakes and towns without a guide", () => {
+    expect(townGuide("Hoschton")).toBeUndefined();
+    expect(townGuide("Lake Lanier")).toBeUndefined();
+    expect(townGuide("Atlanta")).toBeUndefined();
   });
 });
 
