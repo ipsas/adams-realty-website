@@ -20,7 +20,7 @@ import { getCachedAreaSummaries } from "@/lib/listings/cached";
 
 export const metadata: Metadata = {
   title: "Area guides",
-  description: `Live market stats and local context for ${areas.length} towns and lakes across ${site.market.region}: median prices, days on market, recent sales, and the parks, lakes and landmarks that define each area.`,
+  description: `Guides to ${areas.length} towns and lakes around Gainesville and Northeast Georgia: median prices, days on market, recent sales, and the parks and landmarks of each.`,
   alternates: { canonical: "/areas" },
 };
 
