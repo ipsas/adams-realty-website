@@ -49,18 +49,19 @@ email, office hours, GREC firm license, Georgia MLS office ID and DMCA designate
 
 ## Scripts
 
-| Command               | What it does                                          |
-| --------------------- | ----------------------------------------------------- |
-| `npm run dev`         | Dev server                                            |
-| `npm run build`       | Production build (needs no database at build time)    |
-| `npm run lint`        | ESLint                                                |
-| `npm run typecheck`   | TypeScript                                            |
-| `npm test`            | Unit and database tests (Vitest; needs Postgres)      |
-| `npm run test:e2e`    | End-to-end tests (Playwright; seeded DB + dev server) |
-| `npm run db:generate` | Create a migration from schema changes                |
-| `npm run db:migrate`  | Apply migrations                                      |
-| `npm run db:seed`     | Reset and seed demo data (refuses in production)      |
-| `npm run mls:sync`    | Sync MLS feeds now (see _Connecting your MLS_)        |
+| Command                 | What it does                                          |
+| ----------------------- | ----------------------------------------------------- |
+| `npm run dev`           | Dev server                                            |
+| `npm run build`         | Production build (needs no database at build time)    |
+| `npm run lint`          | ESLint                                                |
+| `npm run typecheck`     | TypeScript                                            |
+| `npm test`              | Unit and database tests (Vitest; needs Postgres)      |
+| `npm run test:e2e`      | End-to-end tests (Playwright; seeded DB + dev server) |
+| `npm run db:generate`   | Create a migration from schema changes                |
+| `npm run db:migrate`    | Apply migrations                                      |
+| `npm run db:seed`       | Reset and seed demo data (refuses in production)      |
+| `npm run mls:sync`      | Sync MLS feeds now (see _Connecting your MLS_)        |
+| `npm run mls:add-gamls` | Add or activate the Georgia MLS (Bridge) feed         |
 
 `npm run test:e2e` also starts a fake MLS photo host on 127.0.0.1:4010
 (`e2e/fixtures/photo-host.mjs`, full-size 2.5 MB photos) for the photo tests. To measure
@@ -132,30 +133,38 @@ also has a slim "Preview: the homes on this site are samples" bar at the top.
 
 ## Connecting your MLS (IDX)
 
-Adams Realty is a Georgia MLS member (office ID `ADAM01`), so the IDX feed comes from
-Georgia MLS.
+Adams Realty is a Georgia MLS member (office ID `ADAM01`). Georgia MLS's IDX feed is served
+by Bridge Interactive's RESO Web API; the source definition is `src/lib/mls/gamls.ts` (base
+URL `https://api.bridgedataoutput.com/api/v2/OData/<dataset>`, `companyOfficeIds: ["ADAM01"]`
+marks the firm's own listings).
 
-1. Sign Georgia MLS's IDX agreement and request RESO Web API access. Georgia MLS will give
-   you the API endpoint and credentials (or point you to its data vendor).
-2. Add a row to `data_sources`:
-   ```sql
-   insert into data_sources (slug, name, kind, config, disclaimer) values (
-     'gamls', 'Georgia MLS', 'reso_web_api',
-     '{"baseUrl":"https://<vendor>/odata","resource":"Property","credentialsEnvPrefix":"MLS_GAMLS",
-       "filter":"StandardStatus ne ''Incomplete''","companyOfficeIds":["ADAM01"]}',
-     '<the exact IDX disclaimer text Georgia MLS requires>'
-   );
-   ```
-   `companyOfficeIds` marks listings from office `ADAM01` as Adams listings.
-3. Set the credentials (`MLS_GAMLS_TOKEN`, or `_CLIENT_ID`/`_CLIENT_SECRET` plus `config.tokenUrl`).
-4. **Run the first load from the command line, not on Vercel:** `npm run mls:sync -- --full`
+1. **Placeholders to confirm before launch:**
+   - the Bridge dataset name: `GAMLS_DATASET_DEFAULT` (`"gamls"`) in `src/lib/mls/gamls.ts`,
+     overridable with `MLS_GAMLS_DATASET`;
+   - the exact IDX disclaimer: `site.mls.disclaimer` in `src/config/site.ts`, copied into
+     `data_sources.disclaimer` by the seed and by `npm run mls:add-gamls`;
+   - the agents' Georgia MLS agent IDs: `MLS_AGENT_IDS` in `scripts/seed-data.ts`. Andrea's
+     (`ANDEREGGAA`) is confirmed; the other four (Emily Cooper, Avery McGarity, Erika Lane,
+     Anitra Thompson) are unconfirmed placeholders to verify with Adams Realty. Feed listings
+     link to a profile only through this ID, so a wrong one means that agent's listings show
+     without a profile link. Fix them there and, on a live database, in _Dashboard → Agents_.
+2. **When the token arrives:** add `MLS_GAMLS_TOKEN` to Vercel (Production) and `.env.local`.
+   Probe the feed with `curl` and the bearer token (`$top=1` on `Property`;
+   `$select=ListingKey&$top=1000` to confirm the `$top` cap; `$expand=Media,OpenHouse`) and add
+   any new `StandardStatus`/`PropertyType` spelling to the mapper with a test. Then run
+   `npm run mls:add-gamls` (upserts the `gamls` row and activates it once the token is set).
+   Until then the site runs on demo data: the `gamls` row stays inactive (if activated without
+   a token, the cron answers 200 and marks it "skipped"), and _Dashboard → MLS feeds_ shows
+   which variable is missing.
+3. **Run the first load from the command line, not on Vercel:** `npm run mls:sync -- --full`
    on your computer (or a CI job) with `DATABASE_URL` pointing at the production database. A
    statewide feed is about 65,000 listings and takes 20–60 minutes, far longer than a Vercel
    function may run (300 seconds). It's safe to stop and rerun: every page of 200 listings is
-   saved with the feed position, and a plain `npm run mls:sync` carries on from there.
+   saved with the feed position, and a plain `npm run mls:sync` carries on from there. Then
+   run `npm run mls:sync -- --purge` and check _Dashboard → MLS feeds_.
 
-   After that, Vercel Cron syncs the feed and purges off-market listings on the schedule in
-   `vercel.json` (daily; see _Deploying_). Each cron run stops itself before the time limit
+   After that, Vercel Cron syncs the feed every 15 minutes and purges off-market listings
+   daily (`vercel.json`; see _Deploying_). Each cron run stops itself before the time limit
    and, if the feed had more changes than fit, ends as "partial" in _Dashboard → MLS feeds_;
    the next run continues from the same place.
 
@@ -175,8 +184,8 @@ Georgia MLS.
      finished for a day and a half.
    - `-- --minutes 4`: stop between pages after about 4 minutes.
 
-5. Set each agent's MLS agent ID (_Dashboard → Agents_) so feed listings link to their
-   profiles. Andrea Anderegg's is `ANDEREGGAA`.
+4. Check each agent's Georgia MLS agent ID in _Dashboard → Agents_ (see the placeholders
+   above) so feed listings link to their profiles.
 
 ## Deploying
 
@@ -190,13 +199,17 @@ Vercel plus Neon (or Supabase) Postgres is the simplest setup:
    it yourself: run `npx tsx scripts/seed.ts --force` with that database's `DATABASE_URL` and
    the same `SEED_PASSWORD`. That wipes everything on it, including its logins, leads and
    saved homes, so never point it at a database with real sign-ups or inquiries.
-3. The crons in `vercel.json` run the MLS sync, the off-market purge (`?purge=1`, a separate
-   purge-only run) and email alerts once a day, which is what Vercel's free (Hobby) plan
-   allows; a sub-daily schedule fails the deployment there. The staff's 7 a.m. lead summary
-   has no cron of its own: the sync and alerts routes both try it, and the first run at or
-   after 7 a.m. Eastern sends it (11:00 UTC in summer, 12:00 UTC in winter), once a day. On Vercel Pro, set the sync to
-   `*/15 * * * *` (keep the purge daily, at a minute no sync starts on) and alerts to
-   `5 * * * *` (hourly): see HANDOFF.md section 6.
+   **Preview deployments need their own `DATABASE_URL`** (a Neon branch or a dedicated
+   preview database): `vercel-build` runs migrations in every environment and, with
+   `SEED_DEMO_DATA=1`, seeds an empty database. Scope the production `DATABASE_URL` to
+   Production only; never point Preview at the production database.
+3. The crons in `vercel.json` are set for Vercel Pro, which the project is on: the MLS sync
+   every 15 minutes (`*/15 * * * *`), the off-market purge (`?purge=1`, a separate
+   purge-only run) daily at 09:38 UTC, a minute no sync can still be running in, and email
+   alerts hourly (`5 * * * *`). (Hobby rejects sub-daily crons.) Vercel Cron fires only on
+   Production deployments. The staff's 7 a.m. lead summary has no cron of its own: the sync
+   and alerts routes both try it, and the first run at or after 7 a.m. Eastern sends it (by
+   about 7:15), once a day.
 4. Cached listing data (home page numbers and featured homes, area guide stats) refreshes
    right after each cron sync, and within 15 minutes after a sync run from the command line.
 5. Maps use OpenFreeMap (no API key): its positron style in light mode and its dark style in

@@ -1195,6 +1195,22 @@ export type SeedAgent = {
 };
 
 /**
+ * PLACEHOLDER: the agents' Georgia MLS agent IDs, in one place. Only Andrea
+ * Anderegg's (ANDEREGGAA) is confirmed, by her public Georgia MLS profile.
+ * The other four (Emily Cooper, Avery McGarity, Erika Lane, Anitra Thompson)
+ * are UNCONFIRMED placeholders: verify them with Adams Realty before launch.
+ * A wrong ID only means feed listings won't link to that agent's profile.
+ * Update them here and, on a live database, in Dashboard → Agents.
+ */
+export const MLS_AGENT_IDS = {
+  "Andrea Anderegg": "ANDEREGGAA",
+  "Emily Cooper": "EC7733",
+  "Avery McGarity": "AM6239",
+  "Erika Lane": "NORRISERIKA",
+  "Anitra Thompson": "THOMPSONANIT",
+} as const satisfies Record<string, string>;
+
+/**
  * The team: Adams Realty, Inc.'s five real agents, in display order. Index 0
  * is the broker and the admin login; indexes 1 and 2 get the demo agent
  * logins (agent@ and agent2@adamsrealty.example, see scripts/seed.ts) that
@@ -1220,7 +1236,7 @@ export const AGENTS: SeedAgent[] = [
     photoUrl: "/team/andrea-anderegg.webp",
     phone: "(850) 572-3287",
     email: "contracts.adamsrealty@gmail.com",
-    mlsAgentId: "ANDEREGGAA",
+    mlsAgentId: MLS_AGENT_IDS["Andrea Anderegg"],
     years: null,
     specialties: [
       "First-time home buyers",
@@ -1247,14 +1263,14 @@ export const AGENTS: SeedAgent[] = [
     real: true,
   },
   {
-    // Emily Cooper. Name, title and MLS agent ID only: no bio yet, and no
-    // direct phone or email known, so the office's.
+    // Emily Cooper. Name and title only (MLS agent ID: see MLS_AGENT_IDS):
+    // no bio yet, and no direct phone or email known, so the office's.
     name: "Emily Cooper",
     title: "Agent",
     photoUrl: "/team/emily-cooper.webp",
     phone: site.phone,
     email: site.email,
-    mlsAgentId: "EC7733",
+    mlsAgentId: MLS_AGENT_IDS["Emily Cooper"],
     years: null,
     specialties: [],
     languages: [],
@@ -1263,14 +1279,14 @@ export const AGENTS: SeedAgent[] = [
     real: true,
   },
   {
-    // Avery McGarity. Name, title and MLS agent ID only: no bio yet, and no
-    // direct phone or email known, so the office's.
+    // Avery McGarity. Name and title only (MLS agent ID: see MLS_AGENT_IDS):
+    // no bio yet, and no direct phone or email known, so the office's.
     name: "Avery McGarity",
     title: "Agent",
     photoUrl: "/team/avery-mcgarity.webp",
     phone: site.phone,
     email: site.email,
-    mlsAgentId: "AM6239",
+    mlsAgentId: MLS_AGENT_IDS["Avery McGarity"],
     years: null,
     specialties: [],
     languages: [],
@@ -1279,15 +1295,15 @@ export const AGENTS: SeedAgent[] = [
     real: true,
   },
   {
-    // Erika Lane (formerly Erika Norris: her Georgia MLS agent ID still
-    // carries that name). Bio as provided; specialties are the ones it names
-    // (sellers, land, commercial property). The office's phone and email.
+    // Erika Lane (formerly Erika Norris; the placeholder MLS agent ID in
+    // MLS_AGENT_IDS uses that name). Bio as provided; specialties are the ones
+    // it names (sellers, land, commercial property). The office's phone and email.
     name: "Erika Lane",
     title: "Agent",
     photoUrl: "/team/erika-lane.webp",
     phone: site.phone,
     email: site.email,
-    mlsAgentId: "NORRISERIKA",
+    mlsAgentId: MLS_AGENT_IDS["Erika Lane"],
     years: null,
     specialties: ["Sellers", "Land", "Commercial property"],
     languages: [],
@@ -1309,7 +1325,7 @@ export const AGENTS: SeedAgent[] = [
     photoUrl: "/team/anitra-thompson.webp",
     phone: site.phone,
     email: site.email,
-    mlsAgentId: "THOMPSONANIT",
+    mlsAgentId: MLS_AGENT_IDS["Anitra Thompson"],
     years: null,
     specialties: ["Buyers", "Investment property"],
     languages: [],

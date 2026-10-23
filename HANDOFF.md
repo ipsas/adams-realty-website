@@ -9,7 +9,7 @@ Status as of the end of the cloud session. Everything is on GitHub, on branch
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Desktop site**         | ✅ Done. The branch includes: search with map; property pages; saved homes and searches; email alerts; accounts; broker/agent dashboard (listings, open houses, photos, leads with notes and CSV export, agent profiles, users and roles, MLS feed health); about, contact, privacy, terms, accessibility and fair-housing pages; neighborhood guides.                                                                   |
 | **Real company details** | ✅ Adams Realty, Inc., 69 Mill Street, Royston, GA 30662, (706) 246-0053, contracts.adamsrealty@gmail.com, Georgia MLS office `ADAM01`; office hours (Mon–Fri, 9 a.m.–5 p.m.), GREC firm license 6079 and DMCA designated agent (DMCA-1081724), provided on 2026-10-02.                                                                                                                                                  |
-| **The team**             | ✅ Adams Realty's five real agents. Andrea Anderegg (broker): headshot (`public/team/andrea-anderegg.webp`, chosen from the ones she sent), email, direct line (850) 572-3287, MLS agent ID `ANDEREGGAA` and her own bio. Emily Cooper, Avery McGarity, Erika Lane and Anitra Thompson: names, titles and MLS agent IDs, plus Erika's and Anitra's bios; their headshots (provided 2026-10-05); they use the office phone and email.               |
+| **The team**             | ✅ Adams Realty's five real agents. Andrea Anderegg (broker): headshot (`public/team/andrea-anderegg.webp`, chosen from the ones she sent), email, direct line (850) 572-3287, MLS agent ID `ANDEREGGAA` and her own bio. Emily Cooper, Avery McGarity, Erika Lane and Anitra Thompson: names and titles, plus Erika's and Anitra's bios (their MLS agent IDs are unconfirmed placeholders, `MLS_AGENT_IDS` in `scripts/seed-data.ts`); their headshots (provided 2026-10-05); they use the office phone and email.               |
 | **Sample market**        | ✅ Fictional listings across Georgia: Adams Realty's own in Northeast Georgia (Franklin, Hart, Madison, Stephens, Jackson, Hall and Gwinnett counties: homes, Lake Hartwell property, farms and land, and a **Commercial** type), credited to the five agents in turn, and other brokerages' statewide (Atlanta, Savannah, Athens, Macon and more). Every listing is fake (the agents are real), and the footer says so. |
 | **Checks on the branch** | ✅ Lint, typecheck, 298 unit tests, 22 end-to-end tests and the production build all pass.                                                                                                                                                                                                                                                                                                                               |
 | **Mobile app (PWA)**     | 🟡 Designed and started, not finished. See section 4.                                                                                                                                                                                                                                                                                                                                                                    |
@@ -129,9 +129,11 @@ Use your model table: Opus High for the work packages, and Xhigh if one gets stu
 
 ## 6. Before launch: things only Adams Realty can provide or decide
 
-- [ ] **Georgia MLS IDX feed.** Ask Georgia MLS for an IDX data feed (RESO Web API) for office
-      `ADAM01`, then follow README → "Connecting your MLS". Andrea's listings then appear
-      automatically, credited to her.
+- [ ] **Georgia MLS IDX feed.** Georgia MLS serves its IDX feed for office `ADAM01` through
+      Bridge Interactive's RESO Web API (`src/lib/mls/gamls.ts`). When the token arrives, set
+      `MLS_GAMLS_TOKEN` and follow README → "Connecting your MLS". Andrea's listings then
+      appear automatically, credited to her. Confirm the other four agents' MLS agent IDs
+      (unconfirmed placeholders in `MLS_AGENT_IDS`, `scripts/seed-data.ts`) with Adams Realty.
 - [x] **GREC firm license number** and **office hours.** Done: license 6079 and Mon–Fri,
       9 a.m.–5 p.m., provided on 2026-10-02 (`src/config/site.ts`).
 - [x] **Andrea's bio.** Done: the bio she provided (`scripts/seed-data.ts`).
@@ -150,19 +152,14 @@ Use your model table: Opus High for the work packages, and Xhigh if one gets stu
       and every staff member gets a 7 a.m. summary of leads that need attention. Andrea can
       turn her copies and the summary off in _Dashboard → Email settings_.
 - [ ] **Domain and hosting.** Add your domain in Vercel. The live business site should be on Vercel
-      Pro, whose terms cover commercial use and which allows the 15-minute MLS sync. Only
-      after the project is on Pro (a sub-daily cron fails every deployment on Hobby, which the
-      preview link uses), change the `crons` in `vercel.json`: `/api/cron/sync` to
-      `*/15 * * * *` (every 15 minutes); keep `/api/cron/sync?purge=1` as its own daily run at
-      `38 9 * * *` (it only removes listings that left the feed; minute 38 is clear of the
-      9:30 sync, which ends within 5 minutes, and of the 9:45 one. If they ever meet, the
-      purge waits for the sync, or fails visibly in _Dashboard → MLS feeds_); `/api/cron/alerts` to
-      `5 * * * *` (hourly), and update `src/app/api/cron/sync/schedule.test.ts`, which holds
-      `vercel.json` to Hobby's rules. Until then the schedules stay daily, with the purge at
-      `0 11 * * *`, two hours after the 9:00 sync: Hobby may fire a daily cron at any minute of
-      its hour, so a purge in the next hour could still meet a sync that started at 9:59. If
-      a daily sync ends "partial" in _Dashboard → MLS feeds_, run `npm run mls:sync` from a
-      computer to catch up.
+      Pro, whose terms cover commercial use and which allows the 15-minute MLS sync. The
+      project is on Pro, and `vercel.json` holds the Pro schedules: `/api/cron/sync` every 15
+      minutes (`*/15 * * * *`); `/api/cron/sync?purge=1` as its own daily run at `38 9 * * *`
+      (it only removes listings that left the feed; minute 38 is clear of the 9:30 sync, which
+      ends within 5 minutes, and of the 9:45 one. If they ever meet, the purge waits for the
+      sync, or fails visibly in _Dashboard → MLS feeds_); `/api/cron/alerts` hourly
+      (`5 * * * *`). `src/app/api/cron/sync/schedule.test.ts` checks them. (Hobby rejects
+      sub-daily crons.)
 - [ ] **Statewide cutover order.** Deploy the migrations (including `drizzle/0009`, which pins
       saved searches with no location to Northeast Georgia so their alerts don't widen), run the
       first statewide load below, then widen the feed's filter to statewide. The "all of Georgia"
