@@ -6,7 +6,30 @@ import { mapResoProperty, type ResoProperty } from "./mapper";
 const PAGE_SIZE = 200;
 const KEY_PAGE_SIZE = 1000;
 
-export type ResoProviderOptions = Pick<ResoClientConfig, "deadline" | "fetchImpl">;
+export type ResoProviderOptions = Pick<ResoClientConfig, "deadline" | "fetchImpl" | "now" | "sleep">;
+
+/** A feed source whose credential env vars aren't set (see `missingCredentials`). */
+export class MissingCredentialsError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MissingCredentialsError";
+  }
+}
+
+/**
+ * Null when the env holds credentials for `config` (`${prefix}_TOKEN`, or
+ * `${prefix}_CLIENT_ID` + `_CLIENT_SECRET` with `config.tokenUrl`; empty
+ * strings count as unset), else a message naming the variables to set.
+ */
+export function missingCredentials(
+  config: DataSourceConfig,
+  env: Record<string, string | undefined>,
+): string | null {
+  const prefix = config.credentialsEnvPrefix ?? "MLS";
+  if (env[`${prefix}_TOKEN`]) return null;
+  if (env[`${prefix}_CLIENT_ID`] && env[`${prefix}_CLIENT_SECRET`] && config.tokenUrl) return null;
+  return `${prefix}_TOKEN is not set (or ${prefix}_CLIENT_ID + ${prefix}_CLIENT_SECRET with config.tokenUrl)`;
+}
 
 /**
  * A listing feed served over the RESO Web API. Credentials come from env
@@ -24,6 +47,7 @@ export class ResoWebApiProvider implements ListingProvider {
   private readonly client: ResoClient;
   private readonly resource: string;
   private readonly baseFilter: string | undefined;
+  private readonly keyPageSize: number;
 
   constructor(
     config: DataSourceConfig,
@@ -31,6 +55,8 @@ export class ResoWebApiProvider implements ListingProvider {
     options: ResoProviderOptions = {},
   ) {
     if (!config.baseUrl) throw new Error("RESO data source is missing config.baseUrl");
+    const missing = missingCredentials(config, env);
+    if (missing) throw new MissingCredentialsError(missing);
     const prefix = config.credentialsEnvPrefix ?? "MLS";
     this.client = new ResoClient({
       baseUrl: config.baseUrl,
@@ -42,6 +68,7 @@ export class ResoWebApiProvider implements ListingProvider {
     });
     this.resource = config.resource ?? "Property";
     this.baseFilter = config.filter;
+    this.keyPageSize = config.keyPageSize ?? KEY_PAGE_SIZE;
   }
 
   private filter(...extra: (string | undefined)[]): string | undefined {
@@ -89,7 +116,7 @@ export class ResoWebApiProvider implements ListingProvider {
     for (;;) {
       const query: Record<string, string> = {
         $select: "ListingKey",
-        $top: String(KEY_PAGE_SIZE),
+        $top: String(this.keyPageSize),
         $orderby: "ListingKey asc",
       };
       const filter = this.filter(

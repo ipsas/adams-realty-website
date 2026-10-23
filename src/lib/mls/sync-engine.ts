@@ -115,7 +115,10 @@ export type RunSyncOptions = {
 export type SyncResult = SyncCounts & {
   runId: string | null;
   mode: SyncMode;
-  /** `skipped`: another run of this source was still going; nothing was done (recorded as such). */
+  /**
+   * `skipped`: another run of this source was still going; nothing was done (recorded as such).
+   * syncAllSources also reports a source without credentials as skipped (no run recorded).
+   */
   status: "succeeded" | "partial" | "skipped";
   skipped: Partial<Record<MapSkipReason, number>>;
   cursor: Date | null;

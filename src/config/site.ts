@@ -80,6 +80,9 @@ export const site = {
      * every listing page; fixes or removals happen within one business day.
      */
     corrections: { email: "contracts.adamsrealty@gmail.com", phone: "(706) 246-0053" },
+    /** PLACEHOLDER (IDX agreement): replace with the exact disclaimer wording Georgia MLS requires. Seeded into data_sources.disclaimer for the gamls source; shown in the footer, on listing pages, on /homes and in alert emails. */
+    disclaimer:
+      "Listing information comes from Georgia MLS under its IDX program and is refreshed regularly. Information deemed reliable but not guaranteed.",
   },
   /**
    * What the listings cover: Georgia MLS IDX, statewide. Search headings, the

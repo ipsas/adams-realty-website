@@ -17,6 +17,7 @@
     "db:seed": "tsx scripts/seed.ts",
     "db:reset": "npm run db:migrate && npm run db:seed",
     "mls:sync": "tsx scripts/sync.ts",
+    "mls:add-gamls": "tsx scripts/add-gamls-source.ts",
     "perf:seed": "tsx scripts/perf/seed.ts",
     "perf:measure": "tsx scripts/perf/measure.ts",
     "perf:drop": "tsx scripts/perf/seed.ts --drop",

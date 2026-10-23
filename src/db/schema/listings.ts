@@ -104,6 +104,8 @@ export type DataSourceConfig = {
   tokenUrl?: string;
   /** MLS office IDs that belong to our brokerage; their listings get `isCompanyListing`. */
   companyOfficeIds?: string[];
+  /** $top for the purge's key download (default 1000). Bridge caps $top at 200. */
+  keyPageSize?: number;
 };
 
 export type ListingFeatures = {

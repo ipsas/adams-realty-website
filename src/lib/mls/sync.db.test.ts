@@ -6,7 +6,7 @@ import { agents, dataSources, listings, syncRuns } from "@/db/schema";
 import { closeDb, createSource, listing, resetDb } from "@/test/db/helpers";
 import { STALE_RUN_MS } from "./sync-engine";
 import { createSyncStore, STALE_RUN_ERROR } from "./sync-store";
-import { FEED_GRACE_MS, SyncFailedError, syncSource } from "./sync";
+import { FEED_GRACE_MS, SyncFailedError, syncAllSources, syncSource } from "./sync";
 import type { FeedPosition, ListingProvider, MapResult, NormalizedListing } from "./types";
 
 // The sync end to end against Postgres: syncSource → runSync → the Postgres
@@ -295,6 +295,44 @@ describe("syncSource: the run's deadline reaches the RESO feed", () => {
   it("keeps the grace inside the cron's 45 s margin (deadline = maxDuration − 45 s)", () => {
     expect(FEED_GRACE_MS).toBeGreaterThan(0);
     expect(FEED_GRACE_MS).toBeLessThan(45_000);
+  });
+});
+
+describe("syncAllSources: a feed without credentials", () => {
+  beforeEach(async () => {
+    await db
+      .update(dataSources)
+      .set({
+        config: { baseUrl: "https://feed.example.com/odata", credentialsEnvPrefix: "MLS_GAMLS" },
+      })
+      .where(eq(dataSources.id, source.id));
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("is skipped with a note and records no run", async () => {
+    vi.stubEnv("MLS_GAMLS_TOKEN", "");
+    const results = await syncAllSources({ mode: "purge" });
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      source: source.slug,
+      ok: true,
+      note: expect.stringMatching(/MLS_GAMLS_TOKEN/),
+      result: { status: "skipped", mode: "purge", runId: null },
+    });
+    expect(await db.$count(syncRuns)).toBe(0);
+  });
+
+  it("syncs once the token is set", async () => {
+    vi.stubEnv("MLS_GAMLS_TOKEN", "t");
+    vi.stubGlobal("fetch", async () => Response.json({ value: [] }));
+    const results = await syncAllSources();
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ ok: true, result: { status: "succeeded" } });
+    expect(results[0]).not.toHaveProperty("note");
+    expect(await db.$count(syncRuns)).toBe(1);
   });
 });
 

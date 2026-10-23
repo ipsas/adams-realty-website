@@ -58,6 +58,7 @@ import {
 import { slugify } from "@/lib/listings/slug";
 import { DEFAULT_CRITERIA, type SearchCriteria } from "@/lib/search/params";
 import { searchListings } from "@/lib/search/service";
+import { gamlsSource } from "@/lib/mls/gamls";
 import type { NormalizedListing, NormalizedMedia } from "@/lib/mls/types";
 import {
   AGENTS,
@@ -846,6 +847,8 @@ async function main() {
         config: { resource: "Property", companyOfficeIds: [OFFICE_MLS_ID] },
         disclaimer: DEMO_DISCLAIMER,
       },
+      // Georgia MLS via Bridge: inactive until the token exists; `npm run mls:add-gamls` activates it.
+      { ...gamlsSource(), isActive: false },
     ])
     .returning();
 

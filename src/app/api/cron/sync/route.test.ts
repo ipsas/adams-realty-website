@@ -126,4 +126,20 @@ describe("GET /api/cron/sync", () => {
     const res = await call();
     expect(res.status).toBe(200);
   });
+
+  it("answers 200 for a source skipped for missing credentials, and says why", async () => {
+    h.outcomes = [
+      {
+        source: "gamls",
+        ok: true,
+        note: "MLS_GAMLS_TOKEN is not set",
+        result: result({ status: "skipped", runId: null }),
+      },
+    ];
+    const res = await call();
+    expect(res.status).toBe(200);
+    expect(h.tags).toEqual([]);
+    const body = await res.json();
+    expect(body.results[0].note).toBeDefined();
+  });
 });

@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { purgeScope } from "../purge";
 import type { UpdatesPage } from "../types";
-import { purgeScopeFilter, ResoWebApiProvider, updatesFilter } from "./provider";
+import {
+  MissingCredentialsError,
+  purgeScopeFilter,
+  ResoWebApiProvider,
+  updatesFilter,
+} from "./provider";
 
 // The provider against a fake RESO server that honors the keyset filters it
 // sends and, like many real ones, offers a `$skip`-based @odata.nextLink.
@@ -67,6 +72,18 @@ async function collect<T>(it: AsyncIterable<T>): Promise<T[]> {
   for await (const x of it) out.push(x);
   return out;
 }
+
+describe("ResoWebApiProvider credentials", () => {
+  it("throws MissingCredentialsError, naming the variable, when the env has none", () => {
+    const build = () =>
+      new ResoWebApiProvider(
+        { baseUrl: "https://feed.example.com/odata", credentialsEnvPrefix: "MLS_X" },
+        { MLS_X_TOKEN: "" },
+      );
+    expect(build).toThrow(MissingCredentialsError);
+    expect(build).toThrow(/MLS_X_TOKEN is not set/);
+  });
+});
 
 describe("ResoWebApiProvider.fetchActiveKeys", () => {
   it("misses no key when a listing leaves the feed during the download", async () => {

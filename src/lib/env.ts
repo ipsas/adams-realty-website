@@ -75,6 +75,13 @@ const makeSchema = (strict: boolean) =>
      * Read per request by the gate, like DEMO_DATA_MODE.
      */
     PREVIEW_PASSWORD: optional,
+    /**
+     * Bearer token for the Georgia MLS feed (Bridge RESO Web API). The provider reads it
+     * through the source's credentialsEnvPrefix ("MLS_GAMLS"); unset, the sync skips the feed.
+     */
+    MLS_GAMLS_TOKEN: optional,
+    /** Bridge dataset name of the Georgia MLS feed. PLACEHOLDER default "gamls" (src/lib/mls/gamls.ts). */
+    MLS_GAMLS_DATASET: optional,
   });
 
 export type Env = z.infer<ReturnType<typeof makeSchema>>;

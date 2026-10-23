@@ -1,15 +1,24 @@
 import { SyncButton } from "@/components/dashboard/lead-controls";
 import { PageHeader } from "@/components/dashboard/ui";
 import { site } from "@/config/site";
+import type { DataSourceConfig } from "@/db/schema";
 import { can } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { cn } from "@/lib/cn";
 import { getSources } from "@/lib/dashboard/queries";
 import { formatNumber, formatRelative } from "@/lib/format";
 import { purgeOverdue } from "@/lib/mls/purge";
+import { missingCredentials } from "@/lib/mls/reso/provider";
 import { PURGE_CAP_PREFIX } from "@/lib/mls/sync-engine";
 
 export const metadata = { title: "MLS feeds" };
+
+/** A connected feed whose credential env vars aren't set: which ones to add. */
+function missingFeedCredentials(s: { kind: string; config: DataSourceConfig }): string | null {
+  return s.kind === "reso_web_api" && s.config.baseUrl
+    ? missingCredentials(s.config, process.env)
+    : null;
+}
 
 export default async function SourcesPage() {
   await requirePermission("/dashboard/sources", can.manageDataSources);
@@ -43,7 +52,10 @@ export default async function SourcesPage() {
                 </p>
               </div>
               {s.kind === "reso_web_api" && (
-                <SyncButton sourceId={s.id} disabled={!s.isActive || !s.config.baseUrl} />
+                <SyncButton
+                  sourceId={s.id}
+                  disabled={!s.isActive || !s.config.baseUrl || !!missingFeedCredentials(s)}
+                />
               )}
             </div>
             {s.runs[0]?.status === "failed" && s.runs[0].error?.startsWith(PURGE_CAP_PREFIX) && (
@@ -107,6 +119,13 @@ export default async function SourcesPage() {
                 Not connected yet. Once your IDX agreement with {site.mls.name} is approved, set
                 this source&apos;s <code>config.baseUrl</code> and add its credentials as
                 environment variables (see README → “Connecting your MLS”).
+              </p>
+            )}
+            {missingFeedCredentials(s) && (
+              <p className="mt-4 rounded-2xl bg-sunken px-4 py-3 text-xs leading-relaxed text-muted">
+                Credentials not set: add <code>{missingFeedCredentials(s)}</code> as an environment
+                variable (Vercel → Settings → Environment Variables, or .env.local), then redeploy.
+                See README → “Connecting your MLS”.
               </p>
             )}
           </section>

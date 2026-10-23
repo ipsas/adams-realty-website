@@ -37,7 +37,10 @@ syncAllSources({
   .then((results) => {
     if (!results.length)
       console.info("No active RESO Web API sources. Add one in the data_sources table.");
-    for (const r of results) console.info(r.source, r.ok ? r.result : `FAILED: ${r.error}`);
+    for (const r of results) {
+      if (r.ok && r.note) console.info(r.source, `skipped: ${r.note}`);
+      else console.info(r.source, r.ok ? r.result : `FAILED: ${r.error}`);
+    }
     if (results.some((r) => r.ok && r.result.status === "partial")) {
       console.info("Stopped at the time limit; run again to continue from the saved cursor.");
     }

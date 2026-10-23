@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { dataSources } from "@/db/schema";
 import { refreshPlaces } from "@/lib/listings/places";
-import { ResoWebApiProvider } from "./reso/provider";
+import { missingCredentials, ResoWebApiProvider } from "./reso/provider";
 import { runSync, type RunSyncOptions, type SyncResult } from "./sync-engine";
 import { createSyncStore } from "./sync-store";
 import type { ListingProvider } from "./types";
@@ -92,21 +92,51 @@ async function refreshPlacesQuietly() {
 }
 
 export type SourceSyncOutcome = { source: string } & (
-  | { ok: true; result: SyncResult }
+  /** `note`: why a source was skipped without a run (its credentials aren't set). */
+  | { ok: true; result: SyncResult; note?: string }
   /** `changed`: listings were written before it failed, so caches need refreshing too. */
   | { ok: false; error: string; changed: boolean }
 );
 
-/** Syncs every active feed source. Failures in one source don't stop the others. */
+/**
+ * Syncs every active feed source. Failures in one source don't stop the others.
+ * A source whose credentials aren't set (e.g. no MLS_GAMLS_TOKEN yet) is
+ * skipped with a `note`, without recording a run: it isn't a failure, and a
+ * failed run every few minutes would only bury the real ones.
+ */
 export async function syncAllSources(
   opts: Omit<SyncOptions, "provider"> = {},
 ): Promise<SourceSyncOutcome[]> {
   const sources = await db
-    .select({ id: dataSources.id, slug: dataSources.slug })
+    .select({ id: dataSources.id, slug: dataSources.slug, config: dataSources.config })
     .from(dataSources)
     .where(and(eq(dataSources.isActive, true), eq(dataSources.kind, "reso_web_api")));
   const results: SourceSyncOutcome[] = [];
   for (const s of sources) {
+    const missing = missingCredentials(s.config, process.env);
+    if (missing) {
+      console.warn(`[mls] ${s.slug} skipped: ${missing}`);
+      results.push({
+        source: s.slug,
+        ok: true,
+        note: missing,
+        result: {
+          fetched: 0,
+          upserted: 0,
+          unchanged: 0,
+          removed: 0,
+          runId: null,
+          mode: opts.mode ?? "incremental",
+          status: "skipped",
+          skipped: {},
+          cursor: null,
+          mediaRowsWritten: 0,
+          staleRunsFailed: 0,
+          changed: false,
+        },
+      });
+      continue;
+    }
     try {
       results.push({ source: s.slug, ok: true, result: await syncSource(s.id, opts) });
     } catch (e) {
