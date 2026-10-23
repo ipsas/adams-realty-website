@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { getSession } from "@/lib/auth/session";
 import { lakeName, searchHeading } from "@/lib/search/heading";
 import {
+  DEFAULT_CRITERIA,
   describeCriteria,
   parseFromParam,
   parseSearchParams,
@@ -18,6 +19,12 @@ import { countListings, MAX_PINS, searchListings, searchMapPins } from "@/lib/se
 
 export async function generateMetadata(props: PageProps<"/homes">): Promise<Metadata> {
   const c = parseSearchParams(await props.searchParams);
+  // The unfiltered default search (nothing set but page and sort) leads with the firm's focus;
+  // the search itself stays statewide.
+  const unfiltered =
+    serializeCriteria({ ...c, page: DEFAULT_CRITERIA.page, sort: DEFAULT_CRITERIA.sort }).size ===
+    0;
+  const { city } = site.market.focus;
   const title = c.q
     ? describeCriteria(c)
     : c.types?.length || c.bounds
@@ -27,13 +34,17 @@ export async function generateMetadata(props: PageProps<"/homes">): Promise<Meta
         ? `Homes for rent in ${site.coverage.name}`
         : c.mode === "sold"
           ? `Recently sold homes in ${site.coverage.name}`
-          : `Homes for sale in ${site.coverage.name}`;
+          : unfiltered
+            ? `Homes for sale: ${city} & all of ${site.coverage.name}`
+            : `Homes for sale in ${site.coverage.name}`;
   // Only the location/mode version of a search is canonical; filter permutations aren't indexed separately.
   const canonical = serializeCriteria({ mode: c.mode, q: c.q });
   return {
     title,
     // Only the first letter is lowercased, so place names keep their capitals.
-    description: `Browse ${title.charAt(0).toLowerCase()}${title.slice(1)} from ${site.mls.name}, with the true cost of owning each home and no ads.`,
+    description: unfiltered
+      ? `Search homes for sale around ${city} or anywhere in ${site.coverage.name}, from ${site.mls.name}, with the true cost of owning each home and no ads.`
+      : `Browse ${title.charAt(0).toLowerCase()}${title.slice(1)} from ${site.mls.name}, with the true cost of owning each home and no ads.`,
     alternates: { canonical: canonical.size ? `/homes?${canonical}` : "/homes" },
     robots: c.bounds || c.page > 1 ? { index: false, follow: true } : undefined,
   };

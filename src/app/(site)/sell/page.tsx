@@ -6,8 +6,8 @@ import { Container } from "@/components/ui/section";
 import { site } from "@/config/site";
 
 export const metadata: Metadata = {
-  title: "Sell your home",
-  description: `Sell your ${site.market.region} home, land, farm or lake property with ${site.legalName}. Start with a free, no-obligation valuation from a local agent.`,
+  title: `Sell your home near ${site.market.focus.city}`,
+  description: `Selling a home, land, farm or lake property around ${site.market.focus.city}? Start with a free, no-obligation valuation from a local ${site.name} agent.`,
 };
 
 const IMAGE =
@@ -57,9 +57,9 @@ export default function SellPage() {
               Sell for more, <em className="text-brass-100">with less stress.</em>
             </h1>
             <p className="mt-6 max-w-lg text-lg leading-relaxed text-white/75">
-              Houses in town, lake homes, acreage, farms and commercial property across{" "}
-              {site.market.region} — with one local point of contact from list to close. Start with
-              a free, no-obligation valuation.
+              Houses in town, homes on {site.market.focus.lake}, acreage, farms and commercial
+              property — with one local point of contact from list to close. Start with a free,
+              no-obligation valuation.
             </p>
           </div>
           <div id="valuation" className="scroll-mt-24 rounded-3xl bg-surface p-6 shadow-pop sm:p-8">

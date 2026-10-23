@@ -100,6 +100,8 @@ export const site = {
     state: "GA",
     stateName: "Georgia",
     timeZone: "America/New_York",
+    /** The place the firm's SEO copy leads with (market-copy-draft, 2026-10-23): one place per element, never a town list. */
+    focus: { city: "Gainesville", lake: "Lake Lanier" },
     /**
      * Counties the firm serves, in the order copy lists them. A listing in one
      * of these (or in an area guide's county) is in the firm's area: see

@@ -9,8 +9,8 @@ import { site } from "@/config/site";
 import { getSession } from "@/lib/auth/session";
 
 export const metadata: Metadata = {
-  title: "Contact us",
-  description: `Call, email or message ${site.legalName} in ${site.address.city}. Talk to a local ${site.market.region} real estate agent about buying or selling a home, land, a farm or lake property.`,
+  title: `Contact us about homes near ${site.market.focus.city}`,
+  description: `Call ${site.phone}, email or send a message. One ${site.name} agent answers your question about buying or selling near ${site.market.focus.city}.`,
   alternates: { canonical: "/contact" },
 };
 
@@ -64,9 +64,9 @@ export default async function ContactPage() {
               Let&apos;s talk about <em className="font-light text-brass-100">home.</em>
             </h1>
             <p className="mt-6 max-w-xl text-lg leading-relaxed text-white/75">
-              Questions about a listing, a town or selling your house or land? Call, email or send a
-              message — it comes straight to our office in {site.address.city}, and we&apos;ll
-              connect you with the right agent.
+              Questions about a listing, a town near {site.market.focus.lake} or selling your house
+              or land? Call, email or send a message — it comes straight to our office, and
+              we&apos;ll connect you with the right agent.
             </p>
             <ContactMethods tone="dark" className="mt-10 max-w-2xl" />
           </div>

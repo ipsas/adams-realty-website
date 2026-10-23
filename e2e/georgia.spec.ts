@@ -23,7 +23,7 @@ test.describe("listing coverage copy says Georgia", () => {
   test("search titles and headings", async ({ page }) => {
     await page.goto("/homes");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Homes for sale in Georgia");
-    await expect(page).toHaveTitle(/^Homes for sale in Georgia/);
+    await expect(page).toHaveTitle(/^Homes for sale: Gainesville & all of Georgia/);
 
     await page.goto("/homes?mode=rent");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Rentals in Georgia");
@@ -37,13 +37,13 @@ test.describe("listing coverage copy says Georgia", () => {
     );
   });
 
-  test("the home page hero covers all of Georgia and never mentions monthly costs", async ({
+  test("the home page hero leads with Gainesville and never mentions monthly costs", async ({
     page,
   }) => {
     await page.goto("/");
-    await expect(page.getByText("All of Georgia", { exact: true })).toBeVisible();
+    await expect(page.getByText("Straight from Georgia MLS", { exact: true })).toBeVisible();
     await expect(page.locator("main")).toContainText(
-      "Homes, land, farms and lake property across Georgia, updated directly from Georgia MLS.",
+      "Homes, land, farms and lake property around Gainesville, updated directly from Georgia MLS.",
     );
     const text = (await page.locator("body").innerText()).toLowerCase();
     expect(text).not.toMatch(/monthly cost/);

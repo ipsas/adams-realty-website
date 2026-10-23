@@ -61,7 +61,7 @@ export default async function HomePage() {
         <Container className="pt-36 pb-10 sm:pb-14">
           <p className="mb-5 flex items-center gap-2 text-xs font-semibold tracking-[0.22em] text-white/75 uppercase">
             <span className="h-px w-8 bg-brass-400" />
-            All of {site.coverage.name}
+            Straight from {site.mls.name}
           </p>
           <h1 className="max-w-3xl font-display-tight text-5xl leading-[1.02] font-normal text-white sm:text-7xl">
             Homes worth
@@ -69,8 +69,8 @@ export default async function HomePage() {
             <em className="font-light text-brass-100">coming home to.</em>
           </h1>
           <p className="mt-6 max-w-xl text-lg leading-relaxed text-white/80">
-            Homes, land, farms and lake property across {site.coverage.name}, updated directly from{" "}
-            {site.mls.name}. Agents who actually pick up the phone.
+            Homes, land, farms and lake property around {site.market.focus.city}, updated directly
+            from {site.mls.name}. Agents who actually pick up the phone.
           </p>
           <div className="mt-9">
             <HeroSearch />

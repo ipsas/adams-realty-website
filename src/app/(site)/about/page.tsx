@@ -27,8 +27,8 @@ import { getAgents } from "@/lib/agents/queries";
  */
 
 export const metadata: Metadata = {
-  title: "About us",
-  description: `${site.legalName} is a real estate brokerage in ${site.address.city}, Georgia, serving ${site.market.region}: homes, land, farms, lake and commercial property. No ads, no selling your information.`,
+  title: `About us: real estate around ${site.market.focus.city}`,
+  description: `${site.legalName} is a licensed brokerage${site.brokerLicense ? ` (GREC firm license ${site.brokerLicense})` : ""} serving the ${site.market.focus.city} area. No ads, and we never sell your details.`,
   alternates: { canonical: "/about" },
 };
 
@@ -163,7 +163,7 @@ export default async function AboutPage() {
             We sell homes, <em className="font-light text-brass-100">not your attention.</em>
           </>
         }
-        lead={`${site.legalName} is a real estate brokerage in ${site.address.city}, helping people buy and sell homes, land, farms, lake and commercial property across ${site.market.region}. We built this site to work the way we do: straightforward, local and on your side.`}
+        lead={`${site.legalName} is a real estate brokerage helping people buy and sell homes, land, farms, lake and commercial property around ${site.market.focus.city}. We built this site to work the way we do: straightforward, local and on your side.`}
         aside={
           <dl className="divide-y divide-white/10 rounded-3xl bg-white/[0.04] px-6 py-2 ring-1 ring-white/10 backdrop-blur-sm sm:px-8">
             {glance.map((g) => (
