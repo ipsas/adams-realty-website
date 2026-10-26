@@ -68,6 +68,52 @@ export async function neonBranchVerdict(connectionString, label, log = console.l
 }
 
 /**
+ * Read-only report of the preview database's listings by data source, so the
+ * build log shows whether any seed/demo listings are left. SELECTs only, and
+ * only on the Neon preview branch; on the production branch it throws.
+ * @param {string} connectionString
+ * @param {(line: string) => void} [log]
+ */
+export async function previewListingCounts(connectionString, log = console.log) {
+  const client = new pg.Client({ connectionString });
+  await client.connect();
+  try {
+    const verdict = await branchVerdict(client, "Listing counts", log);
+    if (verdict === "fatal") {
+      throw new Error("Listing counts: connected to the production branch; refusing.");
+    }
+    if (verdict === "refuse") {
+      log("Listing counts refused: not the Neon preview branch.");
+      return;
+    }
+    const bySource = await client.query(`select ds.slug, ds.kind, ds.is_active,
+        count(l.id)::int as listings
+      from data_sources ds left join listings l on l.source_id = ds.id
+      group by ds.id order by ds.slug`);
+    const orphans = await client.query(`select count(*)::int as n
+      from listings l left join data_sources ds on ds.id = l.source_id
+      where ds.id is null`);
+    const byOrigin = await client.query(`select ds.kind, l.from_feed,
+        (l.mls_number is null) as no_mls_number, count(*)::int as listings
+      from listings l left join data_sources ds on ds.id = l.source_id
+      group by 1, 2, 3 order by 1, 2, 3`);
+    const totals = await client.query(`select
+      (select count(*)::int from listings) as listings,
+      (select count(*)::int from listing_media) as listing_media`);
+    log(
+      `Preview listing counts: ${JSON.stringify({
+        by_source: bySource.rows,
+        without_source: orphans.rows[0].n,
+        by_origin: byOrigin.rows,
+        ...totals.rows[0],
+      })}`,
+    );
+  } finally {
+    await client.end();
+  }
+}
+
+/**
  * @param {string} connectionString
  * @param {(line: string) => void} [log]
  */

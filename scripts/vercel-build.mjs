@@ -19,11 +19,20 @@
  * "preview" and MLS_PREVIEW_PURGE is exactly "true", scripts/preview-purge.mjs
  * deletes all listings and deactivates the demo and Georgia MLS sources, only
  * on the Neon preview branch; on the production branch it fails the build.
+ *
+ * Preview listing counts (previews only, after the MLS sync step): a
+ * read-only report of listings per data source in the build log
+ * (previewListingCounts). A failure there only logs; it never fails the build.
  */
 import { execSync } from "node:child_process";
 import pg from "pg";
 import { shouldSyncFeed } from "../src/lib/mls/preview-sync.mjs";
-import { neonBranchVerdict, purgeDecision, purgePreviewListings } from "./preview-purge.mjs";
+import {
+  neonBranchVerdict,
+  previewListingCounts,
+  purgeDecision,
+  purgePreviewListings,
+} from "./preview-purge.mjs";
 
 const run = (cmd) => execSync(cmd, { stdio: "inherit" });
 
@@ -76,6 +85,13 @@ if (!process.env.DATABASE_URL) {
     }
   } else {
     console.log(`MLS sync skipped: ${feed.reason}.`);
+  }
+  if (process.env.VERCEL_ENV === "preview") {
+    try {
+      await previewListingCounts(process.env.DATABASE_URL);
+    } catch (e) {
+      console.warn(`Preview listing counts failed: ${e instanceof Error ? e.message : e}`);
+    }
   }
 }
 
