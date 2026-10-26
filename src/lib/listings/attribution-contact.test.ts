@@ -52,6 +52,23 @@ describe("listingContact", () => {
     });
   });
 
+  it("tolerates cached card data without the attribution fields", () => {
+    expect(
+      listingContact({
+        attributionPhone: undefined,
+        attributionEmail: undefined,
+        isCompanyListing: true,
+      }),
+    ).toEqual({ phone: OFFICE_PHONE, email: OFFICE_EMAIL });
+    expect(
+      listingContact({
+        attributionPhone: undefined,
+        attributionEmail: undefined,
+        isCompanyListing: false,
+      }),
+    ).toEqual({ phone: null, email: null });
+  });
+
   it("still uses Andrea's email override over the feed's email", () => {
     const [andrea] = agentEmailOverrides;
     expect(

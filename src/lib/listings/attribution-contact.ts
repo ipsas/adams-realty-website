@@ -9,10 +9,11 @@ import { formatDisplayPhone } from "@/lib/format";
  * (site.phone / site.email) as the fallback, per field; never agent-specific invented
  * values. Other firms' listings are never filled in (R&R 12d). Idempotent: already
  * displayed values come back unchanged.
+ * Cached card data from before these fields existed may lack them (undefined).
  */
 export function listingContact(l: {
-  attributionPhone: string | null;
-  attributionEmail: string | null;
+  attributionPhone?: string | null;
+  attributionEmail?: string | null;
   isCompanyListing?: boolean | null;
   listAgentId?: string | null;
   listAgentMlsId?: string | null;
@@ -22,6 +23,7 @@ export function listingContact(l: {
       formatDisplayPhone(l.attributionPhone) ??
       (l.isCompanyListing ? formatDisplayPhone(site.phone) : null),
     email:
-      displayAttributionEmail(l) ?? (l.isCompanyListing ? site.email.trim().toLowerCase() : null),
+      displayAttributionEmail({ ...l, attributionEmail: l.attributionEmail ?? null }) ??
+      (l.isCompanyListing ? site.email.trim().toLowerCase() : null),
   };
 }
