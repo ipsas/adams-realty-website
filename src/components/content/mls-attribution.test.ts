@@ -101,7 +101,13 @@ describe("MlsCredit", () => {
 describe("site.mls.disclaimer", () => {
   it("is the fixed wording of GAMLS's notice, verbatim, without the year", () => {
     expect(site.mls.disclaimer).toBe(
-      "All rights reserved. Information Deem Reliable But Not Guaranteed",
+      "All rights reserved. Information is deemed reliable but is not guaranteed accurate by GAMLS",
+    );
+  });
+
+  it("carries the consumer-use notice verbatim", () => {
+    expect(site.mls.consumerUseNotice).toBe(
+      "IDX information is provided exclusively for consumers' personal, non-commercial use and may not be used for any purpose other than to identify prospective properties consumers may be interested in purchasing.",
     );
   });
 });

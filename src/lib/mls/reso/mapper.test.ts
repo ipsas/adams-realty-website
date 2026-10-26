@@ -8,6 +8,7 @@ import {
   mapResoProperty,
   mapStatus,
   monthlyLeaseAmount,
+  taxYear,
   type ResoProperty,
 } from "./mapper";
 
@@ -177,6 +178,63 @@ describe("mapResoProperty", () => {
       hoaFrequency: "monthly",
     });
     expect(mapOk({ ...base, AssociationYN: false, AssociationFee: 300 }).hoaFee).toBeNull();
+  });
+});
+
+describe("Georgia MLS (Bridge gamls2) field shapes", () => {
+  // As the real dataset sends them: the standard coordinates are null on every row.
+  const gamls: ResoProperty = { ...base, Latitude: null, Longitude: null };
+
+  it("reads GAMLS2_Latitude / GAMLS2_Longitude when Latitude/Longitude are null", () => {
+    const l = mapOk({ ...gamls, GAMLS2_Latitude: 34.37, GAMLS2_Longitude: -83.11 });
+    expect([l.latitude, l.longitude]).toEqual([34.37, -83.11]);
+  });
+
+  it("reads Coordinates as [lng, lat]", () => {
+    const l = mapOk({ ...gamls, Coordinates: [-83.11, 34.37] });
+    expect([l.latitude, l.longitude]).toEqual([34.37, -83.11]);
+  });
+
+  it("prefers the standard fields when they're valid", () => {
+    const l = mapOk({ ...base, GAMLS2_Latitude: 34.37, GAMLS2_Longitude: -83.11 });
+    expect([l.latitude, l.longitude]).toEqual([30.2465, -97.7412]);
+  });
+
+  it("nulls out-of-range or malformed coordinates from every source", () => {
+    for (const extra of [
+      { GAMLS2_Latitude: 134.37, GAMLS2_Longitude: -83.11 },
+      { GAMLS2_Latitude: 34.37, GAMLS2_Longitude: -283.11 },
+      { Coordinates: [-83.11, 94.37] },
+      { Coordinates: [0, 0] },
+      { Coordinates: ["-83.11", "34.37"] },
+      { Coordinates: [-83.11, 34.37, 0] },
+    ]) {
+      const l = mapOk({ ...gamls, ...extra });
+      expect([l.latitude, l.longitude], JSON.stringify(extra)).toEqual([null, null]);
+    }
+  });
+
+  it("drops placeholder subdivision names", () => {
+    for (const s of ["None", "none", " NONE ", "N/A", "na", "-", "0", ""]) {
+      expect(mapOk({ ...gamls, SubdivisionName: s }).neighborhood, s).toBeNull();
+    }
+    expect(mapOk({ ...gamls, SubdivisionName: "Harbor Pointe" }).neighborhood).toBe(
+      "Harbor Pointe",
+    );
+  });
+
+  it("reads 2-digit tax years as 20xx and drops impossible ones", () => {
+    expect(mapOk({ ...gamls, TaxYear: 24 }).taxYear).toBe(2024);
+    expect(mapOk({ ...gamls, TaxYear: "25" }).taxYear).toBe(2025);
+    expect(mapOk({ ...gamls, TaxYear: 2023 }).taxYear).toBe(2023);
+    expect(taxYear(2030, new Date("2026-10-26"))).toBeNull();
+    expect(taxYear(2027, new Date("2026-10-26"))).toBe(2027);
+    expect(taxYear(1850)).toBeNull();
+    expect(taxYear(null)).toBeNull();
+  });
+
+  it("keeps the unit as sent (display formats it)", () => {
+    expect(mapOk({ ...gamls, UnitNumber: "A AND B" }).unitNumber).toBe("A AND B");
   });
 });
 

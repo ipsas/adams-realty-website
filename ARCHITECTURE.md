@@ -251,8 +251,11 @@ governs every listing that came from the feed. Adams Realty, Inc. is the license
   dark one, 32 px tall at its own aspect ratio, with "Georgia MLS" as its alt text. Every feed
   card, area-guide tile and map popup also carries `MlsCredit`: the logo at 24 px and
   "© <year> Georgia MLS" in `text-xs` (below the median, so the firm line stays at or above it).
-  The IDX disclaimer is Georgia MLS's PDF wording, "© <year> Georgia MLS. All rights reserved.
-  Information Deem Reliable But Not Guaranteed. Last updated <date> ET", computed by
+  The IDX disclaimer is "© <year> Georgia MLS. All rights reserved. Information is deemed
+  reliable but is not guaranteed accurate by GAMLS. IDX information is provided exclusively for
+  consumers' personal, non-commercial use and may not be used for any purpose other than to
+  identify prospective properties consumers may be interested in purchasing. Last updated
+  <date> ET", computed by
   `mlsDisclaimer()` (`src/lib/mls-copyright.ts`) from the gamls source's last sync; the stored
   gamls `data_sources.disclaimer` text is never shown. The site footer shows a disclaimer only
   for sources with an active (public) listing (`sourcesWithPublicListings` +

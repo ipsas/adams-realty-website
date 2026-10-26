@@ -91,6 +91,12 @@ export type UpdatesPage = {
 
 export interface ListingProvider {
   /**
+   * Version of the mapping from feed records to NormalizedListing (e.g.
+   * RESO_MAPPER_VERSION). When it differs from the one a source last caught up
+   * with, the incremental sync rewrites every record once. Absent: never.
+   */
+  readonly mapperVersion?: number;
+  /**
    * Pages of records in (ModificationTimestamp, ListingKey) order, starting at
    * `from` (every record when null). Pages are fetched by keyset (each one
    * asks for the records after the previous page's last), never by offset, so

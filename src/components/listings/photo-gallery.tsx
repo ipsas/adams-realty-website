@@ -107,6 +107,7 @@ export function PhotoGallery({ photos, alt }: { photos: GalleryPhoto[]; alt: str
       <dialog
         ref={dialog}
         onClose={() => setOpen(null)}
+        aria-label={`Photos of ${alt}`}
         className="m-0 h-dvh max-h-none w-screen max-w-none bg-shade/95 p-0 text-white backdrop:bg-transparent"
       >
         {open !== null && (

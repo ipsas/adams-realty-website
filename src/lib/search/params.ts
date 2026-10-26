@@ -285,6 +285,24 @@ export function searchHref(c: Partial<SearchCriteria>): string {
   return qs ? `/homes?${qs}` : "/homes";
 }
 
+/**
+ * The same /homes URL on another page, every other parameter kept as it was (`view`,
+ * `from`, …); page 1 drops the parameter. For a page past the last one.
+ */
+export function withPageHref(raw: RawParams, page: number): string {
+  const p = new URLSearchParams();
+  const entries =
+    raw instanceof URLSearchParams
+      ? [...raw]
+      : Object.entries(raw).flatMap(([k, v]) =>
+          (Array.isArray(v) ? v : v === undefined ? [] : [v]).map((x) => [k, x] as const),
+        );
+  for (const [k, v] of entries) if (k !== "page") p.append(k, v);
+  if (page > 1) p.set("page", String(page));
+  const qs = p.toString();
+  return qs ? `/homes?${qs}` : "/homes";
+}
+
 /** Count of active filters, for the "Filters (3)" badge. Excludes location, sort, page, bounds. */
 export function countActiveFilters(c: SearchCriteria): number {
   let n = 0;

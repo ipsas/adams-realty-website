@@ -6,7 +6,8 @@ import {
   sourceDisclaimers,
 } from "./mls-copyright";
 
-const WORDING = "Georgia MLS. All rights reserved. Information Deem Reliable But Not Guaranteed.";
+const WORDING =
+  "Georgia MLS. All rights reserved. Information is deemed reliable but is not guaranteed accurate by GAMLS. IDX information is provided exclusively for consumers' personal, non-commercial use and may not be used for any purpose other than to identify prospective properties consumers may be interested in purchasing.";
 
 describe("mlsDisclaimer", () => {
   const now = new Date("2026-10-26T18:00:00Z");
@@ -56,10 +57,9 @@ describe("sourceDisclaimer", () => {
   const at = new Date("2026-10-26T17:57:00Z");
 
   it("computes Georgia MLS's and never shows its stored text", () => {
-    const stale =
-      "© 2021 Georgia MLS. All rights reserved. Information Deem Reliable But Not Guaranteed";
+    const stale = "© 2021 Georgia MLS. stored, never shown";
     expect(sourceDisclaimer({ slug: "gamls", disclaimer: stale, lastSyncedAt: at }, now)).toBe(
-      mlsDisclaimer(at, now),
+      `© 2026 ${WORDING} Last updated Oct 26, 2026, 1:57 PM ET`,
     );
   });
 
@@ -90,7 +90,7 @@ describe("sourceDisclaimers", () => {
         ],
         now,
       ),
-    ).toEqual([mlsDisclaimer(at, now), "Other MLS text."]);
+    ).toEqual([`© 2026 ${WORDING} Last updated Oct 26, 2026, 1:57 PM ET`, "Other MLS text."]);
   });
 
   it("shows nothing for no sources, and no Georgia MLS notice without the gamls source", () => {

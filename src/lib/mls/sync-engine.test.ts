@@ -9,6 +9,7 @@ import {
   PurgeCapError,
   runSync,
   UPDATE_LOOKBACK_MS,
+  type MapperVersions,
   type PageOutcome,
   type RunOutcome,
   type SyncCounts,
@@ -99,6 +100,11 @@ class MemoryStore implements SyncStore {
 
   async savedCursor() {
     return this.cursor;
+  }
+
+  versions: MapperVersions = { done: null, remappingTo: null };
+  async mapperVersions() {
+    return { ...this.versions };
   }
 
   async writePage(
@@ -193,6 +199,12 @@ class MemoryStore implements SyncStore {
   async finishRun(runId: string, outcome: RunOutcome) {
     if (outcome.status !== "failed" && outcome.caughtUp && this.cursor) {
       this.cursor = { ...this.cursor, key: null };
+    }
+    if (outcome.mapperVersion !== undefined) {
+      this.versions =
+        outcome.status === "succeeded" && outcome.caughtUp
+          ? { done: outcome.mapperVersion, remappingTo: null }
+          : { ...this.versions, remappingTo: outcome.mapperVersion };
     }
     Object.assign(
       this.runs.find((r) => r.id === runId)!,
@@ -468,6 +480,97 @@ describe("runSync: time budget and resume", () => {
     };
     await expect(runSync(store, provider, { now: clock })).rejects.toThrow("503");
     expect(store.runs[0]).toMatchObject({ status: "failed", error: "RESO request failed (503)" });
+  });
+});
+
+describe("runSync: mapper version", () => {
+  /** `feed(...)` whose provider reports mapper version `v`. */
+  function versionedFeed(v: number, pages: number) {
+    const f = feed(pages);
+    return { ...f, provider: { ...f.provider, mapperVersion: v } };
+  }
+
+  it("with the stored version, behaves as before: lookback, unchanged records skipped", async () => {
+    store.versions = { done: 2, remappingTo: null };
+    const { provider, calls } = versionedFeed(2, 2);
+    await runSync(store, provider, { now: clock });
+    const cursor = store.cursor!;
+    const again = await runSync(store, provider, { now: clock });
+    expect(calls[1]).toEqual({
+      modifiedAt: new Date(cursor.modifiedAt.getTime() - UPDATE_LOOKBACK_MS),
+      key: null,
+    });
+    expect(again).toMatchObject({ upserted: 0, unchanged: 400 });
+    expect(store.skipFlags).toEqual([true, true, true, true]);
+    expect(store.versions).toEqual({ done: 2, remappingTo: null });
+  });
+
+  it("with a different version, reads from no cursor and rewrites every record, then saves it", async () => {
+    // Rows written by the previous mapper, caught up.
+    const old = feed(2);
+    await runSync(store, old.provider, { now: clock });
+    store.versions = { done: 1, remappingTo: null };
+
+    const { provider, calls } = versionedFeed(2, 2);
+    const remap = await runSync(store, provider, { now: clock });
+    expect(calls[0]).toBeNull();
+    expect(remap).toMatchObject({ status: "succeeded", upserted: 400, unchanged: 0 });
+    expect(store.skipFlags.slice(2)).toEqual([false, false]);
+    expect(store.versions).toEqual({ done: 2, remappingTo: null });
+
+    // Done: the next run is an ordinary incremental one.
+    const next = await runSync(store, provider, { now: clock });
+    expect(calls[1]?.key).toBeNull();
+    expect(calls[1]).not.toBeNull();
+    expect(next).toMatchObject({ upserted: 0, unchanged: 400 });
+  });
+
+  it("a remap stopped partway saves no version, and the next run resumes it without skipping", async () => {
+    const { provider, calls } = versionedFeed(2, 50);
+    const first = await runSync(store, provider, { deadline: START + 255_000, now: clock });
+    expect(first.status).toBe("partial");
+    expect(store.versions).toEqual({ done: null, remappingTo: 2 });
+    const resumeAt = store.cursor!;
+    expect(resumeAt.key).not.toBeNull();
+
+    const second = await runSync(store, provider, { deadline: now + 1_000_000, now: clock });
+    expect(calls[1]).toEqual(resumeAt);
+    expect(second.status).toBe("succeeded");
+    expect(store.skipFlags.every((f) => f === false)).toBe(true);
+    expect(store.versions).toEqual({ done: 2, remappingTo: null });
+  });
+
+  it("doesn't resume an older mapper's partial cursor: starts from no cursor", async () => {
+    const old = feed(50);
+    await runSync(store, old.provider, { deadline: START + 255_000, now: clock });
+    expect(store.cursor?.key).not.toBeNull();
+
+    const { provider, calls } = versionedFeed(2, 50);
+    await runSync(store, provider, { now: clock });
+    expect(calls[0]).toBeNull();
+    expect(store.versions).toEqual({ done: 2, remappingTo: null });
+  });
+
+  it("a remap that fails before writing a page leaves the versions alone", async () => {
+    store.cursor = { modifiedAt: new Date(START - 60_000), key: "K000010" };
+    const provider: ListingProvider = {
+      mapperVersion: 2,
+      async *fetchUpdates() {
+        throw new Error("RESO request failed (503)");
+      },
+      fetchActiveKeys: () => {
+        throw new Error("unused");
+      },
+    };
+    await expect(runSync(store, provider, { now: clock })).rejects.toThrow("503");
+    expect(store.versions).toEqual({ done: null, remappingTo: null });
+  });
+
+  it("a purge neither checks nor saves the version", async () => {
+    seedLive(store, 10);
+    const { provider } = keyFeed(keysOf(10));
+    await runSync(store, { ...provider, mapperVersion: 2 }, { mode: "purge", now: clock });
+    expect(store.versions).toEqual({ done: null, remappingTo: null });
   });
 });
 

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import nextConfig from "../../next.config";
 import {
   ALL_WIDTHS,
+  HERO_EXTRA_WIDTHS,
   PHONE_MAX_WIDTH,
   PHOTO_QUALITY,
   PHOTO_WIDTHS,
@@ -143,8 +144,11 @@ describe("photoSources", () => {
 
 describe("next.config.ts images", () => {
   const images = nextConfig.images!;
-  it("makes only the widths and quality <Photo> asks for", () => {
-    expect([...(images.imageSizes ?? []), ...(images.deviceSizes ?? [])]).toEqual([...ALL_WIDTHS]);
+  it("makes only the widths and quality <Photo> and the home page hero ask for", () => {
+    expect([...(images.imageSizes ?? []), ...(images.deviceSizes ?? [])]).toEqual([
+      ...ALL_WIDTHS,
+      ...HERO_EXTRA_WIDTHS,
+    ]);
     expect(images.qualities).toEqual([PHOTO_QUALITY]);
     expect(images.formats).toEqual(["image/avif", "image/webp"]);
   });

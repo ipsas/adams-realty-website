@@ -88,13 +88,20 @@ export const site = {
      */
     corrections: { email: "contracts.adamsrealty@gmail.com", phone: "(706) 246-0053" },
     /**
-     * The fixed wording of the copyright notice in GAMLS's "Attribution for
-     * GAMLS Listings.pdf" ("© 2021 Georgia MLS. All rights reserved.
-     * Information Deem Reliable But Not Guaranteed"; "Deem" as printed).
+     * The fixed wording of the copyright notice: IDX Agreement Exhibit A §10
+     * ("information is deemed reliable but is not guaranteed") and R&R Art.
+     * III-2 §12 f ("…deemed reliable but is not guaranteed accurate by GAMLS").
      * `mlsDisclaimer` (src/lib/mls-copyright.ts) adds the current year and the
      * last-updated time.
      */
-    disclaimer: "All rights reserved. Information Deem Reliable But Not Guaranteed",
+    disclaimer:
+      "All rights reserved. Information is deemed reliable but is not guaranteed accurate by GAMLS",
+    /**
+     * R&R Art. III-2 §12 f: the consumers' personal, non-commercial use notice,
+     * shown in `mlsDisclaimer` after the copyright notice.
+     */
+    consumerUseNotice:
+      "IDX information is provided exclusively for consumers' personal, non-commercial use and may not be used for any purpose other than to identify prospective properties consumers may be interested in purchasing.",
   },
   /**
    * What the listings cover: Georgia MLS IDX, statewide. Search headings, the

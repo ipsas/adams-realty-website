@@ -20,6 +20,7 @@ import {
   markDrawnStyle,
   swapDrawnStyle,
 } from "./map-setup";
+import { mlsLogoSrcSet } from "@/components/content/mls-attribution";
 import { useMapTheme } from "@/components/theme/use-theme";
 import { readResolvedTheme } from "@/lib/theme";
 import { formatBaths, formatNumber, formatPrice, formatPriceShort } from "@/lib/format";
@@ -351,9 +352,11 @@ function popupNode(p: MapPin): HTMLElement {
   if (p.office) {
     // IDX: the listing firm, in the same size as the other listing text.
     const office = document.createElement("p");
-    office.className = "text-xs text-muted mt-0.5 break-words";
+    office.className = "text-xs text-muted mt-0.5 break-words [overflow-wrap:anywhere]";
     office.dataset.testid = "pin-office";
-    office.textContent = `Listing by ${p.office}`;
+    office.textContent = [`Listing by ${p.office}`, p.attributionPhone, p.attributionEmail]
+      .filter(Boolean)
+      .join(" · ");
     body.append(office);
   }
   if (p.fromFeed) {
@@ -365,6 +368,8 @@ function popupNode(p: MapPin): HTMLElement {
     if (logo) {
       const img = document.createElement("img");
       img.src = logo.src;
+      const srcSet = mlsLogoSrcSet(logo);
+      if (srcSet) img.srcset = srcSet;
       img.alt = site.mls.name;
       img.width = logo.width;
       img.height = logo.height;

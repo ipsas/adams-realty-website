@@ -37,7 +37,9 @@ import { Avatar } from "@/components/ui/avatar";
 import { Expandable } from "@/components/ui/expandable";
 import { Container } from "@/components/ui/section";
 import { site } from "@/config/site";
+import { db } from "@/db";
 import type { ListingFeatures } from "@/db/schema";
+import { displayAttributionEmail } from "@/lib/agents/display-email";
 import { offersTours } from "@/lib/areas/firm-area";
 import { placeHref } from "@/lib/areas/links";
 import { getActor, getSession } from "@/lib/auth/session";
@@ -56,6 +58,7 @@ import {
   formatPrice,
   formatRelative,
   formatStreet,
+  isNullLike,
   listingMetaDescription,
   PROPERTY_TYPE_LABELS,
   statusLabel,
@@ -70,7 +73,8 @@ import {
 } from "@/lib/listings/land";
 import { listingIndexingMode, listingRobots } from "@/lib/listings/indexing";
 import { getListingBySlug, getSimilarListings, type ListingDetail } from "@/lib/listings/queries";
-import { sourceDisclaimer } from "@/lib/mls-copyright";
+import { formatLastUpdated, mlsDisclaimer, sourceDisclaimer } from "@/lib/mls-copyright";
+import { gamlsLastSyncedAt } from "@/lib/mls/last-updated";
 import { financeFor, listingMonthlyCost, monthlyHoaAmount } from "@/lib/mortgage";
 
 export async function generateMetadata(props: PageProps<"/homes/[slug]">): Promise<Metadata> {
@@ -113,13 +117,28 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
   const data = await getListingBySlug(slug);
   if (!data) notFound();
   const { listing: l, media, openHouses, events, agent, source } = data;
-  const [similar, session, actor] = await Promise.all([
+  const [similar, session, actor, lastSynced] = await Promise.all([
     getSimilarListings(l),
     getSession(),
     getActor(),
+    gamlsLastSyncedAt(db),
   ]);
 
+  const attributionEmail = displayAttributionEmail({
+    ...l,
+    listAgentMlsId: agent?.mlsAgentId,
+  });
   const disclaimer = sourceDisclaimer(source);
+  // IDX: a page with Georgia MLS listings (this one or a similar home) shows its disclaimer.
+  const footerDisclaimer =
+    [
+      ...new Set(
+        [
+          disclaimer,
+          l.fromFeed || similar.some((s) => s.fromFeed) ? mlsDisclaimer(lastSynced) : null,
+        ].filter(Boolean),
+      ),
+    ].join(" ") || null;
   const photos = media
     .filter((m) => m.kind === "photo")
     .map((m) => ({ url: m.url, caption: m.caption }));
@@ -153,6 +172,8 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
   const tours = offersTours(l);
   const dom = daysSince(l.listDate);
   const street = formatStreet(l);
+  // Rows synced before the mapper dropped placeholders can still hold "None".
+  const neighborhood = isNullLike(l.neighborhood) ? null : l.neighborhood;
   const canEdit = can.editListing(actor, { sourceKind: source.kind, listAgentId: l.listAgentId });
   // IDX: the listing firm, named prominently (the firm's own listings may carry no office name).
   const office = l.listOfficeName ?? (l.isCompanyListing ? site.legalName : null);
@@ -181,7 +202,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
             <p className="mb-4 rounded-2xl bg-clay-50 px-4 py-3 text-sm text-clay-600">
               This home is no longer on the market.{" "}
               <Link
-                href={placeHref(l.neighborhood ?? l.city, l.county)}
+                href={placeHref(neighborhood ?? l.city, l.county)}
                 className="font-semibold underline"
               >
                 See similar homes nearby
@@ -206,11 +227,11 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                 <Link href={placeHref(l.city, l.county)} className="hover:text-ink">
                   {l.city}
                 </Link>
-                {l.neighborhood && l.neighborhood !== l.city && (
+                {neighborhood && neighborhood !== l.city && (
                   <>
                     <ChevronRight className="size-3.5" />
-                    <Link href={placeHref(l.neighborhood, l.county)} className="hover:text-ink">
-                      {l.neighborhood}
+                    <Link href={placeHref(neighborhood, l.county)} className="hover:text-ink">
+                      {neighborhood}
                     </Link>
                   </>
                 )}
@@ -509,12 +530,12 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                   <div className="h-80 overflow-hidden rounded-2xl border border-line">
                     <LocationMapLazy lat={l.latitude} lng={l.longitude} label={street} />
                   </div>
-                  {l.neighborhood && (
+                  {neighborhood && (
                     <Link
-                      href={placeHref(l.neighborhood, l.county)}
+                      href={placeHref(neighborhood, l.county)}
                       className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-brand-700 hover:underline"
                     >
-                      More homes in {l.neighborhood} <ChevronRight className="size-4" />
+                      More homes in {neighborhood} <ChevronRight className="size-4" />
                     </Link>
                   )}
                 </Section>
@@ -537,28 +558,28 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                   {l.attributionPhone && (
                     <InfoRow label="Contact phone" value={l.attributionPhone} />
                   )}
-                  {l.attributionEmail && (
-                    <InfoRow label="Contact email" value={l.attributionEmail} />
-                  )}
+                  {attributionEmail && <InfoRow label="Contact email" value={attributionEmail} />}
                   {l.variableCompensation !== null && (
                     <InfoRow
                       label="Variable compensation"
                       value={l.variableCompensation ? "Yes" : "No"}
                     />
                   )}
-                  {l.buyerAgencyCompensation && (
-                    <div className="space-y-2 sm:col-span-2" data-testid="buyer-compensation">
-                      <InfoRow
-                        label="Buyer agency compensation"
-                        value={l.buyerAgencyCompensation}
-                      />
-                      <InfoRow
-                        label="Compensation comments"
-                        value={l.compensationComments ?? "None"}
-                      />
-                    </div>
-                  )}
                 </dl>
+                {/* Its own <dl> (a group div may hold only a dt and a dd), full width under the
+                    grid with the grid's row gap above it. */}
+                {l.buyerAgencyCompensation && (
+                  <dl className="mt-2 space-y-2" data-testid="buyer-compensation">
+                    <InfoRow
+                      label="Buyer agency compensation"
+                      value={l.buyerAgencyCompensation}
+                    />
+                    <InfoRow
+                      label="Compensation comments"
+                      value={l.compensationComments ?? "None"}
+                    />
+                  </dl>
+                )}
                 <p className="mt-4">
                   Source: {source.name}
                   {source.lastSyncedAt
@@ -566,6 +587,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                     : l.updatedAt
                       ? ` · Updated ${formatRelative(l.updatedAt)}`
                       : ""}
+                  {l.fromFeed && lastSynced ? ` · ${formatLastUpdated(lastSynced)}` : ""}
                 </p>
                 {l.fromFeed && <MlsAttribution className="mt-3" />}
                 {disclaimer && <p className="mt-3 text-xs text-muted">{disclaimer}</p>}
@@ -694,7 +716,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
           />
         )}
       </main>
-      <SiteFooter disclaimer={disclaimer} />
+      <SiteFooter disclaimer={footerDisclaimer} />
     </>
   );
 }
@@ -725,12 +747,14 @@ function StatusPill({ status, transactionType }: { status: string; transactionTy
  */
 function BigFact({ icon, label, value }: { icon: ReactNode; label: string; value: ReactNode }) {
   return (
-    <div className="flex items-center gap-2 bg-surface px-3 py-4 min-[360px]:gap-3 min-[360px]:px-5 [&_svg]:size-5 [&_svg]:shrink-0 [&_svg]:text-brand-600">
-      {icon}
-      <div>
-        <dd className="text-lg font-semibold [overflow-wrap:anywhere] text-ink tabular">{value}</dd>
-        <dt className="text-xs text-muted">{label}</dt>
-      </div>
+    // A valid <dl> group holds only a dt then a dd, so the icon sits in the dt, pinned to the
+    // left padding (px + icon + gap), and flex-col-reverse shows the value above the label.
+    <div className="relative flex flex-col-reverse justify-center bg-surface py-4 pr-3 pl-10 min-[360px]:pr-5 min-[360px]:pl-13 [&_svg]:absolute [&_svg]:top-1/2 [&_svg]:left-3 [&_svg]:size-5 [&_svg]:-translate-y-1/2 [&_svg]:text-brand-600 min-[360px]:[&_svg]:left-5">
+      <dt className="text-xs text-muted">
+        <span aria-hidden="true">{icon}</span>
+        {label}
+      </dt>
+      <dd className="text-lg font-semibold [overflow-wrap:anywhere] text-ink tabular">{value}</dd>
     </div>
   );
 }
@@ -738,8 +762,10 @@ function BigFact({ icon, label, value }: { icon: ReactNode; label: string; value
 function Fact({ icon, label, value }: { icon: ReactNode; label: string; value: ReactNode }) {
   return (
     <div className="flex items-center gap-3 border-b border-line pb-3 [&_svg]:size-[18px] [&_svg]:text-faint">
-      {icon}
-      <dt className="text-sm text-muted">{label}</dt>
+      <dt className="flex items-center gap-3 text-sm text-muted">
+        <span aria-hidden="true">{icon}</span>
+        {label}
+      </dt>
       <dd className="ml-auto text-sm font-medium text-ink">{value}</dd>
     </div>
   );

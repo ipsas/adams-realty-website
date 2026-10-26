@@ -47,8 +47,17 @@ export type RunOutcome = {
    * after the cursor's record.
    */
   caughtUp: boolean;
+  /**
+   * The provider's mapper version, when this run rewrote every record it read
+   * (a remap, or a full run). Caught up: it becomes the source's stored version.
+   * Otherwise the remap is recorded as underway, so the next run resumes it.
+   */
+  mapperVersion?: number;
   error?: string;
 };
+
+/** See `DataSourceConfig.mapperVersion` / `remappingTo`. */
+export type MapperVersions = { done: number | null; remappingTo: number | null };
 
 /** Everything the engine needs from storage, bound to one data source. */
 export interface SyncStore {
@@ -68,6 +77,8 @@ export interface SyncStore {
   recordSkipped(mode: SyncMode, status: "skipped" | "failed", message: string): Promise<void>;
   /** The saved incremental cursor. */
   savedCursor(): Promise<SyncCursor | null>;
+  /** The mapper version of the last caught-up remap, and of a remap still underway. */
+  mapperVersions(): Promise<MapperVersions>;
   /**
    * Writes one page and saves `cursor`, atomically. With `skipUnchanged`, a
    * record whose ModificationTimestamp matches the stored row isn't rewritten.
@@ -90,7 +101,8 @@ export interface SyncStore {
   pruneRemoved(before: Date): Promise<number>;
   /**
    * Records the outcome; a run that didn't fail also stamps the source's last
-   * sync, and one that caught up clears the cursor's key.
+   * sync, and one that caught up clears the cursor's key. With
+   * `outcome.mapperVersion`, saves it as done (caught up) or as underway.
    */
   finishRun(runId: string, outcome: RunOutcome): Promise<void>;
 }
@@ -255,6 +267,9 @@ export async function runSync(
   let cursor: SyncCursor | null = null;
   let status: "succeeded" | "partial" = "succeeded";
   const cursorDate = () => cursor?.modifiedAt ?? null;
+  // Set while the run rewrites every record for this mapper version, once the
+  // saved cursor is this run's (so a later run may resume the remap from it).
+  let remapVersion: number | undefined;
   try {
     const feed = typeof provider === "function" ? provider() : provider;
     cursor = await store.savedCursor();
@@ -297,7 +312,21 @@ export async function runSync(
       // A run that stopped partway continues right after its last record; one
       // that caught up starts again a little before it (UPDATE_LOOKBACK_MS).
       let from: FeedPosition | null = cursor;
-      if (mode === "full") {
+      // Stored rows mapped by an older mapper (`ListingProvider.mapperVersion`)
+      // must be rewritten, though their ModificationTimestamp hasn't changed:
+      // read the whole feed without skipping unchanged records until a run
+      // catches up. A remap stopped partway resumes from its cursor.
+      const version = feed.mapperVersion;
+      let remap = mode === "full" && version !== undefined;
+      let resumeRemap = false;
+      if (mode === "incremental" && version !== undefined) {
+        const saved = await store.mapperVersions();
+        remap = saved.done !== version;
+        resumeRemap = remap && saved.remappingTo === version && cursor?.key != null;
+      }
+      if (resumeRemap) {
+        remapVersion = version;
+      } else if (mode === "full" || remap) {
         from = null;
         cursor = null;
       } else if (cursor && cursor.key === null) {
@@ -314,8 +343,9 @@ export async function runSync(
         if (page.last) cursor = page.last;
         const outcome = await store.writePage(page.items, cursor, {
           // A full run exists to repair stored rows, so it rewrites every one.
-          skipUnchanged: mode !== "full",
+          skipUnchanged: mode !== "full" && !remap,
         });
+        if (remap) remapVersion = version;
         counts.upserted += outcome.upserted;
         counts.unchanged += outcome.unchanged;
         counts.removed += outcome.removed;
@@ -326,6 +356,8 @@ export async function runSync(
           break;
         }
       }
+      // An empty feed read from the start has caught up too.
+      if (remap && status === "succeeded") remapVersion = version;
     }
 
     await store.finishRun(runId, {
@@ -333,6 +365,7 @@ export async function runSync(
       counts,
       cursor: cursorDate(),
       caughtUp: mode !== "purge" && status === "succeeded",
+      mapperVersion: remapVersion,
     });
     Object.assign(result, counts, {
       status,
@@ -346,6 +379,7 @@ export async function runSync(
       counts,
       cursor: cursorDate(),
       caughtUp: false,
+      mapperVersion: remapVersion,
       error: error instanceof Error ? error.message : String(error),
     });
     throw error;

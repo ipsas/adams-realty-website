@@ -1,4 +1,13 @@
+import { isNullLike } from "@/lib/format";
 import type { MapResult, NormalizedListing, NormalizedMedia, NormalizedOpenHouse } from "../types";
+
+/**
+ * Bump whenever mapResoProperty's output changes for the same input: the next
+ * incremental sync then rewrites every stored row once (sync-engine.ts), since
+ * their ModificationTimestamp alone wouldn't make it.
+ * 2: GAMLS2_Latitude/Longitude and Coordinates, placeholder subdivisions, 2-digit tax years.
+ */
+export const RESO_MAPPER_VERSION = 2;
 
 /**
  * Maps a RESO Data Dictionary 2.x `Property` record (as returned by any
@@ -129,7 +138,7 @@ export function list(v: unknown): string[] {
   const raw = Array.isArray(v) ? v : typeof v === "string" ? v.split(",") : [];
   return raw
     .map((x) => (typeof x === "string" ? x.trim() : ""))
-    .filter((x) => x && x.toLowerCase() !== "none")
+    .filter((x) => !isNullLike(x))
     .map(humanizeLookup);
 }
 
@@ -300,6 +309,43 @@ function bySuffix(p: ResoProperty, suffix: string): string | null {
   return null;
 }
 
+/**
+ * [lat, lng], or null. Georgia MLS's Bridge dataset leaves the standard
+ * Latitude/Longitude null and sends `GAMLS2_Latitude`/`GAMLS2_Longitude`
+ * (any `<PREFIX>_Latitude` is read) and a GeoJSON-style `Coordinates`
+ * [lng, lat], in that order of preference: the first pair that passes the
+ * range check wins. Exported for tests.
+ */
+export function coordinates(p: ResoProperty): [number, number] | null {
+  const geo = Array.isArray(p.Coordinates) && p.Coordinates.length === 2 ? p.Coordinates : [];
+  const candidates: [unknown, unknown][] = [
+    [p.Latitude, p.Longitude],
+    [bySuffix(p, "_Latitude"), bySuffix(p, "_Longitude")],
+    // Numbers only: GeoJSON arrays never carry strings.
+    [typeof geo[1] === "number" ? geo[1] : null, typeof geo[0] === "number" ? geo[0] : null],
+  ];
+  for (const [rawLat, rawLng] of candidates) {
+    const lat = num(rawLat);
+    const lng = num(rawLng);
+    const valid =
+      lat !== null &&
+      lng !== null &&
+      Math.abs(lat) <= 90 &&
+      Math.abs(lng) <= 180 &&
+      !(lat === 0 && lng === 0);
+    if (valid) return [lat, lng];
+  }
+  return null;
+}
+
+/** 2-digit years (24) are 2000+; anything outside 1900…next year is noise. Exported for tests. */
+export function taxYear(v: unknown, now: Date = new Date()): number | null {
+  let y = int(v);
+  if (y === null) return null;
+  if (y >= 0 && y <= 99) y += 2000;
+  return y >= 1900 && y <= now.getFullYear() + 1 ? y : null;
+}
+
 const EMAIL = /[^\s@,;<>()]+@[^\s@,;<>()]+\.[a-z]{2,}/i;
 const PHONE = /(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/;
 
@@ -391,14 +437,8 @@ export function mapResoProperty(p: ResoProperty): MapResult {
   const levels = list(p.Levels).map((l) => l.toLowerCase());
   const stories = int(p.Stories) ?? int(p.StoriesTotal);
   const views = list(p.View);
-  const lat = num(p.Latitude);
-  const lng = num(p.Longitude);
-  const validCoords =
-    lat !== null &&
-    lng !== null &&
-    Math.abs(lat) <= 90 &&
-    Math.abs(lng) <= 180 &&
-    !(lat === 0 && lng === 0);
+  const coords = coordinates(p);
+  const subdivision = str(p.SubdivisionName);
 
   const listing: NormalizedListing = {
     listingKey,
@@ -429,7 +469,7 @@ export function mapResoProperty(p: ResoProperty): MapResult {
     hoaFee: bool(p.AssociationYN) === false ? null : int(p.AssociationFee),
     hoaFrequency: hoaFrequency(p.AssociationFeeFrequency),
     taxAnnualAmount: int(p.TaxAnnualAmount),
-    taxYear: int(p.TaxYear),
+    taxYear: taxYear(p.TaxYear),
 
     addressLine1: titleCaseIfShouting(street),
     unitNumber: str(p.UnitNumber),
@@ -437,10 +477,11 @@ export function mapResoProperty(p: ResoProperty): MapResult {
     state: state.toUpperCase(),
     postalCode,
     county: str(p.CountyOrParish),
-    neighborhood: str(p.SubdivisionName) ? titleCaseIfShouting(str(p.SubdivisionName)!) : null,
+    // Georgia MLS sends "None" (or "none") for no subdivision.
+    neighborhood: subdivision && !isNullLike(subdivision) ? titleCaseIfShouting(subdivision) : null,
     waterBodyName: str(p.WaterBodyName) ? titleCaseIfShouting(str(p.WaterBodyName)!) : null,
-    latitude: validCoords ? lat : null,
-    longitude: validCoords ? lng : null,
+    latitude: coords?.[0] ?? null,
+    longitude: coords?.[1] ?? null,
     hideAddress: bool(p.InternetAddressDisplayYN) === false,
 
     headline: null,

@@ -15,7 +15,7 @@ import { can } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { cn } from "@/lib/cn";
 import { getDashboardListings } from "@/lib/dashboard/queries";
-import { formatPrice, formatRelative, staffStatusLabel } from "@/lib/format";
+import { formatPrice, formatRelative, formatUnit, staffStatusLabel } from "@/lib/format";
 import { isIdxHidden } from "@/lib/listings/visibility";
 
 export const metadata = { title: "Listings" };
@@ -116,7 +116,7 @@ export default async function DashboardListings(props: PageProps<"/dashboard/lis
                                 />
                               )}
                               {r.addressLine1}
-                              {r.unitNumber && ` #${r.unitNumber}`}
+                              {r.unitNumber && ` ${formatUnit(r.unitNumber) ?? ""}`}
                             </p>
                             <p className="text-xs">
                               {r.city} · {r.sourceKind === "manual" ? "Entered here" : "From MLS"}

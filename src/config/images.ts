@@ -12,6 +12,13 @@
 /** Widths for photos that span a good part of the screen (cards, the gallery, the viewer). */
 export const PHOTO_WIDTHS = [480, 640, 800, 1080, 1200, 1600, 1920] as const;
 
+/**
+ * Extra widths for the home page hero: it covers a box taller than wide on phones, so
+ * high-DPI screens need more than 1920 px. next.config.ts adds them to `deviceSizes`;
+ * src/lib/photos.ts never asks for them, so listing photos stay within PHOTO_WIDTHS.
+ */
+export const HERO_EXTRA_WIDTHS = [2560, 3840] as const;
+
 /** Widths for small images (thumbnails, avatars, map previews). All below PHOTO_WIDTHS[0]. */
 export const THUMB_WIDTHS = [96, 160, 256, 384] as const;
 

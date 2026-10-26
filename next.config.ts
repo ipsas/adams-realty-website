@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import {
+  HERO_EXTRA_WIDTHS,
   PHOTO_CACHE_SECONDS,
   PHOTO_QUALITY,
   PHOTO_WIDTHS,
@@ -42,7 +43,7 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "**" },
       { protocol: "http", hostname: "**" },
     ],
-    deviceSizes: [...PHOTO_WIDTHS],
+    deviceSizes: [...PHOTO_WIDTHS, ...HERO_EXTRA_WIDTHS],
     imageSizes: [...THUMB_WIDTHS],
     qualities: [PHOTO_QUALITY],
     formats: ["image/avif", "image/webp"],

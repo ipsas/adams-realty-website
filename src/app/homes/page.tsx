@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { SearchView, type EmptyHelp } from "@/components/search/search-view";
 import { site } from "@/config/site";
 import { db } from "@/db";
@@ -14,6 +15,7 @@ import {
   serializeCriteria,
   type SearchCriteria,
   type SearchMode,
+  withPageHref,
 } from "@/lib/search/params";
 import { centerOf, nearbyTowns, placeBounds, resolveScope } from "@/lib/search/place";
 import { hasLocation, type LocationScope } from "@/lib/search/query";
@@ -63,6 +65,10 @@ export default async function SearchPage(props: PageProps<"/homes">) {
     getSession(),
     gamlsLastSyncedAt(db),
   ]);
+  // A page past the last one would show the "no homes match" state: go to the last page.
+  if (results.total > 0 && criteria.page > results.pageCount) {
+    redirect(withPageHref(raw, results.pageCount));
+  }
   // The town a moved map came from, for "Back to Royston" (only while searching the map).
   const from = criteria.bounds && !criteria.q ? parseFromParam(raw) : undefined;
 

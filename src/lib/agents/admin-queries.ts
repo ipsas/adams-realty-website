@@ -2,6 +2,7 @@ import { and, asc, desc, eq, like, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, type Executor } from "@/db";
 import { agents, offices, users } from "@/db/schema";
+import { displayAgentEmail } from "@/lib/agents/display-email";
 import { slugify } from "@/lib/listings/slug";
 
 /**
@@ -15,9 +16,10 @@ import { slugify } from "@/lib/listings/slug";
 
 /** Every agent profile, active or not, for the admin table. Active first, then public order. */
 export async function getAgentsForAdmin() {
-  return db
+  const rows = await db
     .select({
       id: agents.id,
+      mlsAgentId: agents.mlsAgentId,
       slug: agents.slug,
       name: agents.name,
       title: agents.title,
@@ -36,6 +38,8 @@ export async function getAgentsForAdmin() {
     .from(agents)
     .leftJoin(users, eq(agents.userId, users.id))
     .orderBy(desc(agents.isActive), asc(agents.sortOrder), asc(agents.name));
+  // The table shows the email the site uses for each agent (the firm's fixed ones included).
+  return rows.map((a) => ({ ...a, email: displayAgentEmail(a) }));
 }
 
 /** One profile with its linked login and office (if any), for the edit forms. */

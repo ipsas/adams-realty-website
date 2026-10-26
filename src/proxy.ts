@@ -89,9 +89,9 @@ export const config = {
     /*
      * Everything (pages, route handlers, RSC fetches, server actions), except:
      * - _next/: Next's own files (static chunks and fonts, the image optimizer, dev HMR);
-     * - public files that hold no listing data: the favicon and app icon, the MLS logos
-     *   (/brand), the team photos (/team) and the MapLibre worker (/vendor).
+     * - public files that hold no listing data: the favicon and app icons (/icons), the MLS
+     *   logos (/brand), the team photos (/team) and the MapLibre worker (/vendor).
      */
-    "/((?!_next/|favicon\\.ico$|icon\\.svg$|brand/|team/|vendor/).*)",
+    "/((?!_next/|favicon\\.ico$|icon\\.svg$|icons/|brand/|team/|vendor/).*)",
   ],
 };

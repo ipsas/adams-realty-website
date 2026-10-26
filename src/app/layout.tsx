@@ -32,7 +32,14 @@ export const metadata: Metadata = {
   },
   description: site.description,
   applicationName: site.name,
-  openGraph: { type: "website", siteName: site.name, locale: "en_US" },
+  // A page that sets its own openGraph replaces all of this (Next merges segments shallowly).
+  openGraph: {
+    type: "website",
+    siteName: site.name,
+    locale: "en_US",
+    images: [{ url: "/images/og-default.jpg", width: 1200, height: 800, alt: site.name }],
+  },
+  // No images: Next copies openGraph.images, so pages with their own photo keep it here too.
   twitter: { card: "summary_large_image" },
   appleWebApp: { capable: true, title: site.name, statusBarStyle: "default" },
   formatDetection: { telephone: false },
