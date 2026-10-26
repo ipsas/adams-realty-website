@@ -88,13 +88,14 @@ export const site = {
      */
     corrections: { email: "contracts.adamsrealty@gmail.com", phone: "(706) 246-0053" },
     /**
-     * The copyright notice (IDX Agreement Exhibit A 10). The 12 f text is
-     * `consumerUseNotice`. `mlsDisclaimer` (src/lib/mls-copyright.ts) adds the
-     * current year and the last-updated time.
+     * The copyright notice plus the IDX Agreement Exhibit A §10 disclaimer
+     * ("information is deemed reliable but is not guaranteed."). The R&R
+     * Art. III-2 §12 f text is `consumerUseNotice`. `mlsDisclaimer`
+     * (src/lib/mls-copyright.ts) adds the current year and the last-updated time.
      */
-    disclaimer: "All rights reserved",
+    disclaimer: "All rights reserved. Information is deemed reliable but is not guaranteed",
     /**
-     * GAMLS R&R Art. III-2 Section 12 f verbatim, shown in `mlsDisclaimer`
+     * GAMLS R&R Art. III-2 §12 f verbatim, shown in `mlsDisclaimer`
      * after the copyright notice.
      */
     consumerUseNotice:

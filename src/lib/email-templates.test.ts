@@ -153,7 +153,7 @@ describe("savedHomesUpdateEmail", () => {
 describe("Georgia MLS credit", () => {
   const year = new Date().getFullYear();
   const mlsUpdatedAt = new Date("2026-10-26T17:57:00Z");
-  const notice = `© ${year} Georgia MLS. All rights reserved. IDX information is provided exclusively for consumers' personal, non-commercial use, that it may not be used for any purpose other than to identify prospective properties consumers may be interested in purchasing, and that the data is deemed reliable but is not guaranteed accurate by GAMLS. Last updated Oct 26, 2026, 1:57 PM ET`;
+  const notice = `© ${year} Georgia MLS. All rights reserved. Information is deemed reliable but is not guaranteed. IDX information is provided exclusively for consumers' personal, non-commercial use, that it may not be used for any purpose other than to identify prospective properties consumers may be interested in purchasing, and that the data is deemed reliable but is not guaranteed accurate by GAMLS. Last updated Oct 26, 2026, 1:57 PM ET`;
   const disclaimers = ["Other MLS text."];
   const homesUpdate = () =>
     savedHomesUpdateEmail({

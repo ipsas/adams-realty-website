@@ -100,7 +100,7 @@ describe("MlsCredit", () => {
 
 describe("site.mls.disclaimer", () => {
   it("is the fixed wording of GAMLS's notice, verbatim, without the year", () => {
-    expect(site.mls.disclaimer).toBe("All rights reserved");
+    expect(site.mls.disclaimer).toBe("All rights reserved. Information is deemed reliable but is not guaranteed");
   });
 
   it("carries the consumer-use notice verbatim", () => {

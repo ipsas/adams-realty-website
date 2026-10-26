@@ -32,9 +32,10 @@ export function formatLastUpdated(at: Date): string {
 }
 
 /**
- * Georgia MLS's IDX disclaimer: "© 2026 Georgia MLS. All rights reserved. IDX information is
- * provided exclusively for consumers' personal, non-commercial use, that it may not be used ...
- * by GAMLS. Last updated Oct 26, 2026, 1:57 PM ET". `lastUpdated` is the gamls source's last successful sync; without one, the build
+ * Georgia MLS's IDX disclaimer: "© 2026 Georgia MLS. All rights reserved. Information is
+ * deemed reliable but is not guaranteed. IDX information is provided exclusively for consumers'
+ * personal, non-commercial use, that it may not be used ... by GAMLS. Last updated Oct 26, 2026,
+ * 1:57 PM ET". `lastUpdated` is the gamls source's last successful sync; without one, the build
  * time (BUILD_TIME, fixed in next.config.ts). With neither (a script outside Next), the
  * "Last updated" part is left out.
  */

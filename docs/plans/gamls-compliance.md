@@ -30,10 +30,11 @@ Owner decisions since, now built:
   `/homes`, feed listing pages, `/listing-corrections`) shows it 32 px tall, on a white chip in
   dark mode. Every feed card, area-guide tile and map popup carries `MlsCredit` (logo at 24 px,
   "© <year> Georgia MLS"). The IDX disclaimer is "© <year> Georgia MLS. All rights reserved.
-  Information is deemed reliable but is not guaranteed accurate by GAMLS. IDX information is
-  provided exclusively for consumers' personal, non-commercial use and may not be used for any
-  purpose other than to identify prospective properties consumers may be interested in
-  purchasing. Last updated <date> ET", computed by `mlsDisclaimer()` (`src/lib/mls-copyright.ts`) from the gamls last sync; the
+  Information is deemed reliable but is not guaranteed. IDX information is provided exclusively
+  for consumers' personal, non-commercial use, that it may not be used for any purpose other
+  than to identify prospective properties consumers may be interested in purchasing, and that
+  the data is deemed reliable but is not guaranteed accurate by GAMLS. Last updated <date> ET",
+  computed by `mlsDisclaimer()` (`src/lib/mls-copyright.ts`) from the gamls last sync; the
   stored gamls `data_sources.disclaimer` text is never shown. Only sources with an active
   listing get a footer disclaimer.
 - **The firm's own listings follow the status rule too.** Coming Soon, Withdrawn, Expired and

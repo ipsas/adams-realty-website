@@ -9,7 +9,9 @@ import {
 const SECTION_12F =
   "IDX information is provided exclusively for consumers' personal, non-commercial use, that it may not be used for any purpose other than to identify prospective properties consumers may be interested in purchasing, and that the data is deemed reliable but is not guaranteed accurate by GAMLS.";
 
-const WORDING = `Georgia MLS. All rights reserved. ${SECTION_12F}`;
+const EXHIBIT_A_10 = "Information is deemed reliable but is not guaranteed.";
+
+const WORDING = `Georgia MLS. All rights reserved. Information is deemed reliable but is not guaranteed. ${SECTION_12F}`;
 
 describe("mlsDisclaimer", () => {
   const now = new Date("2026-10-26T18:00:00Z");
@@ -20,11 +22,12 @@ describe("mlsDisclaimer", () => {
     );
   });
 
-  it("contains GAMLS R&R Art. III-2 Section 12 f word for word", () => {
+  it("contains IDX Agreement Exhibit A §10 and GAMLS R&R Art. III-2 §12 f word for word", () => {
     const out = mlsDisclaimer(new Date("2026-10-26T17:57:00Z"), now);
     expect(out).toContain(SECTION_12F);
-    expect(out).not.toContain(["Information", "is deemed"].join(" "));
-    expect(out).not.toContain("use and may not");
+    expect(out).toContain(EXHIBIT_A_10 + " " + SECTION_12F);
+    expect(out.startsWith("© 2026 Georgia MLS. All rights reserved. " + EXHIBIT_A_10)).toBe(true);
+    expect(out).not.toContain(["use and", "may not"].join(" "));
   });
 
   it("takes the year from the render time, never a fixed one", () => {
