@@ -29,7 +29,11 @@ Owner decisions since, now built:
   `public/brand/gamls_idx.png`, set in `site.mls.logo`; every `MlsAttribution` (footer,
   `/homes`, feed listing pages, `/listing-corrections`) shows it 32 px tall, on a white chip in
   dark mode. Every feed card, area-guide tile and map popup carries `MlsCredit` (logo at 24 px,
-  "© <year> Georgia MLS"). The disclaimer placeholder is `site.mls.disclaimer`.
+  "© <year> Georgia MLS"). The IDX disclaimer is Georgia MLS's PDF wording, "© <year> Georgia
+  MLS. All rights reserved. Information Deem Reliable But Not Guaranteed. Last updated <date>
+  ET", computed by `mlsDisclaimer()` (`src/lib/mls-copyright.ts`) from the gamls last sync; the
+  stored gamls `data_sources.disclaimer` text is never shown. Only sources with an active
+  listing get a footer disclaimer.
 - **The firm's own listings follow the status rule too.** Coming Soon, Withdrawn, Expired and
   Canceled listings entered in the dashboard are hidden from the public like feed ones
   (`drizzle/0011_hide_all_hidden_statuses.sql` drops `from_feed and` from `idx_hidden`). There
