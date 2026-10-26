@@ -18,7 +18,7 @@ import { safeNext } from "@/lib/safe-redirect";
  *   so it reaches the coming-soon page and carries on after unlocking.
  * - Always reachable: /preview itself (and its unlock form's post),
  *   /api/cron/* (Vercel Cron; CRON_SECRET guards it), /robots.txt (which says
- *   `Disallow: /` while gated), the icons the coming-soon page uses, and the
+ *   `Disallow: /` while gated), the icons and the web app manifest, and the
  *   unsubscribe links in alert emails (/alerts/one-click, /alerts/unsubscribe):
  *   the cron keeps sending alerts, mail providers post the one-click
  *   unsubscribe from their own servers, and each checks its own signed token.
@@ -130,6 +130,7 @@ const PUBLIC_FILES = new Set([
   "/robots.txt",
   "/icon.svg",
   "/favicon.ico",
+  "/manifest.webmanifest",
   // Alert emails' unsubscribe links (RFC 8058 one-click, and the footer link's confirm page
   // with its server action): authorized by their signed token. While gated the page stands
   // alone like /preview, without the site's header and footer (src/app/(alerts)/layout.tsx).
@@ -137,13 +138,14 @@ const PUBLIC_FILES = new Set([
   "/alerts/unsubscribe",
 ]);
 /**
- * Cron, and public files that hold no listing data (Next's static files, logos, team photos,
- * the MapLibre worker). The proxy's matcher skips the files already; listed for clarity.
+ * Cron, and public files that hold no listing data (Next's static files, app icons, logos,
+ * team photos, the MapLibre worker). The proxy's matcher skips the files already; listed for clarity.
  */
 const PUBLIC_PREFIXES = [
   "/api/cron/",
   "/_next/static/",
   "/_next/image",
+  "/icons/",
   "/brand/",
   "/team/",
   "/vendor/",
