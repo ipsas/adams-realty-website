@@ -428,9 +428,7 @@ export default async function LeadDetailPage(props: PageProps<"/dashboard/leads/
                 )}
               </p>
               <p className="mt-1 font-medium text-ink">
-                {listing.unitNumber
-                  ? `${listing.addressLine1} #${listing.unitNumber}`
-                  : listing.addressLine1}
+                {formatStreet({ ...listing, hideAddress: false })}
               </p>
               <p className="text-sm text-muted">{formatCityLine(listing)}</p>
               {(listing.bedrooms !== null || listing.livingAreaSqft !== null) && (

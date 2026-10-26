@@ -106,6 +106,14 @@ export type DataSourceConfig = {
    * year stay in scope too (other sources).
    */
   liveOnly?: boolean;
+  /**
+   * Written by the sync, not configured: the provider's mapper version (RESO_MAPPER_VERSION)
+   * of the last run that rewrote every record and caught up. A different current version
+   * makes the next incremental run rewrite every record again (sync-engine.ts).
+   */
+  mapperVersion?: number;
+  /** Written by the sync: a rewrite for this mapper version stopped partway; the next run resumes it. */
+  remappingTo?: number;
   /** Env var prefix holding credentials: `${prefix}_TOKEN` or `${prefix}_CLIENT_ID`/`_CLIENT_SECRET`. */
   credentialsEnvPrefix?: string;
   /** OAuth2 token URL when the feed uses client-credentials auth. */

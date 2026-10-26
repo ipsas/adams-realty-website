@@ -48,13 +48,42 @@ type AddressLike = {
   hideAddress?: boolean;
 };
 
+const PLACEHOLDERS = new Set(["none", "n/a", "na", "-", "0"]);
+
+/**
+ * Empty, or a feed's stand-in for "no value" ("None", "N/A", "-", "0"), as
+ * Georgia MLS sends in SubdivisionName. Such values are never shown or linked.
+ */
+export function isNullLike(v: string | null | undefined): boolean {
+  const t = v?.trim().toLowerCase();
+  return !t || PLACEHOLDERS.has(t);
+}
+
+const UNIT_DESIGNATOR = /^(lot|unit|apt|ste|suite|bldg)\b\.?\s*/i;
+
+/**
+ * A unit as shown after the street: "317" and "#317" → "#317", "A AND B" →
+ * "#A & B", "LOT 8" → "Lot 8" (a designator word needs no "#"). Null when empty.
+ */
+export function formatUnit(unitNumber: string | null | undefined): string | null {
+  const unit = unitNumber?.replace(/^[\s#]+/, "").trim();
+  if (!unit) return null;
+  const designator = UNIT_DESIGNATOR.exec(unit);
+  if (designator) {
+    const word = designator[1];
+    const rest = unit.slice(designator[0].length).trim();
+    const title = word[0].toUpperCase() + word.slice(1).toLowerCase();
+    return rest ? `${title} ${rest}` : title;
+  }
+  return `#${unit.replace(/\s+and\s+/gi, " & ")}`;
+}
+
 export function formatStreet(
   a: Pick<AddressLike, "addressLine1" | "unitNumber" | "hideAddress">,
 ): string {
   if (a.hideAddress) return "Address withheld by seller";
-  // Feeds send units as "317" or "#317"; strip the "#" so it isn't doubled.
-  const unit = a.unitNumber?.replace(/^[\s#]+/, "").trim();
-  return unit ? `${a.addressLine1} #${unit}` : a.addressLine1;
+  const unit = formatUnit(a.unitNumber);
+  return unit ? `${a.addressLine1} ${unit}` : a.addressLine1;
 }
 
 export function formatCityLine(a: AddressLike): string {

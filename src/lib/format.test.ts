@@ -10,7 +10,9 @@ import {
   formatPriceShort,
   formatRelativeShort,
   formatStreet,
+  formatUnit,
   freshness,
+  isNullLike,
   listingMetaDescription,
   STALE_FEED_MS,
   staffStatusLabel,
@@ -48,6 +50,33 @@ describe("format", () => {
     expect(formatStreet({ ...a, unitNumber: "##12" })).toBe("1 Main St #12");
     expect(formatStreet({ ...a, unitNumber: "4B" })).toBe("1 Main St #4B");
     expect(formatStreet({ ...a, unitNumber: "#" })).toBe("1 Main St");
+  });
+
+  it("formats units the way Georgia MLS sends them consistently", () => {
+    expect(formatUnit("A & B")).toBe("#A & B");
+    expect(formatUnit("A AND B")).toBe("#A & B");
+    expect(formatUnit("a and b")).toBe("#a & b");
+    expect(formatUnit("ANDOVER")).toBe("#ANDOVER");
+    expect(formatUnit("A")).toBe("#A");
+    expect(formatUnit("LOT 8")).toBe("Lot 8");
+    expect(formatUnit("#Unit 4")).toBe("Unit 4");
+    expect(formatUnit("APT 2B")).toBe("Apt 2B");
+    expect(formatUnit("ste. 100")).toBe("Ste 100");
+    expect(formatUnit("SUITE 210")).toBe("Suite 210");
+    expect(formatUnit("BLDG C")).toBe("Bldg C");
+    expect(formatUnit("LOTUS")).toBe("#LOTUS");
+    expect(formatUnit("  ")).toBeNull();
+    expect(formatUnit(null)).toBeNull();
+    expect(
+      formatStreet({ addressLine1: "424 Harbor Point", unitNumber: "LOT 8", hideAddress: false }),
+    ).toBe("424 Harbor Point Lot 8");
+  });
+
+  it("recognizes placeholder values", () => {
+    for (const v of ["None", "none", " NONE ", "n/a", "NA", "-", "0", "", "  ", null, undefined]) {
+      expect(isNullLike(v), String(v)).toBe(true);
+    }
+    for (const v of ["Harbor Pointe", "Nonesuch", "10"]) expect(isNullLike(v), v).toBe(false);
   });
 
   it("counts days on market", () => {

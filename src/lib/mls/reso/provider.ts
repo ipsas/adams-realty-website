@@ -2,7 +2,7 @@ import type { DataSourceConfig } from "@/db/schema";
 import { liveStatusFilter } from "../gamls";
 import type { FeedPosition, ListingProvider, PurgeScope, UpdatesPage } from "../types";
 import { ResoClient, type ResoClientConfig } from "./client";
-import { mapResoProperty, type ResoProperty } from "./mapper";
+import { mapResoProperty, RESO_MAPPER_VERSION, type ResoProperty } from "./mapper";
 
 const PAGE_SIZE = 200;
 const KEY_PAGE_SIZE = 1000;
@@ -45,6 +45,7 @@ export function missingCredentials(
  * For the purge that means removing a listing that is still for sale.
  */
 export class ResoWebApiProvider implements ListingProvider {
+  readonly mapperVersion = RESO_MAPPER_VERSION;
   private readonly client: ResoClient;
   private readonly resource: string;
   private readonly baseFilter: string | undefined;

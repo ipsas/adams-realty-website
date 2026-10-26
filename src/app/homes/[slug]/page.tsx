@@ -56,6 +56,7 @@ import {
   formatPrice,
   formatRelative,
   formatStreet,
+  isNullLike,
   listingMetaDescription,
   PROPERTY_TYPE_LABELS,
   statusLabel,
@@ -153,6 +154,8 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
   const tours = offersTours(l);
   const dom = daysSince(l.listDate);
   const street = formatStreet(l);
+  // Rows synced before the mapper dropped placeholders can still hold "None".
+  const neighborhood = isNullLike(l.neighborhood) ? null : l.neighborhood;
   const canEdit = can.editListing(actor, { sourceKind: source.kind, listAgentId: l.listAgentId });
   // IDX: the listing firm, named prominently (the firm's own listings may carry no office name).
   const office = l.listOfficeName ?? (l.isCompanyListing ? site.legalName : null);
@@ -181,7 +184,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
             <p className="mb-4 rounded-2xl bg-clay-50 px-4 py-3 text-sm text-clay-600">
               This home is no longer on the market.{" "}
               <Link
-                href={placeHref(l.neighborhood ?? l.city, l.county)}
+                href={placeHref(neighborhood ?? l.city, l.county)}
                 className="font-semibold underline"
               >
                 See similar homes nearby
@@ -206,11 +209,11 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                 <Link href={placeHref(l.city, l.county)} className="hover:text-ink">
                   {l.city}
                 </Link>
-                {l.neighborhood && l.neighborhood !== l.city && (
+                {neighborhood && neighborhood !== l.city && (
                   <>
                     <ChevronRight className="size-3.5" />
-                    <Link href={placeHref(l.neighborhood, l.county)} className="hover:text-ink">
-                      {l.neighborhood}
+                    <Link href={placeHref(neighborhood, l.county)} className="hover:text-ink">
+                      {neighborhood}
                     </Link>
                   </>
                 )}
@@ -509,12 +512,12 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                   <div className="h-80 overflow-hidden rounded-2xl border border-line">
                     <LocationMapLazy lat={l.latitude} lng={l.longitude} label={street} />
                   </div>
-                  {l.neighborhood && (
+                  {neighborhood && (
                     <Link
-                      href={placeHref(l.neighborhood, l.county)}
+                      href={placeHref(neighborhood, l.county)}
                       className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-brand-700 hover:underline"
                     >
-                      More homes in {l.neighborhood} <ChevronRight className="size-4" />
+                      More homes in {neighborhood} <ChevronRight className="size-4" />
                     </Link>
                   )}
                 </Section>

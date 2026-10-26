@@ -82,6 +82,17 @@ export function createSyncStore(source: SourceRow): PostgresSyncStore {
       return row?.cursor ? { modifiedAt: row.cursor, key: row.key } : null;
     },
 
+    async mapperVersions() {
+      const [row] = await db
+        .select({ config: dataSources.config })
+        .from(dataSources)
+        .where(eq(dataSources.id, source.id));
+      return {
+        done: row?.config.mapperVersion ?? null,
+        remappingTo: row?.config.remappingTo ?? null,
+      };
+    },
+
     async writePage(page, cursor, { skipUnchanged }) {
       agentIdsByMlsId ??= new Map(
         (
@@ -188,6 +199,19 @@ export function createSyncStore(source: SourceRow): PostgresSyncStore {
           .set(
             outcome.caughtUp ? { lastSyncedAt: now, syncCursorKey: null } : { lastSyncedAt: now },
           )
+          .where(eq(dataSources.id, source.id));
+      }
+      if (outcome.mapperVersion !== undefined) {
+        // Merged into the jsonb, so the rest of the config is left as it is.
+        const v = outcome.mapperVersion;
+        await db
+          .update(dataSources)
+          .set({
+            config:
+              outcome.status === "succeeded" && outcome.caughtUp
+                ? sql`(${dataSources.config} - 'remappingTo') || jsonb_build_object('mapperVersion', ${v}::int)`
+                : sql`${dataSources.config} || jsonb_build_object('remappingTo', ${v}::int)`,
+          })
           .where(eq(dataSources.id, source.id));
       }
     },
