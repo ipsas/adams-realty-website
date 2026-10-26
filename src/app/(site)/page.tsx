@@ -66,8 +66,13 @@ export default async function HomePage() {
             background:
               "linear-gradient(90deg, rgba(10,14,20,0.85) 0%, rgba(10,14,20,0) 65%), rgba(0,0,0,0.28)",
           }}
+          aria-hidden="true"
         />
-        <div className="absolute inset-0 -z-10 bg-gradient-to-t from-shade/85 via-shade/35 to-shade/40" />
+        <div
+          className="absolute inset-0 -z-10 bg-gradient-to-t from-shade/85 via-shade/35 to-shade/40"
+          aria-hidden="true"
+        />
+        <div className="absolute inset-0 -z-10 bg-black/20 sm:hidden" aria-hidden="true" />
         <Container className="pt-36 pb-10 sm:pb-14">
           <p className="mb-5 flex items-center gap-2 text-xs font-semibold tracking-[0.22em] text-white/75 uppercase">
             <span className="h-px w-8 bg-brass-400" />
@@ -97,7 +102,7 @@ export default async function HomePage() {
                 <Link
                   key={city}
                   href={townHref(city)}
-                  className="flex h-9 shrink-0 items-center rounded-full border border-white/25 px-3 whitespace-nowrap text-white/90 backdrop-blur-sm transition-colors hover:bg-white/15"
+                  className="flex h-9 shrink-0 items-center rounded-full border border-white/60 px-3 whitespace-nowrap text-white/90 backdrop-blur-sm transition-colors hover:bg-white/15"
                 >
                   {city}
                 </Link>
