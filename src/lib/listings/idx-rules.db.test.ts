@@ -178,7 +178,9 @@ describe("hidden listings stay off every public surface, the firm's own included
   it("the listing sitemap", async () => {
     const slugs = new Set((await getListingSitemapChunk(0, 1000)).map((r) => r.slug));
     for (const label of labels.values()) {
-      const shown = PUBLIC_LIVE.includes(label);
+      // The feed's rows are someone else's, in Clarke County, outside the firm's area,
+      // so only the firm's own (manual) live listings are offered.
+      const shown = PUBLIC_LIVE.includes(label) && label.startsWith("manual:");
       expect(slugs.has(await slugOf(label)), label).toBe(shown);
     }
   });

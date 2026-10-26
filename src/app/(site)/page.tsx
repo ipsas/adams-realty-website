@@ -1,4 +1,5 @@
 import { ArrowRight, BadgeDollarSign, EyeOff, RefreshCcw, ShieldCheck } from "lucide-react";
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { ListingCard } from "@/components/listings/listing-card";
@@ -22,6 +23,9 @@ import { NO_HOMES_FOR_SALE } from "@/lib/listings/places-index";
 import { FEATURED_MIN, getNewestListings } from "@/lib/listings/queries";
 import { searchHref } from "@/lib/search/params";
 import heroDusk from "@/../public/images/hero-dusk.jpg";
+
+// Title and description come from the root layout's defaults.
+export const metadata: Metadata = { alternates: { canonical: "/" } };
 
 /** Town chips under the hero search: the cities with the most homes for sale. */
 const TOP_CITIES = 12;

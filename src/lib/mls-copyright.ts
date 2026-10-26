@@ -57,3 +57,19 @@ export function sourceDisclaimer(
 ): string | null {
   return source.slug === GAMLS_SLUG ? mlsDisclaimer(source.lastSyncedAt, now) : source.disclaimer;
 }
+
+/**
+ * The disclaimers to show for the given sources (pass only sources with an active listing,
+ * `sourcesWithPublicListings`): each through `sourceDisclaimer`, Georgia MLS's first,
+ * empty ones dropped, duplicates shown once.
+ */
+export function sourceDisclaimers(
+  sources: Parameters<typeof sourceDisclaimer>[0][],
+  now: Date = new Date(),
+): string[] {
+  const gamlsFirst = [...sources].sort(
+    (a, b) => Number(b.slug === GAMLS_SLUG) - Number(a.slug === GAMLS_SLUG),
+  );
+  const texts = gamlsFirst.flatMap((s) => sourceDisclaimer(s, now) || []);
+  return [...new Set(texts)];
+}

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { formatLastUpdated, mlsDisclaimer, sourceDisclaimer } from "./mls-copyright";
+import {
+  formatLastUpdated,
+  mlsDisclaimer,
+  sourceDisclaimer,
+  sourceDisclaimers,
+} from "./mls-copyright";
 
 const WORDING = "Georgia MLS. All rights reserved. Information Deem Reliable But Not Guaranteed.";
 
@@ -65,5 +70,36 @@ describe("sourceDisclaimer", () => {
     expect(sourceDisclaimer({ slug: "manual", disclaimer: null, lastSyncedAt: null }, now)).toBe(
       null,
     );
+  });
+});
+
+describe("sourceDisclaimers", () => {
+  const now = new Date("2026-10-26T18:00:00Z");
+  const at = new Date("2026-10-26T17:57:00Z");
+  const gamls = { slug: "gamls", disclaimer: "stored, never shown", lastSyncedAt: at };
+
+  it("puts Georgia MLS's computed notice first, drops empty ones and dedupes", () => {
+    expect(
+      sourceDisclaimers(
+        [
+          { slug: "a-mls", disclaimer: "Other MLS text.", lastSyncedAt: null },
+          { slug: "b-mls", disclaimer: "Other MLS text.", lastSyncedAt: null },
+          { slug: "manual", disclaimer: null, lastSyncedAt: null },
+          { slug: "blank", disclaimer: "", lastSyncedAt: null },
+          gamls,
+        ],
+        now,
+      ),
+    ).toEqual([mlsDisclaimer(at, now), "Other MLS text."]);
+  });
+
+  it("shows nothing for no sources, and no Georgia MLS notice without the gamls source", () => {
+    expect(sourceDisclaimers([], now)).toEqual([]);
+    expect(
+      sourceDisclaimers(
+        [{ slug: "other", disclaimer: "Other MLS text.", lastSyncedAt: null }],
+        now,
+      ),
+    ).toEqual(["Other MLS text."]);
   });
 });

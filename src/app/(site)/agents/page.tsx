@@ -10,6 +10,7 @@ import { demoDataMode } from "@/lib/demo-mode";
 export const metadata: Metadata = {
   title: "Our agents",
   description: `Meet the real estate agents at ${site.legalName}, serving buyers and sellers across ${site.market.region}.`,
+  alternates: { canonical: "/agents" },
 };
 
 export default async function AgentsPage() {

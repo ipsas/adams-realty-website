@@ -140,8 +140,6 @@ marks the firm's own listings).
 1. **Placeholders to confirm before launch:**
    - the Bridge dataset name: set by `MLS_GAMLS_DATASET` (no default; the feed has no base URL
      until it is set);
-   - the exact IDX disclaimer: `site.mls.disclaimer` in `src/config/site.ts`, copied into
-     `data_sources.disclaimer` by the seed and by `npm run mls:add-gamls`;
    - the agents' Georgia MLS agent IDs: `MLS_AGENT_IDS` in `scripts/seed-data.ts`. Andrea's
      (`ANDEREGGAA`) is confirmed; the other four (Emily Cooper, Avery McGarity, Erika Lane,
      Anitra Thompson) are unconfirmed placeholders to verify with Adams Realty. Feed listings

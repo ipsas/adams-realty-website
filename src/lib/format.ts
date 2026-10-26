@@ -324,3 +324,19 @@ export function freshness(
         : `Updated ${Math.floor(mins / 60)} hr ago`;
   return { stale: false, label, notice: null };
 }
+
+/**
+ * Cuts text to at most `max` characters at a word boundary, ending in "…"
+ * (no space or punctuation left before it). Text that fits is unchanged.
+ */
+export function cutAtWord(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max - 1);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > 0 ? cut.slice(0, space) : cut).replace(/[\s,.;:]+$/, "")}…`;
+}
+
+/** A listing's meta description from its remarks: whitespace collapsed, cut at a word. */
+export function listingMetaDescription(remarks: string, max = 160): string {
+  return cutAtWord(remarks.replace(/\s+/g, " ").trim(), max);
+}
