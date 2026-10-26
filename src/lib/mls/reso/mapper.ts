@@ -1,4 +1,5 @@
 import { isNullLike } from "@/lib/format";
+import { normalizeTaxYear } from "@/lib/listings/tax-year";
 import type { MapResult, NormalizedListing, NormalizedMedia, NormalizedOpenHouse } from "../types";
 
 /**
@@ -340,10 +341,7 @@ export function coordinates(p: ResoProperty): [number, number] | null {
 
 /** 2-digit years (24) are 2000+; anything outside 1900…next year is noise. Exported for tests. */
 export function taxYear(v: unknown, now: Date = new Date()): number | null {
-  let y = int(v);
-  if (y === null) return null;
-  if (y >= 0 && y <= 99) y += 2000;
-  return y >= 1900 && y <= now.getFullYear() + 1 ? y : null;
+  return normalizeTaxYear(v, now);
 }
 
 const EMAIL = /[^\s@,;<>()]+@[^\s@,;<>()]+\.[a-z]{2,}/i;

@@ -369,3 +369,17 @@ export function cutAtWord(text: string, max: number): string {
 export function listingMetaDescription(remarks: string, max = 160): string {
   return cutAtWord(remarks.replace(/\s+/g, " ").trim(), max);
 }
+
+/**
+ * A US phone number as "xxx-xxx-xxxx" (10 digits, or 11 starting with 1);
+ * anything else is shown as given, trimmed. Blank is null.
+ */
+export function formatDisplayPhone(raw: string | null | undefined): string | null {
+  const trimmed = raw?.trim();
+  if (!trimmed) return null;
+  let digits = trimmed.replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) digits = digits.slice(1);
+  return digits.length === 10
+    ? `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`
+    : trimmed;
+}

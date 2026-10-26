@@ -31,6 +31,7 @@ import { env } from "@/lib/env";
 import { formatPrice, formatStreet } from "@/lib/format";
 import { getCachedAreaGuide } from "@/lib/listings/cached";
 import type { CardRow } from "@/lib/listings/card";
+import { OG_DEFAULT_IMAGE } from "@/lib/og";
 import { searchHref } from "@/lib/search/params";
 
 export async function generateMetadata(props: PageProps<"/areas/[slug]">): Promise<Metadata> {
@@ -48,7 +49,7 @@ export async function generateMetadata(props: PageProps<"/areas/[slug]">): Promi
       title,
       description,
       url,
-      images: stats.photo ? [{ url: stats.photo }] : undefined,
+      images: stats.photo ? [{ url: stats.photo }] : [OG_DEFAULT_IMAGE],
     },
   };
 }

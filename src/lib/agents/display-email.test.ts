@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { agentEmailOverrides } from "@/config/agent-email-overrides";
 import { displayAgentEmail, displayAttributionEmail } from "./display-email";
 
 const ANDREA_ID = "071b7b99-e3c2-47f8-9026-16ee79900bc5";
@@ -21,6 +22,29 @@ describe("displayAgentEmail", () => {
       "pat@example.com",
     );
     expect(displayAgentEmail({ id: null, mlsAgentId: null, email: null })).toBeNull();
+  });
+
+  it("gives every other agent their own stored email, lowercased", () => {
+    for (const mlsAgentId of ["EC7733", "AM6239", "NORRISERIKA", "THOMPSONANIT"]) {
+      expect(
+        displayAgentEmail({ id: `id-${mlsAgentId}`, mlsAgentId, email: `${mlsAgentId}.Adams@Gmail.com` }),
+      ).toBe(`${mlsAgentId.toLowerCase()}.adams@gmail.com`);
+    }
+  });
+
+  it("lowercases and trims, and the override still wins for Andrea", () => {
+    expect(displayAgentEmail({ id: "other-id", email: " Avery.adamsrealty@gmail.com " })).toBe(
+      "avery.adamsrealty@gmail.com",
+    );
+    expect(displayAgentEmail({ id: ANDREA_ID, email: "Andrea.Adamsrealty@Gmail.com" })).toBe(FIXED);
+  });
+});
+
+describe("agentEmailOverrides", () => {
+  it("covers Andrea Anderegg only", () => {
+    expect(agentEmailOverrides).toEqual([
+      { agentId: ANDREA_ID, mlsAgentId: "ANDEREGGAA", email: FIXED },
+    ]);
   });
 });
 
@@ -54,6 +78,22 @@ describe("displayAttributionEmail", () => {
       }),
     ).toBe("jane@brokerage.com");
     expect(displayAttributionEmail({ attributionEmail: null, listAgentId: null })).toBeNull();
+  });
+
+  it("shows the feed's email, lowercased, on another agent's listing", () => {
+    expect(
+      displayAttributionEmail({
+        attributionEmail: " Avery.adamsrealty@gmail.com ",
+        listAgentId: "avery-id",
+        listAgentMlsId: "AM6239",
+      }),
+    ).toBe("avery.adamsrealty@gmail.com");
+  });
+
+  it("still uses the override (lowercase) on her listings with a mixed-case feed email", () => {
+    expect(
+      displayAttributionEmail({ attributionEmail: "Andrea.AdamsRealty@Gmail.com", listAgentId: ANDREA_ID }),
+    ).toBe(FIXED);
   });
 
   it("takes its overrides as a parameter", () => {

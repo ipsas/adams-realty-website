@@ -51,6 +51,7 @@ import {
   formatBaths,
   formatCityLine,
   formatDate,
+  formatDisplayPhone,
   formatFullAddress,
   formatLot,
   formatNumber,
@@ -73,9 +74,11 @@ import {
 } from "@/lib/listings/land";
 import { listingIndexingMode, listingRobots } from "@/lib/listings/indexing";
 import { getListingBySlug, getSimilarListings, type ListingDetail } from "@/lib/listings/queries";
+import { normalizeTaxYear } from "@/lib/listings/tax-year";
 import { formatLastUpdated, mlsDisclaimer, sourceDisclaimer } from "@/lib/mls-copyright";
 import { gamlsLastSyncedAt } from "@/lib/mls/last-updated";
 import { financeFor, listingMonthlyCost, monthlyHoaAmount } from "@/lib/mortgage";
+import { OG_DEFAULT_IMAGE } from "@/lib/og";
 
 export async function generateMetadata(props: PageProps<"/homes/[slug]">): Promise<Metadata> {
   const { slug } = await props.params;
@@ -104,7 +107,7 @@ export async function generateMetadata(props: PageProps<"/homes/[slug]">): Promi
     openGraph: {
       title,
       description,
-      images: l.primaryPhotoUrl ? [{ url: l.primaryPhotoUrl }] : undefined,
+      images: l.primaryPhotoUrl ? [{ url: l.primaryPhotoUrl }] : [OG_DEFAULT_IMAGE],
     },
     // Off-market, sold and out-of-area listings stay reachable but aren't indexed
     // (src/lib/listings/indexing.ts).
@@ -128,6 +131,8 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
     ...l,
     listAgentMlsId: agent?.mlsAgentId,
   });
+  const attributionPhone = formatDisplayPhone(l.attributionPhone);
+  const taxYear = normalizeTaxYear(l.taxYear);
   const disclaimer = sourceDisclaimer(source);
   // IDX: a page with Georgia MLS listings (this one or a similar home) shows its disclaimer.
   const footerDisclaimer =
@@ -426,7 +431,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                   {l.taxAnnualAmount ? (
                     <Fact
                       icon={<DollarSign />}
-                      label={`Property tax${l.taxYear ? ` (${l.taxYear})` : ""}`}
+                      label={`Property tax${taxYear ? ` (${taxYear})` : ""}`}
                       value={`${formatPrice(l.taxAnnualAmount)}/yr`}
                     />
                   ) : null}
@@ -555,9 +560,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                   {l.listAgentName && <InfoRow label="Listing agent" value={l.listAgentName} />}
                   <InfoRow label="Listing ID" value={l.mlsNumber ?? l.listingKey} />
                   <InfoRow label="Status" value={statusLabel(l.status, l.transactionType)} />
-                  {l.attributionPhone && (
-                    <InfoRow label="Contact phone" value={l.attributionPhone} />
-                  )}
+                  {attributionPhone && <InfoRow label="Contact phone" value={attributionPhone} />}
                   {attributionEmail && <InfoRow label="Contact email" value={attributionEmail} />}
                   {l.variableCompensation !== null && (
                     <InfoRow

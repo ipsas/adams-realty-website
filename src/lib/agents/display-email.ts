@@ -17,12 +17,17 @@ function findOverride(
   );
 }
 
+/** Emails are shown (and linked) trimmed and lowercase; null stays null. */
+function normalize<E extends string | null>(email: E): E | string {
+  return email === null ? email : email.trim().toLowerCase();
+}
+
 /** An agent's email: the override when the agent matches by row id or MLS agent ID. */
 export function displayAgentEmail<E extends string | null>(
   agent: { id?: string | null; mlsAgentId?: string | null; email: E },
   overrides: readonly AgentEmailOverride[] = agentEmailOverrides,
 ): E | string {
-  return findOverride(agent.id, agent.mlsAgentId, overrides)?.email ?? agent.email;
+  return normalize(findOverride(agent.id, agent.mlsAgentId, overrides)?.email ?? agent.email);
 }
 
 /**
@@ -37,8 +42,8 @@ export function displayAttributionEmail(
   },
   overrides: readonly AgentEmailOverride[] = agentEmailOverrides,
 ): string | null {
-  return (
+  return normalize(
     findOverride(listing.listAgentId, listing.listAgentMlsId, overrides)?.email ??
-    listing.attributionEmail
+      listing.attributionEmail,
   );
 }

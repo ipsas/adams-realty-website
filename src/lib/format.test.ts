@@ -4,6 +4,7 @@ import {
   daysSince,
   formatBaths,
   formatChangeChip,
+  formatDisplayPhone,
   formatLot,
   formatMonthly,
   formatMonthlyShort,
@@ -250,5 +251,23 @@ describe("cutAtWord and listingMetaDescription", () => {
 
   it("cuts a single long word rather than returning nothing", () => {
     expect(cutAtWord("abcdefghij", 5)).toBe("abcd…");
+  });
+});
+
+describe("formatDisplayPhone", () => {
+  it("formats US numbers as xxx-xxx-xxxx", () => {
+    for (const raw of ["8505723287", "850-572-3287", "(850) 572-3287", "+1 850 572 3287", "18505723287"]) {
+      expect(formatDisplayPhone(raw)).toBe("850-572-3287");
+    }
+  });
+
+  it("is null when blank", () => {
+    expect(formatDisplayPhone("")).toBeNull();
+    expect(formatDisplayPhone("  ")).toBeNull();
+    expect(formatDisplayPhone(null)).toBeNull();
+  });
+
+  it("leaves anything else as given", () => {
+    expect(formatDisplayPhone("572-3287")).toBe("572-3287");
   });
 });

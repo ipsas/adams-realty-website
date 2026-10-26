@@ -2,6 +2,7 @@ import { inArray, lt, sql } from "drizzle-orm";
 import type { Executor } from "@/db";
 import { listingMedia, listings, openHouses } from "@/db/schema";
 import { displayAttributionEmail } from "@/lib/agents/display-email";
+import { formatDisplayPhone } from "@/lib/format";
 import { allowedPhotos } from "./visibility";
 
 /**
@@ -100,6 +101,7 @@ export async function withPhotos(db: Executor, rows: CardRow[]): Promise<Listing
   }
   return rows.map((r) => ({
     ...r,
+    attributionPhone: formatDisplayPhone(r.attributionPhone),
     attributionEmail: displayAttributionEmail(r),
     photos: allowedPhotos(r, byListing.get(r.id) ?? (r.primaryPhotoUrl ? [r.primaryPhotoUrl] : [])),
   }));

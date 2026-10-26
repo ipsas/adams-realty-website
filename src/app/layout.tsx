@@ -12,6 +12,7 @@ import { site } from "@/config/site";
 import { getSession } from "@/lib/auth/session";
 import { env } from "@/lib/env";
 import { getSavedListingIds } from "@/lib/listings/queries";
+import { OG_DEFAULT_IMAGE } from "@/lib/og";
 import { previewPassword } from "@/lib/preview-gate";
 import { THEME_COLORS, THEME_SCRIPT } from "@/lib/theme-script";
 import "./globals.css";
@@ -37,7 +38,7 @@ export const metadata: Metadata = {
     type: "website",
     siteName: site.name,
     locale: "en_US",
-    images: [{ url: "/images/og-default.jpg", width: 1200, height: 800, alt: site.name }],
+    images: [OG_DEFAULT_IMAGE],
   },
   // No images: Next copies openGraph.images, so pages with their own photo keep it here too.
   twitter: { card: "summary_large_image" },

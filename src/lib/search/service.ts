@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { site } from "@/config/site";
 import { listings } from "@/db/schema";
 import { displayAttributionEmail } from "@/lib/agents/display-email";
-import { formatStreet } from "@/lib/format";
+import { formatDisplayPhone, formatStreet } from "@/lib/format";
 import { selectCards, withPhotos, type ListingCardData } from "@/lib/listings/card";
 import { PAGE_SIZE, type SearchCriteria } from "./params";
 import { resolveScope } from "./place";
@@ -262,7 +262,7 @@ export function toPins(rows: PinRow[]): MapPin[] {
       photo: r.photo,
       featured: r.featured,
       office: r.office ?? (r.company ? site.legalName : null),
-      attributionPhone: r.attributionPhone,
+      attributionPhone: formatDisplayPhone(r.attributionPhone),
       attributionEmail: displayAttributionEmail(r),
       fromFeed: r.fromFeed,
     }));

@@ -13,6 +13,7 @@ import { getSession } from "@/lib/auth/session";
 import { cn } from "@/lib/cn";
 import { demoDataMode } from "@/lib/demo-mode";
 import { getAgentListings } from "@/lib/listings/queries";
+import { OG_DEFAULT_IMAGE } from "@/lib/og";
 
 /** One to three figures share the row; a lone one keeps a tile's width instead of the page's. */
 const TILE_COLUMNS: Record<number, string> = {
@@ -40,7 +41,7 @@ export async function generateMetadata(props: PageProps<"/agents/[slug]">): Prom
       bioExcerpt(bio) ??
       `${name}, ${title ?? "agent"} at ${site.legalName} in ${site.address.city}, Georgia.`,
     alternates: { canonical: `/agents/${slug}` },
-    openGraph: { images: data.agent.photoUrl ? [{ url: data.agent.photoUrl }] : undefined },
+    openGraph: { images: data.agent.photoUrl ? [{ url: data.agent.photoUrl }] : [OG_DEFAULT_IMAGE] },
   };
 }
 
