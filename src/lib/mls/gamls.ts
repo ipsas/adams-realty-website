@@ -11,6 +11,9 @@ type Env = Record<string, string | undefined>;
 
 export const GAMLS_ENV_PREFIX = "MLS_GAMLS";
 
+/** The data_sources slug of the Georgia MLS feed. */
+export const GAMLS_SLUG = "gamls";
+
 /** The Bridge dataset name from MLS_GAMLS_DATASET; null when unset (no default). */
 export function gamlsDataset(env: Env = process.env): string | null {
   return env.MLS_GAMLS_DATASET?.trim() || null;
@@ -43,7 +46,7 @@ export function gamlsSource(
   env: Env = process.env,
 ): typeof dataSources.$inferInsert & { config: DataSourceConfig } {
   return {
-    slug: "gamls",
+    slug: GAMLS_SLUG,
     name: site.mls.name,
     kind: "reso_web_api",
     isActive: true,
@@ -58,6 +61,8 @@ export function gamlsSource(
       // Bridge returns Media inline and rejects $expand.
       expand: "",
     },
+    // For reference only: pages and emails show `mlsDisclaimer` (with the year and sync time),
+    // never this column, for the gamls source.
     disclaimer: site.mls.disclaimer,
   };
 }

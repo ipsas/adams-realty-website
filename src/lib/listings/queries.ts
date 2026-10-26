@@ -68,6 +68,7 @@ export const getListingBySlug = cache(async (slug: string) => {
     media: primaryPhotoOnly(listing) ? media.filter((m) => m.kind === "photo").slice(0, 1) : media,
     source: {
       id: source.id,
+      slug: source.slug,
       name: source.name,
       kind: source.kind,
       disclaimer: source.disclaimer,

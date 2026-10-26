@@ -99,9 +99,9 @@ describe("MlsCredit", () => {
 });
 
 describe("site.mls.disclaimer", () => {
-  it("is GAMLS's sample notice, verbatim", () => {
+  it("is the fixed wording of GAMLS's notice, verbatim, without the year", () => {
     expect(site.mls.disclaimer).toBe(
-      "© 2021 Georgia MLS. All rights reserved. Information Deem Reliable But Not Guaranteed",
+      "All rights reserved. Information Deem Reliable But Not Guaranteed",
     );
   });
 });

@@ -66,6 +66,7 @@ import {
   landFacts,
 } from "@/lib/listings/land";
 import { getListingBySlug, getSimilarListings, type ListingDetail } from "@/lib/listings/queries";
+import { sourceDisclaimer } from "@/lib/mls-copyright";
 import { financeFor, listingMonthlyCost, monthlyHoaAmount } from "@/lib/mortgage";
 import { searchHref } from "@/lib/search/params";
 
@@ -114,6 +115,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
     getActor(),
   ]);
 
+  const disclaimer = sourceDisclaimer(source);
   const photos = media
     .filter((m) => m.kind === "photo")
     .map((m) => ({ url: m.url, caption: m.caption }));
@@ -562,9 +564,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                       : ""}
                 </p>
                 {l.fromFeed && <MlsAttribution className="mt-3" />}
-                {source.disclaimer && (
-                  <p className="mt-3 text-xs text-muted">{source.disclaimer}</p>
-                )}
+                {disclaimer && <p className="mt-3 text-xs text-muted">{disclaimer}</p>}
                 <Link
                   href={`/listing-corrections?listing=${encodeURIComponent(l.slug)}`}
                   className="mt-4 inline-flex min-h-10 items-center gap-1.5 font-medium text-brand-700 hover:underline"
@@ -690,7 +690,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
           />
         )}
       </main>
-      <SiteFooter disclaimer={source.disclaimer} />
+      <SiteFooter disclaimer={disclaimer} />
     </>
   );
 }

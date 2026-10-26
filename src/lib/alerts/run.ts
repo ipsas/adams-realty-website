@@ -4,6 +4,7 @@ import { db as defaultDb, type Executor } from "@/db";
 import { savedSearches, users } from "@/db/schema";
 import { listUnsubscribeHeaders, sendEmail, type Email } from "@/lib/email";
 import { absoluteUrl, savedHomesUpdateEmail, savedSearchAlertEmail } from "@/lib/email-templates";
+import { gamlsLastSyncedAt } from "@/lib/mls/last-updated";
 import {
   parseSearchParams,
   searchHref,
@@ -202,6 +203,7 @@ async function processSearch(
       db,
       [...newRows, ...cutRows].map((r) => r.sourceId),
     );
+    const mlsUpdatedAt = await gamlsLastSyncedAt(db);
     const links = unsubscribeUrls({ userId: search.userId, scope: search.id });
     const frequency = search.alertFrequency === "off" ? "daily" : search.alertFrequency;
 
@@ -224,6 +226,7 @@ async function processSearch(
       unsubscribeUrl: links.page,
       manageUrl: absoluteUrl("/saved"),
       disclaimers,
+      mlsUpdatedAt,
     });
     await send({
       to: search.email,
@@ -266,6 +269,7 @@ async function processHomes(
       db,
       homes.map((h) => h.listing.sourceId),
     );
+    const mlsUpdatedAt = await gamlsLastSyncedAt(db);
     const links = unsubscribeUrls({ userId: user.userId, scope: HOME_ALERTS_SCOPE });
     const email = savedHomesUpdateEmail({
       homes: homes.map((h) => toEmailListing(h.listing, h.summary)),
@@ -273,6 +277,7 @@ async function processHomes(
       unsubscribeUrl: links.page,
       manageUrl: absoluteUrl("/account#alerts"),
       disclaimers,
+      mlsUpdatedAt,
     });
     await send({
       to: user.email,

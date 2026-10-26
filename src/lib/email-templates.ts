@@ -1,7 +1,7 @@
 import { site } from "@/config/site";
 import { env } from "@/lib/env";
 import { formatBaths, formatNumber, formatPrice } from "@/lib/format";
-import { mlsCopyright } from "@/lib/mls-copyright";
+import { mlsCopyright, mlsDisclaimer } from "@/lib/mls-copyright";
 import { photoRoute, photoUrl } from "@/lib/photos";
 
 /**
@@ -272,13 +272,15 @@ export type EmailLayout = {
   /** Alert emails: the signed unsubscribe page for this alert. */
   unsubscribe?: { label: string; href: string };
   manage?: { label: string; href: string };
-  /** MLS disclaimers for any listings shown. */
+  /** Other MLS sources' disclaimers for any listings shown (Georgia MLS's comes from `mlsCredit`). */
   disclaimers?: string[];
   /**
    * The email shows Georgia MLS listings: credit the MLS by name and logo, its copyright
-   * notice and its IDX disclaimer.
+   * notice and its IDX disclaimer (`mlsDisclaimer`, last updated at `mlsUpdatedAt`).
    */
   mlsCredit?: boolean;
+  /** The gamls source's last successful sync; null falls back to the build time. */
+  mlsUpdatedAt?: Date | null;
 };
 
 function button(label: string, href: string): EmailBlock {
@@ -313,7 +315,7 @@ export function renderEmail(o: EmailLayout): RenderedEmail {
     : null;
   const credit = o.mlsCredit ? `Listings courtesy of ${site.mls.name}. ${mlsCopyright()}` : null;
   const disclaimers = [
-    ...new Set([...(o.mlsCredit ? [site.mls.disclaimer] : []), ...(o.disclaimers ?? [])]),
+    ...new Set([...(o.mlsCredit ? [mlsDisclaimer(o.mlsUpdatedAt)] : []), ...(o.disclaimers ?? [])]),
   ];
 
   const html = `<!doctype html>
@@ -425,6 +427,7 @@ export function savedSearchAlertEmail(input: {
   unsubscribeUrl: string;
   manageUrl: string;
   disclaimers?: string[];
+  mlsUpdatedAt?: Date | null;
 }): RenderedEmail {
   const { newTotal, priceCutTotal, mode } = input;
   const noun = mode === "rent" ? "rental" : "home";
@@ -485,6 +488,7 @@ export function savedSearchAlertEmail(input: {
     manage: { label: "Manage alerts", href: input.manageUrl },
     disclaimers: input.disclaimers,
     mlsCredit: true,
+    mlsUpdatedAt: input.mlsUpdatedAt,
   });
 }
 
@@ -495,6 +499,7 @@ export function savedHomesUpdateEmail(input: {
   unsubscribeUrl: string;
   manageUrl: string;
   disclaimers?: string[];
+  mlsUpdatedAt?: Date | null;
 }): RenderedEmail {
   const { homes } = input;
   const first = homes[0];
@@ -522,6 +527,7 @@ export function savedHomesUpdateEmail(input: {
     manage: { label: "Email settings", href: input.manageUrl },
     disclaimers: input.disclaimers,
     mlsCredit: true,
+    mlsUpdatedAt: input.mlsUpdatedAt,
   });
 }
 

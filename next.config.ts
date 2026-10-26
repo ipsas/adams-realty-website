@@ -25,6 +25,11 @@ const allowFixtureHost = !isProduction || !!process.env.E2E_PHOTO_HOST;
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   /**
+   * Inlined into the bundle at build time: the Georgia MLS disclaimer's "Last updated" falls
+   * back to it before the feed's first successful sync (src/lib/mls-copyright.ts).
+   */
+  env: { BUILD_TIME: new Date().toISOString() },
+  /**
    * Listing photos from Georgia MLS and from links agents paste can be on any host, and
    * arrive full size, so any http(s) host may be resized (src/lib/photos.ts decides which
    * photos go through here: everything except a CDN that resizes on its own). Only the widths

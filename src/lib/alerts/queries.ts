@@ -1,6 +1,21 @@
-import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 import type { Executor } from "@/db";
 import { dataSources, listingEvents, listings } from "@/db/schema";
+import { GAMLS_SLUG } from "@/lib/mls/gamls";
 import { resolveScope } from "@/lib/search/place";
 import { buildWhere } from "@/lib/search/query";
 import type { SearchCriteria } from "@/lib/search/params";
@@ -156,13 +171,22 @@ export async function findSearchMatches(
   };
 }
 
-/** IDX disclaimers for the feeds the given listings came from. */
+/**
+ * IDX disclaimers for the feeds the given listings came from, except Georgia MLS's: alert
+ * emails always carry that one, computed (`mlsCredit` in email-templates.ts).
+ */
 export async function disclaimersFor(db: Executor, sourceIds: string[]): Promise<string[]> {
   const ids = [...new Set(sourceIds)];
   if (!ids.length) return [];
   const rows = await db
     .selectDistinct({ text: dataSources.disclaimer })
     .from(dataSources)
-    .where(and(inArray(dataSources.id, ids), isNotNull(dataSources.disclaimer)));
+    .where(
+      and(
+        inArray(dataSources.id, ids),
+        isNotNull(dataSources.disclaimer),
+        ne(dataSources.slug, GAMLS_SLUG),
+      ),
+    );
   return rows.map((r) => r.text!).filter(Boolean);
 }

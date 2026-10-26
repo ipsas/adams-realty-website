@@ -83,6 +83,7 @@ export function SearchView({
   maxPins,
   signedIn,
   emptyHelp,
+  mlsDisclaimer,
 }: {
   criteria: SearchCriteria;
   /** "Homes for sale in Hartwell", "Homes near Lake Hartwell", "Homes in this map area"… */
@@ -98,6 +99,8 @@ export function SearchView({
   maxPins: number;
   signedIn: boolean;
   emptyHelp?: EmptyHelp;
+  /** Georgia MLS's IDX disclaimer, computed on the server (`mlsDisclaimer`). */
+  mlsDisclaimer: string;
 }) {
   const { update, setView, isPending } = useSearchNav(criteria);
   const save = useSaveSearch(signedIn);
@@ -268,7 +271,7 @@ export function SearchView({
             <div className="space-y-2 px-4 pb-6 text-xs text-muted">
               <MlsAttribution className="justify-center" />
               <p className="text-center" data-mls-disclaimer>
-                {site.mls.disclaimer}
+                {mlsDisclaimer}
               </p>
             </div>
           </div>

@@ -3,6 +3,8 @@ import { SearchView, type EmptyHelp } from "@/components/search/search-view";
 import { site } from "@/config/site";
 import { db } from "@/db";
 import { getSession } from "@/lib/auth/session";
+import { mlsDisclaimer } from "@/lib/mls-copyright";
+import { gamlsLastSyncedAt } from "@/lib/mls/last-updated";
 import { lakeName, searchHeading } from "@/lib/search/heading";
 import {
   DEFAULT_CRITERIA,
@@ -55,10 +57,11 @@ export default async function SearchPage(props: PageProps<"/homes">) {
   const criteria = parseSearchParams(raw);
   // Whether `q` names a town: looked up once for the list, the pins and the heading.
   const scope = await resolveScope(db, criteria);
-  const [results, pins, session] = await Promise.all([
+  const [results, pins, session, lastSynced] = await Promise.all([
     searchListings(criteria, scope),
     searchMapPins(criteria, scope),
     getSession(),
+    gamlsLastSyncedAt(db),
   ]);
   // The town a moved map came from, for "Back to Royston" (only while searching the map).
   const from = criteria.bounds && !criteria.q ? parseFromParam(raw) : undefined;
@@ -76,6 +79,7 @@ export default async function SearchPage(props: PageProps<"/homes">) {
       maxPins={MAX_PINS}
       signedIn={!!session}
       emptyHelp={results.total === 0 ? await emptyHelp(criteria, scope) : undefined}
+      mlsDisclaimer={mlsDisclaimer(lastSynced)}
     />
   );
 }

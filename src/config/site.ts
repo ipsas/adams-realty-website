@@ -88,14 +88,13 @@ export const site = {
      */
     corrections: { email: "contracts.adamsrealty@gmail.com", phone: "(706) 246-0053" },
     /**
-     * PLACEHOLDER pending the client's final review. Wording copied verbatim
-     * from the sample notice in GAMLS's "Attribution for GAMLS Listings.pdf"
-     * (incl. the 2021 year and "Deem" as printed); do not edit without
-     * GAMLS/client sign-off. Seeded into data_sources.disclaimer for the gamls
-     * source by scripts/add-gamls-source.ts.
+     * The fixed wording of the copyright notice in GAMLS's "Attribution for
+     * GAMLS Listings.pdf" ("© 2021 Georgia MLS. All rights reserved.
+     * Information Deem Reliable But Not Guaranteed"; "Deem" as printed).
+     * `mlsDisclaimer` (src/lib/mls-copyright.ts) adds the current year and the
+     * last-updated time.
      */
-    disclaimer:
-      "© 2021 Georgia MLS. All rights reserved. Information Deem Reliable But Not Guaranteed",
+    disclaimer: "All rights reserved. Information Deem Reliable But Not Guaranteed",
   },
   /**
    * What the listings cover: Georgia MLS IDX, statewide. Search headings, the

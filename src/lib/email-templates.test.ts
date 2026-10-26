@@ -152,7 +152,9 @@ describe("savedHomesUpdateEmail", () => {
 
 describe("Georgia MLS credit", () => {
   const year = new Date().getFullYear();
-  const disclaimers = [site.mls.disclaimer, "Other MLS text."];
+  const mlsUpdatedAt = new Date("2026-10-26T17:57:00Z");
+  const notice = `© ${year} Georgia MLS. All rights reserved. Information Deem Reliable But Not Guaranteed. Last updated Oct 26, 2026, 1:57 PM ET`;
+  const disclaimers = ["Other MLS text."];
   const homesUpdate = () =>
     savedHomesUpdateEmail({
       homes: [home()],
@@ -160,17 +162,19 @@ describe("Georgia MLS credit", () => {
       unsubscribeUrl: "https://adams.example/alerts/unsubscribe?token=h",
       manageUrl: "https://adams.example/account#alerts",
       disclaimers,
+      mlsUpdatedAt,
     });
 
   it("alert emails credit Georgia MLS once: name, logo, copyright and disclaimer", () => {
-    for (const email of [alert({ disclaimers }), homesUpdate()]) {
+    for (const email of [alert({ disclaimers, mlsUpdatedAt }), homesUpdate()]) {
       for (const out of [email.html, email.text]) {
         expect(out).toContain("Listings courtesy of Georgia MLS.");
         expect(out).toContain(`Listing information © ${year} Georgia MLS. All rights reserved.`);
+        expect(out).not.toContain("© 2021");
       }
-      expect(email.html.split(escapeHtml(site.mls.disclaimer)).length - 1).toBe(1);
+      expect(email.html.split(escapeHtml(notice)).length - 1).toBe(1);
       expect(email.html.split("Other MLS text.").length - 1).toBe(1);
-      expect(email.text.split(site.mls.disclaimer).length - 1).toBe(1);
+      expect(email.text.split(notice).length - 1).toBe(1);
       expect(email.html).toContain(`src="${escapeHtml(absoluteUrl("/brand/gamls_idx.png"))}"`);
       expect(email.html).toContain('alt="Georgia MLS"');
     }
