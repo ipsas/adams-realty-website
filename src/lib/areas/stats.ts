@@ -1,6 +1,6 @@
 import { areaRegions, type Area, type AreaRegion } from "@/config/areas";
 import { site } from "@/config/site";
-import { formatPriceShort } from "@/lib/format";
+import { cutAtWord, formatPriceShort } from "@/lib/format";
 
 /**
  * Shapes and pure helpers for neighborhood-guide market stats. The SQL lives
@@ -263,7 +263,5 @@ export function metaDescription(
       }. `
     : "";
   const text = `${placeName(area)}: ${market}${area.description}`;
-  if (text.length <= max) return text;
-  const cut = text.slice(0, max - 1);
-  return `${cut.slice(0, cut.lastIndexOf(" ")).replace(/[\s,.;:]+$/, "")}…`;
+  return cutAtWord(text, max);
 }

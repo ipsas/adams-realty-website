@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 import { demoDataMode } from "@/lib/demo-mode";
 import { env } from "@/lib/env";
+import { listingIndexingMode } from "@/lib/listings/indexing";
 import {
   LISTING_SITEMAP_CHUNK_SIZE,
   LISTING_SITEMAP_CHUNKS,
@@ -8,8 +9,9 @@ import {
   parseChunkId,
 } from "@/lib/listings/sitemap-chunks";
 
-// Listing URLs, in fixed chunks at /homes/sitemap/<id>.xml (robots.ts lists
-// them all). Rendered per request, so a build never touches the database.
+// Indexable listing URLs (src/lib/listings/indexing.ts), in fixed chunks at
+// /homes/sitemap/<id>.xml (robots.ts lists the non-empty ones). Rendered per
+// request, so a build never touches the database.
 export const dynamic = "force-dynamic";
 
 /** A fixed list: counting listings here would need a database at build time. */
@@ -22,7 +24,8 @@ export default async function sitemap(props: {
 }): Promise<MetadataRoute.Sitemap> {
   const chunk = parseChunkId(await props.id);
   // Demo data (src/lib/demo-mode.ts): sample listings are never offered to crawlers.
-  if (chunk === null || demoDataMode()) return [];
+  // LISTINGS_INDEXING=none: no listing is indexable, so none is offered.
+  if (chunk === null || demoDataMode() || listingIndexingMode() === "none") return [];
   // Imported here, not at the top: this module (and generateSitemaps) must load without a database.
   const { getListingSitemapChunk } = await import("@/lib/listings/sitemap-query");
   const homes = await getListingSitemapChunk(chunk);

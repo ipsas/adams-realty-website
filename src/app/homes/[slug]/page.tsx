@@ -54,6 +54,7 @@ import {
   formatPrice,
   formatRelative,
   formatStreet,
+  listingMetaDescription,
   PROPERTY_TYPE_LABELS,
   statusLabel,
 } from "@/lib/format";
@@ -65,6 +66,7 @@ import {
   LAND_LOAN_NOTE,
   landFacts,
 } from "@/lib/listings/land";
+import { listingIndexingMode, listingRobots } from "@/lib/listings/indexing";
 import { getListingBySlug, getSimilarListings, type ListingDetail } from "@/lib/listings/queries";
 import { financeFor, listingMonthlyCost, monthlyHoaAmount } from "@/lib/mortgage";
 import { searchHref } from "@/lib/search/params";
@@ -86,9 +88,9 @@ export async function generateMetadata(props: PageProps<"/homes/[slug]">): Promi
         .filter(Boolean)
         .join(", ");
   const title = `${formatFullAddress(l)} | ${facts ? `${facts} | ` : ""}${formatPrice(l.listPrice)}`;
-  const description =
-    l.description?.slice(0, 180) ??
-    `${statusLabel(l.status, l.transactionType)} in ${l.city}, ${l.state}.`;
+  const description = l.description?.trim()
+    ? listingMetaDescription(l.description)
+    : `${statusLabel(l.status, l.transactionType)} in ${l.city}, ${l.state}.`;
   return {
     title: { absolute: `${title} | ${site.name}` },
     description,
@@ -98,8 +100,9 @@ export async function generateMetadata(props: PageProps<"/homes/[slug]">): Promi
       description,
       images: l.primaryPhotoUrl ? [{ url: l.primaryPhotoUrl }] : undefined,
     },
-    // IDX: off-market listings stay reachable for people who saved them, but shouldn't be indexed.
-    robots: l.removedAt ? { index: false } : undefined,
+    // Off-market, sold and out-of-area listings stay reachable but aren't indexed
+    // (src/lib/listings/indexing.ts).
+    robots: listingRobots(l, listingIndexingMode()),
   };
 }
 

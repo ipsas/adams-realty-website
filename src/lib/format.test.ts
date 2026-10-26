@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  cutAtWord,
   daysSince,
   formatBaths,
   formatChangeChip,
@@ -10,6 +11,7 @@ import {
   formatRelativeShort,
   formatStreet,
   freshness,
+  listingMetaDescription,
   STALE_FEED_MS,
   staffStatusLabel,
   statusLabel,
@@ -191,5 +193,33 @@ describe("mortgage", () => {
     expect(monthlyHoaAmount(300, "quarterly")).toBe(100);
     expect(monthlyHoaAmount(1200, "annually")).toBe(100);
     expect(monthlyHoaAmount(null, "monthly")).toBe(0);
+  });
+});
+
+describe("cutAtWord and listingMetaDescription", () => {
+  it("leaves text that fits untouched", () => {
+    expect(cutAtWord("Three bedrooms on two acres.", 28)).toBe("Three bedrooms on two acres.");
+    expect(listingMetaDescription("Short remarks.")).toBe("Short remarks.");
+  });
+
+  it("cuts at a word boundary, within the limit, ending in an ellipsis", () => {
+    expect(cutAtWord("Three bedrooms on two acres.", 20)).toBe("Three bedrooms on…");
+    const d = listingMetaDescription("Lovely farmhouse with a wraparound porch. ".repeat(10));
+    expect(d.length).toBeLessThanOrEqual(160);
+    expect(d.endsWith("…")).toBe(true);
+    expect(d).not.toMatch(/[\s,.;:]…$/);
+  });
+
+  it("drops punctuation left before the ellipsis", () => {
+    expect(cutAtWord("Updated kitchen, new roof, big yard", 18)).toBe("Updated kitchen…");
+  });
+
+  it("collapses whitespace and newlines in listing remarks", () => {
+    expect(listingMetaDescription("  Big yard.\n\nNew   roof.\t ")).toBe("Big yard. New roof.");
+    expect(listingMetaDescription("One\ntwo three four", 12)).toBe("One two…");
+  });
+
+  it("cuts a single long word rather than returning nothing", () => {
+    expect(cutAtWord("abcdefghij", 5)).toBe("abcd…");
   });
 });
