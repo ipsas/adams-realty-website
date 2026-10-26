@@ -12,10 +12,16 @@
  * MLS feed (previews only, since Vercel Cron doesn't run there): loaded only
  * when MLS_SYNC_ENABLED is exactly "true" and MLS_GAMLS_TOKEN and
  * MLS_GAMLS_DATASET are set (shouldSyncFeed in src/lib/mls/preview-sync.mjs).
+ *
+ * Preview purge (one-time, right after migrations): when VERCEL_ENV is
+ * "preview" and MLS_PREVIEW_PURGE is exactly "true", scripts/preview-purge.mjs
+ * deletes all listings and deactivates the demo and Georgia MLS sources, only
+ * on the Neon preview branch; on the production branch it fails the build.
  */
 import { execSync } from "node:child_process";
 import pg from "pg";
 import { shouldSyncFeed } from "../src/lib/mls/preview-sync.mjs";
+import { purgeDecision, purgePreviewListings } from "./preview-purge.mjs";
 
 const run = (cmd) => execSync(cmd, { stdio: "inherit" });
 
@@ -25,6 +31,13 @@ if (!process.env.DATABASE_URL) {
   );
 } else {
   run("npx drizzle-kit migrate");
+  const purge = purgeDecision(process.env);
+  if (purge.run) {
+    // A production-branch connection throws here and fails the build.
+    await purgePreviewListings(process.env.DATABASE_URL);
+  } else {
+    console.log(`Preview purge skipped: ${purge.reason}.`);
+  }
   if (process.env.SEED_DEMO_DATA === "1") {
     const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
     await client.connect();
