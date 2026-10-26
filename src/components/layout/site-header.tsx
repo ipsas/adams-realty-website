@@ -11,7 +11,6 @@ import { initials } from "@/lib/format";
 import { AppearanceControl } from "../theme/appearance-control";
 import { ThemeMenuButton } from "../theme/theme-menu-button";
 import { Popover } from "../ui/popover";
-import { DemoBar } from "./demo-bar";
 import { Logo } from "./logo";
 
 export type HeaderUser = {
@@ -22,12 +21,7 @@ export type HeaderUser = {
   role: "user" | "agent" | "admin";
 } | null;
 
-/**
- * `demoBar`: show the sample-listings notice (demo-data mode) above the header, where it
- * scrolls away on every page. Over the home page's hero the header is fixed, so until the
- * page scrolls it starts below the notice instead of covering it.
- */
-export function SiteHeader({ user, demoBar = false }: { user: HeaderUser; demoBar?: boolean }) {
+export function SiteHeader({ user }: { user: HeaderUser }) {
   const pathname = usePathname();
   const overHero = pathname === "/";
   const [scrolled, setScrolled] = useState(false);
@@ -58,14 +52,11 @@ export function SiteHeader({ user, demoBar = false }: { user: HeaderUser; demoBa
 
   return (
     <>
-      {demoBar && <DemoBar />}
       <header
         data-site-header
         className={cn(
           "z-50 w-full transition-[top,background-color,border-color,box-shadow] duration-300",
-          overHero
-            ? cn("fixed", demoBar && !scrolled ? "top-(--demo-bar-h)" : "top-0")
-            : "sticky top-0",
+          overHero ? "fixed top-0" : "sticky top-0",
           transparent
             ? "border-b border-transparent bg-transparent"
             : "border-b border-line bg-canvas/85 backdrop-blur-xl backdrop-saturate-150",
@@ -153,7 +144,7 @@ export function SiteHeader({ user, demoBar = false }: { user: HeaderUser; demoBa
 
         {mobileOpen && (
           <nav
-            className="max-h-[calc(100dvh-var(--header-h)-var(--demo-bar-h,0px))] animate-rise overflow-y-auto overscroll-contain border-t border-line bg-canvas px-4 pt-2 pb-6 md:hidden phone:block"
+            className="max-h-[calc(100dvh-var(--header-h))] animate-rise overflow-y-auto overscroll-contain border-t border-line bg-canvas px-4 pt-2 pb-6 md:hidden phone:block"
             aria-label="Mobile"
           >
             {[...nav, { label: "Saved homes", href: "/saved" }].map((item) => (

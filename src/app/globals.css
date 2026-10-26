@@ -295,8 +295,6 @@
   --bottom-chrome-h: 0px;
   /* Dynamic: where bottom-anchored overlays (toasts, install card, FABs) sit. */
   --bottom-overlay-h: 0px;
-  /* The sample-listings notice above the header (DemoBar), 0 when it isn't shown. */
-  --demo-bar-h: 0px;
   /* Safe-area insets. Everything reads these, so tests can simulate a notch. */
   --sai-top: env(safe-area-inset-top, 0px);
   --sai-right: env(safe-area-inset-right, 0px);
@@ -306,17 +304,6 @@
 @media (pointer: coarse) and (max-height: 500px) {
   :root {
     --tabbar-h: 3rem;
-  }
-}
-/* DemoBar (src/components/layout/demo-bar.tsx): its text-xs line needs about 378px, so two
-   lines below 24rem (384px), one from there up. Pages sized to the viewport (search)
-   subtract it; it grows if the text is zoomed. */
-:root:has([data-demo-bar]) {
-  --demo-bar-h: 2.75rem;
-}
-@media (min-width: 24rem) {
-  :root:has([data-demo-bar]) {
-    --demo-bar-h: 1.75rem;
   }
 }
 /* The coming-soon page (src/app/preview) is brand-900 edge to edge in both themes: the

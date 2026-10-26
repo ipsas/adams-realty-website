@@ -128,8 +128,7 @@ shared password, so the public never sees the sample listings:
   To try it locally, put `PREVIEW_PASSWORD=…` in `.env.local` and restart `npm run dev`.
 
 The gate is `src/lib/preview-gate.ts`, run first by `src/proxy.ts`; the coming-soon page is
-`src/app/preview/`. While the sample listings are showing (demo-data mode), every other page
-also has a slim "Preview: the homes on this site are samples" bar at the top.
+`src/app/preview/`.
 
 ## Connecting your MLS (IDX)
 

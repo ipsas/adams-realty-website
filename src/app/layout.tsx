@@ -10,7 +10,6 @@ import { PwaRuntime } from "@/components/pwa/pwa-runtime";
 import { Toaster } from "@/components/ui/toast";
 import { site } from "@/config/site";
 import { getSession } from "@/lib/auth/session";
-import { demoDataMode } from "@/lib/demo-mode";
 import { env } from "@/lib/env";
 import { getSavedListingIds } from "@/lib/listings/queries";
 import { previewPassword } from "@/lib/preview-gate";
@@ -86,7 +85,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           {/* Not on the coming-soon page (/preview), nor while gated on the alert emails' pages
               (src/app/(alerts)). The sample-listings notice rides with the header. */}
           <SiteChrome gated={gated}>
-            <SiteHeader user={user} demoBar={demoDataMode()} />
+            <SiteHeader user={user} />
           </SiteChrome>
           <div id="main" className="flex flex-1 flex-col">
             {children}
