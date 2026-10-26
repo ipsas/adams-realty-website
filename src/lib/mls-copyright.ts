@@ -32,17 +32,19 @@ export function formatLastUpdated(at: Date): string {
 }
 
 /**
- * Georgia MLS's IDX disclaimer: "© 2026 Georgia MLS. All rights reserved. Information Deem
- * Reliable But Not Guaranteed. Last updated Oct 26, 2026, 1:57 PM ET". `lastUpdated` is the
- * gamls source's last successful sync; without one, the build time (BUILD_TIME, fixed in
- * next.config.ts). With neither (a script outside Next), the "Last updated" part is left out.
+ * Georgia MLS's IDX disclaimer: "© 2026 Georgia MLS. All rights reserved. Information is deemed
+ * reliable but is not guaranteed accurate by GAMLS. IDX information is provided exclusively for
+ * consumers' personal, non-commercial use … interested in purchasing. Last updated Oct 26, 2026,
+ * 1:57 PM ET". `lastUpdated` is the gamls source's last successful sync; without one, the build
+ * time (BUILD_TIME, fixed in next.config.ts). With neither (a script outside Next), the
+ * "Last updated" part is left out.
  */
 export function mlsDisclaimer(
   lastUpdated: Date | string | null | undefined,
   now: Date = new Date(),
   buildTime: string | undefined = process.env.BUILD_TIME,
 ): string {
-  const notice = `© ${now.getFullYear()} ${site.mls.copyrightHolder}. ${site.mls.disclaimer}.`;
+  const notice = `© ${now.getFullYear()} ${site.mls.copyrightHolder}. ${site.mls.disclaimer}. ${site.mls.consumerUseNotice}`;
   const at = validDate(lastUpdated) ?? validDate(buildTime);
   return at ? `${notice} Last updated ${formatLastUpdated(at)}` : notice;
 }

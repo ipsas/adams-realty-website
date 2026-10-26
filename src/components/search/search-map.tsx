@@ -351,9 +351,11 @@ function popupNode(p: MapPin): HTMLElement {
   if (p.office) {
     // IDX: the listing firm, in the same size as the other listing text.
     const office = document.createElement("p");
-    office.className = "text-xs text-muted mt-0.5 break-words";
+    office.className = "text-xs text-muted mt-0.5 break-words [overflow-wrap:anywhere]";
     office.dataset.testid = "pin-office";
-    office.textContent = `Listing by ${p.office}`;
+    office.textContent = [`Listing by ${p.office}`, p.attributionPhone, p.attributionEmail]
+      .filter(Boolean)
+      .join(" · ");
     body.append(office);
   }
   if (p.fromFeed) {

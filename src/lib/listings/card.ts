@@ -37,6 +37,9 @@ export const cardColumns = {
   isCompanyListing: listings.isCompanyListing,
   isFeatured: listings.isFeatured,
   listOfficeName: listings.listOfficeName,
+  // IDX: the listing's own attribution contact, shown after the listing firm.
+  attributionPhone: listings.attributionPhone,
+  attributionEmail: listings.attributionEmail,
   // For the all-in monthly estimate (quickMonthlyCost) on cards and rows.
   taxAnnualAmount: listings.taxAnnualAmount,
   hoaFee: listings.hoaFee,

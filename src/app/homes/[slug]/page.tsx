@@ -37,6 +37,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Expandable } from "@/components/ui/expandable";
 import { Container } from "@/components/ui/section";
 import { site } from "@/config/site";
+import { db } from "@/db";
 import type { ListingFeatures } from "@/db/schema";
 import { offersTours } from "@/lib/areas/firm-area";
 import { placeHref } from "@/lib/areas/links";
@@ -71,7 +72,8 @@ import {
 } from "@/lib/listings/land";
 import { listingIndexingMode, listingRobots } from "@/lib/listings/indexing";
 import { getListingBySlug, getSimilarListings, type ListingDetail } from "@/lib/listings/queries";
-import { sourceDisclaimer } from "@/lib/mls-copyright";
+import { formatLastUpdated, mlsDisclaimer, sourceDisclaimer } from "@/lib/mls-copyright";
+import { gamlsLastSyncedAt } from "@/lib/mls/last-updated";
 import { financeFor, listingMonthlyCost, monthlyHoaAmount } from "@/lib/mortgage";
 
 export async function generateMetadata(props: PageProps<"/homes/[slug]">): Promise<Metadata> {
@@ -114,13 +116,24 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
   const data = await getListingBySlug(slug);
   if (!data) notFound();
   const { listing: l, media, openHouses, events, agent, source } = data;
-  const [similar, session, actor] = await Promise.all([
+  const [similar, session, actor, lastSynced] = await Promise.all([
     getSimilarListings(l),
     getSession(),
     getActor(),
+    gamlsLastSyncedAt(db),
   ]);
 
   const disclaimer = sourceDisclaimer(source);
+  // IDX: a page with Georgia MLS listings (this one or a similar home) shows its disclaimer.
+  const footerDisclaimer =
+    [
+      ...new Set(
+        [
+          disclaimer,
+          l.fromFeed || similar.some((s) => s.fromFeed) ? mlsDisclaimer(lastSynced) : null,
+        ].filter(Boolean),
+      ),
+    ].join(" ") || null;
   const photos = media
     .filter((m) => m.kind === "photo")
     .map((m) => ({ url: m.url, caption: m.caption }));
@@ -569,6 +582,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                     : l.updatedAt
                       ? ` · Updated ${formatRelative(l.updatedAt)}`
                       : ""}
+                  {l.fromFeed && lastSynced ? ` · ${formatLastUpdated(lastSynced)}` : ""}
                 </p>
                 {l.fromFeed && <MlsAttribution className="mt-3" />}
                 {disclaimer && <p className="mt-3 text-xs text-muted">{disclaimer}</p>}
@@ -697,7 +711,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
           />
         )}
       </main>
-      <SiteFooter disclaimer={disclaimer} />
+      <SiteFooter disclaimer={footerDisclaimer} />
     </>
   );
 }

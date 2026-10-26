@@ -74,6 +74,9 @@ export type MapPin = {
   featured: boolean;
   /** IDX: the popup names the listing firm, like every card. */
   office: string | null;
+  /** IDX: the listing's own attribution contact, shown after the listing firm. */
+  attributionPhone: string | null;
+  attributionEmail: string | null;
   /** A Georgia MLS listing: the popup also credits the MLS (name, logo, copyright). */
   fromFeed: boolean;
 };
@@ -124,6 +127,8 @@ export async function searchMapPins(c: SearchCriteria, scope?: LocationScope): P
       photo: listings.primaryPhotoUrl,
       featured: listings.isFeatured,
       office: listings.listOfficeName,
+      attributionPhone: listings.attributionPhone,
+      attributionEmail: listings.attributionEmail,
       company: listings.isCompanyListing,
       fromFeed: listings.fromFeed,
     })
@@ -176,6 +181,8 @@ type PinRow = {
   photo: string | null;
   featured: boolean;
   office: string | null;
+  attributionPhone: string | null;
+  attributionEmail: string | null;
   company: boolean;
   fromFeed: boolean;
 };
@@ -216,6 +223,8 @@ export async function locationPins(
       "listings"."hide_address" as "hideAddress", "listings"."primary_photo_url" as "photo",
       "listings"."is_featured" as "featured",
       "listings"."list_office_name" as "office", "listings"."is_company_listing" as "company",
+      "listings"."attribution_phone" as "attributionPhone",
+      "listings"."attribution_email" as "attributionEmail",
       "listings"."from_feed" as "fromFeed"
     from top join ${listings} on "listings"."id" = top."id"
     order by ${order}
@@ -243,6 +252,8 @@ function toPins(rows: PinRow[]): MapPin[] {
       photo: r.photo,
       featured: r.featured,
       office: r.office ?? (r.company ? site.legalName : null),
+      attributionPhone: r.attributionPhone,
+      attributionEmail: r.attributionEmail,
       fromFeed: r.fromFeed,
     }));
 }

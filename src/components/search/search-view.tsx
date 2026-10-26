@@ -161,6 +161,21 @@ export function SearchView({
   // town is kept as `from`, for "Back to Royston".
   const backToTown = () => update({ q: from, bounds: undefined });
 
+  // IDX: Georgia MLS's credit and disclaimer, and the brokerage's name and license.
+  const notice = (
+    <>
+      <MlsAttribution className="justify-center" />
+      <p className="text-center" data-mls-disclaimer>
+        {mlsDisclaimer}
+      </p>
+      {site.brokerLicense && (
+        <p className="text-center">
+          {site.name} · GREC firm license {site.brokerLicense}
+        </p>
+      )}
+    </>
+  );
+
   return (
     // Fills the viewport under the header.
     <div className="flex h-[calc(100dvh-4rem)] flex-col" onClickCapture={onClickCapture}>
@@ -268,59 +283,59 @@ export function SearchView({
                 listRef.current?.scrollTo({ top: 0, behavior: "smooth" });
               }}
             />
-            <div className="space-y-2 px-4 pb-6 text-xs text-muted">
-              <MlsAttribution className="justify-center" />
-              <p className="text-center" data-mls-disclaimer>
-                {mlsDisclaimer}
-              </p>
-            </div>
+            <div className="space-y-2 px-4 pb-6 text-xs text-muted">{notice}</div>
           </div>
         </div>
 
         {/* Map */}
         <div
           className={cn(
-            "relative flex-1 border-l border-line",
+            "flex flex-1 flex-col border-l border-line",
             mobileView === "list" && "max-lg:hidden",
           )}
         >
-          <SearchMap
-            pins={pins}
-            bounds={criteria.bounds}
-            placeBounds={emptyHelp?.placeBounds ?? undefined}
-            fitKey={fitKey}
-            highlightedId={highlighted}
-            onHover={setHighlighted}
-            onUserMove={(bounds) => {
-              if (!searchAsMove) return;
-              // The town gives way to the map: every home in view, with a way back.
-              if (criteria.q) update({ bounds, q: undefined }, { from: place ?? criteria.q });
-              else update({ bounds });
-            }}
-          />
-          <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
-            <div className="pointer-events-auto flex items-center gap-3 rounded-full bg-surface/95 px-4 py-2 text-sm shadow-card backdrop-blur">
-              <Checkbox
-                label="Search as I move the map"
-                checked={searchAsMove}
-                onChange={(e) => setSearchAsMove(e.target.checked)}
-              />
-              {criteria.bounds && (
-                <button
-                  type="button"
-                  className="font-medium text-brand-700 hover:underline"
-                  onClick={() => (from ? backToTown() : update({ bounds: undefined }))}
-                >
-                  Reset
-                </button>
-              )}
+          <div className="relative min-h-0 flex-1">
+            <SearchMap
+              pins={pins}
+              bounds={criteria.bounds}
+              placeBounds={emptyHelp?.placeBounds ?? undefined}
+              fitKey={fitKey}
+              highlightedId={highlighted}
+              onHover={setHighlighted}
+              onUserMove={(bounds) => {
+                if (!searchAsMove) return;
+                // The town gives way to the map: every home in view, with a way back.
+                if (criteria.q) update({ bounds, q: undefined }, { from: place ?? criteria.q });
+                else update({ bounds });
+              }}
+            />
+            <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
+              <div className="pointer-events-auto flex items-center gap-3 rounded-full bg-surface/95 px-4 py-2 text-sm shadow-card backdrop-blur">
+                <Checkbox
+                  label="Search as I move the map"
+                  checked={searchAsMove}
+                  onChange={(e) => setSearchAsMove(e.target.checked)}
+                />
+                {criteria.bounds && (
+                  <button
+                    type="button"
+                    className="font-medium text-brand-700 hover:underline"
+                    onClick={() => (from ? backToTown() : update({ bounds: undefined }))}
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
             </div>
+            {pins.length >= maxPins && (
+              <p className="absolute bottom-8 left-1/2 -translate-x-1/2 rounded-full bg-shade/80 px-4 py-2 text-xs text-white shadow">
+                Showing the first {maxPins} of {formatNumber(total)} — zoom in to see more
+              </p>
+            )}
           </div>
-          {pins.length >= maxPins && (
-            <p className="absolute bottom-8 left-1/2 -translate-x-1/2 rounded-full bg-shade/80 px-4 py-2 text-xs text-white shadow">
-              Showing the first {maxPins} of {formatNumber(total)} — zoom in to see more
-            </p>
-          )}
+          {/* Below lg the map view hides the list, so the notice shows under the map; the
+              bottom padding clears the floating List/Map toggle. */}
+          <div className="space-y-2 px-4 pt-3 pb-24 text-xs text-muted lg:hidden">{notice}</div>
         </div>
 
         {/* Mobile list/map toggle */}
