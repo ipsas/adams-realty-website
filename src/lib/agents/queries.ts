@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { agents, listings } from "@/db/schema";
 import { displayAgentEmail } from "@/lib/agents/display-email";
 import { publicListing } from "@/lib/listings/visibility";
+import { soldWithin } from "@/lib/search/query";
 
 export async function getAgents() {
   const rows = await db
@@ -44,7 +45,8 @@ export const getAgentBySlug = cache(async (slug: string) => {
   const [stats] = await db
     .select({
       active: sql<number>`count(*) filter (where ${listings.status} in ('active','coming_soon'))::int`,
-      sold: sql<number>`count(*) filter (where ${listings.status} = 'closed')::int`,
+      // What the sold search shows: closed sales in its window (soldWithin).
+      sold: sql<number>`count(*) filter (where ${and(...soldWithin())})::int`,
     })
     .from(listings)
     .where(and(eq(listings.listAgentId, agent.id), publicListing()));

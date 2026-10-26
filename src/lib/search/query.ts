@@ -25,7 +25,7 @@ type Status = (typeof listings.status.enumValues)[number];
 
 const BUY_STATUSES: Status[] = ["active", "coming_soon"];
 const PENDING_STATUSES: Status[] = ["active_under_contract", "pending"];
-const DEFAULT_SOLD_WINDOW_DAYS = 365;
+export const DEFAULT_SOLD_WINDOW_DAYS = 365;
 
 const STATE = `(?:${site.market.state}|${site.market.stateName})`;
 const COUNTRY_SUFFIX = /,?\s*(?:USA|U\.S\.A\.|US|United States)\s*$/i;
@@ -130,6 +130,20 @@ export function listedWithin(days: number, now: Date = new Date()): SQL {
   return gte(listings.listDate, since);
 }
 
+/**
+ * Sold (a closed sale) in the last `days` days: sold mode's filter, and the agent
+ * page's sales count and sold cards, which must match what the sold search lists.
+ */
+export function soldWithin(days: number = DEFAULT_SOLD_WINDOW_DAYS, now: Date = new Date()): SQL[] {
+  const since = new Date(now.getTime() - days * 86_400_000).toISOString().slice(0, 10);
+  // Separate conditions, so sold mode's indexes still match each (indexes.test.ts).
+  return [
+    eq(listings.status, "closed"),
+    eq(listings.transactionType, "sale"),
+    gte(listings.closeDate, since),
+  ];
+}
+
 /** Monthly-equivalent HOA fee, so "max HOA $300/mo" compares like with like. */
 const monthlyHoa = sql`(case ${listings.hoaFrequency}
   when 'quarterly' then ${listings.hoaFee} / 3.0
@@ -150,13 +164,7 @@ export function buildConditions(
   const conds: (SQL | undefined)[] = [...publicConditions()];
 
   if (c.mode === "sold") {
-    const days = c.soldWithinDays ?? DEFAULT_SOLD_WINDOW_DAYS;
-    const since = new Date(now.getTime() - days * 86_400_000).toISOString().slice(0, 10);
-    conds.push(
-      eq(listings.status, "closed"),
-      eq(listings.transactionType, "sale"),
-      gte(listings.closeDate, since),
-    );
+    conds.push(...soldWithin(c.soldWithinDays ?? DEFAULT_SOLD_WINDOW_DAYS, now));
   } else {
     const statuses = c.mode === "rent" ? (["active"] as Status[]) : BUY_STATUSES;
     conds.push(

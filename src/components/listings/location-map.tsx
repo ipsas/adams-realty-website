@@ -46,6 +46,7 @@ export default function LocationMap({
     const el = document.createElement("div");
     el.className =
       "flex size-11 items-center justify-center rounded-full bg-primary text-white shadow-lift ring-4 ring-white";
+    el.setAttribute("role", "img");
     el.setAttribute("aria-label", label);
     el.innerHTML =
       '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>';

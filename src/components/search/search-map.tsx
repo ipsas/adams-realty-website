@@ -24,6 +24,7 @@ import { mlsLogoSrcSet } from "@/components/content/mls-attribution";
 import { useMapTheme } from "@/components/theme/use-theme";
 import { readResolvedTheme } from "@/lib/theme";
 import { formatBaths, formatNumber, formatPrice, formatPriceShort } from "@/lib/format";
+import { listingContact } from "@/lib/listings/attribution-contact";
 import { landSummary } from "@/lib/listings/land";
 import { mlsCopyrightShort } from "@/lib/mls-copyright";
 import { photoUrl } from "@/lib/photos";
@@ -332,7 +333,7 @@ function popupNode(p: MapPin): HTMLElement {
     const img = document.createElement("img");
     // 240 px wide at 2×; MLS photos come resized (src/lib/photos.ts).
     img.src = photoUrl(p.photo, 480);
-    img.alt = "";
+    img.alt = p.address;
     img.className = "h-32 w-full object-cover bg-sunken";
     img.onerror = () => img.remove();
     a.append(img);
@@ -354,7 +355,9 @@ function popupNode(p: MapPin): HTMLElement {
     const office = document.createElement("p");
     office.className = "text-xs text-muted mt-0.5 break-words [overflow-wrap:anywhere]";
     office.dataset.testid = "pin-office";
-    office.textContent = [`Listing by ${p.office}`, p.attributionPhone, p.attributionEmail]
+    // Again at render, so a pin cached before the formatting still shows xxx-xxx-xxxx.
+    const contact = listingContact({ ...p, isCompanyListing: p.company });
+    office.textContent = [`Listing by ${p.office}`, contact.phone, contact.email]
       .filter(Boolean)
       .join(" · ");
     body.append(office);
@@ -515,6 +518,16 @@ export default function SearchMap({
           .setLngLat([pin.lng, pin.lat])
           .setDOMContent(popupNode(pin))
           .addTo(map);
+        // Keep the popup clear of the overlay over the map ("Search as I move the map").
+        const overlay = container.current?.parentElement?.querySelector("[data-map-overlay]");
+        if (overlay) {
+          const o = overlay.getBoundingClientRect();
+          const r = popup.current.getElement().getBoundingClientRect();
+          const overlaps =
+            r.top < o.bottom && r.bottom > o.top && r.left < o.right && r.right > o.left;
+          // Programmatic: `movestart` sees no originalEvent, so this won't trigger a bounds search.
+          if (overlaps) map.panBy([0, r.top - o.bottom - 8]);
+        }
       });
     }
     map.on("mouseenter", "clusters", () => (map.getCanvas().style.cursor = "pointer"));

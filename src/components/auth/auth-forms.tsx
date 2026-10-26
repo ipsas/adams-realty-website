@@ -51,14 +51,25 @@ export function SignInForm({ next, googleEnabled }: { next: string; googleEnable
       {googleEnabled && <GoogleButton next={next} />}
       <form
         className="space-y-4"
-        action={(form) =>
+        // Sent from onSubmit, not <form action>, so React doesn't reset what was typed.
+        onSubmit={(e) => {
+          e.preventDefault();
+          const form = new FormData(e.currentTarget);
           startTransition(async () => {
             setError(null);
-            const { error } = await authClient.signIn.email({
-              email: String(form.get("email")),
-              password: String(form.get("password")),
-              rememberMe: true,
-            });
+            let result;
+            try {
+              result = await authClient.signIn.email({
+                email: String(form.get("email")),
+                password: String(form.get("password")),
+                rememberMe: true,
+              });
+            } catch {
+              // A network failure throws: say so inline rather than reach the error boundary.
+              setError("Sign in failed.");
+              return;
+            }
+            const { error } = result;
             if (error) {
               setError(
                 error.status === 401
@@ -70,8 +81,8 @@ export function SignInForm({ next, googleEnabled }: { next: string; googleEnable
             // Replace, so Back from where they land skips the sign-in page.
             router.replace(next);
             router.refresh();
-          })
-        }
+          });
+        }}
       >
         <Field label="Email" htmlFor="email">
           <Input id="email" name="email" type="email" autoComplete="email" required autoFocus />
@@ -123,7 +134,10 @@ export function SignUpForm({ next, googleEnabled }: { next: string; googleEnable
       {googleEnabled && <GoogleButton next={next} />}
       <form
         className="space-y-4"
-        action={(form) =>
+        // Sent from onSubmit, not <form action>, so React doesn't reset what was typed.
+        onSubmit={(e) => {
+          e.preventDefault();
+          const form = new FormData(e.currentTarget);
           startTransition(async () => {
             setError(null);
             const password = String(form.get("password"));
@@ -131,19 +145,27 @@ export function SignUpForm({ next, googleEnabled }: { next: string; googleEnable
               setError("Use at least 8 characters for your password.");
               return;
             }
-            await stamp(form);
-            const { error } = await authClient.signUp.email({
-              name: String(form.get("name")).trim(),
-              email: String(form.get("email")).trim(),
-              password,
-              // Spam checks (src/lib/auth/sign-up-guard.ts): Better Auth owns the body.
-              fetchOptions: {
-                headers: {
-                  "x-form-hp": String(form.get(HONEYPOT_FIELD) ?? ""),
-                  [FORM_TOKEN_HEADER]: String(form.get(FORM_TOKEN_FIELD) ?? ""),
+            let result;
+            try {
+              await stamp(form);
+              result = await authClient.signUp.email({
+                name: String(form.get("name")).trim(),
+                email: String(form.get("email")).trim(),
+                password,
+                // Spam checks (src/lib/auth/sign-up-guard.ts): Better Auth owns the body.
+                fetchOptions: {
+                  headers: {
+                    "x-form-hp": String(form.get(HONEYPOT_FIELD) ?? ""),
+                    [FORM_TOKEN_HEADER]: String(form.get(FORM_TOKEN_FIELD) ?? ""),
+                  },
                 },
-              },
-            });
+              });
+            } catch {
+              // A network failure throws: say so inline rather than reach the error boundary.
+              setError("Couldn't create your account.");
+              return;
+            }
+            const { error } = result;
             if (error) {
               setError(
                 error.code === "USER_ALREADY_EXISTS" || error.status === 422
@@ -155,8 +177,8 @@ export function SignUpForm({ next, googleEnabled }: { next: string; googleEnable
             // Replace, so Back from where they land skips the sign-in page.
             router.replace(next);
             router.refresh();
-          })
-        }
+          });
+        }}
       >
         <Honeypot />
         <Field label="Full name" htmlFor="name">

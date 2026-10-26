@@ -13,7 +13,7 @@ import {
 } from "@/db/schema";
 import { firmAreaCondition } from "@/lib/areas/firm-area";
 import { formatStreet } from "@/lib/format";
-import { defaultTypesCondition, listedWithin } from "@/lib/search/query";
+import { defaultTypesCondition, listedWithin, soldWithin } from "@/lib/search/query";
 import { MAX_AREA_SUGGESTIONS, shapeAreaSuggestions, type Suggestion } from "@/lib/search/suggest";
 import { cardColumns, selectCards, withPhotos } from "./card";
 import { canShowDetails, primaryPhotoOnly, publicListing } from "./visibility";
@@ -155,10 +155,15 @@ export async function getAgentListings(
   agentId: string,
   { includeClosed = true, limit = 12 }: { includeClosed?: boolean; limit?: number } = {},
 ) {
-  const statuses = includeClosed ? [...LIVE_STATUSES, "closed" as const] : [...LIVE_STATUSES];
+  const live = inArray(listings.status, [...LIVE_STATUSES]);
   const rows = await selectCards(db)
     .where(
-      and(publicListing(), eq(listings.listAgentId, agentId), inArray(listings.status, statuses)),
+      and(
+        publicListing(),
+        eq(listings.listAgentId, agentId),
+        // Sales as the sold search shows them (soldWithin), so these match the page's count.
+        includeClosed ? or(live, and(...soldWithin())) : live,
+      ),
     )
     .orderBy(sql`${listings.status} = 'closed'`, sql`${listings.listDate} desc nulls last`)
     .limit(limit);

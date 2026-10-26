@@ -16,15 +16,14 @@ const optional = z
 
 /**
  * On Vercel, fall back to the deployment's own URL so preview deployments work
- * without configuring NEXT_PUBLIC_SITE_URL (production uses the project domain).
+ * without configuring NEXT_PUBLIC_SITE_URL. Never in production: a deploy host
+ * there would become the canonical URL, so production must set NEXT_PUBLIC_SITE_URL.
  */
 export function vercelSiteUrl(
   e: Record<string, string | undefined> = process.env,
 ): string | undefined {
-  const host =
-    e.VERCEL_ENV === "production"
-      ? (e.VERCEL_PROJECT_PRODUCTION_URL ?? e.VERCEL_URL)
-      : (e.VERCEL_BRANCH_URL ?? e.VERCEL_URL);
+  if (e.VERCEL_ENV === "production") return undefined;
+  const host = e.VERCEL_BRANCH_URL ?? e.VERCEL_URL;
   return host ? `https://${host}` : undefined;
 }
 
@@ -35,7 +34,14 @@ export function vercelOrigins(e: Record<string, string | undefined> = process.en
     .map((h) => `https://${h}`);
 }
 
-const makeSchema = (strict: boolean) =>
+/** The site's origin, without trailing slashes (callers append paths). */
+const siteUrl = z
+  .string()
+  .url()
+  .transform((v) => v.replace(/\/+$/, ""));
+
+/** Exported for tests. */
+export const makeSchema = (strict: boolean, e: Record<string, string | undefined> = process.env) =>
   z.object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
     DATABASE_URL: strict
@@ -44,10 +50,12 @@ const makeSchema = (strict: boolean) =>
     BETTER_AUTH_SECRET: strict
       ? z.string().min(32, "BETTER_AUTH_SECRET must be at least 32 characters")
       : z.string().default("dev-only-secret-change-me-dev-only-secret"),
-    NEXT_PUBLIC_SITE_URL: z
-      .string()
-      .url()
-      .default(vercelSiteUrl() ?? "http://localhost:3000"),
+    // Required only on Vercel production: NODE_ENV is also "production" on previews and in
+    // local `next build`, and those keep the deployment/localhost fallback.
+    NEXT_PUBLIC_SITE_URL:
+      e.VERCEL_ENV === "production"
+        ? z.string({ error: "NEXT_PUBLIC_SITE_URL is required in production" }).pipe(siteUrl)
+        : siteUrl.default(vercelSiteUrl(e) ?? "http://localhost:3000"),
     GOOGLE_CLIENT_ID: optional,
     GOOGLE_CLIENT_SECRET: optional,
     /** Bearer token Vercel Cron (or any scheduler) sends to /api/cron/*. */

@@ -311,7 +311,11 @@ export function SearchView({
               }}
             />
             <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
-              <div className="pointer-events-auto flex items-center gap-3 rounded-full bg-surface/95 px-4 py-2 text-sm shadow-card backdrop-blur">
+              {/* data-map-overlay: the map pans an open popup out from under it (search-map). */}
+              <div
+                data-map-overlay
+                className="pointer-events-auto flex items-center gap-3 rounded-full bg-surface/95 px-4 py-2 text-sm shadow-card backdrop-blur"
+              >
                 <Checkbox
                   label="Search as I move the map"
                   checked={searchAsMove}

@@ -2,8 +2,8 @@ import { count, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { site } from "@/config/site";
 import { listings } from "@/db/schema";
-import { displayAttributionEmail } from "@/lib/agents/display-email";
-import { formatDisplayPhone, formatStreet } from "@/lib/format";
+import { formatStreet } from "@/lib/format";
+import { listingContact } from "@/lib/listings/attribution-contact";
 import { selectCards, withPhotos, type ListingCardData } from "@/lib/listings/card";
 import { PAGE_SIZE, type SearchCriteria } from "./params";
 import { resolveScope } from "./place";
@@ -78,6 +78,8 @@ export type MapPin = {
   /** IDX: the listing's own attribution contact, shown after the listing firm. */
   attributionPhone: string | null;
   attributionEmail: string | null;
+  /** The firm's own listing: its attribution contact falls back to the office (listingContact). */
+  company: boolean;
   /** A Georgia MLS listing: the popup also credits the MLS (name, logo, copyright). */
   fromFeed: boolean;
 };
@@ -245,25 +247,29 @@ export async function locationPins(
 export function toPins(rows: PinRow[]): MapPin[] {
   return rows
     .filter((r) => r.lat !== null && r.lng !== null)
-    .map((r) => ({
-      id: r.id,
-      slug: r.slug,
-      lat: r.lat!,
-      lng: r.lng!,
-      price: r.status === "closed" && r.closePrice ? r.closePrice : r.price,
-      status: r.status,
-      beds: r.beds,
-      baths: r.baths,
-      sqft: r.sqft,
-      propertyType: r.propertyType,
-      lotSqft: r.lotSqft,
-      rent: r.transactionType === "rent",
-      address: r.hideAddress ? r.city : `${formatStreet(r)}, ${r.city}`,
-      photo: r.photo,
-      featured: r.featured,
-      office: r.office ?? (r.company ? site.legalName : null),
-      attributionPhone: formatDisplayPhone(r.attributionPhone),
-      attributionEmail: displayAttributionEmail(r),
-      fromFeed: r.fromFeed,
-    }));
+    .map((r) => {
+      const contact = listingContact({ ...r, isCompanyListing: r.company });
+      return {
+        id: r.id,
+        slug: r.slug,
+        lat: r.lat!,
+        lng: r.lng!,
+        price: r.status === "closed" && r.closePrice ? r.closePrice : r.price,
+        status: r.status,
+        beds: r.beds,
+        baths: r.baths,
+        sqft: r.sqft,
+        propertyType: r.propertyType,
+        lotSqft: r.lotSqft,
+        rent: r.transactionType === "rent",
+        address: r.hideAddress ? r.city : `${formatStreet(r)}, ${r.city}`,
+        photo: r.photo,
+        featured: r.featured,
+        office: r.office ?? (r.company ? site.legalName : null),
+        attributionPhone: contact.phone,
+        attributionEmail: contact.email,
+        company: r.company,
+        fromFeed: r.fromFeed,
+      };
+    });
 }

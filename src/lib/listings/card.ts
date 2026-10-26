@@ -1,8 +1,7 @@
 import { inArray, lt, sql } from "drizzle-orm";
 import type { Executor } from "@/db";
 import { listingMedia, listings, openHouses } from "@/db/schema";
-import { displayAttributionEmail } from "@/lib/agents/display-email";
-import { formatDisplayPhone } from "@/lib/format";
+import { listingContact } from "./attribution-contact";
 import { allowedPhotos } from "./visibility";
 
 /**
@@ -99,10 +98,16 @@ export async function withPhotos(db: Executor, rows: CardRow[]): Promise<Listing
     list.push(m.url);
     byListing.set(m.listingId, list);
   }
-  return rows.map((r) => ({
-    ...r,
-    attributionPhone: formatDisplayPhone(r.attributionPhone),
-    attributionEmail: displayAttributionEmail(r),
-    photos: allowedPhotos(r, byListing.get(r.id) ?? (r.primaryPhotoUrl ? [r.primaryPhotoUrl] : [])),
-  }));
+  return rows.map((r) => {
+    const contact = listingContact(r);
+    return {
+      ...r,
+      attributionPhone: contact.phone,
+      attributionEmail: contact.email,
+      photos: allowedPhotos(
+        r,
+        byListing.get(r.id) ?? (r.primaryPhotoUrl ? [r.primaryPhotoUrl] : []),
+      ),
+    };
+  });
 }

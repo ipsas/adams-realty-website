@@ -20,6 +20,7 @@ import {
   PROPERTY_TYPE_LABELS,
 } from "@/lib/format";
 import { site } from "@/config/site";
+import { listingContact } from "@/lib/listings/attribution-contact";
 import type { ListingCardData } from "@/lib/listings/card";
 import { landSummary } from "@/lib/listings/land";
 import { canShowDetails, primaryPhotoOnly } from "@/lib/listings/visibility";
@@ -48,6 +49,8 @@ export function ListingCard({
   const unavailable = l.removedAt !== null || restricted;
   // IDX: every card names the listing firm, as large as the other listing text.
   const office = l.listOfficeName ?? (l.isCompanyListing ? site.legalName : null);
+  // Again at render, so a card cached before the formatting still shows xxx-xxx-xxxx.
+  const contact = listingContact(l);
   const price = sold && l.closePrice ? l.closePrice : l.listPrice;
   const rent = l.transactionType === "rent";
   // Bare land: "Land · 12.5 acres · $8,400/acre" instead of "— bd · — ba" (site review #8).
@@ -131,12 +134,10 @@ export function ListingCard({
           </p>
           {office && (
             <p
-              className="mt-0.5 text-sm break-words text-ink-soft [overflow-wrap:anywhere]"
+              className="mt-0.5 text-sm [overflow-wrap:anywhere] break-words text-ink-soft"
               data-testid="card-office"
             >
-              {[`Listing by ${office}`, l.attributionPhone, l.attributionEmail]
-                .filter(Boolean)
-                .join(" · ")}
+              {[`Listing by ${office}`, contact.phone, contact.email].filter(Boolean).join(" · ")}
             </p>
           )}
           {l.fromFeed && !unavailable && <MlsCredit className="mt-1 text-xs text-muted" />}

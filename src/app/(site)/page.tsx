@@ -61,8 +61,10 @@ export default async function HomePage() {
           priority
           placeholder="blur"
           // Covers a box at least 92svh tall: on screens narrower than the 3:2 photo it is
-          // about 1.5× the box height wide, not 100vw.
-          sizes="(max-aspect-ratio: 3/2) 150vh, 100vw"
+          // about 1.5× the box height wide, not 100vw. Phones get about 1080w at 3×,
+          // deliberately below the cropped box width to keep the download small; tablets
+          // and desktop are unchanged.
+          sizes="(max-width: 767px) 92vw, (max-aspect-ratio: 3/2) 150vh, 100vw"
           className="absolute inset-0 -z-20 object-cover"
           style={{ objectPosition: "60% 60%" }}
         />
@@ -141,17 +143,21 @@ export default async function HomePage() {
                 href: "/homes",
               },
             ].map((s) => (
-              <Link
+              // A <dl> holds only dt/dd groups: the link is on the label and stretched over the tile.
+              <div
                 key={s.label}
-                href={s.href}
-                className="group bg-shade/25 px-5 py-4 transition-colors hover:bg-shade/40"
+                className="group relative bg-shade/25 px-5 py-4 transition-colors hover:bg-shade/40"
               >
-                <dt className="text-xs text-white/65">{s.label}</dt>
+                <dt className="text-xs text-white/65">
+                  <Link href={s.href} className="after:absolute after:inset-0">
+                    {s.label}
+                  </Link>
+                </dt>
                 <dd className="mt-1 flex items-center gap-2 text-2xl font-semibold text-white tabular">
                   {s.value}
                   <ArrowRight className="size-4 -translate-x-1 opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-70" />
                 </dd>
-              </Link>
+              </div>
             ))}
           </dl>
         </Container>

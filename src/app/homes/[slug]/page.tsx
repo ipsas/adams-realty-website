@@ -39,7 +39,6 @@ import { Container } from "@/components/ui/section";
 import { site } from "@/config/site";
 import { db } from "@/db";
 import type { ListingFeatures } from "@/db/schema";
-import { displayAttributionEmail } from "@/lib/agents/display-email";
 import { offersTours } from "@/lib/areas/firm-area";
 import { placeHref } from "@/lib/areas/links";
 import { getActor, getSession } from "@/lib/auth/session";
@@ -51,7 +50,6 @@ import {
   formatBaths,
   formatCityLine,
   formatDate,
-  formatDisplayPhone,
   formatFullAddress,
   formatLot,
   formatNumber,
@@ -64,6 +62,7 @@ import {
   PROPERTY_TYPE_LABELS,
   statusLabel,
 } from "@/lib/format";
+import { listingContact } from "@/lib/listings/attribution-contact";
 import {
   formatAcres,
   formatPricePerAcre,
@@ -127,11 +126,10 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
     gamlsLastSyncedAt(db),
   ]);
 
-  const attributionEmail = displayAttributionEmail({
+  const { phone: attributionPhone, email: attributionEmail } = listingContact({
     ...l,
     listAgentMlsId: agent?.mlsAgentId,
   });
-  const attributionPhone = formatDisplayPhone(l.attributionPhone);
   const taxYear = normalizeTaxYear(l.taxYear);
   const disclaimer = sourceDisclaimer(source);
   // IDX: a page with Georgia MLS listings (this one or a similar home) shows its disclaimer.
@@ -573,10 +571,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                     grid with the grid's row gap above it. */}
                 {l.buyerAgencyCompensation && (
                   <dl className="mt-2 space-y-2" data-testid="buyer-compensation">
-                    <InfoRow
-                      label="Buyer agency compensation"
-                      value={l.buyerAgencyCompensation}
-                    />
+                    <InfoRow label="Buyer agency compensation" value={l.buyerAgencyCompensation} />
                     <InfoRow
                       label="Compensation comments"
                       value={l.compensationComments ?? "None"}
