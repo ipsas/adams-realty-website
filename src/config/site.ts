@@ -63,11 +63,20 @@ export const site = {
      * IDX agreement §7: the Georgia MLS name and logo on pages with its
      * listings. The official GAMLS IDX logo supplied by Georgia MLS (blue and
      * gold on transparent, 300 × 118 PNG); one image for both themes, drawn on
-     * a white chip in dark mode. `MlsMark` draws it 32 px tall (81 px wide),
-     * 24 px on cards, tiles and map popups. Null would show the name as a text
-     * wordmark instead.
+     * a white chip in dark mode. `MlsMark` draws it 32 px tall (81 px wide).
+     * Null would show the name as a text wordmark instead.
      */
     logo: { src: "/brand/gamls_idx.png", width: 300, height: 118 } as {
+      src: string;
+      width: number;
+      height: number;
+    } | null,
+    /**
+     * The smallest logo file Georgia MLS supplied (81 × 32 PNG), drawn at its
+     * native 32 px height on cards, tiles and map popups: the logo is never
+     * shown smaller than this. Falls back to `logo` when null.
+     */
+    logoSmall: { src: "/brand/gamls_idx_81x32.png", width: 81, height: 32 } as {
       src: string;
       width: number;
       height: number;
@@ -78,9 +87,15 @@ export const site = {
      * every listing page; fixes or removals happen within one business day.
      */
     corrections: { email: "contracts.adamsrealty@gmail.com", phone: "(706) 246-0053" },
-    /** PLACEHOLDER (IDX agreement): replace with the exact disclaimer wording Georgia MLS requires. Seeded into data_sources.disclaimer for the gamls source; shown in the footer, on listing pages, on /homes and in alert emails. */
+    /**
+     * PLACEHOLDER pending the client's final review. Wording copied verbatim
+     * from the sample notice in GAMLS's "Attribution for GAMLS Listings.pdf"
+     * (incl. the 2021 year and "Deem" as printed); do not edit without
+     * GAMLS/client sign-off. Seeded into data_sources.disclaimer for the gamls
+     * source by scripts/add-gamls-source.ts.
+     */
     disclaimer:
-      "Listing information comes from Georgia MLS under its IDX program and is refreshed regularly. Information deemed reliable but not guaranteed.",
+      "© 2021 Georgia MLS. All rights reserved. Information Deem Reliable But Not Guaranteed",
   },
   /**
    * What the listings cover: Georgia MLS IDX, statewide. Search headings, the

@@ -2,6 +2,7 @@ import { count, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { site } from "@/config/site";
 import { listings } from "@/db/schema";
+import { formatStreet } from "@/lib/format";
 import { selectCards, withPhotos, type ListingCardData } from "@/lib/listings/card";
 import { PAGE_SIZE, type SearchCriteria } from "./params";
 import { resolveScope } from "./place";
@@ -238,9 +239,7 @@ function toPins(rows: PinRow[]): MapPin[] {
       propertyType: r.propertyType,
       lotSqft: r.lotSqft,
       rent: r.transactionType === "rent",
-      address: r.hideAddress
-        ? r.city
-        : `${r.addressLine1}${r.unitNumber ? ` #${r.unitNumber}` : ""}, ${r.city}`,
+      address: r.hideAddress ? r.city : `${formatStreet(r)}, ${r.city}`,
       photo: r.photo,
       featured: r.featured,
       office: r.office ?? (r.company ? site.legalName : null),

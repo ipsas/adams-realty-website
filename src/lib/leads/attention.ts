@@ -74,7 +74,7 @@ const leadColumns = {
   agentName: agents.name,
   listingStreet: sql<
     string | null
-  >`case when ${listings.unitNumber} is null then ${listings.addressLine1} else ${listings.addressLine1} || ' #' || ${listings.unitNumber} end`,
+  >`case when coalesce(ltrim(rtrim(${listings.unitNumber}), '# '), '') = '' then ${listings.addressLine1} else ${listings.addressLine1} || ' #' || ltrim(rtrim(${listings.unitNumber}), '# ') end`,
   listingCity: listings.city,
   createdAt: inquiries.createdAt,
   tourAt: inquiries.tourAt,

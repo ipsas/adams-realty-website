@@ -12,6 +12,7 @@ import {
   savedListings,
 } from "@/db/schema";
 import { firmAreaCondition } from "@/lib/areas/firm-area";
+import { formatStreet } from "@/lib/format";
 import { defaultTypesCondition, listedWithin } from "@/lib/search/query";
 import { MAX_AREA_SUGGESTIONS, shapeAreaSuggestions, type Suggestion } from "@/lib/search/suggest";
 import { cardColumns, selectCards, withPhotos } from "./card";
@@ -252,7 +253,7 @@ export async function getLocationSuggestions(term: string): Promise<Suggestion[]
     ),
     ...addresses.map((a) => ({
       kind: "address" as const,
-      label: `${a.addressLine1}${a.unitNumber ? ` #${a.unitNumber}` : ""}`,
+      label: formatStreet(a),
       sublabel: `${a.city}, ${a.postalCode}`,
       value: a.slug,
     })),

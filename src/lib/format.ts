@@ -48,9 +48,13 @@ type AddressLike = {
   hideAddress?: boolean;
 };
 
-export function formatStreet(a: AddressLike): string {
+export function formatStreet(
+  a: Pick<AddressLike, "addressLine1" | "unitNumber" | "hideAddress">,
+): string {
   if (a.hideAddress) return "Address withheld by seller";
-  return a.unitNumber ? `${a.addressLine1} #${a.unitNumber}` : a.addressLine1;
+  // Feeds send units as "317" or "#317"; strip the "#" so it isn't doubled.
+  const unit = a.unitNumber?.replace(/^[\s#]+/, "").trim();
+  return unit ? `${a.addressLine1} #${unit}` : a.addressLine1;
 }
 
 export function formatCityLine(a: AddressLike): string {

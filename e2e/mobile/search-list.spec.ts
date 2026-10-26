@@ -19,7 +19,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       const notice = list.locator("[data-mls-disclaimer]");
       const attribution = list.locator("[data-mls-attribution]");
       await expect(toggle).toBeVisible();
-      await expect(notice).toContainText("Information deemed reliable but not guaranteed.");
+      await expect(notice).toContainText("Information Deem Reliable But Not Guaranteed");
 
       // Scroll the list to its very end.
       await list.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));

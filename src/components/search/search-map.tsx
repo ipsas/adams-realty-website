@@ -351,7 +351,7 @@ function popupNode(p: MapPin): HTMLElement {
   if (p.office) {
     // IDX: the listing firm, in the same size as the other listing text.
     const office = document.createElement("p");
-    office.className = "text-xs text-muted mt-0.5 truncate";
+    office.className = "text-xs text-muted mt-0.5 break-words";
     office.dataset.testid = "pin-office";
     office.textContent = `Listing by ${p.office}`;
     body.append(office);
@@ -361,14 +361,14 @@ function popupNode(p: MapPin): HTMLElement {
     const credit = document.createElement("p");
     credit.className = "mt-1 flex items-center gap-1.5 text-xs text-muted";
     credit.dataset.mlsCredit = "";
-    const logo = site.mls.logo;
+    const logo = site.mls.logoSmall ?? site.mls.logo;
     if (logo) {
       const img = document.createElement("img");
       img.src = logo.src;
       img.alt = site.mls.name;
       img.width = logo.width;
       img.height = logo.height;
-      img.className = "h-6 w-auto rounded-sm dark:bg-white dark:px-0.5";
+      img.className = "h-8 w-auto rounded-sm dark:bg-white dark:px-0.5";
       credit.append(img);
     }
     credit.append(mlsCopyrightShort());

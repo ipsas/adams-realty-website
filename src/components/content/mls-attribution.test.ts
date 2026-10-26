@@ -14,10 +14,12 @@ import { MlsAttribution, MlsCredit, MlsMark } from "./mls-attribution";
 
 type Logo = { src: string; width: number; height: number } | null;
 const configured: Logo = site.mls.logo;
-/** `site` is a readonly constant; the tests swap the logo setting in and out. */
-const mls = site.mls as { logo: Logo };
+const configuredSmall: Logo = site.mls.logoSmall;
+/** `site` is a readonly constant; the tests swap the logo settings in and out. */
+const mls = site.mls as { logo: Logo; logoSmall: Logo };
 afterEach(() => {
   mls.logo = configured;
+  mls.logoSmall = configuredSmall;
 });
 
 const year = new Date().getFullYear();
@@ -60,10 +62,19 @@ describe("MlsMark", () => {
     expect(markClasses(html)).toContain("dark:bg-white");
   });
 
-  it("draws the small size 24 px tall", () => {
+  it("draws the small size from the 81 × 32 file at its native 32 px", () => {
     const [img] = imgs(renderToStaticMarkup(createElement(MlsMark, { size: "sm" })));
-    expect(img.cls).toEqual(expect.arrayContaining(["h-6", "w-auto"]));
-    expect(img.cls).not.toContain("h-8");
+    expect(img.src).toBe("/brand/gamls_idx_81x32.png");
+    expect(img.alt).toBe(site.mls.name);
+    expect(img.cls).toEqual(expect.arrayContaining(["h-8", "w-auto"]));
+    expect(img.cls).not.toContain("h-6");
+  });
+
+  it("falls back to the main logo for the small size", () => {
+    mls.logoSmall = null;
+    const [img] = imgs(renderToStaticMarkup(createElement(MlsMark, { size: "sm" })));
+    expect(img.src).toBe("/brand/gamls_idx.png");
+    expect(img.cls).toContain("h-8");
   });
 
   it("carries the mark and the copyright notice in the attribution block", () => {
@@ -81,8 +92,27 @@ describe("MlsCredit", () => {
     const [img, ...rest] = imgs(html);
     expect(rest).toEqual([]);
     expect(img.alt).toBe(site.mls.name);
-    expect(img.cls).toContain("h-6");
+    expect(img.src).toBe("/brand/gamls_idx_81x32.png");
+    expect(img.cls).toContain("h-8");
     expect(html).toContain(`© ${year} ${site.mls.copyrightHolder}`);
+  });
+});
+
+describe("site.mls.disclaimer", () => {
+  it("is GAMLS's sample notice, verbatim", () => {
+    expect(site.mls.disclaimer).toBe(
+      "© 2021 Georgia MLS. All rights reserved. Information Deem Reliable But Not Guaranteed",
+    );
+  });
+});
+
+describe("site.mls.logoSmall", () => {
+  it("is the 81 × 32 GAMLS IDX logo file", () => {
+    const logo = configuredSmall;
+    expect(logo).toEqual({ src: "/brand/gamls_idx_81x32.png", width: 81, height: 32 });
+    const png = readFileSync(join(process.cwd(), "public", logo!.src));
+    expect(png.readUInt32BE(16)).toBe(81);
+    expect(png.readUInt32BE(20)).toBe(32);
   });
 });
 

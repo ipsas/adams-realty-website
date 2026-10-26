@@ -17,6 +17,7 @@ import {
   getCachedPopularAreas,
   getCachedTopCities,
 } from "@/lib/listings/cached";
+import { NO_HOMES_FOR_SALE } from "@/lib/listings/places-index";
 import { FEATURED_MIN, getNewestListings } from "@/lib/listings/queries";
 import { searchHref } from "@/lib/search/params";
 
@@ -223,36 +224,42 @@ export default async function HomePage() {
               </LinkButton>
             }
           />
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            {areas.map((a, i) => (
-              <Link
-                key={a.city}
-                href={townHref(a.city)}
-                className={`group relative isolate overflow-hidden rounded-[var(--radius-card)] bg-brand-800 ${i === 0 ? "col-span-2 row-span-2 aspect-square sm:aspect-auto" : "aspect-[4/5] sm:aspect-[4/3]"}`}
-              >
-                <Photo
-                  src={a.photo}
-                  alt=""
-                  sizes={
-                    i === 0 ? "(min-width: 1024px) 50vw, 100vw" : "(min-width: 1024px) 25vw, 50vw"
-                  }
-                  className="absolute inset-0 -z-20 size-full transition-transform duration-700 group-hover:scale-105"
-                  fallbackClassName="from-brand-600 via-brand-700 to-brand-900 text-brand-500"
-                />
-                <div className="absolute inset-0 -z-10 bg-gradient-to-t from-shade/80 via-shade/10 to-transparent" />
-                <div className="absolute inset-x-0 bottom-0 p-5 text-white">
-                  <p
-                    className={`font-display-tight font-medium ${i === 0 ? "text-3xl" : "text-xl"}`}
-                  >
-                    {a.city}
-                  </p>
-                  <p className="mt-1 text-sm text-white/75">
-                    {a.count} homes · median {formatPriceShort(a.medianPrice)}
-                  </p>
-                </div>
-              </Link>
-            ))}
-          </div>
+          {areas.length === 0 ? (
+            <p className="rounded-3xl border border-dashed border-line-strong px-6 py-16 text-center text-muted">
+              {NO_HOMES_FOR_SALE}
+            </p>
+          ) : (
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+              {areas.map((a, i) => (
+                <Link
+                  key={a.city}
+                  href={townHref(a.city)}
+                  className={`group relative isolate overflow-hidden rounded-[var(--radius-card)] bg-brand-800 ${i === 0 ? "col-span-2 row-span-2 aspect-square sm:aspect-auto" : "aspect-[4/5] sm:aspect-[4/3]"}`}
+                >
+                  <Photo
+                    src={a.photo}
+                    alt=""
+                    sizes={
+                      i === 0 ? "(min-width: 1024px) 50vw, 100vw" : "(min-width: 1024px) 25vw, 50vw"
+                    }
+                    className="absolute inset-0 -z-20 size-full transition-transform duration-700 group-hover:scale-105"
+                    fallbackClassName="from-brand-600 via-brand-700 to-brand-900 text-brand-500"
+                  />
+                  <div className="absolute inset-0 -z-10 bg-gradient-to-t from-shade/80 via-shade/10 to-transparent" />
+                  <div className="absolute inset-x-0 bottom-0 p-5 text-white">
+                    <p
+                      className={`font-display-tight font-medium ${i === 0 ? "text-3xl" : "text-xl"}`}
+                    >
+                      {a.city}
+                    </p>
+                    <p className="mt-1 text-sm text-white/75">
+                      {a.count} homes · median {formatPriceShort(a.medianPrice)}
+                    </p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
         </Container>
       </section>
 

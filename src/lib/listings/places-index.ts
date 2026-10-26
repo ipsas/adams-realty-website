@@ -2,6 +2,9 @@ import { site } from "@/config/site";
 import { normalizeCounty } from "@/lib/areas/match";
 import type { PlacesIndexCounty } from "./queries";
 
+/** What /places and the home page's towns show when no town has homes for sale. */
+export const NO_HOMES_FOR_SALE = "No homes are for sale right now. Check back soon.";
+
 /** One county block on /places. */
 export type PlacesCountyView = PlacesIndexCounty & {
   /** "Franklin County", or "County not listed" for listings with none. */

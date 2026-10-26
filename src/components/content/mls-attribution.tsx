@@ -7,12 +7,13 @@ export { mlsCopyright, mlsCopyrightShort } from "@/lib/mls-copyright";
 /**
  * Georgia MLS's name and logo (IDX agreement §7). The official GAMLS IDX logo
  * when `site.mls.logo` is set: one image for both themes, on a white chip in
- * dark mode so the blue and gold read; 32 px tall (`md`) or 24 px (`sm`, cards
- * and popups). Until then the name as a text wordmark in the theme's ink
- * color, so it reads in both themes.
+ * dark mode so the blue and gold read; 32 px tall in both sizes (`sm`, cards
+ * and popups, uses the 81 × 32 `logoSmall` file at its native size). Until
+ * then the name as a text wordmark in the theme's ink color, so it reads in
+ * both themes.
  */
 export function MlsMark({ className, size = "md" }: { className?: string; size?: "md" | "sm" }) {
-  const logo = site.mls.logo;
+  const logo = size === "sm" ? (site.mls.logoSmall ?? site.mls.logo) : site.mls.logo;
   if (logo) {
     return (
       <span
@@ -29,7 +30,7 @@ export function MlsMark({ className, size = "md" }: { className?: string; size?:
           alt={site.mls.name}
           width={logo.width}
           height={logo.height}
-          className={size === "md" ? "h-8 w-auto" : "h-6 w-auto"}
+          className="h-8 w-auto"
         />
       </span>
     );
@@ -65,7 +66,7 @@ export function MlsAttribution({ className }: { className?: string }) {
 
 /**
  * The compact credit for cards, tiles and popups of Georgia MLS listings: the
- * name (the logo's alt text and the notice), the logo at 24 px, and the
+ * name (the logo's alt text and the notice), the logo at 32 px, and the
  * copyright holder.
  */
 export function MlsCredit({ className }: { className?: string }) {

@@ -130,7 +130,7 @@ export function ListingCard({
             {formatStreet(l)}, {formatCityLine(l)}
           </p>
           {office && (
-            <p className="mt-0.5 truncate text-sm text-muted" data-testid="card-office">
+            <p className="mt-0.5 text-sm break-words text-ink-soft" data-testid="card-office">
               Listing by {office}
             </p>
           )}

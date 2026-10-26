@@ -39,6 +39,15 @@ describe("format", () => {
     expect(formatStreet({ ...a, hideAddress: true })).toBe("Address withheld by seller");
   });
 
+  it("never doubles the unit '#'", () => {
+    const a = { addressLine1: "1 Main St", city: "Austin", state: "TX", postalCode: "78701" };
+    expect(formatStreet({ ...a, unitNumber: "#317" })).toBe("1 Main St #317");
+    expect(formatStreet({ ...a, unitNumber: "# 317" })).toBe("1 Main St #317");
+    expect(formatStreet({ ...a, unitNumber: "##12" })).toBe("1 Main St #12");
+    expect(formatStreet({ ...a, unitNumber: "4B" })).toBe("1 Main St #4B");
+    expect(formatStreet({ ...a, unitNumber: "#" })).toBe("1 Main St");
+  });
+
   it("counts days on market", () => {
     expect(daysSince("2026-09-20", new Date("2026-09-25T15:00:00Z"))).toBe(5);
     expect(daysSince("2026-09-30", new Date("2026-09-25T15:00:00Z"))).toBeLessThan(0);

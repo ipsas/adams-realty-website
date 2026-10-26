@@ -412,7 +412,9 @@ function FeaturedHome({
             </p>
             <p className="truncate text-sm font-medium text-ink">{formatStreet(listing)}</p>
             {listing.listOfficeName && (
-              <p className="truncate text-sm text-muted">Listing by {listing.listOfficeName}</p>
+              <p className="text-sm break-words text-ink-soft">
+                Listing by {listing.listOfficeName}
+              </p>
             )}
             {listing.fromFeed && <MlsCredit className="mt-0.5 text-xs text-muted" />}
           </div>

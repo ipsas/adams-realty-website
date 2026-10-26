@@ -43,9 +43,7 @@ export function RecentSales({ sales }: { sales: CardRow[] }) {
                   Sold {formatDate(s.closeDate)}
                 </p>
                 {s.listOfficeName && (
-                  <p className="mt-0.5 truncate text-sm text-muted">
-                    Listing by {s.listOfficeName}
-                  </p>
+                  <p className="mt-0.5 break-words text-ink-soft">Listing by {s.listOfficeName}</p>
                 )}
                 {s.fromFeed && <MlsCredit className="mt-0.5 text-xs text-muted" />}
               </div>

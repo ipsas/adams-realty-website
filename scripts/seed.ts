@@ -19,6 +19,10 @@
  *
  *   npm run db:seed
  *
+ * With --no-listings it resets the tables and creates only the office, the
+ * agents, the demo logins and the data sources: no listings, nor anything
+ * made from them (open houses, history, leads, saved homes and searches).
+ *
  * The office and the agents are real; their profiles hold only what Adams
  * Realty provided. Every listing (the ones credited to our agents too), lead
  * and saved search, and every other brokerage, is a sample for demonstration,
@@ -105,6 +109,8 @@ if (process.env.NODE_ENV === "production" && !process.argv.includes("--force")) 
   console.error("Refusing to seed a production database. Pass --force if you really mean it.");
   process.exit(1);
 }
+/** Only the office, agents, logins and data sources (the Vercel preview build). */
+const NO_LISTINGS = process.argv.includes("--no-listings");
 
 /** Adams Realty's Georgia MLS office ID (matches `site.mls.officeId`). */
 const OFFICE_MLS_ID = "ADAM01";
@@ -852,6 +858,15 @@ async function main() {
     ])
     .returning();
 
+  if (NO_LISTINGS) {
+    // Nothing derived from listings either: no open houses, history, leads, saved homes or searches.
+    await refreshPlaces(db);
+    console.info(
+      `\n--no-listings: listings skipped. Seeded the office, ${agentRows.length} agents, demo logins and data sources.`,
+    );
+    return;
+  }
+
   const toSource = (s: typeof manualSource): PersistSource => ({
     id: s.id,
     slug: s.slug,
@@ -935,7 +950,10 @@ async function main() {
         toSource(ours && !viaFeed ? manualSource : demoSource),
         listing,
         ours && !viaFeed
-          ? { listAgentId: agent?.id ?? null, isFeatured: listing.status === "active" && i % 3 === 0 }
+          ? {
+              listAgentId: agent?.id ?? null,
+              isFeatured: listing.status === "active" && i % 3 === 0,
+            }
           : { agentIdsByMlsId, isFeatured: ours && listing.status === "active" && i % 4 === 1 },
       ),
     );

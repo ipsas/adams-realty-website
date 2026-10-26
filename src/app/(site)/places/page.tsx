@@ -6,7 +6,7 @@ import { Container } from "@/components/ui/section";
 import { site } from "@/config/site";
 import { formatNumber } from "@/lib/format";
 import { getCachedPlacesIndex } from "@/lib/listings/cached";
-import { letterAnchors, placesIndexView } from "@/lib/listings/places-index";
+import { letterAnchors, NO_HOMES_FOR_SALE, placesIndexView } from "@/lib/listings/places-index";
 import { searchHref } from "@/lib/search/params";
 
 export const metadata: Metadata = {
@@ -68,7 +68,7 @@ export default async function PlacesPage() {
       <Container className="py-12 sm:py-16">
         {view.counties.length === 0 ? (
           <p className="rounded-3xl border border-dashed border-line-strong px-6 py-16 text-center text-muted">
-            No homes are for sale right now. Check back soon.
+            {NO_HOMES_FOR_SALE}
           </p>
         ) : (
           <>
