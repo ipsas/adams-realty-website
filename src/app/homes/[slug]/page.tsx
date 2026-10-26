@@ -39,9 +39,11 @@ import { Container } from "@/components/ui/section";
 import { site } from "@/config/site";
 import type { ListingFeatures } from "@/db/schema";
 import { offersTours } from "@/lib/areas/firm-area";
+import { placeHref } from "@/lib/areas/links";
 import { getActor, getSession } from "@/lib/auth/session";
 import { can } from "@/lib/auth/permissions";
 import { cn } from "@/lib/cn";
+import { env } from "@/lib/env";
 import {
   daysSince,
   formatBaths,
@@ -54,6 +56,7 @@ import {
   formatPrice,
   formatRelative,
   formatStreet,
+  listingMetaDescription,
   PROPERTY_TYPE_LABELS,
   statusLabel,
 } from "@/lib/format";
@@ -65,10 +68,10 @@ import {
   LAND_LOAN_NOTE,
   landFacts,
 } from "@/lib/listings/land";
+import { listingIndexingMode, listingRobots } from "@/lib/listings/indexing";
 import { getListingBySlug, getSimilarListings, type ListingDetail } from "@/lib/listings/queries";
 import { sourceDisclaimer } from "@/lib/mls-copyright";
 import { financeFor, listingMonthlyCost, monthlyHoaAmount } from "@/lib/mortgage";
-import { searchHref } from "@/lib/search/params";
 
 export async function generateMetadata(props: PageProps<"/homes/[slug]">): Promise<Metadata> {
   const { slug } = await props.params;
@@ -87,9 +90,9 @@ export async function generateMetadata(props: PageProps<"/homes/[slug]">): Promi
         .filter(Boolean)
         .join(", ");
   const title = `${formatFullAddress(l)} | ${facts ? `${facts} | ` : ""}${formatPrice(l.listPrice)}`;
-  const description =
-    l.description?.slice(0, 180) ??
-    `${statusLabel(l.status, l.transactionType)} in ${l.city}, ${l.state}.`;
+  const description = l.description?.trim()
+    ? listingMetaDescription(l.description)
+    : `${statusLabel(l.status, l.transactionType)} in ${l.city}, ${l.state}.`;
   return {
     title: { absolute: `${title} | ${site.name}` },
     description,
@@ -99,8 +102,9 @@ export async function generateMetadata(props: PageProps<"/homes/[slug]">): Promi
       description,
       images: l.primaryPhotoUrl ? [{ url: l.primaryPhotoUrl }] : undefined,
     },
-    // IDX: off-market listings stay reachable for people who saved them, but shouldn't be indexed.
-    robots: l.removedAt ? { index: false } : undefined,
+    // Off-market, sold and out-of-area listings stay reachable but aren't indexed
+    // (src/lib/listings/indexing.ts).
+    robots: listingRobots(l, listingIndexingMode()),
   };
 }
 
@@ -177,7 +181,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
             <p className="mb-4 rounded-2xl bg-clay-50 px-4 py-3 text-sm text-clay-600">
               This home is no longer on the market.{" "}
               <Link
-                href={searchHref({ q: l.neighborhood ?? l.city })}
+                href={placeHref(l.neighborhood ?? l.city, l.county)}
                 className="font-semibold underline"
               >
                 See similar homes nearby
@@ -199,13 +203,13 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                   Homes
                 </Link>
                 <ChevronRight className="size-3.5" />
-                <Link href={searchHref({ q: l.city })} className="hover:text-ink">
+                <Link href={placeHref(l.city, l.county)} className="hover:text-ink">
                   {l.city}
                 </Link>
                 {l.neighborhood && l.neighborhood !== l.city && (
                   <>
                     <ChevronRight className="size-3.5" />
-                    <Link href={searchHref({ q: l.neighborhood })} className="hover:text-ink">
+                    <Link href={placeHref(l.neighborhood, l.county)} className="hover:text-ink">
                       {l.neighborhood}
                     </Link>
                   </>
@@ -507,7 +511,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                   </div>
                   {l.neighborhood && (
                     <Link
-                      href={searchHref({ q: l.neighborhood })}
+                      href={placeHref(l.neighborhood, l.county)}
                       className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-brand-700 hover:underline"
                     >
                       More homes in {l.neighborhood} <ChevronRight className="size-4" />
@@ -859,7 +863,7 @@ function JsonLd({ data }: { data: ListingDetail }) {
     "@context": "https://schema.org",
     "@type": "RealEstateListing",
     name: formatFullAddress(l),
-    url: `/homes/${l.slug}`,
+    url: `${env.NEXT_PUBLIC_SITE_URL.replace(/\/+$/, "")}/homes/${l.slug}`,
     datePosted: l.listDate ?? undefined,
     description: l.description ?? undefined,
     image: data.media

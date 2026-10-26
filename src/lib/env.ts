@@ -69,6 +69,12 @@ const makeSchema = (strict: boolean) =>
      */
     DEMO_DATA_MODE: optional,
     /**
+     * Which listing pages search engines may index: `area` (default: the firm's own and those
+     * in its area, also the listing sitemaps) or `none`. Anything else means `none`.
+     * Read per request by src/lib/listings/indexing.ts.
+     */
+    LISTINGS_INDEXING: optional,
+    /**
      * Preview gate (src/lib/preview-gate.ts): while set, only visitors who have entered this
      * shared password on /preview see the site; everyone else gets the coming-soon page.
      * Unset or empty, the site is open. Changing it signs every browser out of the preview.

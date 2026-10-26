@@ -466,8 +466,8 @@ describe("the proxy with the gate on", () => {
     ).toBe(401);
   });
 
-  it("robots.txt disallows everything and lists no sitemaps", () => {
-    expect(robots()).toEqual({ rules: { userAgent: "*", disallow: "/" } });
+  it("robots.txt disallows everything and lists no sitemaps", async () => {
+    expect(await robots()).toEqual({ rules: { userAgent: "*", disallow: "/" } });
   });
 
   it("the decision itself, for a request the proxy never sees mutated", async () => {
@@ -531,7 +531,9 @@ describe("the proxy with the gate off", () => {
     expect(hitRateLimits).toHaveBeenCalled();
   });
 
-  it("robots.txt is the usual one", () => {
-    expect(robots().rules).not.toEqual({ userAgent: "*", disallow: "/" });
+  it("robots.txt is the usual one", async () => {
+    // "none": no listing count, so no database.
+    vi.stubEnv("LISTINGS_INDEXING", "none");
+    expect((await robots()).rules).not.toEqual({ userAgent: "*", disallow: "/" });
   });
 });

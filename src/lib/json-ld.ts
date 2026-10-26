@@ -3,7 +3,8 @@
  * Pure: only facts from src/config/site.ts and the agents table, and the base
  * URL is passed in, so tests can cover every "settings lack X" case. Optional
  * properties are left out, never set to `undefined`.
- * Left out (no provided facts, or no data on every page): geo, logo, image, sameAs, priceRange, ratings/reviews, employee.
+ * The broker is the one employee named; the other agents link back via their own Person's worksFor.
+ * Left out (no provided facts, or no data on every page): geo, logo, image, sameAs, priceRange, ratings/reviews.
  */
 import { telHref } from "@/components/content/contact";
 import { site } from "@/config/site";
@@ -19,6 +20,7 @@ export type FirmSettings = {
   address: { line1: string; city: string; state: string; postalCode: string };
   hours: string | null;
   brokerLicense: string | null;
+  broker: { name: string };
   market: { stateName: string; counties: readonly string[] };
 };
 
@@ -64,6 +66,7 @@ export type RealEstateAgentJsonLd = {
   openingHoursSpecification?: OpeningHoursSpecification[];
   identifier?: PropertyValue;
   areaServed?: AdministrativeArea[];
+  employee: { "@type": "Person"; name: string; jobTitle: "Broker" };
 };
 
 export type PersonJsonLd = {
@@ -198,6 +201,7 @@ export function organizationJsonLd(
           })),
         }
       : {}),
+    employee: { "@type": "Person", name: settings.broker.name, jobTitle: "Broker" },
   };
 }
 

@@ -4,10 +4,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { listings } from "@/db/schema";
 import { closeDb, createSource, insertListings, listing, resetDb } from "@/test/db/helpers";
-import { getListingSitemapChunk } from "./sitemap-query";
+import { countSitemapListings, getListingSitemapChunk } from "./sitemap-query";
 
-// Listing sitemap chunks against Postgres: exactly the live listings, each
-// once, in a stable order, whatever the chunk size.
+// Listing sitemap chunks against Postgres: exactly the live indexable listings
+// (the firm's own or in its area), each once, in a stable order, whatever the
+// chunk size.
 
 // Coming Soon is left out: the public never sees it, even the firm's own.
 const LIVE = ["active", "active_under_contract", "pending"] as const;
@@ -47,6 +48,11 @@ beforeAll(async () => {
     listing(105, { status: "coming_soon" }),
   ];
   await insertListings(source, [...hidden.slice(0, 2), ...live, ...hidden.slice(2)]);
+  // Someone else's listings from the feed: in the firm's area it's offered, outside it isn't.
+  const feed = await createSource();
+  const inArea = listing(200, { city: "Royston", county: "Franklin" });
+  await insertListings(feed, [inArea, listing(201, { city: "Savannah", county: "Chatham" })]);
+  live.push(inArea);
   await db
     .update(listings)
     .set({ removedAt: new Date() })
@@ -73,8 +79,8 @@ const slugs = async (chunk: number, size?: number) =>
   (await getListingSitemapChunk(chunk, size)).map((r) => r.slug);
 
 describe("getListingSitemapChunk", () => {
-  it("holds every live listing and nothing else, in id order", async () => {
-    expect(liveSlugs).toHaveLength(13);
+  it("holds every live indexable listing and nothing else, in id order", async () => {
+    expect(liveSlugs).toHaveLength(14);
     expect(await slugs(0)).toEqual(liveSlugs);
     // With fewer live listings than one chunk holds, the next chunk is empty.
     expect(await slugs(1)).toEqual([]);
@@ -82,8 +88,12 @@ describe("getListingSitemapChunk", () => {
 
   it("splits into consecutive chunks that together hold each live listing once", async () => {
     const chunks = await Promise.all([0, 1, 2, 3, 4].map((c) => slugs(c, 4)));
-    expect(chunks.map((c) => c.length)).toEqual([4, 4, 4, 1, 0]);
+    expect(chunks.map((c) => c.length)).toEqual([4, 4, 4, 2, 0]);
     expect(chunks.flat()).toEqual(liveSlugs);
+  });
+
+  it("is counted by countSitemapListings over the same listings", async () => {
+    expect(await countSitemapListings()).toBe(liveSlugs.length);
   });
 
   it("gives each listing its last update, for <lastmod>", async () => {
