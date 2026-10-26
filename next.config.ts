@@ -28,8 +28,9 @@ const nextConfig: NextConfig = {
    * Listing photos from Georgia MLS and from links agents paste can be on any host, and
    * arrive full size, so any http(s) host may be resized (src/lib/photos.ts decides which
    * photos go through here: everything except a CDN that resizes on its own). Only the widths
-   * and the one quality in src/config/images.ts are made, and only WebP (or the original
-   * format for clients that don't accept it). See ARCHITECTURE.md → "Photos".
+   * and the one quality in src/config/images.ts are made, and only AVIF, with WebP as the
+   * fallback (or the original format for clients that accept neither).
+   * See ARCHITECTURE.md → "Photos".
    */
   images: {
     remotePatterns: [
@@ -39,7 +40,7 @@ const nextConfig: NextConfig = {
     deviceSizes: [...PHOTO_WIDTHS],
     imageSizes: [...THUMB_WIDTHS],
     qualities: [PHOTO_QUALITY],
-    formats: ["image/webp"],
+    formats: ["image/avif", "image/webp"],
     minimumCacheTTL: PHOTO_CACHE_SECONDS,
     // MLS originals are a few MB; nothing legitimate is near this.
     maximumResponseBody: 25_000_000,

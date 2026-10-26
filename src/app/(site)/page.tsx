@@ -1,4 +1,5 @@
 import { ArrowRight, BadgeDollarSign, EyeOff, RefreshCcw, ShieldCheck } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { ListingCard } from "@/components/listings/listing-card";
 import { HeroSearch } from "@/components/search/hero-search";
@@ -20,9 +21,8 @@ import {
 import { NO_HOMES_FOR_SALE } from "@/lib/listings/places-index";
 import { FEATURED_MIN, getNewestListings } from "@/lib/listings/queries";
 import { searchHref } from "@/lib/search/params";
+import heroDusk from "@/../public/images/hero-dusk.jpg";
 
-const HERO_IMAGE =
-  "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=2000&q=80";
 /** Town chips under the hero search: the cities with the most homes for sale. */
 const TOP_CITIES = 12;
 
@@ -50,13 +50,22 @@ export default async function HomePage() {
       <OrganizationJsonLd />
       {/* Hero */}
       <section className="relative isolate flex min-h-[92svh] items-end overflow-hidden bg-brand-900">
-        <Photo
-          src={HERO_IMAGE}
-          alt=""
+        <Image
+          src={heroDusk}
+          alt="Modern house with large windows at dusk"
+          fill
           priority
+          placeholder="blur"
           sizes="100vw"
-          className="absolute inset-0 -z-20 size-full"
-          fallbackClassName="from-brand-800 via-brand-900 to-shade [&>svg]:hidden"
+          className="absolute inset-0 -z-20 object-cover"
+          style={{ objectPosition: "60% 60%" }}
+        />
+        <div
+          className="absolute inset-0 -z-10"
+          style={{
+            background:
+              "linear-gradient(90deg, rgba(10,14,20,0.85) 0%, rgba(10,14,20,0) 65%), rgba(0,0,0,0.28)",
+          }}
         />
         <div className="absolute inset-0 -z-10 bg-gradient-to-t from-shade/85 via-shade/35 to-shade/40" />
         <Container className="pt-36 pb-10 sm:pb-14">

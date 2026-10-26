@@ -146,7 +146,7 @@ describe("next.config.ts images", () => {
   it("makes only the widths and quality <Photo> asks for", () => {
     expect([...(images.imageSizes ?? []), ...(images.deviceSizes ?? [])]).toEqual([...ALL_WIDTHS]);
     expect(images.qualities).toEqual([PHOTO_QUALITY]);
-    expect(images.formats).toEqual(["image/webp"]);
+    expect(images.formats).toEqual(["image/avif", "image/webp"]);
   });
 
   it("accepts photos from any http(s) host, and nothing else", () => {
