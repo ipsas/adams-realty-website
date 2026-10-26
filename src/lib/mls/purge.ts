@@ -1,5 +1,5 @@
-import { and, eq, inArray, isNull, or, sql, gte, type SQL } from "drizzle-orm";
-import { listings } from "@/db/schema";
+import { and, eq, inArray, isNull, lt, or, sql, gte, type SQL } from "drizzle-orm";
+import { inquiries, listings, savedListings } from "@/db/schema";
 import type { PurgeScope } from "./types";
 
 /**
@@ -7,6 +7,20 @@ import type { PurgeScope } from "./types";
  * the statements. The purge compares the feed's keys against the listings the
  * site keeps showing (see `PurgeScope`); older closed sales and off-market
  * rows are out of scope and never touched.
+ *
+ * A live-only source (`DataSourceConfig.liveOnly`, e.g. Georgia MLS) is
+ * different: its feed only ever sends live statuses, so a listing that closed
+ * simply stops arriving and its row still reads active. Every stored row of
+ * the source not yet removed is then in scope, whatever its status, and goes
+ * once its key is missing from the feed's live key list.
+ *
+ * The first purge after switching an existing database to the live-only feed
+ * will usually exceed the 5% cap: it takes down every stored closed row at
+ * once. Run it once with `npm run mls:sync -- --purge --allow-large-purge`
+ * (or the cron route with `&allowLargePurge=1`). A fresh database is not
+ * affected.
+ *
+ * Removed rows are hard-deleted PRUNE_REMOVED_AFTER_DAYS later (`pruneRemovedWhere`).
  */
 
 /** Statuses a purge keeps when the feed still has them. */
@@ -44,10 +58,14 @@ export function purgeOverdue(
   return since !== null && now.getTime() - since.getTime() > PURGE_OVERDUE_MS;
 }
 
-/** The scope for a purge run at `now` (dates in UTC, like sold mode's window). */
-export function purgeScope(now: Date): PurgeScope {
+/**
+ * The scope for a purge run at `now` (dates in UTC, like sold mode's window).
+ * `liveOnly`: the source's feed only sends live statuses (`DataSourceConfig.liveOnly`).
+ */
+export function purgeScope(now: Date, opts: { liveOnly?: boolean } = {}): PurgeScope {
   const since = new Date(now.getTime() - PURGE_SOLD_DAYS * 86_400_000);
-  return { closedSince: since.toISOString().slice(0, 10) };
+  const closedSince = since.toISOString().slice(0, 10);
+  return opts.liveOnly ? { closedSince, liveOnly: true } : { closedSince };
 }
 
 /** Most listings a purge may remove from `inScope` without `allowLargePurge`. */
@@ -55,8 +73,14 @@ export function purgeCap(inScope: number): number {
   return Math.max(MIN_PURGE_CAP, Math.floor(inScope * MAX_PURGE_FRACTION));
 }
 
-/** A source's listings that a purge compares against the feed. */
+/**
+ * A source's listings that a purge compares against the feed. Live-only: every
+ * row not yet removed, whatever its status (a listing that closed stopped
+ * arriving, so it still reads active; older closed or withdrawn rows predate
+ * the filter).
+ */
 export function inPurgeScope(sourceId: string, scope: PurgeScope): SQL {
+  if (scope.liveOnly) return and(eq(listings.sourceId, sourceId), isNull(listings.removedAt))!;
   return and(
     eq(listings.sourceId, sourceId),
     isNull(listings.removedAt),
@@ -93,4 +117,27 @@ export function purgeCountQuery(sourceId: string, feedKeys: string[], scope: Pur
 /** The purge's WHERE clause: in-scope listings of `sourceId` whose key the feed no longer has. */
 export function purgeWhere(sourceId: string, feedKeys: string[], scope: PurgeScope): SQL {
   return and(inPurgeScope(sourceId, scope), missingFromFeed(feedKeys))!;
+}
+
+/**
+ * Removed listings are deleted for good this long after their removal. The
+ * purge only sets `removedAt`, and a statewide feed sheds ~16k listings a
+ * month, so without pruning the soft-deleted rows would pile up.
+ */
+export const PRUNE_REMOVED_AFTER_DAYS = 7;
+
+/**
+ * Listings of `sourceId` removed before `before` that nothing still points
+ * at. A lead (inquiries, set null on delete) or a user's saved home
+ * (saved_listings, cascade) keeps its listing, so neither loses it. Media,
+ * open houses, listing events and daily views cascade with the delete.
+ */
+export function pruneRemovedWhere(sourceId: string, before: Date): SQL {
+  return and(
+    eq(listings.sourceId, sourceId),
+    lt(listings.removedAt, before),
+    // Qualified by hand, like missingFromFeed.
+    sql`not exists (select 1 from ${inquiries} where ${inquiries.listingId} = "listings"."id")`,
+    sql`not exists (select 1 from ${savedListings} where ${savedListings.listingId} = "listings"."id")`,
+  )!;
 }

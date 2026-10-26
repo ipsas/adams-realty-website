@@ -1,4 +1,5 @@
 import type { DataSourceConfig } from "@/db/schema";
+import { liveStatusFilter } from "../gamls";
 import type { FeedPosition, ListingProvider, PurgeScope, UpdatesPage } from "../types";
 import { ResoClient, type ResoClientConfig } from "./client";
 import { mapResoProperty, type ResoProperty } from "./mapper";
@@ -78,6 +79,13 @@ export class ResoWebApiProvider implements ListingProvider {
     return parts.length ? parts.join(" and ") : undefined;
   }
 
+  // TODO (design only): an optional rolling sold window for live-only feeds. A
+  // config option such as `soldWindowDays` would add
+  // `(StandardStatus eq 'Closed' and CloseDate ge <today − N days>)` here at
+  // query time, like purgeScopeFilter does for the purge. Never write it into
+  // the saved `config.filter`: the date changes daily, which would look like a
+  // feed change and reset the cursor (feedChanged). The purge scope would then
+  // keep closed rows whose closeDate falls inside the window.
   async *fetchUpdates(from: FeedPosition | null): AsyncIterable<UpdatesPage> {
     // The raw timestamp string, not a Date, marks the position between pages:
     // a feed with sub-millisecond timestamps would otherwise re-read (or, with
@@ -182,14 +190,12 @@ function lastPosition(rows: ResoProperty[]): { timestamp: string; key: string } 
 /**
  * OData form of a PurgeScope, in the StandardStatus spelling the mapper reads
  * (`mapStatus`). `or` chains rather than `in`, which older OData 4.0 servers
- * reject. Exported for tests.
+ * reject. A live-only scope asks for the live statuses alone. Exported for tests.
  */
 export function purgeScopeFilter(scope: PurgeScope): string {
+  if (scope.liveOnly) return liveStatusFilter();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(scope.closedSince)) {
     throw new Error(`purgeScopeFilter: closedSince must be YYYY-MM-DD, got "${scope.closedSince}"`);
   }
-  const live = ["Active", "Active Under Contract", "Coming Soon", "Pending"]
-    .map((s) => `StandardStatus eq '${s}'`)
-    .join(" or ");
-  return `${live} or (StandardStatus eq 'Closed' and CloseDate ge ${scope.closedSince})`;
+  return `${liveStatusFilter()} or (StandardStatus eq 'Closed' and CloseDate ge ${scope.closedSince})`;
 }

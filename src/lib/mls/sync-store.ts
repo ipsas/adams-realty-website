@@ -2,7 +2,7 @@ import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { agents, dataSources, listings, syncRuns } from "@/db/schema";
 import { upsertListings, type PersistSource } from "@/lib/listings/persist";
-import { purgeCountQuery, purgeWhere } from "./purge";
+import { pruneRemovedWhere, purgeCountQuery, purgeWhere } from "./purge";
 import type { SyncStore } from "./sync-engine";
 
 type SourceRow = typeof dataSources.$inferSelect;
@@ -159,6 +159,12 @@ export function createSyncStore(source: SourceRow): PostgresSyncStore {
         .set({ removedAt: now, updatedAt: now })
         .where(purgeWhere(source.id, feedKeys, scope));
       if (result.rowCount) changed = true;
+      return result.rowCount ?? 0;
+    },
+
+    async pruneRemoved(before) {
+      // Media, open houses, listing events and daily views go with it (on delete cascade).
+      const result = await db.delete(listings).where(pruneRemovedWhere(source.id, before));
       return result.rowCount ?? 0;
     },
 

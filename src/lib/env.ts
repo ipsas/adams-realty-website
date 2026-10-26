@@ -55,6 +55,12 @@ const makeSchema = (strict: boolean) =>
     /** Transactional email via Resend. Without it, emails are logged to the console. */
     RESEND_API_KEY: optional,
     EMAIL_FROM: z.string().default("Adams Realty <hello@example.com>"),
+    /** Reply-To for emails that don't set their own (e.g. the office inbox). Unset: none. */
+    EMAIL_REPLY_TO: z
+      .string()
+      .optional()
+      .transform((v) => (v ? v : undefined))
+      .pipe(z.string().email().optional()),
     /** Where new-lead notifications go when a lead has no assigned agent. */
     LEADS_INBOX: optional,
     /**
@@ -82,8 +88,16 @@ const makeSchema = (strict: boolean) =>
     MLS_GAMLS_TOKEN: optional,
     /** Bridge dataset name of the Georgia MLS feed; no default (e.g. "test" for Bridge's demo data). */
     MLS_GAMLS_DATASET: optional,
-    /** Georgia MLS office ID to limit the feed to (ListOfficeMlsId); unset means the full IDX feed. */
+    /**
+     * Georgia MLS office ID (ListOfficeMlsId). With MLS_GAMLS_SCOPE "statewide" it limits the
+     * feed to that office; with "area" it adds that office's listings outside the area.
+     */
     MLS_GAMLS_OFFICE_ID: optional,
+    /**
+     * Georgia MLS feed geography: "statewide" (default) or "area" (the firm's counties). Read
+     * by gamlsFilter (src/lib/mls/gamls.ts), which throws on any other value.
+     */
+    MLS_GAMLS_SCOPE: optional,
   });
 
 export type Env = z.infer<ReturnType<typeof makeSchema>>;

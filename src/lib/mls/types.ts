@@ -62,11 +62,17 @@ export type MapSkipReason =
 /**
  * What a purge compares: the listings the site keeps showing. Live statuses
  * (active, coming soon, under contract, pending), plus closed sales since
- * `closedSince`, which sold mode and the area guides still show.
+ * `closedSince`, which sold mode and the area guides still show. With
+ * `liveOnly`, every stored listing of the source, whatever its status.
  */
 export type PurgeScope = {
   /** YYYY-MM-DD: closed listings count only when they closed on or after this date. */
   closedSince: string;
+  /**
+   * The feed only sends live statuses (`DataSourceConfig.liveOnly`): the feed is
+   * asked for those alone, and every stored listing whose key it lacks is removed.
+   */
+  liveOnly?: boolean;
 };
 
 /**

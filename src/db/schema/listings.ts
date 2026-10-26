@@ -98,6 +98,14 @@ export type DataSourceConfig = {
   resource?: string;
   /** Extra OData $filter clause, e.g. "PropertyType eq 'Residential'". */
   filter?: string;
+  /**
+   * The saved `filter` already restricts the feed to live statuses (active, coming soon,
+   * under contract, pending). The purge then treats every stored row of the source as in
+   * scope, so closed or off-market rows the feed no longer returns get removed, and
+   * fetchActiveKeys asks only for live statuses. Absent/false: closed sales from the last
+   * year stay in scope too (other sources).
+   */
+  liveOnly?: boolean;
   /** Env var prefix holding credentials: `${prefix}_TOKEN` or `${prefix}_CLIENT_ID`/`_CLIENT_SECRET`. */
   credentialsEnvPrefix?: string;
   /** OAuth2 token URL when the feed uses client-credentials auth. */

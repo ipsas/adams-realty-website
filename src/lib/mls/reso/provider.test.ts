@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { liveStatusFilter } from "../gamls";
 import { purgeScope } from "../purge";
 import type { UpdatesPage } from "../types";
 import {
@@ -111,6 +112,17 @@ describe("ResoWebApiProvider.fetchActiveKeys", () => {
     );
   });
 
+  it("with a live-only scope asks for the base filter and the live statuses only", async () => {
+    const rows = [{ ListingKey: "A-1", ModificationTimestamp: ts(0) }];
+    const { provider, urls } = fakeServer(() => rows);
+    const scope = purgeScope(new Date(ts(0)), { liveOnly: true });
+    await collect(provider.fetchActiveKeys(scope));
+    expect(urls[0].searchParams.get("$filter")).toBe(
+      `(OriginatingSystemName eq 'GAMLS') and (${liveStatusFilter()})`,
+    );
+    expect(urls[0].searchParams.get("$filter")).not.toContain("Closed");
+  });
+
   it("quotes keys that contain an apostrophe", async () => {
     const rows = [
       { ListingKey: "A-1", ModificationTimestamp: ts(0) },
@@ -121,6 +133,20 @@ describe("ResoWebApiProvider.fetchActiveKeys", () => {
     expect(keys).toEqual(["A-1", "O'NEAL-2"]);
     // The request after the page ending at O'NEAL-2 (the empty one that ends the list).
     expect(urls[1].searchParams.get("$filter")).toMatch(/and \(ListingKey gt 'O''NEAL-2'\)$/);
+  });
+});
+
+describe("purgeScopeFilter", () => {
+  it("with liveOnly returns only the live clause", () => {
+    expect(purgeScopeFilter({ closedSince: "2025-09-25", liveOnly: true })).toBe(
+      liveStatusFilter(),
+    );
+  });
+
+  it("without it keeps the closed-sales window", () => {
+    expect(purgeScopeFilter({ closedSince: "2025-09-25" })).toBe(
+      `${liveStatusFilter()} or (StandardStatus eq 'Closed' and CloseDate ge 2025-09-25)`,
+    );
   });
 });
 

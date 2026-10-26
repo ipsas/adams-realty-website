@@ -1,6 +1,9 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import {
+  inPurgeScope,
+  PRUNE_REMOVED_AFTER_DAYS,
+  pruneRemovedWhere,
   PURGE_LIVE_STATUSES,
   purgeCap,
   purgeCountQuery,
@@ -56,9 +59,74 @@ describe("purgeWhere", () => {
   });
 });
 
+describe("live-only scope", () => {
+  const liveOnly = { closedSince: "2025-09-25", liveOnly: true };
+
+  it("compares every row of the source not yet removed, whatever its status", () => {
+    const { sql, params } = dialect.sqlToQuery(inPurgeScope(SOURCE, liveOnly));
+    expect(sql).toBe(`("listings"."source_id" = $1 and "listings"."removed_at" is null)`);
+    expect(params).toEqual([SOURCE]);
+  });
+
+  it("purgeWhere and purgeCountQuery drop the status and close-date condition", () => {
+    for (const statement of [
+      purgeWhere(SOURCE, ["K1"], liveOnly),
+      purgeCountQuery(SOURCE, ["K1"], liveOnly),
+    ]) {
+      const { sql } = dialect.sqlToQuery(statement);
+      expect(sql).toContain(`"listings"."removed_at" is null`);
+      expect(sql).not.toContain(`"listings"."status"`);
+      expect(sql).not.toContain(`"listings"."close_date"`);
+    }
+  });
+
+  it("without liveOnly they keep it", () => {
+    for (const statement of [
+      inPurgeScope(SOURCE, scope),
+      purgeWhere(SOURCE, ["K1"], scope),
+      purgeCountQuery(SOURCE, ["K1"], scope),
+    ]) {
+      const { sql } = dialect.sqlToQuery(statement);
+      expect(sql).toContain(`"listings"."status" in`);
+      expect(sql).toContain(`"listings"."close_date" >=`);
+    }
+  });
+});
+
+describe("pruneRemovedWhere", () => {
+  it("takes the source's rows removed before the cutoff that no lead or saved home references", () => {
+    const before = new Date("2026-09-18T09:00:00Z");
+    const { sql, params } = dialect.sqlToQuery(pruneRemovedWhere(SOURCE, before));
+    expect(sql).toContain(`"listings"."source_id" = $1`);
+    expect(sql).toContain(`"listings"."removed_at" < $2`);
+    expect(sql).toContain(
+      `not exists (select 1 from "inquiries" where "inquiries"."listing_id" = "listings"."id")`,
+    );
+    expect(sql).toContain(
+      `not exists (select 1 from "saved_listings" where "saved_listings"."listing_id" = "listings"."id")`,
+    );
+    expect(params[0]).toBe(SOURCE);
+    expect(params).toHaveLength(2);
+  });
+
+  it("waits a week", () => {
+    expect(PRUNE_REMOVED_AFTER_DAYS).toBe(7);
+  });
+});
+
 describe("purgeScope / purgeCap", () => {
   it("keeps a year of closed sales (sold mode's default window)", () => {
     expect(purgeScope(new Date("2026-09-25T09:00:00Z"))).toEqual({ closedSince: "2025-09-25" });
+  });
+
+  it("marks a live-only scope", () => {
+    expect(purgeScope(new Date("2026-09-25T09:00:00Z"), { liveOnly: true })).toEqual({
+      closedSince: "2025-09-25",
+      liveOnly: true,
+    });
+    expect(purgeScope(new Date("2026-09-25T09:00:00Z"), { liveOnly: false }).liveOnly).toBe(
+      undefined,
+    );
   });
 
   it("caps removals at 5%, but never below 25", () => {

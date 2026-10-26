@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { site } from "@/config/site";
-import { gamlsBaseUrl, gamlsSource } from "../gamls";
+import { gamlsBaseUrl, gamlsFilter, gamlsSource, liveStatusFilter } from "../gamls";
 import { purgeScope } from "../purge";
 import type { MapSkipReason, UpdatesPage } from "../types";
 import page1 from "./fixtures/bridge-gamls-page1.json";
@@ -144,7 +144,9 @@ describe("ResoWebApiProvider against Bridge", () => {
       timestamp: lastOfPage1.ModificationTimestamp as string,
       key: lastOfPage1.ListingKey!,
     });
-    expect(new URL(requests[1].url).searchParams.get("$filter")).toBe(`(${after})`);
+    expect(new URL(requests[1].url).searchParams.get("$filter")).toBe(
+      `(${gamlsFilter(env)}) and (${after})`,
+    );
   });
 
   it("downloads the purge keys 200 at a time (Bridge's $top cap)", async () => {
@@ -190,6 +192,8 @@ describe("gamlsSource", () => {
     expect(s.config).toEqual({
       baseUrl: "https://api.bridgedataoutput.com/api/v2/OData/test",
       resource: "Property",
+      filter: `(${liveStatusFilter()})`,
+      liveOnly: true,
       credentialsEnvPrefix: "MLS_GAMLS",
       companyOfficeIds: ["ADAM01"],
       keyPageSize: 200,
@@ -204,7 +208,7 @@ describe("gamlsSource", () => {
     expect(gamlsBaseUrl({})).toBeUndefined();
   });
 
-  it("limits the feed to MLS_GAMLS_OFFICE_ID when set", async () => {
+  it("limits the feed to live statuses, and to MLS_GAMLS_OFFICE_ID when set", async () => {
     const filters = async (extra: Record<string, string>) => {
       const urls: string[] = [];
       const fetchImpl = (async (url: string) => {
@@ -216,9 +220,12 @@ describe("gamlsSource", () => {
       await collect(provider.fetchUpdates(null));
       return new URL(urls[0]).searchParams.get("$filter");
     };
-    expect(await filters({ MLS_GAMLS_OFFICE_ID: " O'X1 " })).toBe("(ListOfficeMlsId eq 'O''X1')");
-    expect(await filters({ MLS_GAMLS_OFFICE_ID: "" })).toBeNull();
-    expect(await filters({})).toBeNull();
+    const live = `(${liveStatusFilter()})`;
+    expect(await filters({ MLS_GAMLS_OFFICE_ID: " O'X1 " })).toBe(
+      `((ListOfficeMlsId eq 'O''X1') and ${live})`,
+    );
+    expect(await filters({ MLS_GAMLS_OFFICE_ID: "" })).toBe(`(${live})`);
+    expect(await filters({})).toBe(`(${live})`);
   });
 });
 

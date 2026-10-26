@@ -75,7 +75,8 @@ export async function syncSource(sourceId: string, opts: SyncOptions = {}): Prom
     result = await runSync(
       store,
       () => provider ?? createProvider(source, { deadline: runOpts.deadline }),
-      runOpts,
+      // The source's config decides, after the caller's options, so they can't drop it.
+      { ...runOpts, liveOnly: source.config.liveOnly === true },
     );
   } catch (e) {
     const changed = store.changedListings();
@@ -131,6 +132,7 @@ export async function syncAllSources(
           skipped: {},
           cursor: null,
           mediaRowsWritten: 0,
+          pruned: 0,
           staleRunsFailed: 0,
           changed: false,
         },

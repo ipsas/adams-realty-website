@@ -45,6 +45,8 @@ type StoredListing = {
   closeDate: string | null;
   modified: number;
   removed: boolean;
+  /** Fake-clock time of the removal, for pruning. */
+  removedAt?: number;
 };
 
 type Run = {
@@ -62,6 +64,8 @@ class MemoryStore implements SyncStore {
   cursor: SyncCursor | null = null;
   runs: Run[] = [];
   purgeParams: number[] = [];
+  /** `before` as passed to each pruneRemoved. */
+  pruneCalls: Date[] = [];
   /** skipUnchanged as passed to each writePage. */
   skipFlags: boolean[] = [];
   /** Called on every beginRun (lets a test finish a blocking run after a while). */
@@ -156,7 +160,8 @@ class MemoryStore implements SyncStore {
     const inScope = [...this.listings].filter(
       ([, l]) =>
         !l.removed &&
-        (["active", "coming_soon", "active_under_contract", "pending"].includes(l.status) ||
+        (scope.liveOnly ||
+          ["active", "coming_soon", "active_under_contract", "pending"].includes(l.status) ||
           (l.status === "closed" && !!l.closeDate && l.closeDate >= scope.closedSince)),
     );
     return { inScope, missing: inScope.filter(([key]) => !keys.has(key)) };
@@ -169,8 +174,20 @@ class MemoryStore implements SyncStore {
 
   async purge(feedKeys: string[], scope: PurgeScope) {
     const { missing } = this.missing(feedKeys, scope, purgeWhere);
-    for (const [, l] of missing) l.removed = true;
+    for (const [, l] of missing) Object.assign(l, { removed: true, removedAt: now });
     return missing.length;
+  }
+
+  async pruneRemoved(before: Date) {
+    this.pruneCalls.push(before);
+    let pruned = 0;
+    for (const [key, l] of this.listings) {
+      if (l.removed && l.removedAt !== undefined && l.removedAt < before.getTime()) {
+        this.listings.delete(key);
+        pruned++;
+      }
+    }
+    return pruned;
   }
 
   async finishRun(runId: string, outcome: RunOutcome) {
@@ -638,5 +655,65 @@ describe("runSync: purge", () => {
     expect(result.removed).toBe(1);
     expect(store.listings.get("RECENT-SALE")!.removed).toBe(true);
     expect(store.listings.get("OLD-SALE")!.removed).toBe(false);
+  });
+
+  it("passes liveOnly through to the feed's purge scope, and then compares every stored row", async () => {
+    seedLive(store, 100);
+    // Closed long ago, from before the live-only filter: out of the usual scope.
+    store.listings.set("OLD-SALE", {
+      status: "closed",
+      closeDate: "2025-01-10",
+      modified: 0,
+      removed: false,
+    });
+    const { provider, scopes } = keyFeed(keysOf(100));
+    const result = await runSync(store, provider, { mode: "purge", liveOnly: true, now: clock });
+    expect(scopes).toEqual([purgeScope(new Date(START), { liveOnly: true })]);
+    expect(scopes[0].liveOnly).toBe(true);
+    expect(result.removed).toBe(1);
+    expect(store.listings.get("OLD-SALE")!.removed).toBe(true);
+  });
+});
+
+describe("runSync: prune", () => {
+  const DAY = 86_400_000;
+  const removedRow = (removedAt: number): StoredListing => ({
+    status: "active",
+    closeDate: null,
+    modified: 0,
+    removed: true,
+    removedAt,
+  });
+
+  it("deletes listings removed over a week ago after a successful purge, and reports them", async () => {
+    seedLive(store, 100);
+    store.listings.set("GONE-8D", removedRow(START - 8 * DAY));
+    store.listings.set("GONE-1D", removedRow(START - 1 * DAY));
+    // Nothing left the feed: the prune still runs.
+    const result = await runSync(store, keyFeed(keysOf(100)).provider, {
+      mode: "purge",
+      now: clock,
+    });
+    expect(result).toMatchObject({ status: "succeeded", removed: 0, pruned: 1 });
+    expect(store.pruneCalls).toHaveLength(1);
+    expect(store.pruneCalls[0].getTime()).toBe(now - 7 * DAY);
+    expect(store.listings.has("GONE-8D")).toBe(false);
+    expect(store.listings.has("GONE-1D")).toBe(true);
+  });
+
+  it("does not prune when the purge cap stops the purge", async () => {
+    seedLive(store, 1000);
+    store.listings.set("GONE-8D", removedRow(START - 8 * DAY));
+    await expect(
+      runSync(store, keyFeed(keysOf(900)).provider, { mode: "purge", now: clock }),
+    ).rejects.toBeInstanceOf(PurgeCapError);
+    expect(store.pruneCalls).toEqual([]);
+    expect(store.listings.has("GONE-8D")).toBe(true);
+  });
+
+  it("does not prune on an incremental run", async () => {
+    const result = await runSync(store, feed(1).provider, { now: clock });
+    expect(result.pruned).toBe(0);
+    expect(store.pruneCalls).toEqual([]);
   });
 });

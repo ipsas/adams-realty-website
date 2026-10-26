@@ -1,4 +1,4 @@
-import { purgeCap, purgeScope, MAX_PURGE_FRACTION } from "./purge";
+import { purgeCap, purgeScope, MAX_PURGE_FRACTION, PRUNE_REMOVED_AFTER_DAYS } from "./purge";
 import type { FeedPosition, ListingProvider, MapResult, MapSkipReason, PurgeScope } from "./types";
 
 /**
@@ -84,6 +84,11 @@ export interface SyncStore {
   /** Soft-removes the in-scope listings missing from `feedKeys`; returns how many. */
   purge(feedKeys: string[], scope: PurgeScope): Promise<number>;
   /**
+   * Deletes for good this source's listings removed before `before` that no
+   * lead or saved home references (`pruneRemovedWhere`); returns how many.
+   */
+  pruneRemoved(before: Date): Promise<number>;
+  /**
    * Records the outcome; a run that didn't fail also stamps the source's last
    * sync, and one that caught up clears the cursor's key.
    */
@@ -105,6 +110,11 @@ export type RunSyncOptions = {
   deadline?: number;
   /** Lets a purge remove more than MAX_PURGE_FRACTION of the in-scope listings. */
   allowLargePurge?: boolean;
+  /**
+   * The source's feed only sends live statuses (`DataSourceConfig.liveOnly`), so the
+   * purge compares every stored listing of the source (see `PurgeScope.liveOnly`).
+   */
+  liveOnly?: boolean;
   /** A `running` run with no heartbeat for this long was cut off. Default: the cron's maxDuration. */
   staleAfterMs?: number;
   /** Injected clock and sleep (tests). */
@@ -123,6 +133,8 @@ export type SyncResult = SyncCounts & {
   skipped: Partial<Record<MapSkipReason, number>>;
   cursor: Date | null;
   mediaRowsWritten: number;
+  /** Removed listings deleted for good after a purge (PRUNE_REMOVED_AFTER_DAYS). */
+  pruned: number;
   /** Earlier runs found cut off and marked failed. */
   staleRunsFailed: number;
   /** Whether any listing changed, so caches need refreshing. */
@@ -207,6 +219,7 @@ export async function runSync(
     skipped: {},
     cursor: null,
     mediaRowsWritten: 0,
+    pruned: 0,
     staleRunsFailed: staleFailed,
     changed: false,
   };
@@ -247,7 +260,7 @@ export async function runSync(
     cursor = await store.savedCursor();
 
     if (mode === "purge") {
-      const scope = purgeScope(new Date(clock()));
+      const scope = purgeScope(new Date(clock()), { liveOnly: opts.liveOnly });
       const keys = new Set<string>();
       let complete = true;
       for await (const page of feed.fetchActiveKeys(scope)) {
@@ -276,6 +289,10 @@ export async function runSync(
       const cap = purgeCap(inScope);
       if (missing > cap && !opts.allowLargePurge) throw new PurgeCapError(missing, inScope, cap);
       counts.removed = missing > 0 ? await store.purge(feedKeys, scope) : 0;
+      // Not capped: these rows are already off the site.
+      result.pruned = await store.pruneRemoved(
+        new Date(clock() - PRUNE_REMOVED_AFTER_DAYS * 86_400_000),
+      );
     } else {
       // A run that stopped partway continues right after its last record; one
       // that caught up starts again a little before it (UPDATE_LOOKBACK_MS).

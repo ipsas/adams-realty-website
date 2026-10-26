@@ -57,7 +57,7 @@ export async function sendEmail(email: Email): Promise<void> {
       subject: email.subject,
       text: email.text,
       html: email.html,
-      reply_to: email.replyTo,
+      reply_to: email.replyTo ?? env.EMAIL_REPLY_TO,
       headers: email.headers,
     }),
   });

@@ -7,8 +7,9 @@
  * The row is active only when MLS_GAMLS_TOKEN (or client credentials) is set;
  * otherwise it is left inactive and the missing variable is printed. Only the
  * definition columns are written; the sync cursor is kept, unless the saved
- * row pointed at another feed (dataset or office filter), whose cursor would
- * make the incremental sync skip this feed's older listings: then it is reset.
+ * row pointed at another feed (dataset, filter: scope or office, or the live-only
+ * flag), whose cursor would make the incremental sync skip this feed's older
+ * listings: then it is reset.
  */
 import "dotenv/config";
 import { eq } from "drizzle-orm";
