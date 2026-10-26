@@ -139,8 +139,8 @@ URL `https://api.bridgedataoutput.com/api/v2/OData/<dataset>`, `companyOfficeIds
 marks the firm's own listings).
 
 1. **Placeholders to confirm before launch:**
-   - the Bridge dataset name: `GAMLS_DATASET_DEFAULT` (`"gamls"`) in `src/lib/mls/gamls.ts`,
-     overridable with `MLS_GAMLS_DATASET`;
+   - the Bridge dataset name: set by `MLS_GAMLS_DATASET` (no default; the feed has no base URL
+     until it is set);
    - the exact IDX disclaimer: `site.mls.disclaimer` in `src/config/site.ts`, copied into
      `data_sources.disclaimer` by the seed and by `npm run mls:add-gamls`;
    - the agents' Georgia MLS agent IDs: `MLS_AGENT_IDS` in `scripts/seed-data.ts`. Andrea's
@@ -150,7 +150,8 @@ marks the firm's own listings).
      without a profile link. Fix them there and, on a live database, in _Dashboard → Agents_.
 2. **When the token arrives:** add `MLS_GAMLS_TOKEN` to Vercel (Production) and `.env.local`.
    Probe the feed with `curl` and the bearer token (`$top=1` on `Property`;
-   `$select=ListingKey&$top=1000` to confirm the `$top` cap; `$expand=Media,OpenHouse`) and add
+   `$select=ListingKey&$top=1000` to confirm the `$top` cap; no `$expand`: Bridge rejects it and
+   returns `Media` inline) and add
    any new `StandardStatus`/`PropertyType` spelling to the mapper with a test. Then run
    `npm run mls:add-gamls` (upserts the `gamls` row and activates it once the token is set).
    Until then the site runs on demo data: the `gamls` row stays inactive (if activated without

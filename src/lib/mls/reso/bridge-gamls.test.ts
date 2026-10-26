@@ -21,6 +21,7 @@ import {
 const rows = (page: { value: unknown[] }) => page.value as ResoProperty[];
 const records = [...rows(page1), ...rows(page2)];
 const lastOfPage1 = rows(page1).at(-1)!;
+const env = { MLS_GAMLS_DATASET: "test" };
 
 async function collect<T>(it: AsyncIterable<T>): Promise<T[]> {
   const out: T[] = [];
@@ -105,7 +106,7 @@ function bridge(opts: { throttleFirst?: boolean } = {}) {
     return Response.json({ value: [] });
   }) as unknown as typeof fetch;
   const provider = new ResoWebApiProvider(
-    gamlsSource({}).config,
+    gamlsSource(env).config,
     { MLS_GAMLS_TOKEN: "test-token" },
     {
       fetchImpl,
@@ -127,9 +128,9 @@ describe("ResoWebApiProvider against Bridge", () => {
       const headers = init.headers as Record<string, string>;
       expect(headers.Authorization).toBe("Bearer test-token");
       expect(headers.Accept).toBe("application/json");
-      expect(url.startsWith(`${gamlsBaseUrl({})}/Property?`)).toBe(true);
+      expect(url.startsWith(`${gamlsBaseUrl(env)}/Property?`)).toBe(true);
       const q = new URL(url).searchParams;
-      expect(q.get("$expand")).toBe("Media,OpenHouse");
+      expect(q.has("$expand")).toBe(false);
       expect(q.get("$top")).toBe("200");
       expect(q.has("$skip")).toBe(false);
     }
@@ -163,7 +164,7 @@ describe("ResoWebApiProvider against Bridge", () => {
 });
 
 describe("Georgia MLS credentials", () => {
-  const { config } = gamlsSource({});
+  const { config } = gamlsSource(env);
 
   it("refuses to build a provider without MLS_GAMLS_TOKEN", () => {
     expect(() => new ResoWebApiProvider(config, {})).toThrow(MissingCredentialsError);
@@ -178,7 +179,7 @@ describe("Georgia MLS credentials", () => {
 
 describe("gamlsSource", () => {
   it("defines the Georgia MLS feed on Bridge", () => {
-    const s = gamlsSource({});
+    const s = gamlsSource(env);
     expect(s).toMatchObject({
       slug: "gamls",
       name: site.mls.name,
@@ -187,17 +188,53 @@ describe("gamlsSource", () => {
       disclaimer: site.mls.disclaimer,
     });
     expect(s.config).toEqual({
-      baseUrl: "https://api.bridgedataoutput.com/api/v2/OData/gamls",
+      baseUrl: "https://api.bridgedataoutput.com/api/v2/OData/test",
       resource: "Property",
       credentialsEnvPrefix: "MLS_GAMLS",
       companyOfficeIds: ["ADAM01"],
       keyPageSize: 200,
+      expand: "",
     });
   });
 
-  it("takes the dataset name from MLS_GAMLS_DATASET", () => {
-    expect(gamlsSource({ MLS_GAMLS_DATASET: "gamls_test" }).config.baseUrl).toBe(
+  it("takes the dataset name from MLS_GAMLS_DATASET, with no default", () => {
+    expect(gamlsSource({ MLS_GAMLS_DATASET: " gamls_test " }).config.baseUrl).toBe(
       "https://api.bridgedataoutput.com/api/v2/OData/gamls_test",
     );
+    expect(gamlsBaseUrl({})).toBeUndefined();
+  });
+
+  it("limits the feed to MLS_GAMLS_OFFICE_ID when set", async () => {
+    const filters = async (extra: Record<string, string>) => {
+      const urls: string[] = [];
+      const fetchImpl = (async (url: string) => {
+        urls.push(url);
+        return Response.json({ value: [] });
+      }) as unknown as typeof fetch;
+      const config = gamlsSource({ ...env, ...extra }).config;
+      const provider = new ResoWebApiProvider(config, { MLS_GAMLS_TOKEN: "t" }, { fetchImpl });
+      await collect(provider.fetchUpdates(null));
+      return new URL(urls[0]).searchParams.get("$filter");
+    };
+    expect(await filters({ MLS_GAMLS_OFFICE_ID: " O'X1 " })).toBe("(ListOfficeMlsId eq 'O''X1')");
+    expect(await filters({ MLS_GAMLS_OFFICE_ID: "" })).toBeNull();
+    expect(await filters({})).toBeNull();
+  });
+});
+
+describe("$expand", () => {
+  it('defaults to "Media,OpenHouse" for a non-Bridge feed', async () => {
+    const urls: string[] = [];
+    const fetchImpl = (async (url: string) => {
+      urls.push(url);
+      return Response.json({ value: [] });
+    }) as unknown as typeof fetch;
+    const provider = new ResoWebApiProvider(
+      { baseUrl: "https://example.com/odata", credentialsEnvPrefix: "MLS" },
+      { MLS_TOKEN: "t" },
+      { fetchImpl },
+    );
+    await collect(provider.fetchUpdates(null));
+    expect(new URL(urls[0]).searchParams.get("$expand")).toBe("Media,OpenHouse");
   });
 });

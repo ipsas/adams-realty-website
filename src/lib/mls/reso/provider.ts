@@ -48,6 +48,7 @@ export class ResoWebApiProvider implements ListingProvider {
   private readonly resource: string;
   private readonly baseFilter: string | undefined;
   private readonly keyPageSize: number;
+  private readonly expand: string;
 
   constructor(
     config: DataSourceConfig,
@@ -69,6 +70,7 @@ export class ResoWebApiProvider implements ListingProvider {
     this.resource = config.resource ?? "Property";
     this.baseFilter = config.filter;
     this.keyPageSize = config.keyPageSize ?? KEY_PAGE_SIZE;
+    this.expand = config.expand ?? "Media,OpenHouse";
   }
 
   private filter(...extra: (string | undefined)[]): string | undefined {
@@ -88,8 +90,8 @@ export class ResoWebApiProvider implements ListingProvider {
       const query: Record<string, string> = {
         $top: String(PAGE_SIZE),
         $orderby: "ModificationTimestamp asc,ListingKey asc",
-        $expand: "Media,OpenHouse",
       };
+      if (this.expand) query.$expand = this.expand;
       const filter = this.filter(position ? updatesFilter(position) : undefined);
       if (filter) query.$filter = filter;
       const rows = await this.client.getPage<ResoProperty>(this.resource, query);

@@ -16,7 +16,12 @@ import { missingCredentials } from "@/lib/mls/reso/provider";
 
 async function main() {
   const row = gamlsSource();
-  const missing = missingCredentials(row.config, process.env);
+  const missing = [
+    missingCredentials(row.config, process.env),
+    row.config.baseUrl ? null : "MLS_GAMLS_DATASET is not set",
+  ]
+    .filter(Boolean)
+    .join("; ");
   const values = { ...row, isActive: !missing };
   const [saved] = await db
     .insert(dataSources)

@@ -80,8 +80,10 @@ const makeSchema = (strict: boolean) =>
      * through the source's credentialsEnvPrefix ("MLS_GAMLS"); unset, the sync skips the feed.
      */
     MLS_GAMLS_TOKEN: optional,
-    /** Bridge dataset name of the Georgia MLS feed. PLACEHOLDER default "gamls" (src/lib/mls/gamls.ts). */
+    /** Bridge dataset name of the Georgia MLS feed; no default (e.g. "test" for Bridge's demo data). */
     MLS_GAMLS_DATASET: optional,
+    /** Georgia MLS office ID to limit the feed to (ListOfficeMlsId); unset means the full IDX feed. */
+    MLS_GAMLS_OFFICE_ID: optional,
   });
 
 export type Env = z.infer<ReturnType<typeof makeSchema>>;

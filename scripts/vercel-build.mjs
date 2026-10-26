@@ -36,6 +36,19 @@ if (!process.env.DATABASE_URL) {
       run("npx tsx scripts/seed.ts --force");
     }
   }
+  // Vercel Cron doesn't run on previews, so load the demo/approved feed into the preview DB here.
+  if (
+    process.env.VERCEL_ENV === "preview" &&
+    process.env.MLS_GAMLS_TOKEN &&
+    process.env.MLS_GAMLS_DATASET
+  ) {
+    try {
+      run("npx tsx scripts/add-gamls-source.ts");
+      run("npx tsx scripts/sync.ts --minutes 2");
+    } catch {
+      console.warn("Georgia MLS feed load failed — continuing the build without it.");
+    }
+  }
 }
 
 run("npx next build");

@@ -106,6 +106,11 @@ export type DataSourceConfig = {
   companyOfficeIds?: string[];
   /** $top for the purge's key download (default 1000). Bridge caps $top at 200. */
   keyPageSize?: number;
+  /**
+   * OData $expand value for the updates download (default "Media,OpenHouse"). "" sends no
+   * $expand, e.g. Bridge, which returns Media inline and rejects $expand.
+   */
+  expand?: string;
 };
 
 export type ListingFeatures = {
