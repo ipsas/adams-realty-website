@@ -5,10 +5,13 @@ import { startTransition, useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, FormMessage, Input, Select, Textarea } from "@/components/ui/form";
 import { Honeypot, useFormTimer } from "@/components/ui/spam-guard";
+import { catchSendFailure } from "@/lib/leads/send";
 import { createInquiry, type InquiryState } from "@/server/actions/inquiries";
 
+const sendInquiry = catchSendFailure(createInquiry);
+
 export function ValuationForm() {
-  const [state, action, pending] = useActionState<InquiryState, FormData>(createInquiry, {
+  const [state, action, pending] = useActionState<InquiryState, FormData>(sendInquiry, {
     ok: false,
   });
   const stamp = useFormTimer();
@@ -25,13 +28,14 @@ export function ValuationForm() {
   }
   return (
     <form
-      // The timer token is usually in hand already; the dispatch goes back into a transition.
-      action={async (form) => {
-        const stamped = await stamp(form);
+      // Sent from onSubmit, not <form action>, so React doesn't reset what was typed. The
+      // browser checks the fields first; the timer token is usually in hand already.
+      onSubmit={async (e) => {
+        e.preventDefault();
+        const stamped = await stamp(new FormData(e.currentTarget));
         startTransition(() => action(stamped));
       }}
       className="space-y-4"
-      noValidate
     >
       <input type="hidden" name="type" value="valuation" />
       <input type="hidden" name="source" value="sell" />
@@ -43,6 +47,7 @@ export function ValuationForm() {
           autoComplete="street-address"
           placeholder="Street address, town and ZIP"
           required
+          maxLength={300}
         />
       </Field>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -52,11 +57,13 @@ export function ValuationForm() {
             name="name"
             autoComplete="name"
             required
+            minLength={2}
+            maxLength={100}
             aria-invalid={!!state.errors?.name}
           />
         </Field>
         <Field label="Phone" htmlFor="v-phone">
-          <Input id="v-phone" name="phone" type="tel" autoComplete="tel" />
+          <Input id="v-phone" name="phone" type="tel" autoComplete="tel" maxLength={40} />
         </Field>
       </div>
       <Field label="Email" htmlFor="v-email" error={state.errors?.email}>
@@ -66,6 +73,7 @@ export function ValuationForm() {
           type="email"
           autoComplete="email"
           required
+          maxLength={200}
           aria-invalid={!!state.errors?.email}
         />
       </Field>
@@ -82,6 +90,7 @@ export function ValuationForm() {
           id="v-notes"
           name="notes"
           rows={3}
+          maxLength={4000}
           placeholder="Acreage, recent renovations, questions, preferred contact time…"
         />
       </Field>

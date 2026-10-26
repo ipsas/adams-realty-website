@@ -7,6 +7,7 @@ import { Field, FormMessage, Input, Select, Textarea } from "@/components/ui/for
 import { Honeypot, useFormTimer } from "@/components/ui/spam-guard";
 import { site } from "@/config/site";
 import { cn } from "@/lib/cn";
+import { catchSendFailure } from "@/lib/leads/send";
 import { upcomingDays } from "@/lib/time";
 import { createInquiry, type InquiryState } from "@/server/actions/inquiries";
 
@@ -22,6 +23,8 @@ const TIMES = [
   "17:00",
   "18:00",
 ];
+
+const sendInquiry = catchSendFailure(createInquiry);
 
 function timeLabel(t: string) {
   const [h] = t.split(":").map(Number);
@@ -46,7 +49,7 @@ export function ContactForm({
   compact?: boolean;
 }) {
   const [mode, setMode] = useState<"tour" | "question">(allowTour ? "tour" : "question");
-  const [state, action, pending] = useActionState<InquiryState, FormData>(createInquiry, {
+  const [state, action, pending] = useActionState<InquiryState, FormData>(sendInquiry, {
     ok: false,
   });
   const days = useMemo(() => upcomingDays(7), []);
@@ -69,13 +72,14 @@ export function ContactForm({
 
   return (
     <form
-      // The timer token is usually in hand already; the dispatch goes back into a transition.
-      action={async (form) => {
-        const stamped = await stamp(form);
+      // Sent from onSubmit, not <form action>, so React doesn't reset what was typed. The
+      // browser checks the fields first; the timer token is usually in hand already.
+      onSubmit={async (e) => {
+        e.preventDefault();
+        const stamped = await stamp(new FormData(e.currentTarget));
         startTransition(() => action(stamped));
       }}
       className="space-y-4"
-      noValidate
     >
       <input type="hidden" name="source" value={source} />
       <input type="hidden" name="type" value={mode} />
@@ -173,6 +177,8 @@ export function ContactForm({
             autoComplete="name"
             defaultValue={user?.name}
             required
+            minLength={2}
+            maxLength={100}
             aria-invalid={!!state.errors?.name}
           />
         </Field>
@@ -183,6 +189,7 @@ export function ContactForm({
             type="tel"
             autoComplete="tel"
             defaultValue={user?.phone ?? ""}
+            maxLength={40}
           />
         </Field>
       </div>
@@ -194,6 +201,7 @@ export function ContactForm({
           autoComplete="email"
           defaultValue={user?.email}
           required
+          maxLength={200}
           aria-invalid={!!state.errors?.email}
         />
       </Field>
@@ -202,6 +210,7 @@ export function ContactForm({
           id="c-message"
           name="message"
           rows={3}
+          maxLength={4000}
           defaultValue={mode === "question" ? defaultMessage : undefined}
           placeholder={
             mode === "tour" ? "Anything we should know? (optional)" : "What would you like to know?"
