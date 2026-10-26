@@ -1,9 +1,10 @@
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { agents, dataSources, listings, syncRuns } from "@/db/schema";
-import { upsertListings, type PersistSource } from "@/lib/listings/persist";
+import { listingLabel, upsertListings, type PersistSource } from "@/lib/listings/persist";
 import { pruneRemovedWhere, purgeCountQuery, purgeWhere } from "./purge";
 import type { SyncStore } from "./sync-engine";
+import { describeError, writeIsolated } from "./write-errors";
 
 type SourceRow = typeof dataSources.$inferSelect;
 
@@ -105,11 +106,24 @@ export function createSyncStore(source: SourceRow): PostgresSyncStore {
       const agentMap = agentIdsByMlsId;
       return db.transaction(async (tx) => {
         const now = new Date();
-        const results = await upsertListings(
-          tx,
-          persistSource,
+        // Each attempt in a savepoint, so a rejected statement doesn't abort
+        // the page's transaction: a record Postgres rejects is skipped, the
+        // rest of the page is written and the cursor still advances.
+        const { results, failed } = await writeIsolated(
           page.flatMap((item) => (item.ok ? [item.listing] : [])),
-          { agentIdsByMlsId: agentMap, skipUnchanged, now },
+          (batch) =>
+            tx.transaction((sp) =>
+              upsertListings(sp, persistSource, batch, {
+                agentIdsByMlsId: agentMap,
+                skipUnchanged,
+                now,
+              }),
+            ),
+          (n, error) =>
+            console.error(
+              `[mls] ${source.slug}: skipped ${listingLabel(n)}, which couldn't be written: ` +
+                describeError(error),
+            ),
         );
         const written = new Set(results.filter((r) => r.written).map((r) => r.id));
         const untouched = new Set(results.filter((r) => !r.written).map((r) => r.id));
@@ -143,6 +157,7 @@ export function createSyncStore(source: SourceRow): PostgresSyncStore {
           upserted: written.size,
           unchanged: untouched.size,
           removed,
+          failed: failed.length,
           mediaRowsWritten: results.reduce((n, r) => n + r.mediaRowsWritten, 0),
         };
       });

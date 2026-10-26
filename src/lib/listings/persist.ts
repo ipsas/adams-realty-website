@@ -8,6 +8,7 @@ import {
   type DataSourceConfig,
 } from "@/db/schema";
 import type { NormalizedListing, NormalizedMedia, NormalizedOpenHouse } from "@/lib/mls/types";
+import { sanitizeNumeric } from "./sanitize";
 import { listingSlug } from "./slug";
 import { isIdxHidden } from "./visibility";
 
@@ -81,7 +82,7 @@ export async function upsertListings(
   if (!items.length) return [];
   const now = opts.now ?? new Date();
   const byKey = new Map<string, NormalizedListing>();
-  for (const n of items) byKey.set(n.listingKey, n);
+  for (const n of items) byKey.set(n.listingKey, sanitizeListing(n));
   const keys = [...byKey.keys()];
 
   const previousRows = await tx
@@ -177,7 +178,8 @@ export async function upsertListings(
           .insert(listings)
           .values(
             batch.map(({ n, row }) => ({
-              ...row,
+              // Again for derived columns (photoCount). It only nulls: the column set holds.
+              ...sanitizeNumeric(listings, row, listingLabel(n)),
               sourceId: source.id,
               slug: listingSlug({ ...n, sourceSlug: source.slug }),
             })),
@@ -276,6 +278,23 @@ export async function upsertListings(
 }
 
 const listingColumns = getTableColumns(listings);
+
+/** How logs name a listing: its key, and the public MLS number when it has one. */
+export function listingLabel(n: Pick<NormalizedListing, "listingKey" | "mlsNumber">): string {
+  return `listing ${n.listingKey}${n.mlsNumber ? ` (MLS ${n.mlsNumber})` : ""}`;
+}
+
+/**
+ * The listing with values its numeric columns (and its media's) can't hold
+ * nulled, so one bad feed value can't fail the batch (./sanitize.ts).
+ */
+function sanitizeListing(n: NormalizedListing): NormalizedListing {
+  const label = listingLabel(n);
+  return {
+    ...sanitizeNumeric(listings, n, label),
+    media: n.media.map((m) => sanitizeNumeric(listingMedia, m, label)),
+  };
+}
 
 function definedKeys(row: object): string[] {
   return Object.entries(row)

@@ -1,3 +1,4 @@
+import { DrizzleQueryError } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { purgeCountQuery, purgeScope, purgeWhere } from "./purge";
@@ -24,6 +25,7 @@ import type {
   NormalizedListing,
   PurgeScope,
 } from "./types";
+import { describeError, writeIsolated } from "./write-errors";
 
 // The engine against an in-memory store and a fake feed on a fake clock:
 // every page "takes" PAGE_MS, so a 300 s function is simulated instantly.
@@ -33,6 +35,16 @@ const START = Date.parse("2026-09-25T09:00:00Z");
 const SOURCE_ID = "b35e5476-2b15-4c16-908b-020063e6a746";
 /** Postgres rejects a statement with more bind parameters than this. */
 const PG_MAX_PARAMS = 65_535;
+
+/** node-postgres's error for a value too big for an `integer`, wrapped as drizzle does. */
+const outOfRange = (key: string) =>
+  new DrizzleQueryError(
+    'insert into "listings" …',
+    [key],
+    Object.assign(new Error('value "2182094640" is out of range for type integer'), {
+      code: "22003",
+    }),
+  );
 
 let now = START;
 const clock = () => now;
@@ -123,26 +135,41 @@ class MemoryStore implements SyncStore {
           l.removed = true;
           removed++;
         }
-        continue;
       }
-      const n = item.listing;
-      const modified = n.sourceModifiedAt!.getTime();
-      const prev = this.listings.get(n.listingKey);
-      if (skipUnchanged && prev && !prev.removed && prev.modified === modified) {
-        unchanged++;
-        continue;
-      }
-      this.listings.set(n.listingKey, {
-        status: n.status,
-        closeDate: n.closeDate ?? null,
-        modified,
-        removed: false,
-      });
-      upserted++;
     }
+    // Batches through writeIsolated like the Postgres store; a batch holding a
+    // rejected key fails whole, as Postgres fails the multi-row upsert.
+    const { failed } = await writeIsolated(
+      page.flatMap((item) => (item.ok ? [item.listing] : [])),
+      async (batch) => {
+        const bad = batch.find((n) => this.rejectKeys.has(n.listingKey));
+        if (bad) throw outOfRange(bad.listingKey);
+        for (const n of batch) {
+          const modified = n.sourceModifiedAt!.getTime();
+          const prev = this.listings.get(n.listingKey);
+          if (skipUnchanged && prev && !prev.removed && prev.modified === modified) {
+            unchanged++;
+            continue;
+          }
+          this.listings.set(n.listingKey, {
+            status: n.status,
+            closeDate: n.closeDate ?? null,
+            modified,
+            removed: false,
+          });
+          upserted++;
+        }
+        return batch;
+      },
+      (n, error) => this.failures.push(`${n.listingKey}: ${describeError(error)}`),
+    );
     this.cursor = cursor;
-    return { upserted, unchanged, removed, mediaRowsWritten: 0 };
+    return { upserted, unchanged, removed, failed: failed.length, mediaRowsWritten: 0 };
   }
+
+  /** Keys Postgres "rejects" (an out-of-range value), and what was logged for them. */
+  rejectKeys = new Set<string>();
+  failures: string[] = [];
 
   async heartbeat(runId: string, counts: SyncCounts) {
     const run = this.runs.find((r) => r.id === runId)!;
@@ -467,6 +494,43 @@ describe("runSync: time budget and resume", () => {
     // An incremental run skips them.
     const incremental = await runSync(store, provider, { now: clock });
     expect(incremental).toMatchObject({ upserted: 0, unchanged: 400, changed: false });
+  });
+
+  it("skips a record Postgres rejects, writes the rest of its page, and carries on", async () => {
+    // The full sync stopped at 33,165 of ~68k: one record failed its page's upsert every run.
+    const { provider, records } = feed(3);
+    const bad = keyOf(records[250]);
+    store.rejectKeys.add(bad);
+    const result = await runSync(store, provider, { mode: "full", now: clock });
+    expect(result).toMatchObject({ status: "succeeded", fetched: 600, upserted: 599 });
+    expect(result.skipped).toEqual({ write_failed: 1 });
+    expect(store.listings.has(bad)).toBe(false);
+    expect(store.live()).toBe(599);
+    // Logged with its key and the real Postgres error, not "Failed query: …".
+    expect(store.failures).toEqual([
+      `${bad}: value "2182094640" is out of range for type integer (code: 22003)`,
+    ]);
+    // Past the bad page: the cursor is the feed's last record, and the run caught up.
+    expect(store.cursor).toEqual({ modifiedAt: new Date(modifiedOf(records[599])), key: null });
+    expect(store.runs[0]).toMatchObject({ status: "succeeded", error: undefined });
+  });
+
+  it("records the real Postgres error when a page fails for another reason", async () => {
+    const { provider } = feed(1);
+    store.writePage = async () => {
+      throw new DrizzleQueryError(
+        'update "data_sources" …',
+        [],
+        Object.assign(new Error("terminating connection due to administrator command"), {
+          code: "57P01",
+        }),
+      );
+    };
+    await expect(runSync(store, provider, { now: clock })).rejects.toThrow(DrizzleQueryError);
+    expect(store.runs[0]).toMatchObject({
+      status: "failed",
+      error: "terminating connection due to administrator command (code: 57P01)",
+    });
   });
 
   it("records a failure with its message and rethrows", async () => {

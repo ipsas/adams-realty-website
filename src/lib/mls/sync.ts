@@ -6,6 +6,7 @@ import { missingCredentials, ResoWebApiProvider } from "./reso/provider";
 import { runSync, type RunSyncOptions, type SyncResult } from "./sync-engine";
 import { createSyncStore } from "./sync-store";
 import type { ListingProvider } from "./types";
+import { describeError } from "./write-errors";
 
 export type { SyncMode, SyncResult } from "./sync-engine";
 
@@ -46,7 +47,7 @@ export class SyncFailedError extends Error {
     cause: unknown,
     readonly changed: boolean,
   ) {
-    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    super(describeError(cause), { cause });
     this.name = "SyncFailedError";
   }
 }
@@ -142,10 +143,12 @@ export async function syncAllSources(
     try {
       results.push({ source: s.slug, ok: true, result: await syncSource(s.id, opts) });
     } catch (e) {
+      const error = describeError(e);
+      console.error(`[mls] ${s.slug} sync failed: ${error}`);
       results.push({
         source: s.slug,
         ok: false,
-        error: e instanceof Error ? e.message : String(e),
+        error,
         changed: e instanceof SyncFailedError && e.changed,
       });
     }

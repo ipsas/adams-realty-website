@@ -1,5 +1,6 @@
 import { purgeCap, purgeScope, MAX_PURGE_FRACTION, PRUNE_REMOVED_AFTER_DAYS } from "./purge";
 import type { FeedPosition, ListingProvider, MapResult, MapSkipReason, PurgeScope } from "./types";
+import { describeError } from "./write-errors";
 
 /**
  * The sync's control flow — time budget, resume, purge rules — with no
@@ -25,6 +26,8 @@ export type PageOutcome = {
   upserted: number;
   unchanged: number;
   removed: number;
+  /** Records Postgres rejected (logged and skipped; the rest of the page was written). */
+  failed: number;
   /** Rows written to listing_media and open_houses. */
   mediaRowsWritten: number;
 };
@@ -142,7 +145,11 @@ export type SyncResult = SyncCounts & {
    * syncAllSources also reports a source without credentials as skipped (no run recorded).
    */
   status: "succeeded" | "partial" | "skipped";
-  skipped: Partial<Record<MapSkipReason, number>>;
+  /**
+   * Records not written, by reason: the mapper's, or `write_failed` for one
+   * Postgres rejected (logged; the run carries on and the cursor moves past it).
+   */
+  skipped: Partial<Record<MapSkipReason | "write_failed", number>>;
   cursor: Date | null;
   mediaRowsWritten: number;
   /** Removed listings deleted for good after a purge (PRUNE_REMOVED_AFTER_DAYS). */
@@ -349,6 +356,9 @@ export async function runSync(
         counts.upserted += outcome.upserted;
         counts.unchanged += outcome.unchanged;
         counts.removed += outcome.removed;
+        if (outcome.failed) {
+          result.skipped.write_failed = (result.skipped.write_failed ?? 0) + outcome.failed;
+        }
         result.mediaRowsWritten += outcome.mediaRowsWritten;
         await store.heartbeat(runId, counts);
         if (outOfTime()) {
@@ -380,7 +390,7 @@ export async function runSync(
       cursor: cursorDate(),
       caughtUp: false,
       mapperVersion: remapVersion,
-      error: error instanceof Error ? error.message : String(error),
+      error: describeError(error),
     });
     throw error;
   }
