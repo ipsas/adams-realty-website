@@ -88,20 +88,17 @@ export const site = {
      */
     corrections: { email: "contracts.adamsrealty@gmail.com", phone: "(706) 246-0053" },
     /**
-     * The fixed wording of the copyright notice: IDX Agreement Exhibit A §10
-     * ("information is deemed reliable but is not guaranteed") and R&R Art.
-     * III-2 §12 f ("…deemed reliable but is not guaranteed accurate by GAMLS").
-     * `mlsDisclaimer` (src/lib/mls-copyright.ts) adds the current year and the
-     * last-updated time.
+     * The copyright notice (IDX Agreement Exhibit A 10). The 12 f text is
+     * `consumerUseNotice`. `mlsDisclaimer` (src/lib/mls-copyright.ts) adds the
+     * current year and the last-updated time.
      */
-    disclaimer:
-      "All rights reserved. Information is deemed reliable but is not guaranteed accurate by GAMLS",
+    disclaimer: "All rights reserved",
     /**
-     * R&R Art. III-2 §12 f: the consumers' personal, non-commercial use notice,
-     * shown in `mlsDisclaimer` after the copyright notice.
+     * GAMLS R&R Art. III-2 Section 12 f verbatim, shown in `mlsDisclaimer`
+     * after the copyright notice.
      */
     consumerUseNotice:
-      "IDX information is provided exclusively for consumers' personal, non-commercial use and may not be used for any purpose other than to identify prospective properties consumers may be interested in purchasing.",
+      "IDX information is provided exclusively for consumers' personal, non-commercial use, that it may not be used for any purpose other than to identify prospective properties consumers may be interested in purchasing, and that the data is deemed reliable but is not guaranteed accurate by GAMLS.",
   },
   /**
    * What the listings cover: Georgia MLS IDX, statewide. Search headings, the
