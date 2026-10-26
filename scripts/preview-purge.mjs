@@ -41,6 +41,32 @@ async function counts(client) {
   };
 }
 
+/** Reads the Neon ids from an open client, logs them (ids only) and returns checkBranch's verdict. */
+async function branchVerdict(client, label, log) {
+  const projectId = await showSetting(client, "neon.project_id");
+  const branchId = await showSetting(client, "neon.branch_id");
+  const verdict = checkBranch({ projectId, branchId });
+  log(`${label} branch check: project=${projectId} branch=${branchId} -> ${verdict}`);
+  return verdict;
+}
+
+/**
+ * The purge's branch check on its own connection: "ok" only on the Neon
+ * preview branch, "fatal" on the production branch, "refuse" otherwise.
+ * @param {string} connectionString
+ * @param {string} label
+ * @param {(line: string) => void} [log]
+ */
+export async function neonBranchVerdict(connectionString, label, log = console.log) {
+  const client = new pg.Client({ connectionString });
+  await client.connect();
+  try {
+    return await branchVerdict(client, label, log);
+  } finally {
+    await client.end();
+  }
+}
+
 /**
  * @param {string} connectionString
  * @param {(line: string) => void} [log]
@@ -49,10 +75,7 @@ export async function purgePreviewListings(connectionString, log = console.log) 
   const client = new pg.Client({ connectionString });
   await client.connect();
   try {
-    const projectId = await showSetting(client, "neon.project_id");
-    const branchId = await showSetting(client, "neon.branch_id");
-    const verdict = checkBranch({ projectId, branchId });
-    log(`Preview purge branch check: project=${projectId} branch=${branchId} -> ${verdict}`);
+    const verdict = await branchVerdict(client, "Preview purge", log);
     if (verdict === "fatal") {
       throw new Error("Preview purge: connected to the production branch; refusing and failing.");
     }

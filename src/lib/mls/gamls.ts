@@ -27,6 +27,18 @@ function officeFilter(env: Env): string | undefined {
   return id ? `ListOfficeMlsId eq '${id.replaceAll("'", "''")}'` : undefined;
 }
 
+/**
+ * Whether the saved row pointed at a different feed (dataset or filter), so
+ * its sync cursor belongs to that feed and must be reset. False with no row.
+ */
+export function feedChanged(
+  prev: DataSourceConfig | null | undefined,
+  next: DataSourceConfig,
+): boolean {
+  if (!prev) return false;
+  return prev.baseUrl !== next.baseUrl || prev.filter !== next.filter;
+}
+
 export function gamlsSource(
   env: Env = process.env,
 ): typeof dataSources.$inferInsert & { config: DataSourceConfig } {

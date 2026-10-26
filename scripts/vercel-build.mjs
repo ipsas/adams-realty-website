@@ -12,6 +12,8 @@
  * MLS feed (previews only, since Vercel Cron doesn't run there): loaded only
  * when MLS_SYNC_ENABLED is exactly "true" and MLS_GAMLS_TOKEN and
  * MLS_GAMLS_DATASET are set (shouldSyncFeed in src/lib/mls/preview-sync.mjs).
+ * It then runs only on the Neon preview branch (neonBranchVerdict, the purge's
+ * check); on the production branch it fails the build.
  *
  * Preview purge (one-time, right after migrations): when VERCEL_ENV is
  * "preview" and MLS_PREVIEW_PURGE is exactly "true", scripts/preview-purge.mjs
@@ -21,7 +23,7 @@
 import { execSync } from "node:child_process";
 import pg from "pg";
 import { shouldSyncFeed } from "../src/lib/mls/preview-sync.mjs";
-import { purgeDecision, purgePreviewListings } from "./preview-purge.mjs";
+import { neonBranchVerdict, purgeDecision, purgePreviewListings } from "./preview-purge.mjs";
 
 const run = (cmd) => execSync(cmd, { stdio: "inherit" });
 
@@ -58,11 +60,19 @@ if (!process.env.DATABASE_URL) {
   }
   const feed = shouldSyncFeed(process.env);
   if (feed.run) {
-    try {
-      run("npx tsx scripts/add-gamls-source.ts");
-      run("npx tsx scripts/sync.ts --minutes 2");
-    } catch {
-      console.warn("Georgia MLS feed load failed — continuing the build without it.");
+    const verdict = await neonBranchVerdict(process.env.DATABASE_URL, "MLS sync");
+    if (verdict === "fatal") {
+      throw new Error("MLS sync: connected to the production branch; refusing and failing.");
+    }
+    if (verdict === "refuse") {
+      console.log("MLS sync refused: not the Neon preview branch; nothing written.");
+    } else if (verdict === "ok") {
+      try {
+        run("npx tsx scripts/add-gamls-source.ts");
+        run("npx tsx scripts/sync.ts --minutes 2");
+      } catch {
+        console.warn("Georgia MLS feed load failed — continuing the build without it.");
+      }
     }
   } else {
     console.log(`MLS sync skipped: ${feed.reason}.`);
