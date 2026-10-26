@@ -15,6 +15,7 @@ export { mlsCopyright, mlsCopyrightShort } from "@/lib/mls-copyright";
 export function MlsMark({ className, size = "md" }: { className?: string; size?: "md" | "sm" }) {
   const logo = size === "sm" ? (site.mls.logoSmall ?? site.mls.logo) : site.mls.logo;
   if (logo) {
+    const srcSet = mlsLogoSrcSet(logo);
     return (
       <span
         className={cn(
@@ -27,6 +28,7 @@ export function MlsMark({ className, size = "md" }: { className?: string; size?:
         {/* eslint-disable-next-line @next/next/no-img-element -- a small static PNG */}
         <img
           src={logo.src}
+          srcSet={srcSet}
           alt={site.mls.name}
           width={logo.width}
           height={logo.height}
@@ -46,6 +48,16 @@ export function MlsMark({ className, size = "md" }: { className?: string; size?:
       {site.mls.name}
     </span>
   );
+}
+
+/**
+ * High-DPI screens get the 300 × 118 file for the 81 × 32 one (the map popup builds its
+ * logo by hand and uses this too). Undefined for the large file or when either is unset.
+ */
+export function mlsLogoSrcSet(logo: { src: string }): string | undefined {
+  const { logo: large, logoSmall: small } = site.mls;
+  if (!large || !small || logo.src !== small.src) return undefined;
+  return `${small.src} 1x, ${large.src} 2x`;
 }
 
 /**

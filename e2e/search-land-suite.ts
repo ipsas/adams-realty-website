@@ -508,12 +508,17 @@ export function searchLandSuite(test: typeof baseTest, { phone }: { phone: boole
             const box = cell.getBoundingClientRect();
             const inner = box.right - parseFloat(cs.paddingRight) - parseFloat(cs.borderRightWidth);
             const icon = cell.querySelector("svg")!.getBoundingClientRect();
-            // The text itself, line by line (a box can be narrower than what it holds).
-            const lines = [...cell.querySelectorAll("dd, dt")].flatMap((t) => {
-              const range = document.createRange();
-              range.selectNodeContents(t);
-              return [...range.getClientRects()];
-            });
+            // The text itself, line by line (a box can be narrower than what it holds); the
+            // icon sits inside the dt, so only its text nodes count.
+            const lines = [...cell.querySelectorAll("dd, dt")].flatMap((t) =>
+              [...t.childNodes]
+                .filter((n) => n.nodeType === Node.TEXT_NODE)
+                .flatMap((n) => {
+                  const range = document.createRange();
+                  range.selectNodeContents(n);
+                  return [...range.getClientRects()];
+                }),
+            );
             // Each word of the value on one line: a number is never split.
             const dd = cell.querySelector("dd")!;
             const text = dd.firstChild as Text;

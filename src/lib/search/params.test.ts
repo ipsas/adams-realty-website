@@ -13,7 +13,24 @@ import {
   SORT_LABELS,
   SORTS,
   sortLabel,
+  withPageHref,
 } from "./params";
+
+describe("withPageHref", () => {
+  it("sets the page and keeps every other parameter", () => {
+    expect(
+      withPageHref({ q: "Royston", page: "9", view: ["list", "1"], from: "Royston" }, 3),
+    ).toBe("/homes?q=Royston&view=list&view=1&from=Royston&page=3");
+    expect(withPageHref(new URLSearchParams("page=4&sort=newest"), 2)).toBe(
+      "/homes?sort=newest&page=2",
+    );
+  });
+
+  it("drops the parameter for page 1", () => {
+    expect(withPageHref({ page: "2", beds: "3" }, 1)).toBe("/homes?beds=3");
+    expect(withPageHref({ page: "2" }, 1)).toBe("/homes");
+  });
+});
 
 describe("parseSearchParams", () => {
   it("returns defaults for an empty query", () => {

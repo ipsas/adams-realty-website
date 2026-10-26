@@ -20,6 +20,7 @@ import {
   markDrawnStyle,
   swapDrawnStyle,
 } from "./map-setup";
+import { mlsLogoSrcSet } from "@/components/content/mls-attribution";
 import { useMapTheme } from "@/components/theme/use-theme";
 import { readResolvedTheme } from "@/lib/theme";
 import { formatBaths, formatNumber, formatPrice, formatPriceShort } from "@/lib/format";
@@ -367,6 +368,8 @@ function popupNode(p: MapPin): HTMLElement {
     if (logo) {
       const img = document.createElement("img");
       img.src = logo.src;
+      const srcSet = mlsLogoSrcSet(logo);
+      if (srcSet) img.srcset = srcSet;
       img.alt = site.mls.name;
       img.width = logo.width;
       img.height = logo.height;

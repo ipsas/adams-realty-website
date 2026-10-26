@@ -60,7 +60,9 @@ export default async function HomePage() {
           fill
           priority
           placeholder="blur"
-          sizes="100vw"
+          // Covers a box at least 92svh tall: on screens narrower than the 3:2 photo it is
+          // about 1.5× the box height wide, not 100vw.
+          sizes="(max-aspect-ratio: 3/2) 150vh, 100vw"
           className="absolute inset-0 -z-20 object-cover"
           style={{ objectPosition: "60% 60%" }}
         />
@@ -76,7 +78,7 @@ export default async function HomePage() {
           className="absolute inset-0 -z-10 bg-gradient-to-t from-shade/85 via-shade/35 to-shade/40"
           aria-hidden="true"
         />
-        <div className="absolute inset-0 -z-10 bg-black/20 sm:hidden" aria-hidden="true" />
+        <div className="absolute inset-0 -z-10 bg-black/20 lg:hidden" aria-hidden="true" />
         <Container className="pt-36 pb-10 sm:pb-14">
           <p className="mb-5 flex items-center gap-2 text-xs font-semibold tracking-[0.22em] text-white/75 uppercase">
             <span className="h-px w-8 bg-brass-400" />

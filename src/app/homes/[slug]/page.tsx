@@ -562,19 +562,21 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                       value={l.variableCompensation ? "Yes" : "No"}
                     />
                   )}
-                  {l.buyerAgencyCompensation && (
-                    <div className="space-y-2 sm:col-span-2" data-testid="buyer-compensation">
-                      <InfoRow
-                        label="Buyer agency compensation"
-                        value={l.buyerAgencyCompensation}
-                      />
-                      <InfoRow
-                        label="Compensation comments"
-                        value={l.compensationComments ?? "None"}
-                      />
-                    </div>
-                  )}
                 </dl>
+                {/* Its own <dl> (a group div may hold only a dt and a dd), full width under the
+                    grid with the grid's row gap above it. */}
+                {l.buyerAgencyCompensation && (
+                  <dl className="mt-2 space-y-2" data-testid="buyer-compensation">
+                    <InfoRow
+                      label="Buyer agency compensation"
+                      value={l.buyerAgencyCompensation}
+                    />
+                    <InfoRow
+                      label="Compensation comments"
+                      value={l.compensationComments ?? "None"}
+                    />
+                  </dl>
+                )}
                 <p className="mt-4">
                   Source: {source.name}
                   {source.lastSyncedAt
@@ -742,12 +744,14 @@ function StatusPill({ status, transactionType }: { status: string; transactionTy
  */
 function BigFact({ icon, label, value }: { icon: ReactNode; label: string; value: ReactNode }) {
   return (
-    <div className="flex items-center gap-2 bg-surface px-3 py-4 min-[360px]:gap-3 min-[360px]:px-5 [&_svg]:size-5 [&_svg]:shrink-0 [&_svg]:text-brand-600">
-      {icon}
-      <div>
-        <dd className="text-lg font-semibold [overflow-wrap:anywhere] text-ink tabular">{value}</dd>
-        <dt className="text-xs text-muted">{label}</dt>
-      </div>
+    // A valid <dl> group holds only a dt then a dd, so the icon sits in the dt, pinned to the
+    // left padding (px + icon + gap), and flex-col-reverse shows the value above the label.
+    <div className="relative flex flex-col-reverse justify-center bg-surface py-4 pr-3 pl-10 min-[360px]:pr-5 min-[360px]:pl-13 [&_svg]:absolute [&_svg]:top-1/2 [&_svg]:left-3 [&_svg]:size-5 [&_svg]:-translate-y-1/2 [&_svg]:text-brand-600 min-[360px]:[&_svg]:left-5">
+      <dt className="text-xs text-muted">
+        <span aria-hidden="true">{icon}</span>
+        {label}
+      </dt>
+      <dd className="text-lg font-semibold [overflow-wrap:anywhere] text-ink tabular">{value}</dd>
     </div>
   );
 }
@@ -755,8 +759,10 @@ function BigFact({ icon, label, value }: { icon: ReactNode; label: string; value
 function Fact({ icon, label, value }: { icon: ReactNode; label: string; value: ReactNode }) {
   return (
     <div className="flex items-center gap-3 border-b border-line pb-3 [&_svg]:size-[18px] [&_svg]:text-faint">
-      {icon}
-      <dt className="text-sm text-muted">{label}</dt>
+      <dt className="flex items-center gap-3 text-sm text-muted">
+        <span aria-hidden="true">{icon}</span>
+        {label}
+      </dt>
       <dd className="ml-auto text-sm font-medium text-ink">{value}</dd>
     </div>
   );

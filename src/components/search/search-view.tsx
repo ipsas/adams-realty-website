@@ -219,13 +219,14 @@ export function SearchView({
               </div>
               {/* On a phone the row takes the full width and the sort menu shrinks to what's
                   left (its longest label, "Acreage (most first)", would push Save search off
-                  the screen); from sm up it sizes to its label. */}
+                  the screen); from sm up it sizes to its label. pl-3 pr-8 (the arrow still
+                  clears the text) leave room for "Recommended" at 360 px in Firefox. */}
               <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
                 <label className="flex min-w-0 flex-1 items-center gap-2 text-sm text-muted sm:flex-none">
                   Sort
                   <Select
                     aria-label="Sort results"
-                    className="h-9 w-full min-w-0 rounded-full py-0 text-sm sm:w-auto"
+                    className="h-9 w-full min-w-0 rounded-full py-0 pr-8 pl-3 text-sm sm:w-auto"
                     value={criteria.sort}
                     onChange={(e) => update({ sort: e.target.value as SortValue })}
                   >
