@@ -29,7 +29,8 @@ const FACT_COLUMNS: Record<number, string> = {
 };
 
 export async function generateMetadata(props: PageProps<"/agents/[slug]">): Promise<Metadata> {
-  const data = await getAgentBySlug((await props.params).slug);
+  const { slug } = await props.params;
+  const data = await getAgentBySlug(slug);
   if (!data) return { title: "Agent not found" };
   const { name, title, bio } = data.agent;
   return {
@@ -38,6 +39,7 @@ export async function generateMetadata(props: PageProps<"/agents/[slug]">): Prom
     description:
       bioExcerpt(bio) ??
       `${name}, ${title ?? "agent"} at ${site.legalName} in ${site.address.city}, Georgia.`,
+    alternates: { canonical: `/agents/${slug}` },
     openGraph: { images: data.agent.photoUrl ? [{ url: data.agent.photoUrl }] : undefined },
   };
 }

@@ -100,6 +100,19 @@ describe("organizationJsonLd", () => {
     expect("areaServed" in none).toBe(false);
   });
 
+  it("names the broker as an employee", () => {
+    expect(json.employee).toEqual({
+      "@type": "Person",
+      name: "Andrea Anderegg",
+      jobTitle: "Broker",
+    });
+  });
+
+  it("leaves out geo and sameAs", () => {
+    expect("geo" in json).toBe(false);
+    expect("sameAs" in json).toBe(false);
+  });
+
   it("leaves out a blank street line", () => {
     const noStreet = organizationJsonLd(base, { ...site, address: { ...site.address, line1: "" } });
     expect("streetAddress" in noStreet.address).toBe(false);

@@ -39,9 +39,11 @@ import { Container } from "@/components/ui/section";
 import { site } from "@/config/site";
 import type { ListingFeatures } from "@/db/schema";
 import { offersTours } from "@/lib/areas/firm-area";
+import { placeHref } from "@/lib/areas/links";
 import { getActor, getSession } from "@/lib/auth/session";
 import { can } from "@/lib/auth/permissions";
 import { cn } from "@/lib/cn";
+import { env } from "@/lib/env";
 import {
   daysSince,
   formatBaths,
@@ -69,7 +71,6 @@ import {
 import { listingIndexingMode, listingRobots } from "@/lib/listings/indexing";
 import { getListingBySlug, getSimilarListings, type ListingDetail } from "@/lib/listings/queries";
 import { financeFor, listingMonthlyCost, monthlyHoaAmount } from "@/lib/mortgage";
-import { searchHref } from "@/lib/search/params";
 
 export async function generateMetadata(props: PageProps<"/homes/[slug]">): Promise<Metadata> {
   const { slug } = await props.params;
@@ -178,7 +179,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
             <p className="mb-4 rounded-2xl bg-clay-50 px-4 py-3 text-sm text-clay-600">
               This home is no longer on the market.{" "}
               <Link
-                href={searchHref({ q: l.neighborhood ?? l.city })}
+                href={placeHref(l.neighborhood ?? l.city, l.county)}
                 className="font-semibold underline"
               >
                 See similar homes nearby
@@ -200,13 +201,13 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                   Homes
                 </Link>
                 <ChevronRight className="size-3.5" />
-                <Link href={searchHref({ q: l.city })} className="hover:text-ink">
+                <Link href={placeHref(l.city, l.county)} className="hover:text-ink">
                   {l.city}
                 </Link>
                 {l.neighborhood && l.neighborhood !== l.city && (
                   <>
                     <ChevronRight className="size-3.5" />
-                    <Link href={searchHref({ q: l.neighborhood })} className="hover:text-ink">
+                    <Link href={placeHref(l.neighborhood, l.county)} className="hover:text-ink">
                       {l.neighborhood}
                     </Link>
                   </>
@@ -508,7 +509,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                   </div>
                   {l.neighborhood && (
                     <Link
-                      href={searchHref({ q: l.neighborhood })}
+                      href={placeHref(l.neighborhood, l.county)}
                       className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-brand-700 hover:underline"
                     >
                       More homes in {l.neighborhood} <ChevronRight className="size-4" />
@@ -862,7 +863,7 @@ function JsonLd({ data }: { data: ListingDetail }) {
     "@context": "https://schema.org",
     "@type": "RealEstateListing",
     name: formatFullAddress(l),
-    url: `/homes/${l.slug}`,
+    url: `${env.NEXT_PUBLIC_SITE_URL.replace(/\/+$/, "")}/homes/${l.slug}`,
     datePosted: l.listDate ?? undefined,
     description: l.description ?? undefined,
     image: data.media

@@ -8,6 +8,7 @@ import { site } from "@/config/site";
 export const metadata: Metadata = {
   title: `Sell your home near ${site.market.focus.city}`,
   description: `Selling a home, land, farm or lake property around ${site.market.focus.city}? Start with a free, no-obligation valuation from a local ${site.name} agent.`,
+  alternates: { canonical: "/sell" },
 };
 
 const IMAGE =
