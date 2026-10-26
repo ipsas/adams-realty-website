@@ -2,12 +2,14 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { cache } from "react";
 import { db } from "@/db";
 import { agents, listings } from "@/db/schema";
+import { displayAgentEmail } from "@/lib/agents/display-email";
 import { publicListing } from "@/lib/listings/visibility";
 
 export async function getAgents() {
-  return db
+  const rows = await db
     .select({
       id: agents.id,
+      mlsAgentId: agents.mlsAgentId,
       slug: agents.slug,
       name: agents.name,
       title: agents.title,
@@ -27,6 +29,7 @@ export async function getAgents() {
     .from(agents)
     .where(eq(agents.isActive, true))
     .orderBy(asc(agents.sortOrder), asc(agents.name));
+  return rows.map((a) => ({ ...a, email: displayAgentEmail(a) }));
 }
 
 export const getAgentBySlug = cache(async (slug: string) => {
@@ -36,6 +39,8 @@ export const getAgentBySlug = cache(async (slug: string) => {
     .where(and(eq(agents.slug, slug), eq(agents.isActive, true)))
     .limit(1);
   if (!agent) return null;
+  // The page and its JSON-LD show the firm's fixed email for this agent, if any.
+  agent.email = displayAgentEmail(agent);
   const [stats] = await db
     .select({
       active: sql<number>`count(*) filter (where ${listings.status} in ('active','coming_soon'))::int`,

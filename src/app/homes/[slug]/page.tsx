@@ -39,6 +39,7 @@ import { Container } from "@/components/ui/section";
 import { site } from "@/config/site";
 import { db } from "@/db";
 import type { ListingFeatures } from "@/db/schema";
+import { displayAttributionEmail } from "@/lib/agents/display-email";
 import { offersTours } from "@/lib/areas/firm-area";
 import { placeHref } from "@/lib/areas/links";
 import { getActor, getSession } from "@/lib/auth/session";
@@ -123,6 +124,10 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
     gamlsLastSyncedAt(db),
   ]);
 
+  const attributionEmail = displayAttributionEmail({
+    ...l,
+    listAgentMlsId: agent?.mlsAgentId,
+  });
   const disclaimer = sourceDisclaimer(source);
   // IDX: a page with Georgia MLS listings (this one or a similar home) shows its disclaimer.
   const footerDisclaimer =
@@ -553,9 +558,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                   {l.attributionPhone && (
                     <InfoRow label="Contact phone" value={l.attributionPhone} />
                   )}
-                  {l.attributionEmail && (
-                    <InfoRow label="Contact email" value={l.attributionEmail} />
-                  )}
+                  {attributionEmail && <InfoRow label="Contact email" value={attributionEmail} />}
                   {l.variableCompensation !== null && (
                     <InfoRow
                       label="Variable compensation"

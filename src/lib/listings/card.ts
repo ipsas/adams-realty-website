@@ -1,6 +1,7 @@
 import { inArray, lt, sql } from "drizzle-orm";
 import type { Executor } from "@/db";
 import { listingMedia, listings, openHouses } from "@/db/schema";
+import { displayAttributionEmail } from "@/lib/agents/display-email";
 import { allowedPhotos } from "./visibility";
 
 /**
@@ -40,6 +41,11 @@ export const cardColumns = {
   // IDX: the listing's own attribution contact, shown after the listing firm.
   attributionPhone: listings.attributionPhone,
   attributionEmail: listings.attributionEmail,
+  // For the firm's fixed agent emails (displayAttributionEmail), by row id or MLS agent ID.
+  listAgentId: listings.listAgentId,
+  listAgentMlsId: sql<string | null>`(
+    select a.mls_agent_id from agents a where a.id = "listings"."list_agent_id"
+  )`,
   // For the all-in monthly estimate (quickMonthlyCost) on cards and rows.
   taxAnnualAmount: listings.taxAnnualAmount,
   hoaFee: listings.hoaFee,
@@ -94,6 +100,7 @@ export async function withPhotos(db: Executor, rows: CardRow[]): Promise<Listing
   }
   return rows.map((r) => ({
     ...r,
+    attributionEmail: displayAttributionEmail(r),
     photos: allowedPhotos(r, byListing.get(r.id) ?? (r.primaryPhotoUrl ? [r.primaryPhotoUrl] : [])),
   }));
 }

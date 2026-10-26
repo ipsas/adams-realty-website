@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { site } from "@/config/site";
 import type { Executor } from "@/db";
 import { agents, inquiries, listings, users } from "@/db/schema";
+import { displayAgentEmail } from "@/lib/agents/display-email";
 import { toEmailListing } from "@/lib/alerts/present";
 import type { Email } from "@/lib/email";
 import { leadNotificationEmail } from "@/lib/email-templates";
@@ -221,6 +222,7 @@ export async function sendLeadAssignedEmail(
   if (!row || row.lead.agentId !== input.agentId) return null;
   if (row.agent.userId && row.agent.userId === input.assignedBy.userId) return null;
   const { lead, listing, agent } = row;
+  const to = displayAgentEmail(agent);
   const email = leadNotificationEmail({
     ...leadEmailInput({
       id: lead.id,
@@ -242,7 +244,7 @@ export async function sendLeadAssignedEmail(
   const ok = await trySend(
     deps.send,
     {
-      to: agent.email,
+      to,
       replyTo: lead.email,
       subject: email.subject,
       text: email.text,
@@ -251,5 +253,5 @@ export async function sendLeadAssignedEmail(
     },
     "lead assignment email",
   );
-  return ok ? agent.email : null;
+  return ok ? to : null;
 }

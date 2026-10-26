@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { site } from "@/config/site";
 import { db as defaultDb, type Executor } from "@/db";
 import { agents, leadDigests, users } from "@/db/schema";
+import { displayAgentEmail } from "@/lib/agents/display-email";
 import { localClock, SEND_HOUR } from "@/lib/alerts/schedule";
 import { sendEmail, type Email } from "@/lib/email";
 import { leadDigestEmail, type DigestLead, type DigestSection } from "@/lib/email-templates";
@@ -82,7 +83,12 @@ export async function digestRecipients(db: Executor): Promise<Recipient[]> {
       .where(and(eq(users.role, "admin"), eq(users.leadDigest, true)))
       .orderBy(users.name),
     db
-      .select({ agentId: agents.id, name: agents.name, email: agents.email })
+      .select({
+        agentId: agents.id,
+        mlsAgentId: agents.mlsAgentId,
+        name: agents.name,
+        email: agents.email,
+      })
       .from(agents)
       .innerJoin(users, eq(users.id, agents.userId))
       .where(and(eq(users.role, "agent"), eq(users.leadDigest, true)))
@@ -97,7 +103,7 @@ export async function digestRecipients(db: Executor): Promise<Recipient[]> {
     })),
     ...agentLogins.map((a) => ({
       key: `agent:${a.agentId}`,
-      email: a.email,
+      email: displayAgentEmail({ ...a, id: a.agentId }),
       firstName: firstName(a.name),
       scope: { kind: "agent", agentId: a.agentId } as const,
     })),

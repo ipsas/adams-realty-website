@@ -2,6 +2,7 @@ import { count, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { site } from "@/config/site";
 import { listings } from "@/db/schema";
+import { displayAttributionEmail } from "@/lib/agents/display-email";
 import { formatStreet } from "@/lib/format";
 import { selectCards, withPhotos, type ListingCardData } from "@/lib/listings/card";
 import { PAGE_SIZE, type SearchCriteria } from "./params";
@@ -129,6 +130,10 @@ export async function searchMapPins(c: SearchCriteria, scope?: LocationScope): P
       office: listings.listOfficeName,
       attributionPhone: listings.attributionPhone,
       attributionEmail: listings.attributionEmail,
+      listAgentId: listings.listAgentId,
+      listAgentMlsId: sql<string | null>`(
+        select a.mls_agent_id from agents a where a.id = "listings"."list_agent_id"
+      )`,
       company: listings.isCompanyListing,
       fromFeed: listings.fromFeed,
     })
@@ -183,6 +188,8 @@ type PinRow = {
   office: string | null;
   attributionPhone: string | null;
   attributionEmail: string | null;
+  listAgentId: string | null;
+  listAgentMlsId: string | null;
   company: boolean;
   fromFeed: boolean;
 };
@@ -225,6 +232,8 @@ export async function locationPins(
       "listings"."list_office_name" as "office", "listings"."is_company_listing" as "company",
       "listings"."attribution_phone" as "attributionPhone",
       "listings"."attribution_email" as "attributionEmail",
+      "listings"."list_agent_id" as "listAgentId",
+      (select a.mls_agent_id from agents a where a.id = "listings"."list_agent_id") as "listAgentMlsId",
       "listings"."from_feed" as "fromFeed"
     from top join ${listings} on "listings"."id" = top."id"
     order by ${order}
@@ -232,7 +241,8 @@ export async function locationPins(
   return toPins(rows);
 }
 
-function toPins(rows: PinRow[]): MapPin[] {
+/** Exported for tests. */
+export function toPins(rows: PinRow[]): MapPin[] {
   return rows
     .filter((r) => r.lat !== null && r.lng !== null)
     .map((r) => ({
@@ -253,7 +263,7 @@ function toPins(rows: PinRow[]): MapPin[] {
       featured: r.featured,
       office: r.office ?? (r.company ? site.legalName : null),
       attributionPhone: r.attributionPhone,
-      attributionEmail: r.attributionEmail,
+      attributionEmail: displayAttributionEmail(r),
       fromFeed: r.fromFeed,
     }));
 }

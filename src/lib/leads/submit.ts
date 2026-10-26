@@ -3,6 +3,7 @@ import { z } from "zod";
 import { site } from "@/config/site";
 import type { Executor } from "@/db";
 import { agents, inquiries, listings } from "@/db/schema";
+import { displayAgentEmail } from "@/lib/agents/display-email";
 import { offersTours } from "@/lib/areas/firm-area";
 import type { Email } from "@/lib/email";
 import { countLeadToken, hitFormLimits, isKnownCustomer, retryPhrase } from "@/lib/form-guard";
@@ -225,7 +226,7 @@ export async function submitInquiry(
           agentName: agent?.name ?? null,
           siteUrl: deps.siteUrl,
         }),
-        to: report ? site.mls.corrections.email : (agent?.email ?? deps.inbox),
+        to: report ? site.mls.corrections.email : agent ? displayAgentEmail(agent) : deps.inbox,
         replyTo: d.email,
         agentUserId: agent?.userId ?? null,
         copies: !report,
