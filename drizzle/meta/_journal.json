@@ -134,6 +134,13 @@
       "when": 1793072200000,
       "tag": "0018_own_closed_window",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793080255802,
+      "tag": "0019_expire_logged_reset_tokens",
+      "breakpoints": true
     }
   ]
 }
