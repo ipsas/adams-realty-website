@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { site } from "@/config/site";
+import { toEmailListing, type AlertListing } from "@/lib/alerts/present";
 import { cardColumns, type CardRow } from "./card";
 import { listingOfficeLabel } from "./office-label";
+import { trafficOfficeLabel, type ListingViewRow } from "./views";
 
 const firm = { legalName: "Adams Realty, Inc." };
 
@@ -58,13 +61,13 @@ describe("listingOfficeLabel", () => {
     ).toBe("Peachtree Partners");
   });
 
-  it("prefers the looked-up name to the firm's legal name", () => {
+  it("prefers the firm's legal name to the looked-up name for its own listing", () => {
     expect(
       listingOfficeLabel(
         { officeLookupName: "Adams Realty Inc", listOfficeMlsId: "ADAM01", isCompanyListing: true },
         firm,
       ),
-    ).toBe("Adams Realty Inc");
+    ).toBe("Adams Realty, Inc.");
   });
 
   it("falls back to the MLS office ID when the lookup found nothing", () => {
@@ -101,5 +104,62 @@ describe("listingOfficeLabel", () => {
       { isCompanyListing: true },
     ];
     for (const c of cases) expect(listingOfficeLabel(c, firm)).not.toMatch(/not provided/i);
+  });
+});
+
+describe("own office (ADAM01) shows the legal name on every surface", () => {
+  const own = {
+    listOfficeName: null,
+    officeLookupName: "Adams Realty Inc",
+    listOfficeMlsId: "ADAM01",
+    isCompanyListing: true,
+  };
+
+  it("card", () => {
+    const card: Pick<
+      CardRow,
+      "listOfficeName" | "officeLookupName" | "listOfficeMlsId" | "isCompanyListing"
+    > = own;
+    expect(listingOfficeLabel(card, firm)).toBe("Adams Realty, Inc.");
+  });
+
+  it("pin", () => {
+    // The mapping in src/lib/search/service.ts.
+    const r = {
+      office: null,
+      listOfficeMlsId: "ADAM01",
+      officeLookupName: "Adams Realty Inc",
+      company: true,
+    };
+    expect(
+      listingOfficeLabel(
+        {
+          listOfficeName: r.office,
+          listOfficeMlsId: r.listOfficeMlsId,
+          officeLookupName: r.officeLookupName,
+          isCompanyListing: r.company,
+        },
+        site,
+      ),
+    ).toBe("Adams Realty, Inc.");
+  });
+
+  it("email", () => {
+    const l = { ...own, slug: "x", status: "active", listPrice: 1 } as unknown as AlertListing;
+    expect(toEmailListing(l).attribution).toBe("Listed by Adams Realty, Inc.");
+  });
+
+  it("export", () => {
+    const r: ListingViewRow = {
+      ...own,
+      listingId: "1",
+      mlsNumber: "123",
+      slug: "x",
+      address: "1 Main St",
+      city: "Royston",
+      fromFeed: true,
+      views: 1,
+    };
+    expect(trafficOfficeLabel(r)).toBe("Adams Realty, Inc.");
   });
 });
