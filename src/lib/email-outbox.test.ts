@@ -3,6 +3,7 @@ import type { Executor } from "@/db";
 import type { Email } from "@/lib/email";
 import { captureConsole } from "@/test/console";
 import {
+  isOutboxKind,
   OUTBOX_MIN_TIME_MS,
   outboxIdempotencyKey,
   outboxStatus,
@@ -18,12 +19,19 @@ const email: Email = {
   html: "<p>Jordan asked about 12 Oak Street.</p>",
 };
 
-/** A db whose every query chain resolves to the one claimed row `ROW`. */
-function fakeDb(): Executor {
-  const row = { id: ROW, kind: "lead-notice", attempts: 1, state: "pending" };
+/**
+ * A db whose every query chain resolves to the one claimed row `ROW`, of
+ * `kind`; each `.set(...)` value is pushed to `sets`.
+ */
+function fakeDb(kind = "lead-notice", sets: unknown[] = []): Executor {
+  const row = { id: ROW, kind, attempts: 1, state: "pending" };
   const chain: object = new Proxy(() => {}, {
     get: (_t, prop) =>
-      prop === "then" ? (resolve: (v: unknown) => void) => resolve([row]) : () => chain,
+      prop === "then"
+        ? (resolve: (v: unknown) => void) => resolve([row])
+        : prop === "set"
+          ? (v: unknown) => (sets.push(v), chain)
+          : () => chain,
     apply: () => chain,
   });
   return chain as Executor;
@@ -49,6 +57,34 @@ describe("processEmailOutbox's key", () => {
       });
     }
     expect(keys).toEqual([`outbox/${ROW}`, `outbox/${ROW}`]);
+  });
+});
+
+describe("processEmailOutbox with a kind it doesn't know", () => {
+  it("rebuilds and sends nothing, and marks the row dead", async () => {
+    const { output } = captureConsole();
+    const sets: unknown[] = [];
+    const send = vi.fn();
+    const rebuild = vi.fn(async () => email);
+    const run = await processEmailOutbox({ db: fakeDb("lead-mystery", sets), send, rebuild });
+    expect(run).toEqual({ sent: 0, retry: 0, dead: 1, gone: 0 });
+    expect(rebuild).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(sets).toContainEqual(
+      expect.objectContaining({ state: "dead", lastStatus: "unknown_kind" }),
+    );
+    expect(output()).toContain(
+      `[email-outbox] kind=lead-mystery id=${ROW} status=dead last=unknown_kind`,
+    );
+  });
+});
+
+describe("isOutboxKind", () => {
+  it("knows the three notice kinds only", () => {
+    for (const kind of ["lead-notice", "lead-copy", "lead-assignment"])
+      expect(isOutboxKind(kind)).toBe(true);
+    for (const kind of ["lead-mystery", "", "toString", "__proto__"])
+      expect(isOutboxKind(kind)).toBe(false);
   });
 });
 

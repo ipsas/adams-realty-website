@@ -16,11 +16,24 @@ import { describeError } from "@/lib/mls/write-errors";
  * is gone is deleted. A 409 for a same-key request still in progress is
  * retried like any failure (but never marks the row dead); a 409 for a key
  * already used with another payload marks it dead at once (see
- * `outboxIdempotencyKey`).
+ * `outboxIdempotencyKey`). A row of a kind this code doesn't know is marked
+ * dead unsent.
  */
 
 export type OutboxRow = typeof emailOutbox.$inferSelect;
 export type OutboxItem = Pick<OutboxRow, "kind" | "entityId" | "recipientRole" | "recipientId">;
+
+/** Every kind the outbox sends: a Record, so a kind added to the column must be added here. */
+const OUTBOX_KINDS: Record<OutboxRow["kind"], true> = {
+  "lead-notice": true,
+  "lead-copy": true,
+  "lead-assignment": true,
+};
+
+/** False for a row written with a kind this code doesn't know (the column is plain text). */
+export function isOutboxKind(kind: string): kind is OutboxRow["kind"] {
+  return Object.hasOwn(OUTBOX_KINDS, kind);
+}
 
 /** Tries in all (the in-request one first) before a notice is marked dead. */
 export const OUTBOX_MAX_ATTEMPTS = 6;
@@ -186,6 +199,16 @@ export async function processEmailOutbox(deps: OutboxDeps): Promise<OutboxRun> {
     }
     const tag = `[email-outbox] kind=${row.kind} id=${row.id}`;
     try {
+      // Never rebuilt as some other notice: kept dead, for a look, until pruned.
+      if (!isOutboxKind(row.kind)) {
+        await db
+          .update(emailOutbox)
+          .set({ state: "dead", lastStatus: "unknown_kind", updatedAt: sql`now()` })
+          .where(eq(emailOutbox.id, row.id));
+        console.error(`${tag} status=dead last=unknown_kind`);
+        run.dead++;
+        continue;
+      }
       const email = await deps.rebuild(row);
       if (!email) {
         await db.delete(emailOutbox).where(eq(emailOutbox.id, row.id));

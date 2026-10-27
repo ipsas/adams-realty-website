@@ -4,7 +4,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { db, schema } from "@/db";
-import { agents, emailOutbox, inquiries } from "@/db/schema";
+import { agents, auditLogs, emailOutbox, inquiries, users } from "@/db/schema";
 import type { Email, SendResult } from "@/lib/email";
 import { retryLeadEmails } from "@/lib/leads/outbox";
 import { captureConsole } from "@/test/console";
@@ -246,6 +246,106 @@ describe("processEmailOutbox", () => {
     });
     expect(sent[0].text).toContain(`${SITE}/dashboard/leads/${leadId}`);
     expect(await rows()).toEqual([]);
+  });
+
+  it("names the admin of the latest assignment in a rebuilt assignment notice", async () => {
+    captureConsole();
+    const [agent] = await db.select().from(agents);
+    await db.insert(users).values([
+      { id: "sam", name: "Sam Staff", email: "sam@adams.example", role: "admin" },
+      { id: "andrea", name: "Andrea Anderegg", email: "andrea@adams.example", role: "admin" },
+    ]);
+    const assign = (actorId: string, agentId: string, minutesAgo: number) => ({
+      actorId,
+      action: "inquiry.assign",
+      entityType: "inquiry",
+      entityId: leadId,
+      changes: { agentId },
+      createdAt: sql`now() - ${minutesAgo}::integer * interval '1 minute'`,
+    });
+    await db
+      .insert(auditLogs)
+      .values([
+        assign("sam", agent.id, 30),
+        assign("andrea", agent.id, 10),
+        assign("sam", randomUUID(), 5),
+      ]);
+    await enqueueEmail(db, {
+      kind: "lead-assignment",
+      entityId: leadId,
+      recipientRole: "agent",
+      recipientId: agent.id,
+      lastStatus: "http_503",
+    });
+    await due();
+    const sent: Email[] = [];
+    const run = await retryLeadEmails({
+      send: async (e) => (sent.push(e), { ok: true }),
+      siteUrl: SITE,
+      inbox: "office@adams.example",
+    });
+    expect(run).toEqual({ sent: 1, retry: 0, dead: 0, gone: 0 });
+    expect(sent[0]).toMatchObject({ kind: "lead-assignment", to: "pat@adams.example" });
+    expect(sent[0].text).toContain("Andrea Anderegg assigned this lead to you.");
+  });
+
+  it("falls back to 'Your broker' when the assigning admin is gone", async () => {
+    captureConsole();
+    const [agent] = await db.select().from(agents);
+    await db
+      .insert(users)
+      .values({
+        id: "andrea",
+        name: "Andrea Anderegg",
+        email: "andrea@adams.example",
+        role: "admin",
+      });
+    await db.insert(auditLogs).values({
+      actorId: "andrea",
+      action: "inquiry.assign",
+      entityType: "inquiry",
+      entityId: leadId,
+      changes: { agentId: agent.id },
+    });
+    // The audit row stays, its actor set null.
+    await db.delete(users).where(eq(users.id, "andrea"));
+    await enqueueEmail(db, {
+      kind: "lead-assignment",
+      entityId: leadId,
+      recipientRole: "agent",
+      recipientId: agent.id,
+      lastStatus: "http_503",
+    });
+    await due();
+    const sent: Email[] = [];
+    await retryLeadEmails({
+      send: async (e) => (sent.push(e), { ok: true }),
+      siteUrl: SITE,
+      inbox: "office@adams.example",
+    });
+    expect(sent).toHaveLength(1);
+    expect(sent[0].text).toContain("Your broker assigned this lead to you.");
+  });
+
+  it("marks a row of a kind it doesn't know dead, sending nothing", async () => {
+    const { output } = captureConsole();
+    await db.insert(emailOutbox).values({
+      ...office(leadId),
+      kind: "lead-mystery" as OutboxItem["kind"],
+      lastStatus: "http_503",
+    });
+    await due();
+    const send = vi.fn(async () => ({ ok: true as const }));
+    const run = await retryLeadEmails({ send, siteUrl: SITE, inbox: "office@adams.example" });
+    expect(run).toEqual({ sent: 0, retry: 0, dead: 1, gone: 0 });
+    expect(send).not.toHaveBeenCalled();
+    const [row] = await rows();
+    expect(row).toMatchObject({ state: "dead", lastStatus: "unknown_kind", attempts: 1 });
+    expect(output()).toContain(
+      `[email-outbox] kind=lead-mystery id=${row.id} status=dead last=unknown_kind`,
+    );
+    await due();
+    expect(await claimDueEmails(db, 10)).toEqual([]);
   });
 
   it("deletes the row, sending nothing, when the lead is gone or no longer the agent's", async () => {
