@@ -334,10 +334,10 @@ export function createSyncStore(source: SourceRow): PostgresSyncStore {
         await db
           .update(dataSources)
           // Caught up: the next run starts afresh, with the lookback. A sync
-          // that didn't fail ends the rejection streak (a purge reads no page).
+          // that didn't fail ends the rejection streak once it got past its page.
           .set({
             lastSyncedAt: now,
-            ...(run?.mode !== "purge"
+            ...(outcome.pastStreak && run?.mode !== "purge"
               ? { rejectStreak: 0, rejectStreakCursor: null, rejectStreakCursorKey: null }
               : {}),
             ...(outcome.caughtUp ? { syncCursorKey: null } : {}),

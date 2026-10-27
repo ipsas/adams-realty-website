@@ -64,7 +64,7 @@ export type SyncCursor = FeedPosition;
  * Runs in a row that failed with PageRejectedError, or then with
  * QuarantineRefusedError, on the page starting at `at` (the saved cursor then;
  * null: the feed's start). A failure at another position starts a new streak;
- * a run that doesn't fail ends it. Other errors (a lost connection, a timeout)
+ * a run that doesn't fail ends it once it got past `at` (pastStreak). Other errors (a lost connection, a timeout)
  * neither count nor end it. Runs 1–QUARANTINE_AFTER_FAILURES are rejections;
  * each later one is a refusal (refusalNumber), escalated at
  * QUARANTINE_ESCALATE_AT_REFUSAL. Kept in `data_sources.reject_streak*`.
@@ -75,6 +75,20 @@ const samePosition = (a: SyncCursor | null, b: SyncCursor | null) =>
   a === null || b === null
     ? a === b
     : a.modifiedAt.getTime() === b.modifiedAt.getTime() && a.key === b.key;
+
+/**
+ * `a` is strictly after `b` in the feed's (ModificationTimestamp, ListingKey)
+ * order. A null key (a caught-up cursor) is the end of its timestamp; a null
+ * position is the feed's start.
+ */
+const isAfter = (a: SyncCursor | null, b: SyncCursor | null): boolean => {
+  if (a === null) return false;
+  if (b === null) return true;
+  const dt = a.modifiedAt.getTime() - b.modifiedAt.getTime();
+  if (dt !== 0) return dt > 0;
+  if (b.key === null) return false;
+  return a.key === null || a.key > b.key;
+};
 
 /** Which refusal (1…QUARANTINE_ESCALATE_AT_REFUSAL) a quarantine run at `streak` would be. */
 export const refusalNumber = (streak: RejectionStreak) =>
@@ -129,6 +143,13 @@ export type RunOutcome = {
    * after the cursor's record.
    */
   caughtUp: boolean;
+  /**
+   * The run got past the RejectionStreak's page: it caught up, wrote (or
+   * quarantined) the page at the streak's cursor, or its cursor moved beyond
+   * it. Only then does a run that didn't fail end the streak; a run stopped by
+   * its time budget before reaching that page keeps it.
+   */
+  pastStreak: boolean;
   /**
    * The provider's mapper version, when this run rewrote every record it read
    * (a remap, or a full run). Caught up: it becomes the source's stored version.
@@ -212,7 +233,7 @@ export interface SyncStore {
   pruneRemoved(before: Date): Promise<number>;
   /**
    * Records the outcome; a run that didn't fail also stamps the source's last
-   * sync (and, unless a purge, ends the RejectionStreak), and one that caught
+   * sync (and, with `outcome.pastStreak`, ends the RejectionStreak), and one that caught
    * up clears the cursor's key. With
    * `outcome.mapperVersion`, saves it as done (caught up) or as underway.
    */
@@ -442,6 +463,8 @@ export async function runSync(
   // saved cursor is this run's (so a later run may resume the remap from it).
   let remapVersion: number | undefined;
   let quarantineNote: string | undefined;
+  // See RunOutcome.pastStreak.
+  let passed = false;
   const activeRunId = runId;
   const sendAlert = async (alert: SyncAlert) => {
     if (!opts.alert) return;
@@ -566,6 +589,7 @@ export async function runSync(
       }
       // A page that failed runs in a row starts at the cursor they left: this run's first.
       const streak = await store.rejectionStreak();
+      passed = streak === null;
       // A full run exists to repair stored rows, so it rewrites every one,
       // and retries quarantined ones (as does a remap).
       const skipUnchanged = mode !== "full" && !remap;
@@ -630,6 +654,7 @@ export async function runSync(
             quarantineNote += ` (refusal ${escalated} at this cursor escalated: quarantined regardless of the per-run cap)`;
           }
         }
+        if (streak && (samePosition(streak.at, cursor) || isAfter(next, streak.at))) passed = true;
         cursor = next;
         storedCursor = next;
         if (remap) remapVersion = version;
@@ -653,6 +678,8 @@ export async function runSync(
       counts,
       cursor: cursorDate(),
       caughtUp: mode !== "purge" && status === "succeeded",
+      // A purge reads no page: it neither counts towards nor ends a streak.
+      pastStreak: mode !== "purge" && (passed || status === "succeeded"),
       mapperVersion: remapVersion,
       error: quarantineNote,
     });
@@ -678,6 +705,7 @@ export async function runSync(
       counts,
       cursor: cursorDate(),
       caughtUp: false,
+      pastStreak: false,
       mapperVersion: remapVersion,
       error: describeError(error),
     });

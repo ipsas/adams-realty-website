@@ -330,7 +330,7 @@ class MemoryStore implements SyncStore {
       this.cursor = { ...this.cursor, key: null };
     }
     const mode = this.runs.find((r) => r.id === runId)!.mode;
-    if (outcome.status !== "failed" && mode !== "purge") this.streak = null;
+    if (outcome.status !== "failed" && outcome.pastStreak && mode !== "purge") this.streak = null;
     if (outcome.mapperVersion !== undefined) {
       this.versions =
         outcome.status !== "failed" && outcome.caughtUp
@@ -874,6 +874,44 @@ describe("runSync: quarantine after repeated page rejections", () => {
 
     store.rejectKeys.clear();
     expect(await runSync(store, provider, { now: clock })).toMatchObject({ status: "succeeded" });
+    expect(store.streak).toBeNull();
+  });
+
+  /** A deadline that lets the run write `pages` pages of PAGE_MS each, then stops it. */
+  const after = (pages: number) => now + pages * PAGE_MS + PAGE_MS * 1.5 - 1;
+
+  it("a full run stopped by its time budget before the stuck cursor keeps the streak; one past it ends it", async () => {
+    const { provider, records } = feed(3);
+    store.rejectKeys = new Set(records.slice(200, 301).map(keyOf));
+    const page1End = positionAfter(records[199]);
+    for (let run = 0; run < 2; run++) {
+      await expect(runSync(store, provider, { now: clock })).rejects.toThrow(PageRejectedError);
+    }
+    expect(store.streak).toEqual({ at: page1End, failures: 2 });
+
+    // From the feed's start, stopped on reaching the stuck cursor: not past it.
+    const short = await runSync(store, provider, { mode: "full", deadline: after(1), now: clock });
+    expect(short).toMatchObject({ status: "partial", upserted: 200 });
+    expect(store.streak).toEqual({ at: page1End, failures: 2 });
+
+    // The rows are fixed; a full run that gets beyond the cursor ends the streak.
+    store.rejectKeys.clear();
+    const past = await runSync(store, provider, { mode: "full", deadline: after(2), now: clock });
+    expect(past).toMatchObject({ status: "partial", upserted: 400 });
+    expect(store.cursor).toEqual(positionAfter(records[399]));
+    expect(store.streak).toBeNull();
+  });
+
+  it("a partial incremental run that writes the stuck page ends the streak", async () => {
+    const { provider, records } = feed(3);
+    store.rejectKeys = new Set(records.slice(200, 301).map(keyOf));
+    for (let run = 0; run < 2; run++) {
+      await expect(runSync(store, provider, { now: clock })).rejects.toThrow(PageRejectedError);
+    }
+    store.rejectKeys.clear();
+    const result = await runSync(store, provider, { deadline: after(1), now: clock });
+    expect(result).toMatchObject({ status: "partial", upserted: 200 });
+    expect(store.cursor).toEqual(positionAfter(records[399]));
     expect(store.streak).toBeNull();
   });
 
