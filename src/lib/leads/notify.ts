@@ -4,7 +4,8 @@ import type { Executor } from "@/db";
 import { agents, inquiries, listings, users } from "@/db/schema";
 import { displayAgentEmail } from "@/lib/agents/display-email";
 import { toEmailListing } from "@/lib/alerts/present";
-import type { Email, SendEmail } from "@/lib/email";
+import type { Email, SendEmail, SendResult } from "@/lib/email";
+import { enqueueEmail, outboxStatus, type OutboxItem } from "@/lib/email-outbox";
 import { leadNotificationEmail } from "@/lib/email-templates";
 import { formatCityLine, formatFullAddress, formatStreet } from "@/lib/format";
 import { describeError } from "@/lib/mls/write-errors";
@@ -24,7 +25,10 @@ import { describeError } from "@/lib/mls/write-errors";
  * Every email's button opens the lead itself (/dashboard/leads/<id>), where
  * the Call and Text buttons are. Sending is the caller's `send`; server
  * actions run it after the response with `after()` (./deliver.ts) so a
- * serverless function isn't stopped mid-send.
+ * serverless function isn't stopped mid-send, and pass `sendTransactional`,
+ * which retries in the request. A notice that still fails (other than for a
+ * missing Resend key) is queued in `email_outbox` by reference only, and the
+ * sync cron rebuilds and retries it (./outbox.ts).
  */
 
 export type LeadMailDeps = {
@@ -32,6 +36,8 @@ export type LeadMailDeps = {
   send: SendEmail;
   /** Absolute origin for links, e.g. https://adamsrealtyga.com. */
   siteUrl: string;
+  /** Queues a failed notice for the cron. Default: `enqueueEmail` on `db`. */
+  enqueue?: (item: OutboxItem & { lastStatus: string }) => Promise<void>;
 };
 
 export const leadPageUrl = (siteUrl: string, id: string) => `${siteUrl}/dashboard/leads/${id}`;
@@ -124,14 +130,27 @@ const norm = (email: string) => email.trim().toLowerCase();
 /**
  * Sends one email; false when it didn't go. Never throws, so the others still
  * go out. A send that reports failure was already logged (redacted) by sendEmail.
+ * A failed notice is queued as `retry` (references only), unless email isn't
+ * configured at all.
  */
-async function trySend(send: LeadMailDeps["send"], email: Email, what: string): Promise<boolean> {
+async function trySend(
+  deps: LeadMailDeps,
+  email: Email,
+  what: string,
+  retry: OutboxItem,
+): Promise<boolean> {
+  let res: SendResult | null = null;
   try {
-    return (await send(email)).ok;
+    res = await deps.send(email);
   } catch (e) {
     console.error(`[leads] ${what} failed: ${describeError(e)}`);
-    return false;
   }
+  if (res?.ok) return true;
+  if (res?.reason !== "email_not_configured") {
+    const item = { ...retry, lastStatus: outboxStatus(res) };
+    await (deps.enqueue ? deps.enqueue(item) : enqueueEmail(deps.db, item));
+  }
+  return false;
 }
 
 /**
@@ -145,6 +164,8 @@ export async function sendNewLeadEmails(
     id: string;
     input: LeadEmailInput;
     to: string;
+    /** Who `to` is, for the outbox: the lead's agent, the office inbox or the corrections contact. */
+    recipient: { role: "agent"; id: string } | { role: "office" | "corrections" };
     replyTo: string;
     /** The login of the agent it went to, if any: that admin already has it. */
     agentUserId: string | null;
@@ -156,7 +177,7 @@ export async function sendNewLeadEmails(
   const main = leadNotificationEmail(lead.input);
   if (
     await trySend(
-      deps.send,
+      deps,
       {
         kind: "lead-notice",
         to: lead.to,
@@ -167,6 +188,12 @@ export async function sendNewLeadEmails(
         idempotencyKey: `lead-new:${lead.id}`,
       },
       "lead notification",
+      {
+        kind: "lead-notice",
+        entityId: lead.id,
+        recipientRole: lead.recipient.role,
+        recipientId: lead.recipient.role === "agent" ? lead.recipient.id : null,
+      },
     )
   )
     sent.push(lead.to);
@@ -183,7 +210,7 @@ export async function sendNewLeadEmails(
     });
     if (
       await trySend(
-        deps.send,
+        deps,
         {
           kind: "lead-copy",
           to: admin.email,
@@ -194,6 +221,7 @@ export async function sendNewLeadEmails(
           idempotencyKey: `lead-copy:${lead.id}:${admin.userId}`,
         },
         "lead copy",
+        { kind: "lead-copy", entityId: lead.id, recipientRole: "admin", recipientId: admin.userId },
       )
     )
       sent.push(admin.email);
@@ -201,22 +229,23 @@ export async function sendNewLeadEmails(
   return sent;
 }
 
+export type LeadAssignment = {
+  inquiryId: string;
+  agentId: string;
+  assignedBy: { userId: string; name: string | null };
+  /** Distinguishes repeat assignments in the idempotency key. */
+  at?: Date;
+};
+
 /**
- * Tells an agent a lead was assigned to them. `assignedBy` is the admin who did
- * it (no email when they assigned it to themselves). Reads the lead fresh, so
- * the email shows what the agent will find. Returns the address emailed, or
- * null when nobody was.
+ * The assignment email for the lead as it is now. Null when nobody should get
+ * it: the lead or agent is gone, the lead is someone else's now, the admin
+ * assigned it to themselves, or the agent has no email.
  */
-export async function sendLeadAssignedEmail(
-  deps: LeadMailDeps,
-  input: {
-    inquiryId: string;
-    agentId: string;
-    assignedBy: { userId: string; name: string | null };
-    /** Distinguishes repeat assignments in the idempotency key. */
-    at?: Date;
-  },
-): Promise<string | null> {
+export async function leadAssignedEmail(
+  deps: Pick<LeadMailDeps, "db" | "siteUrl">,
+  input: LeadAssignment,
+): Promise<Email | null> {
   const [row] = await deps.db
     .select({ lead: inquiries, listing: listings, agent: agents })
     .from(inquiries)
@@ -228,6 +257,7 @@ export async function sendLeadAssignedEmail(
   if (row.agent.userId && row.agent.userId === input.assignedBy.userId) return null;
   const { lead, listing, agent } = row;
   const to = displayAgentEmail(agent);
+  if (!to) return null;
   const email = leadNotificationEmail({
     ...leadEmailInput({
       id: lead.id,
@@ -246,18 +276,34 @@ export async function sendLeadAssignedEmail(
     audience: "assigned",
     assignedByName: input.assignedBy.name,
   });
-  const ok = await trySend(
-    deps.send,
-    {
-      kind: "lead-assignment",
-      to,
-      replyTo: lead.email,
-      subject: email.subject,
-      text: email.text,
-      html: email.html,
-      idempotencyKey: `lead-assign:${lead.id}:${agent.id}:${(input.at ?? new Date()).toISOString()}`,
-    },
-    "lead assignment email",
-  );
-  return ok ? to : null;
+  return {
+    kind: "lead-assignment",
+    to,
+    replyTo: lead.email,
+    subject: email.subject,
+    text: email.text,
+    html: email.html,
+    idempotencyKey: `lead-assign:${lead.id}:${agent.id}:${(input.at ?? new Date()).toISOString()}`,
+  };
+}
+
+/**
+ * Tells an agent a lead was assigned to them. `assignedBy` is the admin who did
+ * it (no email when they assigned it to themselves). Reads the lead fresh, so
+ * the email shows what the agent will find. Returns the address emailed, or
+ * null when nobody was; a failed send is queued for the cron.
+ */
+export async function sendLeadAssignedEmail(
+  deps: LeadMailDeps,
+  input: LeadAssignment,
+): Promise<string | null> {
+  const email = await leadAssignedEmail(deps, input);
+  if (!email) return null;
+  const ok = await trySend(deps, email, "lead assignment email", {
+    kind: "lead-assignment",
+    entityId: input.inquiryId,
+    recipientRole: "agent",
+    recipientId: input.agentId,
+  });
+  return ok ? String(email.to) : null;
 }

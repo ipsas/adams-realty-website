@@ -16,10 +16,11 @@ import { env } from "@/lib/env";
  *
  * - a per-run cap (EMAIL_BATCH_RUN_CAP, default 50), shared by everything one
  *   cron request sends, so a large backlog spreads over several runs;
- * - a budget, checked and charged in one atomic statement (`reserve`): batch
- *   sends today below EMAIL_BATCH_DAILY_BUDGET (default 60), all sends today
- *   below DAILY_TOTAL_CAP and all sends this UTC month below
- *   MONTHLY_TOTAL_CAP. The rest of the quota stays free for transactional mail;
+ * - a budget, checked and charged under one lock (`reserve`): batch sends
+ *   today below EMAIL_BATCH_DAILY_BUDGET (default 60, never more than
+ *   BATCH_DAILY_LIMIT), all sends today below BATCH_DAILY_TOTAL_LIMIT and all
+ *   sends this UTC month below BATCH_MONTHLY_TOTAL_LIMIT. So at least 30 sends
+ *   a day (and 300 a month) always stay free for transactional mail;
  * - a stop: once Resend answers 429, nothing more is sent this run (a planned
  *   deferral, not a failure); after MAX_CONSECUTIVE_FAILURES other failures in
  *   a row, likewise.
@@ -33,10 +34,15 @@ import { env } from "@/lib/env";
  * place under the per-run cap back.
  */
 
-/** All sends (batch and transactional) per UTC day: Resend's free quota is 100. */
-export const DAILY_TOTAL_CAP = 85;
-/** All sends per UTC month: Resend's free quota is 3,000. */
-export const MONTHLY_TOTAL_CAP = 2700;
+/** Batch sends per UTC day, at most: EMAIL_BATCH_DAILY_BUDGET is clamped to it. */
+export const BATCH_DAILY_LIMIT = 60;
+/**
+ * Batch mail may reserve only while all sends today (batch and transactional)
+ * are below this: Resend's free quota is 100 a day, so 30 stay for transactional mail.
+ */
+export const BATCH_DAILY_TOTAL_LIMIT = 70;
+/** Likewise for all sends this UTC month: Resend's free quota is 3,000. */
+export const BATCH_MONTHLY_TOTAL_LIMIT = 2700;
 /** Non-429 send failures in a row after which the batch stops for the run. */
 export const MAX_CONSECUTIVE_FAILURES = 3;
 
@@ -67,8 +73,9 @@ export type BatchBudget = {
 /** The shared send counts; the default lives in `email_send_counters`. */
 export type SendCounter = {
   /**
-   * Charges one batch send to today's row if `dailyBudget` and both totals
-   * allow it; returns the period charged, or null (nothing charged).
+   * Charges one batch send to today's row if `dailyBudget` (clamped to
+   * BATCH_DAILY_LIMIT) and both totals allow it; returns the period charged,
+   * or null (nothing charged).
    */
   reserve: (dailyBudget: number) => Promise<string | null>;
   /** Gives back one batch send on the period `reserve` returned (floored at 0). */
@@ -77,34 +84,51 @@ export type SendCounter = {
 
 /** Today, 'YYYY-MM-DD' in UTC, by the database clock. */
 const UTC_DAY = sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD')`;
-/** All sends this UTC month so far. */
-const MONTH_TOTAL = sql`(select coalesce(sum(m.total), 0) from email_send_counters m
-  where left(m.period, 7) = to_char(now() at time zone 'UTC', 'YYYY-MM'))`;
+/** All sends this UTC month on the days before today. */
+const MONTH_BEFORE_TODAY = sql`(select coalesce(sum(m.total), 0) from email_send_counters m
+  where left(m.period, 7) = to_char(now() at time zone 'UTC', 'YYYY-MM') and m.period <> ${UTC_DAY})`;
+
+/** The `pg_advisory_xact_lock` key that serializes every `reserve`, across instances. */
+export const SEND_COUNTER_LOCK = 4_658_129_017_334_201;
 
 /**
- * One statement per reserve. The day row's conditions are checked under its
- * row lock, so concurrent runs can't overshoot the daily numbers. The month
- * sum reads the other days' rows without that lock, so two runs racing on the
- * last few sends of a month could both pass; the 300 sends of slack between
- * MONTHLY_TOTAL_CAP and Resend's 3,000 make that harmless.
+ * Each reserve is a transaction: it takes SEND_COUNTER_LOCK, then upserts
+ * today's row in a separate statement. Under READ COMMITTED that statement's
+ * snapshot is taken after the lock was granted, so it sees every reserve
+ * committed before it, and the batch, day and month limits hold exactly under
+ * any concurrency. Today's own numbers come from the row the upsert locked
+ * (its latest version), not from the snapshot, so a `countSent` committed in
+ * between is seen too.
+ *
+ * `countSent` and `refund` don't take the lock. `countSent` only adds to
+ * today's row, which reserve reads under its row lock, and it must never wait
+ * to count mail that already went. `refund` only lowers counts: a reserve that
+ * misses one refuses at worst one send early. What's left: a transactional
+ * send counted on the old day while UTC midnight passes can be missed by the
+ * month sum; the 300 sends between BATCH_MONTHLY_TOTAL_LIMIT and Resend's
+ * 3,000 cover that.
  */
 export function sendCounter(db: Executor): SendCounter {
   return {
-    reserve: async (dailyBudget) => {
-      const res = await db.execute<{ period: string }>(sql`
-        insert into email_send_counters (period, batch, total)
-        select ${UTC_DAY}, 1, 1
-        where ${dailyBudget}::integer > 0 and ${MONTH_TOTAL} < ${MONTHLY_TOTAL_CAP}
-        on conflict (period) do update set
-          batch = email_send_counters.batch + 1,
-          total = email_send_counters.total + 1,
-          updated_at = now()
-        where email_send_counters.batch < ${dailyBudget}::integer
-          and email_send_counters.total < ${DAILY_TOTAL_CAP}
-          and ${MONTH_TOTAL} < ${MONTHLY_TOTAL_CAP}
-        returning period`);
-      return res.rows[0]?.period ?? null;
-    },
+    reserve: (dailyBudget) =>
+      db.transaction(async (tx) => {
+        const budget = Math.min(dailyBudget, BATCH_DAILY_LIMIT);
+        await tx.execute(sql`select pg_advisory_xact_lock(${SEND_COUNTER_LOCK}::bigint)`);
+        const res = await tx.execute<{ period: string }>(sql`
+          insert into email_send_counters (period, batch, total)
+          select ${UTC_DAY}, 1, 1
+          where ${budget}::integer > 0
+            and ${MONTH_BEFORE_TODAY} < ${BATCH_MONTHLY_TOTAL_LIMIT}
+          on conflict (period) do update set
+            batch = email_send_counters.batch + 1,
+            total = email_send_counters.total + 1,
+            updated_at = now()
+          where email_send_counters.batch < ${budget}::integer
+            and email_send_counters.total < ${BATCH_DAILY_TOTAL_LIMIT}
+            and ${MONTH_BEFORE_TODAY} + email_send_counters.total < ${BATCH_MONTHLY_TOTAL_LIMIT}
+          returning period`);
+        return res.rows[0]?.period ?? null;
+      }),
     refund: async (period) => {
       await db.execute(sql`
         update email_send_counters set
@@ -116,13 +140,31 @@ export function sendCounter(db: Executor): SendCounter {
   };
 }
 
-/** Counts a transactional send (one per recipient) against today's total. */
+/**
+ * Counts a transactional send against today's total: one per recipient (To,
+ * CC and BCC alike, as Resend counts). Never blocked, and takes no lock.
+ */
 export async function countSent(recipients: number, db: Executor = defaultDb): Promise<void> {
   await db.execute(sql`
     insert into email_send_counters (period, total) values (${UTC_DAY}, ${recipients}::integer)
     on conflict (period) do update set
       total = email_send_counters.total + excluded.total,
       updated_at = now()`);
+}
+
+/** Counter rows are kept this long; the month limit only reads this month's. */
+export const SEND_COUNTERS_KEEP_DAYS = 90;
+
+/**
+ * Deletes the counter rows of UTC days more than SEND_COUNTERS_KEEP_DAYS ago;
+ * returns how many. `period` is compared as text ('YYYY-MM-DD' sorts like the
+ * date), so no value in it can make the statement throw.
+ */
+export async function pruneSendCounters(db: Executor = defaultDb): Promise<number> {
+  const res = await db.execute(sql`
+    delete from email_send_counters
+    where period < to_char((now() at time zone 'UTC') - ${SEND_COUNTERS_KEEP_DAYS}::integer * interval '1 day', 'YYYY-MM-DD')`);
+  return res.rowCount ?? 0;
 }
 
 export const ALERTS_ACTIVATED_FLAG = "email_alerts_activated";
@@ -158,7 +200,7 @@ export type BatchBudgetOptions = {
   db?: Executor;
   /** Default: EMAIL_BATCH_RUN_CAP. */
   runCap?: number;
-  /** Default: EMAIL_BATCH_DAILY_BUDGET. */
+  /** Default: EMAIL_BATCH_DAILY_BUDGET. Clamped to BATCH_DAILY_LIMIT. */
   dailyLimit?: number;
   /** Default: `sendCounter` on `email_send_counters`. */
   counter?: SendCounter;
@@ -167,7 +209,7 @@ export type BatchBudgetOptions = {
 /** One per cron request: building it touches nothing; the first `reserve` does. */
 export function createBatchBudget(opts: BatchBudgetOptions = {}): BatchBudget {
   const runCap = opts.runCap ?? env.EMAIL_BATCH_RUN_CAP;
-  const dailyLimit = opts.dailyLimit ?? env.EMAIL_BATCH_DAILY_BUDGET;
+  const dailyLimit = Math.min(opts.dailyLimit ?? env.EMAIL_BATCH_DAILY_BUDGET, BATCH_DAILY_LIMIT);
   const counter = opts.counter ?? sendCounter(opts.db ?? defaultDb);
   let reserved = 0;
   let failures = 0;
@@ -189,8 +231,8 @@ export function createBatchBudget(opts: BatchBudgetOptions = {}): BatchBudget {
       if (!period) {
         stop(
           "budget",
-          `email budget used up (batch ${dailyLimit}/day, all ${DAILY_TOTAL_CAP}/day, ` +
-            `${MONTHLY_TOTAL_CAP}/month, UTC); the rest waits`,
+          `email budget used up (batch ${dailyLimit}/day, all ${BATCH_DAILY_TOTAL_LIMIT}/day, ` +
+            `${BATCH_MONTHLY_TOTAL_LIMIT}/month, UTC); the rest waits`,
         );
         return null;
       }

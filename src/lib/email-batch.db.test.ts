@@ -1,14 +1,17 @@
 import { eq, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { db } from "@/db";
+import { db, schema } from "@/db";
 import { appFlags, emailSendCounters, savedSearches, users } from "@/db/schema";
 import { parseSearchParams } from "@/lib/search/params";
 import { closeDb } from "@/test/db/helpers";
 import {
   activateEmailAlerts,
   countSent,
-  DAILY_TOTAL_CAP,
-  MONTHLY_TOTAL_CAP,
+  BATCH_DAILY_TOTAL_LIMIT,
+  BATCH_MONTHLY_TOTAL_LIMIT,
+  pruneSendCounters,
   sendCounter,
 } from "./email-batch";
 
@@ -18,6 +21,11 @@ import {
 
 const USER = "email-batch-user";
 const DAY = 86_400_000;
+
+/** Enough connections for reserves to really run side by side (the app pool has 5). */
+const wide = new Pool({ connectionString: process.env.DATABASE_URL, max: 40 });
+const wideDb = drizzle(wide, { schema });
+const parallel = <T>(n: number, fn: () => Promise<T>) => Promise.all(Array.from({ length: n }, fn));
 
 const today = async () =>
   (
@@ -35,6 +43,7 @@ beforeEach(async () => {
 afterAll(async () => {
   await db.execute(sql`truncate table email_send_counters, app_flags`);
   await db.delete(users).where(eq(users.id, USER));
+  await wide.end();
   await closeDb();
 });
 
@@ -56,10 +65,59 @@ describe("sendCounter", () => {
 
   it("refuses batch mail once all sends today reach the daily total", async () => {
     const counter = sendCounter(db);
-    await countSent(DAILY_TOTAL_CAP - 1, db);
+    await countSent(BATCH_DAILY_TOTAL_LIMIT - 1, db);
     expect(await counter.reserve(60)).not.toBeNull();
     expect(await counter.reserve(60)).toBeNull();
-    expect(await row(await today())).toMatchObject({ batch: 1, total: DAILY_TOTAL_CAP });
+    expect(await row(await today())).toMatchObject({ batch: 1, total: BATCH_DAILY_TOTAL_LIMIT });
+  });
+
+  it("holds the daily numbers exactly under concurrency, with transactional sends racing in", async () => {
+    const day = await today();
+    const counter = sendCounter(wideDb);
+    const batch = await parallel(300, () => counter.reserve(60));
+    expect(batch.filter(Boolean)).toHaveLength(60);
+
+    await db.update(emailSendCounters).set({ batch: 0, total: BATCH_DAILY_TOTAL_LIMIT - 10 });
+    const mixed = await Promise.all([
+      ...Array.from({ length: 200 }, () => counter.reserve(60)),
+      ...Array.from({ length: 30 }, () => countSent(1, wideDb).then(() => null)),
+    ]);
+    const ok = mixed.filter(Boolean).length;
+    // Never past the daily total for batch mail; every transactional send counted.
+    expect(ok).toBeLessThanOrEqual(10);
+    expect(await row(day)).toMatchObject({
+      batch: ok,
+      total: BATCH_DAILY_TOTAL_LIMIT - 10 + ok + 30,
+    });
+  });
+
+  it("stops at the monthly total exactly under concurrency (QA: 300 reserves at 2,690)", async () => {
+    const day = await today();
+    const month = day.slice(0, 7);
+    // Earlier days of this UTC month (a fake day 00 when today is the 1st: same month prefix).
+    const dayOfMonth = Number(day.slice(8));
+    const earlier =
+      dayOfMonth === 1
+        ? [`${month}-00`]
+        : Array.from(
+            { length: dayOfMonth - 1 },
+            (_, i) => `${month}-${String(i + 1).padStart(2, "0")}`,
+          );
+    const seeded = BATCH_MONTHLY_TOTAL_LIMIT - 10;
+    await db.insert(emailSendCounters).values(
+      earlier.map((period, i) => ({
+        period,
+        total: Math.floor(seeded / earlier.length) + (i < seeded % earlier.length ? 1 : 0),
+      })),
+    );
+
+    const results = await parallel(300, () => sendCounter(wideDb).reserve(60));
+    expect(results.filter(Boolean)).toHaveLength(10);
+    expect(await row(day)).toMatchObject({ batch: 10, total: 10 });
+    const sum = await db.execute<{ total: number }>(
+      sql`select sum(total)::int as total from email_send_counters where left(period, 7) = ${month}`,
+    );
+    expect(sum.rows[0].total).toBe(BATCH_MONTHLY_TOTAL_LIMIT);
   });
 
   it("refuses batch mail once this UTC month reaches the monthly total, even on a new day", async () => {
@@ -67,7 +125,9 @@ describe("sendCounter", () => {
     const month = day.slice(0, 7);
     // Earlier this month (or a fake day 00 when today is the 1st: same month prefix).
     const earlier = day.endsWith("-01") ? `${month}-00` : `${month}-01`;
-    await db.insert(emailSendCounters).values({ period: earlier, total: MONTHLY_TOTAL_CAP });
+    await db
+      .insert(emailSendCounters)
+      .values({ period: earlier, total: BATCH_MONTHLY_TOTAL_LIMIT });
     expect(await sendCounter(db).reserve(60)).toBeNull();
     expect(await row(day)).toBeUndefined();
     // Last month's sends don't count.
@@ -90,6 +150,24 @@ describe("sendCounter", () => {
     await countSent(1, db);
     await countSent(2, db);
     expect(await row(await today())).toMatchObject({ batch: 0, total: 3 });
+  });
+});
+
+describe("pruneSendCounters", () => {
+  it("deletes the rows of UTC days more than 90 days ago only", async () => {
+    const daysAgo = async (n: number) =>
+      (
+        await db.execute<{ day: string }>(
+          sql`select to_char((now() at time zone 'UTC') - ${n}::integer * interval '1 day', 'YYYY-MM-DD') as day`,
+        )
+      ).rows[0].day;
+    const kept = [await today(), await daysAgo(90)];
+    await db
+      .insert(emailSendCounters)
+      .values([...kept, await daysAgo(91), "2000-01-01"].map((period) => ({ period, total: 1 })));
+    expect(await pruneSendCounters(db)).toBe(2);
+    const left = await db.select({ period: emailSendCounters.period }).from(emailSendCounters);
+    expect(left.map((r) => r.period).sort()).toEqual(kept.sort());
   });
 });
 

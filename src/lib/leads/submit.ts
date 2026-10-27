@@ -227,6 +227,11 @@ export async function submitInquiry(
           siteUrl: deps.siteUrl,
         }),
         to: report ? site.mls.corrections.email : agent ? displayAgentEmail(agent) : deps.inbox,
+        recipient: report
+          ? { role: "corrections" }
+          : agent
+            ? { role: "agent", id: agent.id }
+            : { role: "office" },
         replyTo: d.email,
         agentUserId: agent?.userId ?? null,
         copies: !report,

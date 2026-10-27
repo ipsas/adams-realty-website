@@ -20,12 +20,13 @@ vi.mock("next/cache", () => ({ revalidatePath: () => {}, updateTag: () => {} }))
 vi.mock("@/lib/leads/deliver", () => ({
   afterResponse: (_label: string, task: () => Promise<unknown>) => void h.later.push(task),
 }));
-vi.mock("@/lib/email", () => ({
-  sendEmail: async (e: { to: string | string[]; subject: string }) => (
+vi.mock("@/lib/email", () => {
+  const send = async (e: { to: string | string[]; subject: string }) => (
     h.sent.push(e),
     { ok: true }
-  ),
-}));
+  );
+  return { sendEmail: send, sendTransactional: send };
+});
 
 const { updateInquiryStatus } = await import("./dashboard");
 

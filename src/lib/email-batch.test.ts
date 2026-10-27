@@ -34,9 +34,11 @@ const {
   activateEmailAlerts,
   countSent,
   createBatchBudget,
+  pruneSendCounters,
   sendCounter,
-  DAILY_TOTAL_CAP,
-  MONTHLY_TOTAL_CAP,
+  BATCH_DAILY_TOTAL_LIMIT,
+  BATCH_MONTHLY_TOTAL_LIMIT,
+  SEND_COUNTER_LOCK,
 } = await import("./email-batch");
 const { sendEmail } = await import("./email");
 
@@ -136,7 +138,21 @@ describe("createBatchBudget", () => {
     expect(await budget.reserve(sender())).toBeNull();
     expect(c.reserves).toBe(1); // stopped: no more counter round-trips this run
     expect(output()).toEqual([
-      "[email-batch] email budget used up (batch 60/day, all 85/day, 2700/month, UTC); the rest waits",
+      "[email-batch] email budget used up (batch 60/day, all 70/day, 2700/month, UTC); the rest waits",
+    ]);
+  });
+
+  it("clamps a larger daily budget to 60", async () => {
+    const { counter } = fakeCounter(0);
+    const asked: number[] = [];
+    const budget = createBatchBudget({
+      dailyLimit: 95,
+      counter: { ...counter, reserve: async (n) => (asked.push(n), null) },
+    });
+    expect(await budget.reserve(sender())).toBeNull();
+    expect(asked).toEqual([60]);
+    expect(output()).toEqual([
+      "[email-batch] email budget used up (batch 60/day, all 70/day, 2700/month, UTC); the rest waits",
     ]);
   });
 
@@ -192,19 +208,27 @@ describe("createBatchBudget", () => {
 });
 
 describe("sendCounter (SQL)", () => {
-  function recordingDb(rows: unknown[] = []) {
-    const queries: { sql: string; params: unknown[] }[] = [];
+  function recordingDb(rows: unknown[] = [], rowCount = 0) {
+    const queries: { sql: string; params: unknown[]; tx: boolean }[] = [];
+    const exec = (tx: boolean) => async (q: SQL) => (
+      queries.push({ ...dialect.sqlToQuery(q), tx }),
+      { rows, rowCount }
+    );
     const db = {
-      execute: async (q: SQL) => (queries.push(dialect.sqlToQuery(q)), { rows }),
+      execute: exec(false),
+      transaction: async <T>(fn: (tx: unknown) => Promise<T>) => fn({ execute: exec(true) }),
     } as unknown as Executor;
     return { db, queries };
   }
 
-  it("reserves in one conditional upsert keyed by the database's UTC day", async () => {
+  it("reserves under the advisory lock, then in one conditional upsert keyed by the database's UTC day", async () => {
     const { db, queries } = recordingDb([{ period: "2026-10-27" }]);
     expect(await sendCounter(db).reserve(60)).toBe("2026-10-27");
-    expect(queries).toHaveLength(1);
-    const { sql, params } = queries[0];
+    expect(queries).toHaveLength(2);
+    expect(queries.every((q) => q.tx)).toBe(true);
+    expect(queries[0].sql).toBe("select pg_advisory_xact_lock($1::bigint)");
+    expect(queries[0].params).toEqual([SEND_COUNTER_LOCK]);
+    const { sql, params } = queries[1];
     const flat = sql.replace(/\s+/g, " ");
     expect(flat).toContain("insert into email_send_counters (period, batch, total)");
     expect(flat).toContain("to_char(now() at time zone 'UTC', 'YYYY-MM-DD')");
@@ -212,8 +236,19 @@ describe("sendCounter (SQL)", () => {
     expect(flat).toMatch(/where email_send_counters\.batch < \$\d+::integer/);
     expect(flat).toMatch(/and email_send_counters\.total < \$\d+/);
     expect(flat).toContain("to_char(now() at time zone 'UTC', 'YYYY-MM')");
+    // The month: earlier days from the snapshot, today from the locked row.
+    expect(flat).toContain("+ email_send_counters.total <");
     expect(flat).toContain("returning period");
-    expect(params).toEqual(expect.arrayContaining([60, DAILY_TOTAL_CAP, MONTHLY_TOTAL_CAP]));
+    expect(params).toEqual(
+      expect.arrayContaining([60, BATCH_DAILY_TOTAL_LIMIT, BATCH_MONTHLY_TOTAL_LIMIT]),
+    );
+  });
+
+  it("clamps the daily budget to 60", async () => {
+    const { db, queries } = recordingDb();
+    await sendCounter(db).reserve(95);
+    expect(queries[1].params).not.toContain(95);
+    expect(queries[1].params).toContain(60);
   });
 
   it("returns null when the statement charged nothing", async () => {
@@ -239,7 +274,18 @@ describe("sendCounter (SQL)", () => {
     expect(flat).toContain("to_char(now() at time zone 'UTC', 'YYYY-MM-DD')");
     expect(flat).toContain("total = email_send_counters.total + excluded.total");
     expect(flat).not.toContain("batch");
+    expect(flat).not.toContain("lock");
     expect(queries[0].params).toEqual([3]);
+  });
+
+  it("prunes counter rows of UTC days more than 90 days ago, comparing the period as text", async () => {
+    const { db, queries } = recordingDb([], 4);
+    expect(await pruneSendCounters(db)).toBe(4);
+    const flat = queries[0].sql.replace(/\s+/g, " ").trim();
+    expect(flat).toBe(
+      "delete from email_send_counters where period < to_char((now() at time zone 'UTC') - $1::integer * interval '1 day', 'YYYY-MM-DD')",
+    );
+    expect(queries[0].params).toEqual([90]);
   });
 });
 

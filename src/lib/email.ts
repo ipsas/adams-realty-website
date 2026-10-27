@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { BATCH_EMAIL_KINDS, countSent } from "@/lib/email-batch";
 import { env } from "@/lib/env";
 
@@ -42,9 +43,17 @@ export type EmailKind =
 /**
  * `rate_limited`: Resend answered 429 (its send rate or daily quota), so batch
  * runs stop for the rest of the run. Every other failure is `send_failed`.
+ * `status` is Resend's HTTP code (none when the request itself failed), and
+ * `retryAfterMs` its Retry-After, when it sent one.
  */
 export type SendResult =
-  { ok: true } | { ok: false; reason: "email_not_configured" | "send_failed" | "rate_limited" };
+  | { ok: true }
+  | {
+      ok: false;
+      reason: "email_not_configured" | "send_failed" | "rate_limited";
+      status?: number;
+      retryAfterMs?: number;
+    };
 
 export type SendEmail = (email: Email) => Promise<SendResult>;
 
@@ -125,15 +134,78 @@ export async function sendEmail(email: Email): Promise<SendResult> {
   }
   if (!res.ok) {
     logSend(email, "failed", res.status);
-    return { ok: false, reason: res.status === 429 ? "rate_limited" : "send_failed" };
+    const retryAfterMs = parseRetryAfter(res.headers.get("retry-after"), Date.now());
+    return {
+      ok: false,
+      reason: res.status === 429 ? "rate_limited" : "send_failed",
+      status: res.status,
+      ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
+    };
   }
   logSend(email, "sent");
   // Batch mail was counted when the guard reserved it. Counting is best effort:
   // the email already went, so a failure here is logged and never fails the send.
+  // `to` is every recipient: an Email has no CC or BCC.
   if (!BATCH_EMAIL_KINDS.has(email.kind)) {
     await countSent([email.to].flat().length).catch(() =>
       console.error(`[email-batch] could not count a sent email (kind=${email.kind})`),
     );
   }
   return { ok: true };
+}
+
+/** A Retry-After header (seconds, or an HTTP date) in ms from `now`; undefined when absent or unreadable. */
+export function parseRetryAfter(value: string | null, now: number): number | undefined {
+  const v = value?.trim();
+  if (!v) return undefined;
+  if (/^\d+$/.test(v)) return Number(v) * 1000;
+  const at = Date.parse(v);
+  return Number.isNaN(at) ? undefined : Math.max(0, at - now);
+}
+
+/** Tries per transactional send, the first included. */
+export const RETRY_ATTEMPTS = 3;
+/** All the waiting between tries, at most: someone (or the cron) is waiting. */
+export const RETRY_WAIT_CAP_MS = 3000;
+/** The wait after the first failed try when Resend sends no Retry-After; doubled after each. */
+const RETRY_BASE_MS = 250;
+
+/** A 429, a 5xx or no answer at all (the request failed) is worth another try; other 4xx never are. */
+function retryable(res: SendResult): boolean {
+  if (res.ok || res.reason === "email_not_configured") return false;
+  return res.reason === "rate_limited" || res.status === undefined || res.status >= 500;
+}
+
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * `sendEmail` for transactional mail (password resets, lead notices and
+ * copies, assignment notices, sync alerts), retried in the request on a 429,
+ * a 5xx or a failed request: up to RETRY_ATTEMPTS tries, waiting Resend's
+ * Retry-After or else 250 ms, then 500 ms, and never more than
+ * RETRY_WAIT_CAP_MS in all (a longer Retry-After ends it, and the failure is
+ * returned). A wrapper rather than part of `sendEmail`, so the batch runs and
+ * the outbox (src/lib/email-outbox.ts), which defer on their own, still try
+ * once; batch kinds passed here are sent once too. Each try logs its own line;
+ * a send that goes is counted once (by the `sendEmail` that sent it).
+ *
+ * Every try carries the same idempotency key (a random one if the email has
+ * none), so a try whose reply was lost can't make the next one send twice.
+ */
+export async function sendTransactional(
+  email: Email,
+  opts: { sleep?: (ms: number) => Promise<void> } = {},
+): Promise<SendResult> {
+  if (BATCH_EMAIL_KINDS.has(email.kind)) return sendEmail(email);
+  const sleep = opts.sleep ?? wait;
+  const keyed = email.idempotencyKey ? email : { ...email, idempotencyKey: randomUUID() };
+  let waited = 0;
+  for (let attempt = 1; ; attempt++) {
+    const res = await sendEmail(keyed);
+    if (res.ok || attempt >= RETRY_ATTEMPTS || !retryable(res)) return res;
+    const delay = res.retryAfterMs ?? RETRY_BASE_MS * 2 ** (attempt - 1);
+    if (waited + delay > RETRY_WAIT_CAP_MS) return res;
+    waited += delay;
+    await sleep(delay);
+  }
 }

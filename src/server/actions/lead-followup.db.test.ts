@@ -20,9 +20,10 @@ vi.mock("next/cache", () => ({ revalidatePath: () => {}, updateTag: () => {} }))
 vi.mock("@/lib/leads/deliver", () => ({
   afterResponse: (_label: string, task: () => Promise<unknown>) => void h.later.push(task),
 }));
-vi.mock("@/lib/email", () => ({
-  sendEmail: async (e: (typeof h.sent)[number]) => (h.sent.push(e), { ok: true }),
-}));
+vi.mock("@/lib/email", () => {
+  const send = async (e: (typeof h.sent)[number]) => (h.sent.push(e), { ok: true });
+  return { sendEmail: send, sendTransactional: send };
+});
 
 const { assignInquiry, updateInquiryStatus } = await import("./dashboard");
 const { setLeadFollowUp } = await import("./leads");

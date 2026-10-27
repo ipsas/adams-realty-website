@@ -80,7 +80,8 @@ export const makeSchema = (strict: boolean, e: Record<string, string | undefined
     EMAIL_BATCH_RUN_CAP: count(50),
     /**
      * Batch mail per UTC day across every instance, kept below Resend's 100/day free quota so
-     * password resets and lead notices always have room. Default 60.
+     * password resets and lead notices always have room. Default 60, and never more
+     * (BATCH_DAILY_LIMIT in src/lib/email-batch.ts).
      */
     EMAIL_BATCH_DAILY_BUDGET: count(60),
     /** Reply-To for emails that don't set their own (e.g. the office inbox). Unset: none. */

@@ -184,7 +184,7 @@ describe("alert run under the batch-mail guard", () => {
     expect(res.searches).toMatchObject({ due: 3, deferred: 3, emailed: 0 });
     expect(res.homes).toMatchObject({ deferred: 1 });
     expect(output().filter((l) => l.startsWith("[email-batch]"))).toEqual([
-      "[email-batch] email budget used up (batch 60/day, all 85/day, 2700/month, UTC); the rest waits",
+      "[email-batch] email budget used up (batch 60/day, all 70/day, 2700/month, UTC); the rest waits",
     ]);
   });
 

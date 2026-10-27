@@ -7,6 +7,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  unique,
   uuid,
 } from "drizzle-orm/pg-core";
 import type { SearchCriteria } from "@/lib/search/params";
@@ -201,3 +202,39 @@ export const appFlags = pgTable("app_flags", {
   value: text("value"),
   setAt: timestamp("set_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Lead and assignment notices whose send still failed after the in-request
+ * retries, tried again by the sync cron (src/lib/email-outbox.ts). References
+ * only, never a body, subject, address, name, phone, token or link: the email
+ * is rebuilt from the current lead and recipient when it is sent. `entity_id`
+ * is the lead; the recipient is `recipient_role` ('agent': an agents.id,
+ * 'admin': a users.id, 'office' and 'corrections': no id). One row per notice
+ * and recipient. A logged table, so a queued notice survives a restart.
+ */
+export const emailOutbox = pgTable(
+  "email_outbox",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kind: text("kind").$type<"lead-notice" | "lead-copy" | "lead-assignment">().notNull(),
+    entityId: uuid("entity_id").notNull(),
+    recipientRole: text("recipient_role")
+      .$type<"agent" | "admin" | "office" | "corrections">()
+      .notNull(),
+    recipientId: text("recipient_id"),
+    /** Tries so far, the in-request one included. */
+    attempts: integer("attempts").notNull().default(1),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+    /** The last failure, e.g. 'http_503', 'http_429', 'network'. */
+    lastStatus: text("last_status"),
+    state: text("state").$type<"pending" | "dead">().notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("email_outbox_notice_key")
+      .on(t.kind, t.entityId, t.recipientRole, t.recipientId)
+      .nullsNotDistinct(),
+    index("email_outbox_due_idx").on(t.state, t.nextAttemptAt),
+  ],
+);

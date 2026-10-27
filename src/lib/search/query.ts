@@ -12,11 +12,12 @@ import {
   ne,
   or,
   sql,
+  type AnyColumn,
   type SQL,
 } from "drizzle-orm";
 import { findArea, normalizeAreaName, type Area } from "@/config/areas";
 import { site } from "@/config/site";
-import { listings, openHouses } from "@/db/schema";
+import { keywordVector, listings, openHouses } from "@/db/schema";
 import { areaCondition, normalizedMatch } from "@/lib/areas/match";
 import { ACCESS_CODE_PG, ACCESS_CODE_PG_REPLACEMENT } from "@/lib/listings/excluded-fields";
 import { publicConditions } from "@/lib/listings/visibility";
@@ -29,11 +30,22 @@ const BUY_STATUSES: Status[] = ["active", "coming_soon"];
 const PENDING_STATUSES: Status[] = ["active_under_contract", "pending"];
 export const DEFAULT_SOLD_WINDOW_DAYS = 365;
 
-/** search_vector's text with the description as the listing page shows it (`redactAccessCodes`). */
-const shownSearchText = sql`to_tsvector('english', concat_ws(' ',
+/** `text` with any access code masked, as the listing page shows it (`redactAccessCodes`). */
+const masked = (text: SQL | AnyColumn) =>
+  sql`regexp_replace(${text}, ${ACCESS_CODE_PG}, ${ACCESS_CODE_PG_REPLACEMENT}, 'gi')`;
+
+/**
+ * `keywordVector`'s text as shown: the description masked, then "/" read as a space,
+ * and each string in `features` masked on its own (never the JSON text as a whole),
+ * then "/" read as a space.
+ */
+const shownKeywordVector = sql`(to_tsvector('english', translate(concat_ws(' ',
   ${listings.addressLine1}, ${listings.city}, ${listings.postalCode}, ${listings.neighborhood},
   ${listings.mlsNumber}, ${listings.headline}, ${listings.propertySubType},
-  regexp_replace(${listings.description}, ${ACCESS_CODE_PG}, ${ACCESS_CODE_PG_REPLACEMENT}, 'gi')))`;
+  ${masked(listings.description)}), '/', ' ')) ||
+  to_tsvector('english', coalesce((select string_agg(translate(${masked(sql`v #>> '{}'`)}, '/', ' '), ' ')
+    from jsonb_path_query(${listings.features}, 'strict $.**') as v
+    where jsonb_typeof(v) = 'string'), '')))`;
 
 const STATE = `(?:${site.market.state}|${site.market.stateName})`;
 const COUNTRY_SUFFIX = /,?\s*(?:USA|U\.S\.A\.|US|United States)\s*$/i;
@@ -226,12 +238,13 @@ export function buildConditions(
   }
   if (c.age55 === "only") conds.push(eq(listings.seniorCommunity, true));
   else if (c.age55 === "exclude") conds.push(sql`${listings.seniorCommunity} is not true`);
-  // Keywords search the listing text (headline, description), apart from the location box.
-  // search_vector (indexed) holds the raw description; the match must also hold on the
-  // text as shown, codes masked, so a keyword search can't confirm a lockbox code.
+  // Keywords search the listing text (headline, description, features), apart from the
+  // location box. keywordVector (indexed) holds the raw text; the match must also hold on
+  // the text as shown, codes masked, so a keyword search can't confirm a lockbox code.
+  // "/" is a space on both sides, so "room/kitchen/dining" still finds what it did.
   if (c.kw) {
-    const kw = sql`websearch_to_tsquery('english', ${c.kw})`;
-    conds.push(sql`${listings.searchVector} @@ ${kw}`, sql`${shownSearchText} @@ ${kw}`);
+    const kw = sql`websearch_to_tsquery('english', ${c.kw.replaceAll("/", " ")})`;
+    conds.push(sql`${keywordVector(listings)} @@ ${kw}`, sql`${shownKeywordVector} @@ ${kw}`);
   }
   if (c.priceReduced && allowsPriceReduced(c.mode)) {
     conds.push(

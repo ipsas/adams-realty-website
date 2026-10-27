@@ -33,4 +33,33 @@ describe("password reset email", () => {
     await expect(sendPasswordReset({ user, url }, send)).resolves.toBeUndefined();
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ kind: "password-reset" }));
   });
+
+  it("logs exactly one failure line, with the HTTP code, when the send finally fails", async () => {
+    const { output } = captureConsole();
+    const send = vi.fn(async () => ({
+      ok: false as const,
+      reason: "send_failed" as const,
+      status: 503,
+    }));
+    await expect(sendPasswordReset({ user, url }, send)).resolves.toBeUndefined();
+    expect(output()).toEqual(["[email] kind=reset status=failed http=503"]);
+  });
+
+  it("logs http=none when no answer came (or the mailer threw)", async () => {
+    const { output } = captureConsole();
+    await sendPasswordReset({ user, url }, async () => ({ ok: false, reason: "send_failed" }));
+    await sendPasswordReset({ user, url }, async () => {
+      throw new Error(`failed for ${url}`);
+    });
+    expect(output()).toEqual([
+      "[email] kind=reset status=failed http=none",
+      "[email] kind=reset status=failed http=none",
+    ]);
+  });
+
+  it("logs no failure line when it went", async () => {
+    const { output } = captureConsole();
+    await sendPasswordReset({ user, url }, async () => ({ ok: true }));
+    expect(output()).toEqual([]);
+  });
 });

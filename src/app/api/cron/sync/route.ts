@@ -2,7 +2,9 @@ import { revalidateTag } from "next/cache";
 import { NextResponse, type NextRequest } from "next/server";
 import { isCronAuthorized } from "@/lib/cron-auth";
 import { emailConfigured } from "@/lib/email";
+import { pruneSendCounters } from "@/lib/email-batch";
 import { runLeadDigests } from "@/lib/leads/digest";
+import { retryLeadEmails } from "@/lib/leads/outbox";
 import { LISTINGS_TAG } from "@/lib/listings/cache-tags";
 import { syncAllSources } from "@/lib/mls/sync";
 import { describeError } from "@/lib/mls/write-errors";
@@ -22,6 +24,7 @@ const BUDGET_MS = (maxDuration - 45) * 1000;
  * - `?purge=1`: only the purge (listings that left the feed), no incremental.
  *   It aborts if it would remove more than 5% of the listings; add
  *   `&allowLargePurge=1` once you've checked the feed really dropped them.
+ *   It also prunes old email send counters (best effort, not in the status).
  *
  * After any change (even by a run that then failed), the cached listing data
  * (home page stats, area guides…) is revalidated. 200 when every source
@@ -33,7 +36,9 @@ const BUDGET_MS = (maxDuration - 45) * 1000;
  * Every run (every 15 minutes on Vercel Pro) also tries the staff's 7 a.m.
  * morning summary (src/lib/leads/digest.ts), so it goes out by about 7:15
  * Eastern: before 7 a.m. it does nothing, and it never sends twice a day.
- * Its outcome doesn't change the status. `email.configured` says whether
+ * Before it, lead and assignment notices whose send failed are retried from
+ * `email_outbox` (src/lib/email-outbox.ts; a few per run, best effort).
+ * Neither outcome changes the status. `email.configured` says whether
  * RESEND_API_KEY is set (false: nothing is being sent).
  */
 export async function GET(request: NextRequest) {
@@ -42,13 +47,25 @@ export async function GET(request: NextRequest) {
   }
   const started = Date.now();
   const params = request.nextUrl.searchParams;
+  const purge = params.get("purge") === "1";
+  if (purge) {
+    // Daily housekeeping: email_send_counters rows older than 90 days (email-batch.ts).
+    await pruneSendCounters().catch((e) =>
+      console.error(`[cron] email counter prune failed: ${describeError(e)}`),
+    );
+  }
   const results = await syncAllSources({
-    mode: params.get("purge") === "1" ? "purge" : "incremental",
+    mode: purge ? "purge" : "incremental",
     allowLargePurge: params.get("allowLargePurge") === "1",
     deadline: Date.now() + BUDGET_MS,
   });
   if (results.some((r) => (r.ok ? r.result.changed : r.changed))) {
     revalidateTag(LISTINGS_TAG, "max");
+  }
+  if (emailConfigured()) {
+    await retryLeadEmails().catch((e) =>
+      console.error(`[cron] email outbox failed: ${describeError(e)}`),
+    );
   }
   const digests = await runLeadDigests({ deadline: started + (maxDuration - 15) * 1000 }).catch(
     (e) => {

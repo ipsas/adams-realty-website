@@ -190,23 +190,39 @@ const ADDRESS = new RegExp(
   "g",
 );
 
-/** Before and after a number that isn't part of a token (a key, a version, a host:port, a timestamp). */
-const NUMBER_START = String.raw`(?<![\w.:/+-])`;
+/**
+ * Before and after a number that isn't part of a token (a key, a version, a
+ * timestamp). A ':' may come before it ("phone:706-555-1234"): the number must
+ * still be whole (a host:port's isn't a phone).
+ */
+const NUMBER_START = String.raw`(?<![\w./+-])`;
 const NUMBER_END = String.raw`(?![\w-]|\.\d)`;
 
 /**
- * A US phone number: "(706) 555-1234", "706-555-1234", "706.555.1234" (one
- * separator throughout), "+1 706 555 1234". Ten bare digits are an ID, kept.
+ * `number` not part of a token, or a whole path segment ("/706-555-1234",
+ * "/706-555-1234?x"; not the slug in "/listings/706-555-1234-abc" or "….html").
+ */
+const wholeNumber = (number: string) =>
+  String.raw`${NUMBER_START}(?:${number})${NUMBER_END}|(?<=/)(?:${number})(?=$|[\s/?#])`;
+
+/**
+ * A US phone number: "(706) 555-1234", "706-555-1234", "706.555-1234",
+ * "+1 706 555 1234", "1 706 555 1234". Spaced, it must be exactly 3-3-4 digits
+ * with single spaces, with no more digits around ("page 1 706 555 1234 5" is
+ * kept). Ten bare digits are an ID, kept.
  */
 const PHONE = new RegExp(
-  String.raw`(?:\+1[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?|` +
-    String.raw`${NUMBER_START}(?:1[\s.-]?)?\(\d{3}\)\s?\d{3}[\s.-]|` +
-    String.raw`${NUMBER_START}(?:1[.-])?\d{3}([.-])\d{3}\1)\d{4}${NUMBER_END}`,
+  String.raw`\+1[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}${NUMBER_END}|` +
+    wholeNumber(
+      String.raw`(?:1[\s.-]?)?\(\d{3}\)\s?\d{3}[\s.-]\d{4}|` +
+        String.raw`(?:1[.-])?\d{3}[.-]\d{3}[.-]\d{4}|` +
+        String.raw`(?<!\d )(?:1 )?\d{3} \d{3} \d{4}(?! \d)`,
+    ),
   "g",
 );
 
 /** A Social Security number: "123-45-6789". */
-const SSN = new RegExp(String.raw`${NUMBER_START}\d{3}-\d{2}-\d{4}${NUMBER_END}`, "g");
+const SSN = new RegExp(wholeNumber(String.raw`\d{3}-\d{2}-\d{4}`), "g");
 
 /**
  * A unit not attached to an address ("apt 4b", "Suite 100"; an attached one

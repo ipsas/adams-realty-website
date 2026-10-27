@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
 import type { Executor } from "@/db";
 import { users } from "@/db/schema";
-import { sendEmail, type SendEmail } from "@/lib/email";
+import { sendTransactional, type SendEmail } from "@/lib/email";
 import type { SyncAlert } from "./sync-engine";
 import { describeError, QUARANTINE_ESCALATE_AT_REFUSAL, redactPersonal } from "./write-errors";
 
@@ -75,6 +75,7 @@ export function syncAlertKey(source: string, alert: SyncAlert, userId: string): 
  * Emails `alert` to each of `recipients()`. Never throws: a failed lookup or
  * send is logged (redacted) and the others still go out. A send that reports
  * failure (no Resend key, an HTTP error) was already logged by sendEmail.
+ * Each send is retried in the request (`sendTransactional`), never queued.
  */
 export async function sendSyncAlert(
   source: string,
@@ -84,7 +85,7 @@ export async function sendSyncAlert(
     send?: SendEmail;
   },
 ): Promise<void> {
-  const send = deps.send ?? sendEmail;
+  const send = deps.send ?? sendTransactional;
   let recipients: AlertRecipient[];
   try {
     recipients = await deps.recipients();

@@ -148,6 +148,20 @@
       "when": 1793087654740,
       "tag": "0020_email_send_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1793100948964,
+      "tag": "0021_email_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1793102425774,
+      "tag": "0022_keyword_index",
+      "breakpoints": true
     }
   ]
 }

@@ -5,7 +5,7 @@ import { site } from "@/config/site";
 import { db } from "@/db";
 import { clientIp } from "@/lib/anti-scraping";
 import { getSession } from "@/lib/auth/session";
-import { sendEmail } from "@/lib/email";
+import { sendTransactional } from "@/lib/email";
 import { env } from "@/lib/env";
 import { afterResponse } from "@/lib/leads/deliver";
 import { submitInquiry, type InquiryState } from "@/lib/leads/submit";
@@ -34,7 +34,8 @@ export async function createInquiry(_prev: InquiryState, form: FormData): Promis
     },
     {
       db,
-      send: sendEmail,
+      // Retried in the request; a notice that still fails is queued for the cron.
+      send: sendTransactional,
       siteUrl: env.NEXT_PUBLIC_SITE_URL,
       inbox: env.LEADS_INBOX ?? site.email,
       // The emails finish after the thank-you is sent, and the function waits for them.

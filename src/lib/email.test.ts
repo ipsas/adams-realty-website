@@ -7,12 +7,19 @@ const h = vi.hoisted(() => ({
     EMAIL_FROM: "Adams Realty <hello@adams.example>",
     EMAIL_REPLY_TO: "office@adams.example" as string | undefined,
   },
+  counted: [] as number[],
 }));
 vi.mock("@/lib/env", () => ({ env: h.env }));
 // The send counter is tested in email-batch.test.ts.
-vi.mock("@/lib/email-batch", () => ({ BATCH_EMAIL_KINDS: new Set(), countSent: async () => {} }));
+vi.mock("@/lib/email-batch", () => ({
+  BATCH_EMAIL_KINDS: new Set(["search-alert"]),
+  countSent: async (n: number) => {
+    h.counted.push(n);
+  },
+}));
 
-const { emailConfigured, sendEmail } = await import("./email");
+const { emailConfigured, parseRetryAfter, sendEmail, sendTransactional, RETRY_WAIT_CAP_MS } =
+  await import("./email");
 import type { Email } from "./email";
 
 const RESET_URL = "https://adams.example/reset-password/tok_SECRET123?callbackURL=%2F";
@@ -138,7 +145,7 @@ describe("sendEmail with a key", () => {
           new Response("rejected jordan.buyer@example.com tok_SECRET123", { status: 500 }),
       ),
     );
-    expect(await sendEmail(email())).toEqual({ ok: false, reason: "send_failed" });
+    expect(await sendEmail(email())).toEqual({ ok: false, reason: "send_failed", status: 500 });
     expect(output()).toEqual([
       "[email] kind=password-reset to_domain=example.com status=failed http=500",
     ]);
@@ -157,6 +164,7 @@ describe("sendEmail with a key", () => {
     expect(await sendEmail(email({ kind: "search-alert" }))).toEqual({
       ok: false,
       reason: "rate_limited",
+      status: 429,
     });
     expect(output()).toEqual([
       "[email] kind=search-alert to_domain=example.com status=failed http=429",
@@ -173,5 +181,118 @@ describe("sendEmail with a key", () => {
     );
     expect(await sendEmail(email())).toEqual({ ok: false, reason: "send_failed" });
     expect(output()).toEqual(["[email] kind=password-reset to_domain=example.com status=failed"]);
+  });
+});
+
+describe("parseRetryAfter", () => {
+  const now = Date.parse("2026-10-27T12:00:00Z");
+  it("reads seconds and HTTP dates; ignores what it can't read", () => {
+    expect(parseRetryAfter("2", now)).toBe(2000);
+    expect(parseRetryAfter("Tue, 27 Oct 2026 12:00:01 GMT", now)).toBe(1000);
+    expect(parseRetryAfter("Tue, 27 Oct 2026 11:00:00 GMT", now)).toBe(0);
+    expect(parseRetryAfter(null, now)).toBeUndefined();
+    expect(parseRetryAfter("soon", now)).toBeUndefined();
+  });
+});
+
+describe("sendTransactional", () => {
+  beforeEach(() => {
+    h.env.RESEND_API_KEY = "re_test_key";
+    h.counted.length = 0;
+  });
+
+  /** A fetch answering with `statuses` in turn ("throw": the request fails). */
+  function answers(...replies: Array<number | "throw" | [number, string]>) {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => {
+      const r = replies.shift() ?? 200;
+      if (r === "throw") throw new Error("connect ECONNRESET");
+      const [status, retryAfter] = Array.isArray(r) ? r : [r, undefined];
+      return new Response("{}", {
+        status,
+        headers: retryAfter ? { "Retry-After": retryAfter } : {},
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+    return fetch;
+  }
+  const sleeps: number[] = [];
+  const sleep = async (ms: number) => {
+    sleeps.push(ms);
+  };
+  beforeEach(() => {
+    sleeps.length = 0;
+  });
+
+  it("retries a 429, then sends; counted once", async () => {
+    const fetch = answers(429, 200);
+    expect(await sendTransactional(email(), { sleep })).toEqual({ ok: true });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(sleeps).toEqual([250]);
+    expect(h.counted).toEqual([1]);
+  });
+
+  it("gives up after three 503s and reports the last failure, counting nothing", async () => {
+    const fetch = answers(503, 503, 503);
+    expect(await sendTransactional(email(), { sleep })).toEqual({
+      ok: false,
+      reason: "send_failed",
+      status: 503,
+    });
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(sleeps).toEqual([250, 500]);
+    expect(h.counted).toEqual([]);
+    expect(output().filter((l) => l.includes("status=failed http=503"))).toHaveLength(3);
+  });
+
+  it("waits what Retry-After asks, and stops when that would pass the cap", async () => {
+    answers([429, "1"], [429, "Tue, 27 Oct 2099 12:00:00 GMT"], 200);
+    const res = await sendTransactional(email(), { sleep });
+    expect(res).toMatchObject({ ok: false, reason: "rate_limited", status: 429 });
+    expect(sleeps).toEqual([1000]);
+    expect(sleeps.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(RETRY_WAIT_CAP_MS);
+
+    sleeps.length = 0;
+    answers([503, "2"], [503, "2"], 200);
+    expect(await sendTransactional(email(), { sleep })).toMatchObject({ status: 503 });
+    expect(sleeps).toEqual([2000]);
+  });
+
+  it("never retries another 4xx", async () => {
+    const fetch = answers(400, 200);
+    expect(await sendTransactional(email(), { sleep })).toMatchObject({ ok: false, status: 400 });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(sleeps).toEqual([]);
+  });
+
+  it("retries a request that failed outright, with one idempotency key for every try", async () => {
+    const fetch = answers("throw", 200);
+    expect(await sendTransactional(email({ idempotencyKey: undefined }), { sleep })).toEqual({
+      ok: true,
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const keys = fetch.mock.calls.map(
+      ([, init]) => (init!.headers as Record<string, string>)["Idempotency-Key"],
+    );
+    expect(keys[0]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(keys[1]).toBe(keys[0]);
+    expect(h.counted).toEqual([1]);
+  });
+
+  it("tries batch kinds once: their guard defers them", async () => {
+    const fetch = answers(429, 200);
+    expect(await sendTransactional(email({ kind: "search-alert" }), { sleep })).toMatchObject({
+      reason: "rate_limited",
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("doesn't retry when email isn't configured", async () => {
+    h.env.RESEND_API_KEY = undefined;
+    const fetch = answers();
+    expect(await sendTransactional(email(), { sleep })).toEqual({
+      ok: false,
+      reason: "email_not_configured",
+    });
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

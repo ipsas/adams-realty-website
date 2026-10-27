@@ -18,7 +18,7 @@ import {
 } from "@/db/schema";
 import { authorize, can, ForbiddenError, type Actor } from "@/lib/auth/permissions";
 import { getActor } from "@/lib/auth/session";
-import { sendEmail } from "@/lib/email";
+import { sendTransactional } from "@/lib/email";
 import { env } from "@/lib/env";
 import { geocodeAddress } from "@/lib/geocode";
 import { afterResponse } from "@/lib/leads/deliver";
@@ -576,7 +576,7 @@ function emailAgentAboutAssignment(inquiryId: string, agentId: string, actor: Ac
       .where(eq(users.id, actor.userId))
       .limit(1);
     await sendLeadAssignedEmail(
-      { db, send: sendEmail, siteUrl: env.NEXT_PUBLIC_SITE_URL },
+      { db, send: sendTransactional, siteUrl: env.NEXT_PUBLIC_SITE_URL },
       { inquiryId, agentId, assignedBy: { userId: actor.userId, name: me?.name ?? null } },
     );
   });

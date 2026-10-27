@@ -149,12 +149,18 @@ describe("access code masking", () => {
   it("drops coded items from feature lists and keeps the rest", () => {
     expect(
       withoutExcludedFields({
-        interior: ["Dining Combo", "Keypad Entry", "Keypad 1234"],
+        interior: ["Dining Combo", "Keypad Entry", "Keypad 1234", "Smart Lock"],
         garage: ["Garage code 5678", "Attached"],
-        exterior: ["Lockbox: 4521", "Porch"],
+        exterior: [
+          "Lockbox: 4521",
+          "Porch",
+          "Combo lock 1234",
+          "combination 1234",
+          "Gate code 4455",
+        ],
       }),
     ).toEqual({
-      interior: ["Dining Combo", "Keypad Entry"],
+      interior: ["Dining Combo", "Keypad Entry", "Smart Lock"],
       garage: ["Attached"],
       exterior: ["Porch"],
     });

@@ -11,8 +11,26 @@ const h = vi.hoisted(() => ({
   tags: [] as Array<[string, unknown]>,
   digests: [] as Array<Record<string, unknown>>,
   configured: false,
+  prunes: 0,
+  pruneFails: false,
+  outboxRuns: 0,
+  outboxFails: false,
+}));
+vi.mock("@/lib/leads/outbox", () => ({
+  retryLeadEmails: async () => {
+    h.outboxRuns++;
+    if (h.outboxFails) throw new Error("relation email_outbox does not exist");
+    return { sent: 0, retry: 0, dead: 0, gone: 0 };
+  },
 }));
 vi.mock("@/lib/email", () => ({ emailConfigured: () => h.configured }));
+vi.mock("@/lib/email-batch", () => ({
+  pruneSendCounters: async () => {
+    h.prunes++;
+    if (h.pruneFails) throw new Error("connection terminated");
+    return 0;
+  },
+}));
 
 vi.mock("@/lib/cron-auth", () => ({
   isCronAuthorized: (r: Request) => r.headers.get("authorization") === "Bearer secret",
@@ -66,6 +84,11 @@ beforeEach(() => {
   h.calls.length = 0;
   h.tags.length = 0;
   h.digests.length = 0;
+  h.prunes = 0;
+  h.pruneFails = false;
+  h.outboxRuns = 0;
+  h.outboxFails = false;
+  h.configured = false;
   h.outcomes = [{ source: "gamls", ok: true, result: result() }];
 });
 
@@ -92,6 +115,45 @@ describe("GET /api/cron/sync", () => {
     expect(h.calls[0]).toMatchObject({ mode: "purge", allowLargePurge: false });
     await call("?purge=1&allowLargePurge=1");
     expect(h.calls[1]).toMatchObject({ mode: "purge", allowLargePurge: true });
+  });
+
+  it("prunes old email send counters on the daily purge only", async () => {
+    await call();
+    expect(h.prunes).toBe(0);
+    expect((await call("?purge=1")).status).toBe(200);
+    expect(h.prunes).toBe(1);
+  });
+
+  it("logs one line when the counter prune fails, and still purges", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    h.pruneFails = true;
+    const res = await call("?purge=1");
+    expect(res.status).toBe(200);
+    expect(h.calls[0]).toMatchObject({ mode: "purge" });
+    expect(errors.mock.calls).toEqual([
+      [expect.stringMatching(/^\[cron\] email counter prune failed: /)],
+    ]);
+    errors.mockRestore();
+  });
+
+  it("retries queued lead notices on every run once email is configured", async () => {
+    await call();
+    expect(h.outboxRuns).toBe(0);
+    h.configured = true;
+    await call();
+    await call("?purge=1");
+    expect(h.outboxRuns).toBe(2);
+  });
+
+  it("logs one line when the outbox fails, and still answers for the sync alone", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    h.configured = true;
+    h.outboxFails = true;
+    const res = await call();
+    expect(res.status).toBe(200);
+    expect(h.digests).toHaveLength(1);
+    expect(errors.mock.calls).toEqual([[expect.stringMatching(/^\[cron\] email outbox failed: /)]]);
+    errors.mockRestore();
   });
 
   it("refreshes the listing caches when a source changed listings", async () => {
