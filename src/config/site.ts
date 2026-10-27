@@ -63,7 +63,7 @@ export const site = {
      * IDX agreement §7: the Georgia MLS name and logo on pages with its
      * listings. The official GAMLS IDX logo supplied by Georgia MLS (blue and
      * gold on transparent, 300 × 118 PNG); one image for both themes, drawn on
-     * a white chip in dark mode. `MlsMark` draws it 20 px tall (51 px wide).
+     * a white chip in dark mode. `MlsMark` draws it 24 px tall (61 px wide).
      * Null would show the name as a text wordmark instead.
      */
     logo: { src: "/brand/gamls_idx.png", width: 300, height: 118 } as {
@@ -72,9 +72,10 @@ export const site = {
       height: number;
     } | null,
     /**
-     * The smallest logo file Georgia MLS supplied (81 × 32 PNG), drawn 20 px
-     * tall on cards, tiles and map popups (GAMLS sets no minimum logo size; 20 px
-     * is the line height of the `text-sm` listing-firm line). Falls back to
+     * The smallest logo file Georgia MLS supplied (81 × 32 PNG), drawn 24 px
+     * tall on cards, tiles and map popups (GAMLS sets no minimum logo size; 24 px
+     * is the business's chosen middle ground between 20 px and the original
+     * 32 px, with "GAMLS" about 14 px tall). Falls back to
      * `logo` when null.
      */
     logoSmall: { src: "/brand/gamls_idx_81x32.png", width: 81, height: 32 } as {

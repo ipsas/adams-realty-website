@@ -183,7 +183,7 @@ async function expectMlsMark(page: Page, mark: Locator) {
       const r = img.getBoundingClientRect();
       return { w: r.width, h: r.height, ratio: img.naturalWidth / img.naturalHeight };
     });
-    expect(box.h).toBeGreaterThanOrEqual(20);
+    expect(box.h).toBeGreaterThanOrEqual(24);
     expect(Math.abs(box.w / box.h - box.ratio)).toBeLessThan(0.05);
   };
 

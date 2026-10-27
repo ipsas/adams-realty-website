@@ -27,8 +27,8 @@ Owner decisions since, now built:
 
 - **Official Georgia MLS logo.** The GAMLS IDX logo supplied by Georgia MLS is
   `public/brand/gamls_idx.png`, set in `site.mls.logo`; every `MlsAttribution` (footer,
-  `/homes`, feed listing pages, `/listing-corrections`) shows it 20 px tall, on a white chip in
-  dark mode. Every feed card, area-guide tile and map popup carries `MlsCredit` (logo at 20 px,
+  `/homes`, feed listing pages, `/listing-corrections`) shows it 24 px tall, on a white chip in
+  dark mode. Every feed card, area-guide tile and map popup carries `MlsCredit` (logo at 24 px,
   "© <year> Georgia MLS"). The IDX disclaimer is "© <year> Georgia MLS. All rights reserved.
   Information is deemed reliable but is not guaranteed. IDX information is provided exclusively
   for consumers' personal, non-commercial use, that it may not be used for any purpose other

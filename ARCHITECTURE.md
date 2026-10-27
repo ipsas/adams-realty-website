@@ -248,13 +248,15 @@ governs every listing that came from the feed. Adams Realty, Inc. is the license
   footer, on the search page and in each feed listing's information block. The logo is the
   official GAMLS IDX logo supplied by Georgia MLS (`site.mls.logo`,
   `public/brand/gamls_idx.png`, 300 × 118): one image for both themes, on a white chip in the
-  dark one, 20 px tall at its own aspect ratio, with "Georgia MLS" as its alt text. Neither the
+  dark one, 24 px tall at its own aspect ratio, with "Georgia MLS" as its alt text. Neither the
   IDX agreement §7 (https://media.georgiamls.com/gamls/docs/administrative/idx_agreement.pdf)
   nor the vendor FAQ's "reasonably prominent location with reasonable visibility"
-  (https://www.gamls.com/vendors/retsfaq) sets a minimum logo size, and the type-size rule
-  applies to the firm line, not the logo; 20 px is that line's height (`text-sm`, 14/20 px) and
-  the logo's lettering (about 10 px) is its cap height. Every feed
-  card, area-guide tile and map popup also carries `MlsCredit`: the logo at 20 px and
+  (https://www.gamls.com/vendors/retsfaq) sets a minimum logo size. 24 px is the business's
+  chosen middle ground between 20 px and the original 32 px: scaled from the 300 × 118 source,
+  the "GAMLS" lettering is about 14 px tall and the gold "IDX" box about 7 px. IDX agreement §18
+  presumes co-branding is not misleading when the participant's logo is larger than any third
+  party's; the Adams logo (161 × 32) stays larger. Every feed
+  card, area-guide tile and map popup also carries `MlsCredit`: the logo at 24 px and
   "© <year> Georgia MLS" in `text-xs` (below the median, so the firm line stays at or above it).
   The IDX disclaimer is "© <year> Georgia MLS. All rights reserved. Information is deemed
   reliable but is not guaranteed accurate by GAMLS. IDX information is provided exclusively for

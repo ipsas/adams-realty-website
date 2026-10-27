@@ -46,7 +46,7 @@ describe("MlsMark", () => {
     expect(imgs(html)).toEqual([]);
   });
 
-  it("shows the one official logo, 20 px tall, on a white chip in dark mode", () => {
+  it("shows the one official logo, 24 px tall, on a white chip in dark mode", () => {
     const html = renderToStaticMarkup(createElement(MlsMark));
     expect(html).toContain('data-mls-mark="logo"');
     expect(html).not.toContain('data-mls-mark="text"');
@@ -56,25 +56,25 @@ describe("MlsMark", () => {
     expect(img.src).toBe("/brand/gamls_idx.png");
     expect(img.alt).toBe(site.mls.name);
     // A fixed height and its own width (never stretched), in both themes.
-    expect(img.cls).toEqual(expect.arrayContaining(["h-5", "w-auto"]));
+    expect(img.cls).toEqual(expect.arrayContaining(["h-6", "w-auto"]));
     expect(img.cls).not.toContain("hidden");
     expect(img.cls).not.toContain("dark:hidden");
     expect(markClasses(html)).toContain("dark:bg-white");
   });
 
-  it("draws the small size from the 81 × 32 file at 20 px", () => {
+  it("draws the small size from the 81 × 32 file at 24 px", () => {
     const [img] = imgs(renderToStaticMarkup(createElement(MlsMark, { size: "sm" })));
     expect(img.src).toBe("/brand/gamls_idx_81x32.png");
     expect(img.alt).toBe(site.mls.name);
-    expect(img.cls).toEqual(expect.arrayContaining(["h-5", "w-auto"]));
-    expect(img.cls).not.toContain("h-6");
+    expect(img.cls).toEqual(expect.arrayContaining(["h-6", "w-auto"]));
+    expect(img.cls).not.toContain("h-8");
   });
 
   it("falls back to the main logo for the small size", () => {
     mls.logoSmall = null;
     const [img] = imgs(renderToStaticMarkup(createElement(MlsMark, { size: "sm" })));
     expect(img.src).toBe("/brand/gamls_idx.png");
-    expect(img.cls).toContain("h-5");
+    expect(img.cls).toContain("h-6");
   });
 
   it("carries the mark and the copyright notice in the attribution block", () => {
@@ -93,7 +93,7 @@ describe("MlsCredit", () => {
     expect(rest).toEqual([]);
     expect(img.alt).toBe(site.mls.name);
     expect(img.src).toBe("/brand/gamls_idx_81x32.png");
-    expect(img.cls).toContain("h-5");
+    expect(img.cls).toContain("h-6");
     expect(html).toContain(`© ${year} ${site.mls.copyrightHolder}`);
   });
 });
