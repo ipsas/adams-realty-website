@@ -21,6 +21,7 @@ const rows = () =>
   db
     .select({
       id: listings.id,
+      key: listings.listingKey,
       tsv: sql<string | null>`${listings.keywordTsv}::text`,
       ver: listings.keywordTsvVer,
       updatedAt: sql<string>`${listings.updatedAt}::text`,
@@ -216,7 +217,10 @@ describe("backfillKeywordTsv", () => {
       listing(2, { description: "Bright bungalow." }),
       listing(3, { description: "Updated duplex." }),
     ]);
-    const [noVersion, older, current] = await rows();
+    const before = await rows();
+    const [noVersion, older, current] = ["K000001", "K000002", "K000003"].map(
+      (key) => before.find((r) => r.key === key)!,
+    );
     // Old vectors, still in place: one from before the version, one an older version, and a
     // current one (a stand-in vector, so a rewrite would show).
     await db.execute(sql`
@@ -238,7 +242,7 @@ describe("backfillKeywordTsv", () => {
     expect(byId.get(older.id)).toMatchObject({ ver: KEYWORD_TSV_VERSION });
     expect(byId.get(older.id)?.tsv).toContain("'bungalow'");
     expect(byId.get(current.id)).toMatchObject({ tsv: "'kept':1", ver: KEYWORD_TSV_VERSION });
-    expect(after.map((r) => r.updatedAt)).toEqual(
+    expect([noVersion, older, current].map((r) => byId.get(r.id)?.updatedAt)).toEqual(
       [noVersion, older, current].map((r) => r.updatedAt),
     );
     expect(await countStaleKeywordTsv(db)).toBe(0);
