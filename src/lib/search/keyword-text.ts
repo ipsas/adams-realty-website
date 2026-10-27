@@ -14,6 +14,7 @@ export type KeywordFields = {
   features?: unknown;
 };
 
+/** Must match the columns of the listings_keyword_tsv_stale trigger (drizzle/0024). */
 export const KEYWORD_FIELDS = [
   "addressLine1",
   "city",
@@ -31,7 +32,8 @@ export const KEYWORD_FIELDS = [
  * keyword search can't confirm a lockbox code. The description and each string
  * anywhere in `features` (never its keys) are masked on their own with the
  * listing page's masker, then "/" is read as a space (the parser takes
- * "room/kitchen/dining" or "Washer/Dryer" as one word).
+ * "room/kitchen/dining" or "Washer/Dryer" as one word). A change here (or to the
+ * masker) needs a migration resetting keyword_tsv, as drizzle/0024 does.
  */
 export function keywordText(l: KeywordFields): string {
   const parts = [

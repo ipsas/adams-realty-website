@@ -13,19 +13,77 @@ const UPDATE_BATCH = 500;
  * none are left or the deadline is near (a large table fills in a few cron runs,
  * not a day of them). The text is built in JS (`keywordText`: the masker is JS).
  * Only a row unchanged since it was read is written (same `updated_at`, still
- * null), so a sync write in between wins. `updated_at` is left alone: the
- * listing didn't change. Returns how many rows it filled.
+ * null), so a sync write in between wins, and a row another transaction has
+ * locked is skipped, not waited on. `updated_at` is left alone: the listing
+ * didn't change. At most `batches` batches (a caller reporting progress).
+ * Returns how many rows it filled.
  */
 export async function backfillKeywordTsv(
   db: Executor,
-  { limit = 2000, deadline = Infinity }: { limit?: number; deadline?: number } = {},
+  {
+    limit = 2000,
+    deadline = Infinity,
+    batches = Infinity,
+  }: { limit?: number; deadline?: number; batches?: number } = {},
 ): Promise<number> {
   let filled = 0;
-  for (;;) {
+  for (let n = 1; ; n++) {
     const batch = await fillBatch(db, limit, deadline);
     filled += batch.filled;
-    // Done, out of time, or every row read was changed meanwhile (reading them again could loop).
-    if (batch.read < limit || batch.stopped || batch.filled === 0) return filled;
+    // Done, out of time, or every row read was changed or locked meanwhile (reading them again
+    // could loop).
+    if (batch.read < limit || batch.stopped || batch.filled === 0 || n >= batches) return filled;
+  }
+}
+
+/** Rows whose `keyword_tsv` is still null. */
+export async function countMissingKeywordTsv(db: Executor): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(listings)
+    .where(isNull(listings.keywordTsv));
+  return row.n;
+}
+
+/**
+ * Runs `fill` (a few backfill batches) until `remaining` is 0 or `deadline`
+ * passes. A pass that fills nothing while rows remain (locked, or written
+ * meanwhile) is retried after `retryMs`, at most `retries` times in a row.
+ * `progress` gets counts only. Used by scripts/keyword-backfill.ts.
+ */
+export async function backfillUntilDone({
+  fill,
+  remaining,
+  deadline,
+  progress = () => {},
+  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  now = Date.now,
+  retries = 3,
+  retryMs = 1000,
+}: {
+  fill: (deadline: number) => Promise<number>;
+  remaining: () => Promise<number>;
+  deadline: number;
+  progress?: (filled: number, remaining: number) => void;
+  sleep?: (ms: number) => Promise<unknown>;
+  now?: () => number;
+  retries?: number;
+  retryMs?: number;
+}): Promise<{ filled: number; remaining: number }> {
+  let filled = 0;
+  let idle = 0;
+  for (;;) {
+    const n = await fill(deadline);
+    filled += n;
+    const left = await remaining();
+    if (left === 0 || now() >= deadline) return { filled, remaining: left };
+    if (n > 0) {
+      idle = 0;
+      progress(filled, left);
+    } else {
+      if (++idle > retries) return { filled, remaining: left };
+      await sleep(retryMs);
+    }
   }
 }
 
@@ -61,9 +119,17 @@ async function fillBatch(
     const values = rows
       .slice(i, i + UPDATE_BATCH)
       .map((r) => sql`(${r.id}::uuid, ${r.updatedAt}::timestamptz, ${keywordTsv(keywordText(r))})`);
+    // Rows locked in id order, a locked one skipped (it stays null for the next run): a
+    // multi-row listing write locking in another order can't deadlock with this one.
     const result = await db.execute(sql`
+      with v(id, updated_at, tsv) as (values ${sql.join(values, sql`, `)}),
+      locked as (
+        select "id" from "listings"
+        where "id" in (select id from v) and "keyword_tsv" is null
+        order by "id" for update skip locked
+      )
       update ${listings} set "keyword_tsv" = v.tsv
-      from (values ${sql.join(values, sql`, `)}) as v(id, updated_at, tsv)
+      from v join locked using (id)
       where ${listings.id} = v.id and ${listings.updatedAt} = v.updated_at
         and ${listings.keywordTsv} is null`);
     filled += result.rowCount ?? 0;

@@ -23,6 +23,14 @@
  * Preview listing counts (previews only, after the MLS sync step): a
  * read-only report of listings per data source in the build log
  * (previewListingCounts). A failure there only logs; it never fails the build.
+ *
+ * Keyword vectors (every environment, last before `next build`):
+ * scripts/keyword-backfill.ts fills listings.keyword_tsv where it is null (a
+ * migration may reset them all, as 0024 does), so the deployment searches fresh
+ * vectors when traffic switches. It runs for up to KEYWORD_BACKFILL_MINUTES
+ * (default 20); rows left then are logged and the build continues (the sync
+ * cron, every 15 minutes, finishes them). An error fails the build; a rerun
+ * resumes, since it only fills null rows.
  */
 import { execSync } from "node:child_process";
 import pg from "pg";
@@ -93,6 +101,7 @@ if (!process.env.DATABASE_URL) {
       console.warn(`Preview listing counts failed: ${e instanceof Error ? e.message : e}`);
     }
   }
+  run("npx tsx scripts/keyword-backfill.ts");
 }
 
 run("npx next build");

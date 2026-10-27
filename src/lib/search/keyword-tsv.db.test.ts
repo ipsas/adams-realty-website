@@ -52,6 +52,7 @@ describe("upsertListings", () => {
     expect(tsv).not.toContain("4455");
   });
 
+  // The stale trigger leaves it be: the write gives keyword_tsv a new value.
   it("recomputes it on a full update", async () => {
     await insertListings(source, [full(1, { description: RANCH })]);
     await insertListings(source, [full(1, { description: "Bright bungalow." })]);
@@ -74,6 +75,65 @@ describe("upsertListings", () => {
     const [after] = await rows();
     expect(after.tsv).toContain("'ranch'");
     expect(after.tsv).toContain("'headlin'");
+  });
+});
+
+describe("listings_keyword_tsv_stale trigger", () => {
+  const filled = async () => {
+    await insertListings(source, [full(1, { description: RANCH })]);
+    const [row] = await rows();
+    expect(row.tsv).toContain("'ranch'");
+    return row;
+  };
+
+  it("nulls it on a write that changes a keyword column but not keyword_tsv", async () => {
+    const { id } = await filled();
+    await db.execute(
+      sql`update listings set description = 'Bright bungalow.', updated_at = now() where id = ${id}`,
+    );
+    expect((await rows())[0].tsv).toBeNull();
+  });
+
+  it("nulls it on an upsert's conflict update that doesn't set keyword_tsv", async () => {
+    const { id } = await filled();
+    // The row copied as a new insert (every column but id, keyword_tsv and the generated ones),
+    // with a new description: it conflicts on (source_id, listing_key).
+    const { rows: cols } = await db.execute<{ column_name: string }>(sql`
+      select column_name from information_schema.columns
+      where table_schema = current_schema() and table_name = 'listings'
+        and is_generated = 'NEVER' and column_name not in ('id', 'keyword_tsv')`);
+    const names = cols.map((c) => `"${c.column_name}"`);
+    const values = cols.map((c) =>
+      c.column_name === "description" ? `'Bright bungalow.'` : `"${c.column_name}"`,
+    );
+    await db.execute(sql`
+      insert into listings (${sql.raw(names.join(", "))})
+      select ${sql.raw(values.join(", "))} from listings where id = ${id}
+      on conflict (source_id, listing_key) do update set description = excluded.description`);
+    const [row] = await rows();
+    expect(row.id).toBe(id);
+    expect(row.tsv).toBeNull();
+  });
+
+  it("keeps it on an update that changes no keyword column, or sets keyword_tsv", async () => {
+    const { id } = await filled();
+    await db.execute(
+      sql`update listings set removed_at = now(), updated_at = now() where id = ${id}`,
+    );
+    // In the SET list but unchanged.
+    await db.execute(sql`update listings set description = description where id = ${id}`);
+    expect((await rows())[0].tsv).toContain("'ranch'");
+    // The backfill's keyword_tsv-only write.
+    await db.execute(sql`update listings set keyword_tsv = to_tsvector('english', 'cottage')`);
+    expect((await rows())[0].tsv).toBe("'cottag':1");
+  });
+
+  it("keeps a vector the write computes along with the new text", async () => {
+    const { id } = await filled();
+    await db.execute(sql`
+      update listings set description = 'Bright bungalow.',
+        keyword_tsv = to_tsvector('english', 'Bright bungalow.') where id = ${id}`);
+    expect((await rows())[0].tsv).toContain("'bungalow'");
   });
 });
 
@@ -180,6 +240,23 @@ describe("backfillKeywordTsv", () => {
     const after = await rows();
     expect(after.find((r) => r.id === first.id)?.tsv).toBeNull();
     expect(after.find((r) => r.id === second.id)?.tsv).toBeTruthy();
+  });
+
+  it("skips a row another transaction has locked, without waiting for it", async () => {
+    await insertListings(source, [listing(1), listing(2)]);
+    await clearAll();
+    const [first, second] = await rows();
+    // A concurrent listing write holding the first row (waiting on it would hang this test).
+    const filled = await db.transaction(async (tx) => {
+      await tx.execute(sql`select 1 from listings where id = ${first.id} for update`);
+      return backfillKeywordTsv(db);
+    });
+    expect(filled).toBe(1);
+    const after = await rows();
+    expect(after.find((r) => r.id === first.id)?.tsv).toBeNull();
+    expect(after.find((r) => r.id === second.id)?.tsv).toBeTruthy();
+    // Unlocked, the next run fills it.
+    expect(await backfillKeywordTsv(db)).toBe(1);
   });
 
   it("does nothing with too little time before the deadline, or past it", async () => {
