@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, lt, lte, sql } from "drizzle-orm";
 import { db as defaultDb, type Executor } from "@/db";
 import { emailOutbox } from "@/db/schema";
 import type { Email, SendEmail, SendResult } from "@/lib/email";
@@ -233,6 +233,29 @@ export async function processEmailOutbox(deps: OutboxDeps): Promise<OutboxRun> {
     }
   }
   return run;
+}
+
+/** Dead rows are kept this long after their last try, for a look at why they failed. */
+export const OUTBOX_DEAD_KEEP_DAYS = 30;
+
+/**
+ * Deletes the dead rows last tried more than OUTBOX_DEAD_KEEP_DAYS ago;
+ * returns how many. Sent rows are already deleted when sent, and pending ones
+ * are never pruned, however old.
+ */
+export async function pruneEmailOutbox(db: Executor = defaultDb): Promise<number> {
+  const res = await db
+    .delete(emailOutbox)
+    .where(
+      and(
+        eq(emailOutbox.state, "dead"),
+        lt(
+          emailOutbox.updatedAt,
+          sql`now() - ${OUTBOX_DEAD_KEEP_DAYS}::integer * interval '1 day'`,
+        ),
+      ),
+    );
+  return res.rowCount ?? 0;
 }
 
 /** `releaseClaims`, logged and left to the lease should it fail. */

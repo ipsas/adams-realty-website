@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { isCronAuthorized } from "@/lib/cron-auth";
 import { emailConfigured } from "@/lib/email";
 import { pruneSendCounters } from "@/lib/email-batch";
+import { pruneEmailOutbox } from "@/lib/email-outbox";
 import { runLeadDigests } from "@/lib/leads/digest";
 import { retryLeadEmails } from "@/lib/leads/outbox";
 import { LISTINGS_TAG } from "@/lib/listings/cache-tags";
@@ -26,7 +27,8 @@ const BUDGET_MS = (maxDuration - 45) * 1000;
  * - `?purge=1`: only the purge (listings that left the feed), no incremental.
  *   It aborts if it would remove more than 5% of the listings; add
  *   `&allowLargePurge=1` once you've checked the feed really dropped them.
- *   It also prunes old email send counters (best effort, not in the status).
+ *   It also prunes old email send counters and dead outbox rows (best effort,
+ *   not in the status).
  *
  * After any change (even by a run that then failed), the cached listing data
  * (home page stats, area guides…) is revalidated. 200 when every source
@@ -57,6 +59,11 @@ export async function GET(request: NextRequest) {
     // Daily housekeeping: email_send_counters rows older than 90 days (email-batch.ts).
     await pruneSendCounters().catch((e) =>
       console.error(`[cron] email counter prune failed: ${describeError(e)}`),
+    );
+    // And email_outbox rows dead for more than 30 days (email-outbox.ts).
+    await pruneEmailOutbox().then(
+      (pruned) => console.info(`[cron] email outbox: pruned ${pruned} dead rows`),
+      (e) => console.error(`[cron] email outbox prune failed: ${describeError(e)}`),
     );
   }
   const results = await syncAllSources({

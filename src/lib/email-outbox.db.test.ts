@@ -12,9 +12,11 @@ import { closeDb, resetDb } from "@/test/db/helpers";
 import {
   claimDueEmails,
   enqueueEmail,
+  OUTBOX_DEAD_KEEP_DAYS,
   OUTBOX_MAX_ATTEMPTS,
   OUTBOX_MIN_TIME_MS,
   processEmailOutbox,
+  pruneEmailOutbox,
   type OutboxItem,
 } from "./email-outbox";
 
@@ -271,5 +273,31 @@ describe("processEmailOutbox", () => {
     expect(send).not.toHaveBeenCalled();
     expect(await rows()).toEqual([]);
     expect(output().filter((l) => l.includes("status=gone"))).toHaveLength(2);
+  });
+});
+
+describe("pruneEmailOutbox", () => {
+  it("deletes dead rows last tried more than 30 days ago only, never a pending one", async () => {
+    // Sent rows are deleted when sent, so dead and pending are the only states left.
+    const ago = (days: number) => sql`now() - ${days}::integer * interval '1 day'`;
+    const old = OUTBOX_DEAD_KEEP_DAYS + 1;
+    const recent = OUTBOX_DEAD_KEEP_DAYS - 1;
+    const values = [
+      { name: "old-dead", state: "dead" as const, days: old },
+      { name: "recent-dead", state: "dead" as const, days: recent },
+      { name: "old-pending", state: "pending" as const, days: 400 },
+      { name: "new-pending", state: "pending" as const, days: 0 },
+    ].map((v) => ({
+      ...office(randomUUID()),
+      state: v.state,
+      lastStatus: v.name,
+      createdAt: ago(v.days),
+      updatedAt: ago(v.days),
+      nextAttemptAt: ago(v.days),
+    }));
+    await db.insert(emailOutbox).values(values);
+    expect(await pruneEmailOutbox(db)).toBe(1);
+    const left = (await rows()).map((r) => r.lastStatus).sort();
+    expect(left).toEqual(["new-pending", "old-pending", "recent-dead"]);
   });
 });

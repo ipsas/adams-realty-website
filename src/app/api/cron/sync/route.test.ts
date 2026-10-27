@@ -13,6 +13,8 @@ const h = vi.hoisted(() => ({
   configured: false,
   prunes: 0,
   pruneFails: false,
+  outboxPrunes: 0,
+  outboxPruneFails: false,
   outboxRuns: 0,
   outboxOpts: [] as Array<Record<string, unknown>>,
   outboxFails: false,
@@ -44,6 +46,13 @@ vi.mock("@/lib/email-batch", () => ({
     h.prunes++;
     if (h.pruneFails) throw new Error("connection terminated");
     return 0;
+  },
+}));
+vi.mock("@/lib/email-outbox", () => ({
+  pruneEmailOutbox: async () => {
+    h.outboxPrunes++;
+    if (h.outboxPruneFails) throw new Error("connection terminated");
+    return 3;
   },
 }));
 
@@ -102,6 +111,8 @@ beforeEach(() => {
   h.digests.length = 0;
   h.prunes = 0;
   h.pruneFails = false;
+  h.outboxPrunes = 0;
+  h.outboxPruneFails = false;
   h.outboxRuns = 0;
   h.outboxOpts.length = 0;
   h.outboxFails = false;
@@ -153,6 +164,28 @@ describe("GET /api/cron/sync", () => {
     expect(h.calls[0]).toMatchObject({ mode: "purge" });
     expect(errors.mock.calls).toEqual([
       [expect.stringMatching(/^\[cron\] email counter prune failed: /)],
+    ]);
+    errors.mockRestore();
+  });
+
+  it("prunes old dead outbox rows on the daily purge only, and logs how many", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    await call();
+    expect(h.outboxPrunes).toBe(0);
+    expect((await call("?purge=1")).status).toBe(200);
+    expect(h.outboxPrunes).toBe(1);
+    expect(info.mock.calls).toContainEqual(["[cron] email outbox: pruned 3 dead rows"]);
+    info.mockRestore();
+  });
+
+  it("logs one line when the outbox prune fails, and still purges", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    h.outboxPruneFails = true;
+    const res = await call("?purge=1");
+    expect(res.status).toBe(200);
+    expect(h.calls[0]).toMatchObject({ mode: "purge" });
+    expect(errors.mock.calls).toEqual([
+      [expect.stringMatching(/^\[cron\] email outbox prune failed: /)],
     ]);
     errors.mockRestore();
   });
