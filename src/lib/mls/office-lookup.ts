@@ -7,8 +7,8 @@ import type { MlsOffice } from "./types";
 /**
  * Names the listing office of feed listings that arrive without a
  * ListOfficeName (gamls2 sends it empty). Once after a sync run (syncSource),
- * up to OFFICE_RUN_CAP office IDs of the source's listings that mls_offices
- * has no fresh entry for are looked up in the feed's Office resource,
+ * up to OFFICE_RUN_CAP office IDs of the source's listings (not the firm's own)
+ * that mls_offices has no fresh entry for are looked up in the feed's Office resource,
  * OFFICE_CHUNK per request, and cached, IDs the feed doesn't know too (with a
  * null name, so they aren't asked for every run). listingOfficeLabel reads
  * the cache through officeLookupName() (src/lib/listings/card.ts).
@@ -92,6 +92,7 @@ export function officeLookupStore(
           and(
             eq(listings.sourceId, sourceId),
             isNull(listings.removedAt),
+            eq(listings.isCompanyListing, false),
             sql`coalesce(trim(${listings.listOfficeName}), '') = ''`,
             sql`coalesce(trim(${listings.listOfficeMlsId}), '') <> ''`,
             notExists(

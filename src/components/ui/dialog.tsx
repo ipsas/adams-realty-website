@@ -501,7 +501,7 @@ export function Dialog({
             </header>
           )}
         </div>
-        <div className="flex-1 overflow-y-auto overscroll-contain">{children}</div>
+        <div className="min-h-0 flex-auto overflow-y-auto overscroll-contain">{children}</div>
         <div ref={slotRef} data-toast-slot className="relative h-0 shrink-0" />
         {footer && <footer className="shrink-0 border-t border-line px-6 py-4">{footer}</footer>}
       </ControlsContext.Provider>
