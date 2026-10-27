@@ -133,7 +133,7 @@ describe("refreshOffices", () => {
     expect(requests).toHaveLength(4);
     expect(saved.flat()).toHaveLength(200);
     expect(lines).toEqual([
-      { level: "info", line: "office_lookup: requested=200 resolved=4 status=200" },
+      { level: "info", line: "office_lookup: requested=200 resolved=4 status=200 cut=deadline" },
     ]);
   });
 
@@ -144,7 +144,28 @@ describe("refreshOffices", () => {
     await expect(refreshOffices(deps)).resolves.toBe(0);
     expect(requests).toEqual([]);
     expect(lines).toEqual([
-      { level: "info", line: "office_lookup: requested=0 resolved=0 status=200" },
+      { level: "info", line: "office_lookup: requested=0 resolved=0 status=200 cut=deadline" },
+    ]);
+  });
+
+  it("with every batch done before the deadline logs no cut", async () => {
+    const ids = Array.from({ length: 100 }, (_, i) => `O${i}`);
+    let clock = NOW;
+    const { deps, lines, requests } = setup({
+      ids,
+      now: () => clock,
+      // Both batches start with more than OFFICE_BATCH_MIN_REMAINING_MS left.
+      deadline: NOW + 10_000 + OFFICE_BATCH_MIN_REMAINING_MS + 1,
+      fetchOffices: async (chunk) => {
+        requests.push(chunk);
+        clock += 10_000;
+        return [];
+      },
+    });
+    await refreshOffices(deps);
+    expect(requests).toHaveLength(2);
+    expect(lines).toEqual([
+      { level: "info", line: "office_lookup: requested=100 resolved=0 status=200" },
     ]);
   });
 

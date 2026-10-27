@@ -15,7 +15,8 @@ import type { MlsOffice } from "./types";
  *
  * Requests go one at a time, OFFICE_BATCH_PAUSE_MS apart. With a `deadline`,
  * no request starts with less than OFFICE_BATCH_MIN_REMAINING_MS left; IDs
- * not reached are looked up on a later run.
+ * not reached are looked up on a later run, and the log line ends in
+ * `cut=deadline`.
  *
  * Best effort: it never throws. The first failure ends the step; the listing
  * shows "MLS Office ID <id>" meanwhile. One log line a run, which never holds
@@ -54,6 +55,7 @@ export async function refreshOffices(deps: OfficeLookupDeps): Promise<number> {
   let requested = 0;
   let resolved = 0;
   let saved = 0;
+  let cut = false;
   let phase: "db" | "fetch" = "db";
   const now = deps.now ?? Date.now;
   const sleep = deps.sleep ?? ((ms) => new Promise<void>((r) => setTimeout(r, ms)));
@@ -67,6 +69,7 @@ export async function refreshOffices(deps: OfficeLookupDeps): Promise<number> {
     for (let i = 0; i < ids.length; i += OFFICE_CHUNK) {
       if (i > 0) await sleep(OFFICE_BATCH_PAUSE_MS);
       if (deps.deadline !== undefined && deps.deadline - now() < OFFICE_BATCH_MIN_REMAINING_MS) {
+        cut = true;
         break;
       }
       const chunk = ids.slice(i, i + OFFICE_CHUNK);
@@ -80,7 +83,9 @@ export async function refreshOffices(deps: OfficeLookupDeps): Promise<number> {
       await deps.saveOffices(offices);
       saved += named;
     }
-    log.info(`office_lookup: requested=${requested} resolved=${resolved} status=200`);
+    log.info(
+      `office_lookup: requested=${requested} resolved=${resolved} status=200${cut ? " cut=deadline" : ""}`,
+    );
   } catch (e) {
     const counts = `office_lookup: requested=${requested} resolved=${resolved}`;
     const status = (e as { status?: unknown } | null)?.status;
