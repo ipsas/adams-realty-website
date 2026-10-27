@@ -10,27 +10,7 @@ import {
   type FeatureFlag,
   type SearchCriteria,
 } from "@/lib/search/params";
-
-const FEATURE_LABELS: Record<FeatureFlag, string> = {
-  garage: "Garage",
-  pool: "Private pool",
-  waterfront: "Waterfront",
-  view: "View",
-  basement: "Basement",
-  newConstruction: "New construction",
-  singleStory: "Single story",
-  openHouse: "Open house",
-  virtualTour: "3D / virtual tour",
-  ourListings: "Adams Realty listings only",
-  fireplace: "Fireplace",
-  primaryOnMain: "Primary bedroom on main",
-  bedOnMain: "Any bedroom on main level",
-};
-
-/** Accessible names where the visible label leaves out words people search by. */
-const FEATURE_ARIA_LABELS: Partial<Record<FeatureFlag, string>> = {
-  primaryOnMain: "Primary bedroom on main (master bedroom on main floor)",
-};
+import { FEATURE_ARIA_LABELS, FEATURE_LABELS } from "./feature-labels";
 
 const SQFT = [500, 750, 1000, 1250, 1500, 1750, 2000, 2500, 3000, 3500, 4000, 5000, 7500];
 const ACRES: [number, string][] = [

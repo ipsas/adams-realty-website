@@ -389,8 +389,14 @@ export function compensation(p: ResoProperty): {
   };
 }
 
-/** The InteriorFeatures value for a primary bedroom on the main level (Georgia MLS: "Master On Main Level"). */
-const PRIMARY_ON_MAIN = /^(master|primary)( bedroom| suite)? on main( level)?$/i;
+/**
+ * The InteriorFeatures values that put the primary bedroom on the main level,
+ * matched whole and case-insensitively. A full scan of the GAMLS feed on
+ * 2026-10-27 (all 403,824 Property records) found only this one; add a value
+ * only after it appears in the feed.
+ */
+export const PRIMARY_ON_MAIN_VALUES = ["Master On Main Level"] as const;
+const PRIMARY_ON_MAIN = new Set<string>(PRIMARY_ON_MAIN_VALUES.map((v) => v.toLowerCase()));
 
 /**
  * A non-negative whole number: a safe-integer JSON number, or a string of
@@ -410,8 +416,9 @@ function strictNonNegInt(v: unknown): number | null {
  * `MainLevelBedrooms` and `BedroomsTotal` must be strict non-negative integers
  * (strictNonNegInt). `MainLevelBedrooms` counts only when `BedroomsTotal` is
  * known and it is no greater; otherwise unknown. The primary bedroom is on the
- * main level when InteriorFeatures says so or every bedroom is there, and isn't
- * when no bedroom is; the flag with zero main-level bedrooms conflicts, so
+ * main level when InteriorFeatures says so (an exact PRIMARY_ON_MAIN_VALUES
+ * value) or every bedroom is there, and isn't when no bedroom is; the flag
+ * with zero main-level bedrooms conflicts, so
  * unknown. With `BedroomsTotal` 0 it is unknown whatever the flag or count say.
  * A missing flag alone isn't a "no": many one-level homes don't carry it.
  * The v4 remap (RESO_MAPPER_VERSION) fills both columns for stored rows.
@@ -424,7 +431,16 @@ export function mainLevelBedroomFacts(p: ResoProperty): {
   const total = strictNonNegInt(p.BedroomsTotal);
   const raw = strictNonNegInt(p.MainLevelBedrooms);
   const mainLevelBedrooms = raw !== null && total !== null && raw <= total ? raw : null;
-  const masterFlag = list(p.InteriorFeatures).some((v) => PRIMARY_ON_MAIN.test(v));
+  // The raw values, untrimmed (list() trims and humanizes): only an exact value counts.
+  const features = p.InteriorFeatures;
+  const rawFeatures: unknown[] = Array.isArray(features)
+    ? features
+    : typeof features === "string"
+      ? features.split(/,\s*/)
+      : [];
+  const masterFlag = rawFeatures.some(
+    (v) => typeof v === "string" && PRIMARY_ON_MAIN.has(v.toLowerCase()),
+  );
   let primaryBedroomOnMain: boolean | null = null;
   if (total === 0) primaryBedroomOnMain = null;
   else if (masterFlag) primaryBedroomOnMain = mainLevelBedrooms === 0 ? null : true;

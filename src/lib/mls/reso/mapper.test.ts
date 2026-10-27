@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { isExcludedField } from "@/lib/listings/excluded-fields";
@@ -238,7 +239,7 @@ describe("mapResoProperty", () => {
 
   it("maps main-level bedrooms and the primary bedroom on main", () => {
     expect(
-      mapOk({ ...base, MainLevelBedrooms: 1, InteriorFeatures: ["MasterOnMainLevel"] }),
+      mapOk({ ...base, MainLevelBedrooms: 1, InteriorFeatures: ["Master On Main Level"] }),
     ).toMatchObject({ mainLevelBedrooms: 1, primaryBedroomOnMain: true });
     expect(mapOk(base)).toMatchObject({ mainLevelBedrooms: null, primaryBedroomOnMain: null });
   });
@@ -562,11 +563,22 @@ describe("mainLevelBedroomFacts", () => {
     });
   });
 
-  it("matches the flag's spellings case-insensitively", () => {
-    for (const v of ["Primary Bedroom On Main", "master on main", "PRIMARY SUITE ON MAIN LEVEL"]) {
+  it("matches only the feed's exact value, case-insensitively", () => {
+    for (const v of ["Master On Main Level", "master on main level", "MASTER ON MAIN LEVEL"]) {
       expect(facts({ InteriorFeatures: [v] }).primaryBedroomOnMain, v).toBe(true);
     }
-    for (const v of ["Master Downstairs", "Guest On Main", "Master On Main Level Plus"]) {
+    for (const v of [
+      "Primary On Main",
+      "Master Bedroom On Main Level",
+      "Master On Main",
+      "Master on Main Floor",
+      "Main Level Master",
+      "Owner's Suite on Main",
+      " Master On Main Level",
+      "Master Downstairs",
+      "Guest On Main",
+      "Master On Main Level Plus",
+    ]) {
       expect(facts({ InteriorFeatures: [v] }).primaryBedroomOnMain, v).toBeNull();
     }
   });
@@ -681,12 +693,12 @@ describe("mainLevelBedroomFacts", () => {
   });
 });
 
-describe("0028_main_level_bedrooms migration", () => {
+describe("main_level_bedrooms migration", () => {
   it("only adds columns and indexes: the v4 remap fills them, not an UPDATE", () => {
-    const migration = readFileSync(
-      fileURLToPath(new URL("../../../../drizzle/0028_main_level_bedrooms.sql", import.meta.url)),
-      "utf8",
-    );
+    const dir = fileURLToPath(new URL("../../../../drizzle/", import.meta.url));
+    const files = readdirSync(dir).filter((f) => f.endsWith("_main_level_bedrooms.sql"));
+    expect(files).toHaveLength(1);
+    const migration = readFileSync(join(dir, files[0]), "utf8");
     expect(migration).not.toMatch(/\bUPDATE\b/i);
     expect(migration.trimEnd()).not.toMatch(/statement-breakpoint$/);
   });
