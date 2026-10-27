@@ -45,7 +45,11 @@ export type EmailKind =
  * runs stop for the rest of the run. Every other failure is `send_failed`.
  * `status` is Resend's HTTP code (none when the request itself failed), and
  * `retryAfterMs` its Retry-After, when it sent one. `timedOut`: no answer
- * within SEND_TIMEOUT_MS (a failed request, so no status).
+ * within SEND_TIMEOUT_MS (a failed request, so no status). `conflict`: which
+ * idempotency 409 Resend answered: `concurrent_idempotent_requests` (a request
+ * with the same key is still in progress; retry later with the same key) or
+ * `invalid_idempotent_request` (the key was already used with another payload;
+ * a retry can't succeed).
  */
 export type SendResult =
   | { ok: true }
@@ -55,7 +59,10 @@ export type SendResult =
       status?: number;
       retryAfterMs?: number;
       timedOut?: true;
+      conflict?: IdempotencyConflict;
     };
+
+export type IdempotencyConflict = "concurrent_idempotent_requests" | "invalid_idempotent_request";
 
 export type SendEmail = (email: Email) => Promise<SendResult>;
 
@@ -123,6 +130,7 @@ export async function sendEmail(email: Email): Promise<SendResult> {
     return { ok: false, reason: "email_not_configured" };
   }
   let res: Response;
+  let conflict: IdempotencyConflict | undefined;
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), SEND_TIMEOUT_MS);
   try {
@@ -144,6 +152,8 @@ export async function sendEmail(email: Email): Promise<SendResult> {
       }),
       signal: abort.signal,
     });
+    // Read while the timeout still applies, so a stalled body can't hang the send.
+    if (res.status === 409) conflict = await idempotencyConflict(res);
   } catch {
     if (abort.signal.aborted) {
       logSend(email, "timeout");
@@ -162,6 +172,7 @@ export async function sendEmail(email: Email): Promise<SendResult> {
       reason: res.status === 429 ? "rate_limited" : "send_failed",
       status: res.status,
       ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
+      ...(conflict ? { conflict } : {}),
     };
   }
   logSend(email, "sent");
@@ -174,6 +185,17 @@ export async function sendEmail(email: Email): Promise<SendResult> {
     );
   }
   return { ok: true };
+}
+
+/** The idempotency error `name` of a 409 body; undefined for any other (or unreadable) body. Only the name is read. */
+async function idempotencyConflict(res: Response): Promise<IdempotencyConflict | undefined> {
+  const name: unknown = await res
+    .json()
+    .then((b: { name?: unknown } | null) => b?.name)
+    .catch(() => undefined);
+  return name === "concurrent_idempotent_requests" || name === "invalid_idempotent_request"
+    ? name
+    : undefined;
 }
 
 /** A Retry-After header (seconds, or an HTTP date) in ms from `now`; undefined when absent or unreadable. */
@@ -192,10 +214,19 @@ export const RETRY_WAIT_CAP_MS = 3000;
 /** The wait after the first failed try when Resend sends no Retry-After; doubled after each. */
 const RETRY_BASE_MS = 250;
 
-/** A 429, a 5xx or no answer at all (the request failed or timed out) is worth another try; other 4xx never are. */
+/**
+ * A 429, a 5xx, a 409 for a same-key request still in progress, or no answer
+ * at all (the request failed or timed out) is worth another try; other 4xx
+ * never are.
+ */
 function retryable(res: SendResult): boolean {
   if (res.ok || res.reason === "email_not_configured") return false;
-  return res.reason === "rate_limited" || res.status === undefined || res.status >= 500;
+  return (
+    res.reason === "rate_limited" ||
+    res.conflict === "concurrent_idempotent_requests" ||
+    res.status === undefined ||
+    res.status >= 500
+  );
 }
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -203,7 +234,7 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
 /**
  * `sendEmail` for transactional mail (password resets, lead notices and
  * copies, assignment notices, sync alerts), retried in the request on a 429,
- * a 5xx or a failed or timed-out request: up to RETRY_ATTEMPTS tries, waiting Resend's
+ * a 5xx, a 409 `concurrent_idempotent_requests` or a failed or timed-out request: up to RETRY_ATTEMPTS tries, waiting Resend's
  * Retry-After or else 250 ms, then 500 ms, and never more than
  * RETRY_WAIT_CAP_MS in all (a longer Retry-After ends it, and the failure is
  * returned). A wrapper rather than part of `sendEmail`, so the batch runs and

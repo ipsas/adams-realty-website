@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
 import { db as defaultDb, type Executor } from "@/db";
 import { emailOutbox } from "@/db/schema";
@@ -14,7 +13,10 @@ import { describeError } from "@/lib/mls/write-errors";
  * and sends it once. A sent notice's row is deleted; a failed one is tried
  * again after 15 min × 2^(attempts − 1), and after OUTBOX_MAX_ATTEMPTS tries
  * in all it is marked dead with one log line. A notice whose lead or recipient
- * is gone is deleted.
+ * is gone is deleted. A 409 for a same-key request still in progress is
+ * retried like any failure (but never marks the row dead); a 409 for a key
+ * already used with another payload marks it dead at once (see
+ * `outboxIdempotencyKey`).
  */
 
 export type OutboxRow = typeof emailOutbox.$inferSelect;
@@ -32,13 +34,16 @@ const LEASE = sql`interval '10 minutes'`;
 export const OUTBOX_MIN_TIME_MS = 60_000;
 
 /**
- * A failed send's reason for `last_status`: 'http_<code>', 'timeout' when
+ * A failed send's reason for `last_status`: 'http_<code>', '409_concurrent'
+ * or '409_payload_changed' for Resend's idempotency 409s, 'timeout' when
  * Resend didn't answer in time, or 'network' when the request failed.
  */
 export function outboxStatus(res: SendResult | null): string {
   if (!res) return "error";
   if (res.ok) return "sent";
   if (res.reason === "email_not_configured") return "not_configured";
+  if (res.conflict === "concurrent_idempotent_requests") return "409_concurrent";
+  if (res.conflict === "invalid_idempotent_request") return "409_payload_changed";
   if (res.timedOut) return "timeout";
   return res.status ? `http_${res.status}` : "network";
 }
@@ -105,18 +110,25 @@ export async function releaseClaims(db: Executor, ids: OutboxRow["id"][]): Promi
     .where(and(inArray(emailOutbox.id, ids), eq(emailOutbox.state, "pending")));
 }
 
-/** Records a failed try: due again after the backoff, or dead after OUTBOX_MAX_ATTEMPTS. */
+/**
+ * Records a failed try: due again after the backoff, or dead after
+ * OUTBOX_MAX_ATTEMPTS. `state` overrides that: 'dead' ends the row now,
+ * 'pending' keeps it due again whatever its attempts.
+ */
 export async function recordFailure(
   db: Executor,
   row: OutboxRow,
   lastStatus: string,
+  state?: OutboxRow["state"],
 ): Promise<{ attempts: number; state: OutboxRow["state"] }> {
   const [r] = await db
     .update(emailOutbox)
     .set({
       attempts: sql`${emailOutbox.attempts} + 1`,
       lastStatus,
-      state: sql`case when ${emailOutbox.attempts} + 1 >= ${OUTBOX_MAX_ATTEMPTS}::integer then 'dead' else 'pending' end`,
+      state:
+        state ??
+        sql`case when ${emailOutbox.attempts} + 1 >= ${OUTBOX_MAX_ATTEMPTS}::integer then 'dead' else 'pending' end`,
       nextAttemptAt: sql`now() + ${BACKOFF} * power(2, ${emailOutbox.attempts})`,
       updatedAt: sql`now()`,
     })
@@ -126,16 +138,18 @@ export async function recordFailure(
 }
 
 /**
- * The Resend idempotency key for an outbox try: the row and a hash of the
- * rebuilt body. Resend keeps a key 24 h and answers 409 when it comes back with
- * another body, so a rebuilt notice that changed (lead edited, another inbox)
- * gets a new key, while a resend of the same body can't be delivered twice.
- * The in-request try's key differs, so a lost reply after Resend accepted it
- * can mean one duplicate notice: a duplicate beats a lost lead.
+ * The Resend idempotency key for every outbox try of a row: one key per notice
+ * row, so a try whose reply was lost after Resend accepted it can't make a
+ * later try send the notice again. Resend keeps a key 24 h; the outbox gives
+ * up well inside that (its tries are 15 + 30 + 60 + 120 + 240 min = 7 h 45 min
+ * after the first, plus cron and lease slack). A rebuilt notice that changed
+ * (lead edited, another inbox) gets a 409 `invalid_idempotent_request`: Resend
+ * already holds a request for this row, so the row is marked dead rather than
+ * sent again under another key. The in-request try's key differs, so a lost
+ * reply there can still mean one duplicate notice: a duplicate beats a lost lead.
  */
-export function outboxIdempotencyKey(rowId: OutboxRow["id"], email: Email): string {
-  const body = JSON.stringify([email.to, email.subject, email.text, email.html ?? null]);
-  return `outbox/${rowId}/${createHash("sha256").update(body).digest("hex").slice(0, 16)}`;
+export function outboxIdempotencyKey(rowId: OutboxRow["id"]): string {
+  return `outbox/${rowId}`;
 }
 
 export type OutboxDeps = {
@@ -181,7 +195,7 @@ export async function processEmailOutbox(deps: OutboxDeps): Promise<OutboxRun> {
       }
       let res: SendResult | null = null;
       try {
-        res = await deps.send({ ...email, idempotencyKey: outboxIdempotencyKey(row.id, email) });
+        res = await deps.send({ ...email, idempotencyKey: outboxIdempotencyKey(row.id) });
       } catch (e) {
         console.error(`${tag} send threw: ${describeError(e)}`);
       }
@@ -192,7 +206,17 @@ export async function processEmailOutbox(deps: OutboxDeps): Promise<OutboxRun> {
         continue;
       }
       const last = outboxStatus(res);
-      const { attempts, state } = await recordFailure(db, row, last);
+      const conflict = res && !res.ok ? res.conflict : undefined;
+      const { attempts, state } = await recordFailure(
+        db,
+        row,
+        last,
+        conflict === "invalid_idempotent_request"
+          ? "dead"
+          : conflict === "concurrent_idempotent_requests"
+            ? "pending"
+            : undefined,
+      );
       if (state === "dead") {
         console.error(`${tag} status=dead attempts=${attempts} last=${last}`);
         run.dead++;

@@ -140,6 +140,54 @@ describe("processEmailOutbox", () => {
     expect(await claimDueEmails(db, 10)).toEqual([]);
   });
 
+  it("retries a 409 concurrent under the same key, never marking the row dead for it", async () => {
+    const { output } = captureConsole();
+    await enqueueEmail(db, { ...office(leadId), lastStatus: "http_503" });
+    const concurrent: SendResult = {
+      ok: false,
+      reason: "send_failed",
+      status: 409,
+      conflict: "concurrent_idempotent_requests",
+    };
+    const keys: (string | undefined)[] = [];
+    const send = vi.fn(async (e: Email) => (keys.push(e.idempotencyKey), concurrent));
+    // Past OUTBOX_MAX_ATTEMPTS: an in-progress request is not a failure to give up on.
+    for (let i = 0; i < OUTBOX_MAX_ATTEMPTS; i++) {
+      await due();
+      await processEmailOutbox({ db, send, rebuild: async () => email });
+    }
+    const [row] = await rows();
+    expect(row).toMatchObject({
+      state: "pending",
+      attempts: OUTBOX_MAX_ATTEMPTS + 1,
+      lastStatus: "409_concurrent",
+    });
+    expect(new Set(keys)).toEqual(new Set([`outbox/${row.id}`]));
+    expect(output().filter((l) => l.includes("status=dead"))).toEqual([]);
+  });
+
+  it("marks the row dead at once on a 409 invalid_idempotent_request, sending nothing else", async () => {
+    const { output } = captureConsole();
+    await enqueueEmail(db, { ...office(leadId), lastStatus: "http_503" });
+    await due();
+    const send = vi.fn(async (): Promise<SendResult> => ({
+      ok: false,
+      reason: "send_failed",
+      status: 409,
+      conflict: "invalid_idempotent_request",
+    }));
+    const run = await processEmailOutbox({ db, send, rebuild: async () => email });
+    expect(run).toEqual({ sent: 0, retry: 0, dead: 1, gone: 0 });
+    expect(send).toHaveBeenCalledTimes(1);
+    const [row] = await rows();
+    expect(row).toMatchObject({ state: "dead", attempts: 2, lastStatus: "409_payload_changed" });
+    expect(output()).toContain(
+      `[email-outbox] kind=lead-notice id=${row.id} status=dead attempts=2 last=409_payload_changed`,
+    );
+    await due();
+    expect(await claimDueEmails(db, 10)).toEqual([]);
+  });
+
   it("starts no row once the deadline is near, and hands back the untried claims", async () => {
     captureConsole();
     for (let i = 0; i < 3; i++)
@@ -192,7 +240,7 @@ describe("processEmailOutbox", () => {
       kind: "lead-notice",
       to: "pat@adams.example",
       replyTo: "jordan@example.com",
-      idempotencyKey: expect.stringMatching(/^outbox\/[0-9a-f-]{36}\/[0-9a-f]{16}$/),
+      idempotencyKey: expect.stringMatching(/^outbox\/[0-9a-f-]{36}$/),
     });
     expect(sent[0].text).toContain(`${SITE}/dashboard/leads/${leadId}`);
     expect(await rows()).toEqual([]);

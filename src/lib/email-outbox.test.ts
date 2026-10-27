@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Executor } from "@/db";
 import type { Email } from "@/lib/email";
+import { captureConsole } from "@/test/console";
 import {
   OUTBOX_MIN_TIME_MS,
   outboxIdempotencyKey,
@@ -17,33 +18,37 @@ const email: Email = {
   html: "<p>Jordan asked about 12 Oak Street.</p>",
 };
 
+/** A db whose every query chain resolves to the one claimed row `ROW`. */
+function fakeDb(): Executor {
+  const row = { id: ROW, kind: "lead-notice", attempts: 1, state: "pending" };
+  const chain: object = new Proxy(() => {}, {
+    get: (_t, prop) =>
+      prop === "then" ? (resolve: (v: unknown) => void) => resolve([row]) : () => chain,
+    apply: () => chain,
+  });
+  return chain as Executor;
+}
+
 describe("outboxIdempotencyKey", () => {
-  it("is stable for the same body", () => {
-    expect(outboxIdempotencyKey(ROW, { ...email })).toBe(outboxIdempotencyKey(ROW, email));
-    // Fields outside the body don't change it.
-    expect(outboxIdempotencyKey(ROW, { ...email, idempotencyKey: "lead-new:1" })).toBe(
-      outboxIdempotencyKey(ROW, email),
-    );
+  it("is outbox/<row id>, one per row", () => {
+    expect(outboxIdempotencyKey(ROW)).toBe(`outbox/${ROW}`);
+    expect(outboxIdempotencyKey(ROW.replace("6f", "7f"))).not.toBe(outboxIdempotencyKey(ROW));
   });
+});
 
-  it("changes when the body or the row changes", () => {
-    const key = outboxIdempotencyKey(ROW, email);
-    for (const changed of [
-      { ...email, to: "office@adams.example" },
-      { ...email, subject: "New lead: 14 Oak Street" },
-      { ...email, text: "Jordan asked about 14 Oak Street." },
-      { ...email, html: undefined },
-    ]) {
-      expect(outboxIdempotencyKey(ROW, changed)).not.toBe(key);
+describe("processEmailOutbox's key", () => {
+  it("is the same on every try of a row, whatever the rebuilt body", async () => {
+    captureConsole();
+    const bodies = [email, { ...email, text: "Jordan asked about 14 Oak Street." }];
+    const keys: (string | undefined)[] = [];
+    for (const body of bodies) {
+      await processEmailOutbox({
+        db: fakeDb(),
+        send: async (e) => (keys.push(e.idempotencyKey), { ok: true }),
+        rebuild: async () => body,
+      });
     }
-    expect(outboxIdempotencyKey(ROW.replace("6f", "7f"), email)).not.toBe(key);
-  });
-
-  it("holds no address or subject text and fits Resend's 256 chars", () => {
-    const key = outboxIdempotencyKey(ROW, email);
-    expect(key).toMatch(/^outbox\/[0-9a-f-]{36}\/[0-9a-f]{16}$/);
-    expect(key).not.toMatch(/adams|Oak|@/);
-    expect(key.length).toBeLessThanOrEqual(256);
+    expect(keys).toEqual([`outbox/${ROW}`, `outbox/${ROW}`]);
   });
 });
 
@@ -52,6 +57,17 @@ describe("outboxStatus", () => {
     expect(outboxStatus({ ok: false, reason: "send_failed", timedOut: true })).toBe("timeout");
     expect(outboxStatus({ ok: false, reason: "send_failed" })).toBe("network");
     expect(outboxStatus({ ok: false, reason: "send_failed", status: 503 })).toBe("http_503");
+  });
+
+  it("names Resend's two idempotency 409s", () => {
+    const res = { ok: false, reason: "send_failed", status: 409 } as const;
+    expect(outboxStatus({ ...res, conflict: "concurrent_idempotent_requests" })).toBe(
+      "409_concurrent",
+    );
+    expect(outboxStatus({ ...res, conflict: "invalid_idempotent_request" })).toBe(
+      "409_payload_changed",
+    );
+    expect(outboxStatus(res)).toBe("http_409");
   });
 });
 

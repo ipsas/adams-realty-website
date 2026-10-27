@@ -350,6 +350,65 @@ describe("sendTransactional", () => {
     expect(h.counted).toEqual([]);
   });
 
+  /** A Resend 409 with its JSON error body (which holds nothing personal here). */
+  const conflict = (name: string) =>
+    new Response(JSON.stringify({ statusCode: 409, name, message: "Idempotency conflict" }), {
+      status: 409,
+    });
+  const keysOf = (fetch: ReturnType<typeof vi.fn<typeof globalThis.fetch>>) =>
+    fetch.mock.calls.map(
+      ([, init]) => (init!.headers as Record<string, string>)["Idempotency-Key"],
+    );
+
+  it("retries a 409 concurrent_idempotent_requests with the same key", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    fetch
+      .mockResolvedValueOnce(conflict("concurrent_idempotent_requests"))
+      .mockResolvedValueOnce(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetch);
+    expect(await sendTransactional(email(), { sleep })).toEqual({ ok: true });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(keysOf(fetch)).toEqual(["reset:abc", "reset:abc"]);
+    expect(sleeps).toEqual([250]);
+    // The 409 is logged by its status only, never its body.
+    expect(
+      output()
+        .filter((l) => l.startsWith("[email]"))
+        .sort(),
+    ).toEqual([
+      "[email] kind=password-reset to_domain=example.com status=failed http=409",
+      "[email] kind=password-reset to_domain=example.com status=sent",
+    ]);
+  });
+
+  it("never retries a 409 invalid_idempotent_request, and says which 409 it was", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      conflict("invalid_idempotent_request"),
+    );
+    vi.stubGlobal("fetch", fetch);
+    expect(await sendTransactional(email(), { sleep })).toEqual({
+      ok: false,
+      reason: "send_failed",
+      status: 409,
+      conflict: "invalid_idempotent_request",
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(sleeps).toEqual([]);
+  });
+
+  it("treats a 409 with an unknown or unreadable body as final, with no conflict", async () => {
+    for (const body of [JSON.stringify({ name: "something_else" }), "not json"]) {
+      const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response(body, { status: 409 }));
+      vi.stubGlobal("fetch", fetch);
+      expect(await sendTransactional(email(), { sleep })).toEqual({
+        ok: false,
+        reason: "send_failed",
+        status: 409,
+      });
+      expect(fetch).toHaveBeenCalledTimes(1);
+    }
+  });
+
   it("tries batch kinds once: their guard defers them", async () => {
     const fetch = answers(429, 200);
     expect(await sendTransactional(email({ kind: "search-alert" }), { sleep })).toMatchObject({
