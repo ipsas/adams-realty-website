@@ -282,15 +282,12 @@ describe("describeError", () => {
       ["call (212) 900-0000 or 1 (999) 200 1234", "call [phone] or [phone]"],
       ["call 1-800-200-1234 or 1.212.555.0000", "call [phone] or [phone]"],
       ["call +1 (706) 555-1234", "call [phone]"],
-      // Only the area code must start with 2-9; the exchange is any 3 digits.
+      // After area code 555 the exchange may be any 3 digits.
+      ["555 123 4567", "[phone]"],
       ["call 555 123 4567", "call [phone]"],
       ["555-123-4567", "[phone]"],
       ["(555) 123-4567", "[phone]"],
       ["+1 555 123 4567", "[phone]"],
-      ["range 706 155 1234 and 206 055 1234", "range [phone] and [phone]"],
-      ["ids 706-100-1234, 706.055.1234", "ids [phone], [phone]"],
-      ["(706) 155-1234 and 1 (706) 055 1234", "[phone] and [phone]"],
-      ["+1-706-155-1234", "[phone]"],
       ["at RR 2 Box 14, Royston", "at [address], Royston"],
       ["at Rural Route 3 Box 7 and rr 4", "at [address] and [address]"],
       ["at RR 2 Box 14 Apt 3", "at [address]"],
@@ -340,6 +337,14 @@ describe("describeError", () => {
       "ids 100-200-3000, 1-155-555-1234",
       "(100) 555-1234 and 1 (055) 555 1234",
       "+1 100 555 1234; +1-155-555-1234; +1 (055) 555-1234",
+      // Nor one whose exchange starts with 0 or 1 (unless the area code is 555).
+      "offset 200 100 3000",
+      "page 706 155 1234",
+      "id 123 456 7890",
+      "range 706 155 1234 and 206 055 1234",
+      "ids 706-100-1234, 706.055.1234",
+      "(706) 155-1234 and 1 (706) 055 1234",
+      "+1-706-155-1234",
       // A phone-like slug inside a path segment isn't a phone.
       "/listings/706-555-1234-abc",
       "/listings/706-555-1234.html",

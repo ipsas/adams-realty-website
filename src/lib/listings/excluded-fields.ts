@@ -92,15 +92,20 @@ const RESTRICTED_VALUE = new RegExp(
  *   digits, but no 2-digit number) or a 3+ digit number, but not after "zoning", "zip",
  *   "area" and the like.
  * - `NOT_CODE_START` is never a code: a code year ("2018 IBC"), a year of work ("2019
- *   renovated") or a size ("20x30"). A number of units ("1234 sqft", "12 ac") right after
- *   a code phrase is the code ("gate code 4455 feet from road" masks 4455).
+ *   renovated") or a size ("20x30"), except that a year directly after a strong phrase
+ *   (separators and filler words only) is the code ("lockbox code 1999 install", "Gate
+ *   code 2018 IBC" mask the year); a size there still is not ("gate code 20x30"). A number
+ *   of units ("1234 sqft", "12 ac") right after a code phrase is the code ("gate code 4455
+ *   feet from road" masks 4455).
  * - `NOT_CODE` is never part of a code, after its first digit group: those, or a number of
  *   units ("Keypad 1234 12 acres", "gate code 1234 2400 sqft"). A number starting with 0
  *   is never a size.
  *
  * Postgres prefers the longest match where JS takes the first alternative that matches,
  * so alternatives are ordered longest first, and the words a phrase may skip are letters
- * only and never a spelled-out digit, so the code starts at the same place in both.
+ * only and never a spelled-out digit, so the code starts at the same place in both. Only
+ * the direct strong branch takes a year, and the branches after it never do, so a year is
+ * masked (or kept) the same way in both.
  * `\b` is the only word-boundary escape used, so the same pattern runs in Postgres
  * (`\y`) for keyword search (`ACCESS_CODE_PG`).
  */
@@ -141,7 +146,9 @@ const REACH = String.raw`(?:\s+(?!${DIGIT_WORD})[a-z]+\b){1,6}`;
 // What a weak phrase takes: 3+ digits, digit groups, letters and digits, 3+ spelled digits.
 const WEAK_CODE = String.raw`(?=\d{3}|\d{1,2}[\s-]\d|\d{1,2}[a-z]|[a-z]+\d|${DIGIT_WORD}[\s-]+${DIGIT_WORD}[\s-]+${DIGIT_WORD})`;
 const CODE_CODE = String.raw`(?=\d{3}|\d{1,2}[\s-]\d|\d{1,2}[a-z]|[a-z])`;
-const PREFIX = String.raw`\b(?:(?:${STRONG})\b(?:${SEP}|${REACH}${SEP}(?!${YEAR})${WEAK_CODE})|${CODE}\b${SEP}${CODE_CODE}|(?:${WEAK})\b${SEP}${WEAK_CODE})`;
+// Right after a strong phrase only a size stops the code ("gate code 2018 IBC" masks 2018);
+// everywhere else `NOT_CODE_START` does.
+const PREFIX = String.raw`\b(?:(?:${STRONG})\b(?:${SEP}(?!${DIMENSION})|${REACH}${SEP}(?!${YEAR})${WEAK_CODE}(?!${NOT_CODE_START}))|${CODE}\b${SEP}${CODE_CODE}(?!${NOT_CODE_START})|(?:${WEAK})\b${SEP}${WEAK_CODE}(?!${NOT_CODE_START}))`;
 // Digit groups: "1234 5678" or "12-34 56" (a lone digit after a space is not part of the
 // code: "alarm 1234 2 car garage"), dashed "1-2-3-4", or single digits "1 2 3 4".
 const TOKEN = [
@@ -153,7 +160,7 @@ const TOKEN = [
   // Letters and digits, but not an ordinal ("2nd").
   String.raw`(?=[0-9a-z]*\d)(?=[0-9a-z]*[a-z])(?![0-9]+(?:st|nd|rd|th)\b)[0-9a-z]{3,12}`,
 ].join("|");
-const ACCESS_CODE_SOURCE = String.raw`(${PREFIX})(?!${NOT_CODE_START})(?:${TOKEN})#?(?![0-9a-z]|-\d)|(\bkey\s+under\s+)[^.,;!?\n]{1,40}`;
+const ACCESS_CODE_SOURCE = String.raw`(${PREFIX})(?:${TOKEN})#?(?![0-9a-z]|-\d)|(\bkey\s+under\s+)[^.,;!?\n]{1,40}`;
 const ACCESS_CODE = new RegExp(ACCESS_CODE_SOURCE, "gi");
 const HAS_ACCESS_CODE = new RegExp(ACCESS_CODE_SOURCE, "i");
 const MASK = "****";

@@ -209,17 +209,19 @@ const wholeNumber = (number: string) =>
  * A US phone number: "(706) 555-1234", "706-555-1234", "706.555-1234",
  * "+1 706 555 1234", "1 706 555 1234". Spaced, it must be exactly 3-3-4 digits
  * with single spaces, with no more digits around ("page 1 706 555 1234 5" is
- * kept). Ten bare digits are an ID, kept. The area code starts with 2-9, as in
- * every NANP number, so "offset 100 200 3000" is kept; the exchange may be any
- * 3 digits, so a made-up "555 123 4567" is still a phone.
+ * kept). Ten bare digits are an ID, kept. The area code and the exchange start
+ * with 2-9, as in every NANP number, so "offset 100 200 3000" and "offset 200
+ * 100 3000" are kept; only after area code 555 may the exchange be any 3 digits,
+ * so a made-up "555 123 4567" is still a phone.
  */
-const AREA = String.raw`[2-9]\d\d`;
+const areaExchange = (open: string, close: string) =>
+  String.raw`(?:${open}555${close}\d{3}|${open}[2-9]\d\d${close}[2-9]\d\d)`;
 const PHONE = new RegExp(
-  String.raw`\+1[\s.-]?\(?${AREA}\)?[\s.-]?\d{3}[\s.-]?\d{4}${NUMBER_END}|` +
+  String.raw`\+1[\s.-]?${areaExchange(String.raw`\(?`, String.raw`\)?[\s.-]?`)}[\s.-]?\d{4}${NUMBER_END}|` +
     wholeNumber(
-      String.raw`(?:1[\s.-]?)?\(${AREA}\)\s?\d{3}[\s.-]\d{4}|` +
-        String.raw`(?:1[.-])?${AREA}[.-]\d{3}[.-]\d{4}|` +
-        String.raw`(?<!\d )(?:1 )?${AREA} \d{3} \d{4}(?! \d)`,
+      String.raw`(?:1[\s.-]?)?${areaExchange(String.raw`\(`, String.raw`\)\s?`)}[\s.-]\d{4}|` +
+        String.raw`(?:1[.-])?${areaExchange("", "[.-]")}[.-]\d{4}|` +
+        String.raw`(?<!\d )(?:1 )?${areaExchange("", " ")} \d{4}(?! \d)`,
     ),
   "g",
 );
