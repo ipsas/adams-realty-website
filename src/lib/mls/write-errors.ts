@@ -115,22 +115,85 @@ function redactUnknown(e: unknown): string {
 /** An email address; not a URL's `user@host` (nothing before it may be part of one). */
 const EMAIL = /(?<![\w.%+\-:/])[\w.%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}\b/gi;
 
+/** A `mailto:` link, whole (its address can carry `?subject=…`). */
+const MAILTO = /\bmailto:[^\s"'<>)\]]+/gi;
+
+/** The `user:pass@` of a URL; a bare `user@` (no password) is kept. */
+const URL_CREDENTIALS = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/?#@:]*:[^\s/?#]*@/gi;
+
+/** `words` ("St|Rd") matching in any case: "[sS][tT]|[rR][dD]". */
+const anyCase = (words: string) =>
+  words.replace(/[a-z]/gi, (c) => `[${c.toLowerCase()}${c.toUpperCase()}]`);
+
 const STREET_SUFFIXES =
-  "St|Street|Rd|Road|Ave|Avenue|Dr|Drive|Ln|Lane|Ct|Court|Hwy|Highway|Blvd|Way|Pkwy|Cir";
+  "St|Street|Rd|Road|Ave|Avenue|Dr|Drive|Ln|Lane|Ct|Court|Hwy|Highway|Blvd|Way|Pkwy|Cir|" +
+  "Trl|Trail|Pl|Place|Ter|Terrace|Run|Loop|Ext|Extension|Xing|Crossing|Crk|Creek";
+/** A suffix as written ("St") or in capitals ("ST"). */
+const CANONICAL_SUFFIX = `${STREET_SUFFIXES}|${STREET_SUFFIXES.toUpperCase()}`;
+const DIRECTIONS = "N|S|E|W|NE|NW|SE|SW|North|South|East|West";
+const UNITS = "Apt|Unit|Ste|Suite|Bldg|Lot";
 
 /**
- * A street address, conservatively: a house number, 1–4 words, then a street
- * suffix as written ("St") or in capitals ("ST"), so "3 runs the way" isn't one.
+ * A house number: not part of a token ("SALE-123", "v2", "10.0.0.1:5432",
+ * a timestamp), so only the address after it is redacted.
  */
-const STREET_ADDRESS = new RegExp(
-  String.raw`\b\d{1,6}[A-Za-z]?(?:\s+[A-Za-z0-9'.-]+){1,4}?\s+` +
-    String.raw`(?:${STREET_SUFFIXES}|${STREET_SUFFIXES.toUpperCase()})\b\.?`,
+const HOUSE_NUMBER = String.raw`(?<![\w.:/-])\d{1,6}[A-Za-z]?`;
+/** A word of a street name; never a bare number ("5 at 10 Pine Cir" is "5 at" + an address). */
+const NAME_WORD = String.raw`(?!\d+\b)[A-Za-z0-9'.-]+`;
+/** A highway's number ("Hwy 17", "Highway 17A", "Hwy-17"). */
+const ROUTE_NUMBER = String.raw`\s*-?\s*\d{1,4}[A-Za-z]?\b`;
+/** What may follow an address: a direction ("NE"), then a unit ("Apt 4", "#4", ", Ste B"). */
+const ADDRESS_TAIL =
+  String.raw`(?:\s+(?:${anyCase(DIRECTIONS)})\b)?` +
+  String.raw`(?:,?\s*(?:(?:${anyCase(UNITS)})\b\.?\s*#?\s*|#\s*)(?=[A-Za-z]?\d|[A-Za-z]\b)[A-Za-z0-9-]+)?`;
+/**
+ * After a suffix written in another case than "St"/"ST" ("st", "sT"): the
+ * end, punctuation, a direction or a unit (or a highway's number), so a
+ * lowercase phrase that merely ends in a suffix word ("200 records the way
+ * it was asked", "3 runs the way it should") isn't taken for an address.
+ */
+const LOOSE_SUFFIX_END =
+  String.raw`(?=\.?\s*$|\s*[.,;:!?)\]}"'/]|\s+(?:${anyCase(DIRECTIONS)}|${anyCase(UNITS)})\b|\s*#|` +
+  String.raw`(?<=${anyCase("Hwy|Highway")})${ROUTE_NUMBER})`;
+/** A numbered highway: "Hwy 17", "US Highway 29", "State Route 8" in any case; "GA-17", "SR 8", "US-29". */
+const HIGHWAY =
+  String.raw`(?:(?:${anyCase("US|GA|State")}|[uU]\.[sS]\.)[\s-]+)?(?:${anyCase("Highway|Hwy")})${ROUTE_NUMBER}|` +
+  String.raw`(?:${anyCase("State|US|GA")}|[uU]\.[sS]\.)\s+(?:${anyCase("Route|Rte")})${ROUTE_NUMBER}|` +
+  String.raw`(?<![\w-])(?:US|GA|SR)[\s-]?\d{1,3}[A-Z]?\b`;
+
+/**
+ * An address: a PO box; a house number, 1–4 words and a street suffix (in
+ * any case; up to two more as written may follow: "Shoal Creek Rd", "Big Loop
+ * Ext"), with a highway's number after "Hwy"/"Highway", then a direction and
+ * unit; or a numbered highway, with or without a house number. A suffix
+ * as written ("St") or in capitals ("ST") may be followed by anything (as in
+ * "near 9 Lake Pkwy at 9 E Main St"); in any other case, only by what
+ * LOOSE_SUFFIX_END allows. The trade-off: a lowercase address mid-sentence
+ * ("at 12 main st and …") is missed, and a lowercase phrase ending in a suffix
+ * word at the end of a sentence ("… 3 runs the way.") is redacted, though never
+ * past its own words: the tokens around a match are kept.
+ */
+const ADDRESS = new RegExp(
+  String.raw`(?<![\w-])(?:${anyCase("PO")}|[pP]\.\s?[oO]\.|${anyCase("Post")}\s+${anyCase("Office")})\s*` +
+    String.raw`${anyCase("Box")}\s*#?\s*\d{1,6}\b|` +
+    String.raw`${HOUSE_NUMBER}(?:\s+${NAME_WORD}){1,4}?\s+` +
+    String.raw`(?:(?:${CANONICAL_SUFFIX})\b|(?:${anyCase(STREET_SUFFIXES)})${LOOSE_SUFFIX_END})` +
+    String.raw`(?:\s+(?:${CANONICAL_SUFFIX})\b){0,2}` +
+    String.raw`(?:(?<=${anyCase("Hwy|Highway")})${ROUTE_NUMBER})?\.?${ADDRESS_TAIL}|` +
+    String.raw`(?:${HOUSE_NUMBER}\s+)?(?:${HIGHWAY})${ADDRESS_TAIL}`,
   "g",
 );
 
-/** `text` with its email addresses and street addresses replaced by placeholders. */
+/**
+ * `text` with URL credentials (`scheme://[credentials]@host`), `mailto:`
+ * links and email addresses, and street addresses replaced by placeholders.
+ */
 export function redactPersonal(text: string): string {
-  return text.replace(EMAIL, "[email]").replace(STREET_ADDRESS, "[address]");
+  return text
+    .replace(URL_CREDENTIALS, "$1[credentials]@")
+    .replace(MAILTO, "[email]")
+    .replace(EMAIL, "[email]")
+    .replace(ADDRESS, "[address]");
 }
 
 /**

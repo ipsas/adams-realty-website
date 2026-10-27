@@ -222,6 +222,63 @@ describe("describeError", () => {
     expect(long).toContain("[address]");
   });
 
+  it("redacts addresses in any case, with more suffixes, highways and PO boxes", () => {
+    const redacted: [string, string][] = [
+      ["1 Elm Trl, 2 Oak Pl. 3 Ash Ter; 4 Fox Run", "[address], [address] [address]; [address]"],
+      ["at 5 Big Loop Ext and 9 Shoal Creek Rd", "at [address] and [address]"],
+      ["6 Mill Xing #4 / 7 Deep Crk Apt 2B", "[address] / [address]"],
+      ["8 Long Trail, 10 Smith Extension, 11 Vista Terrace", "[address], [address], [address]"],
+      ["12 Hill Crossing, 13 Rose Place, 14 Bear Creek", "[address], [address], [address]"],
+      ["near Highway 17, Hwy 17 and US Highway 29 N", "near [address], [address] and [address]"],
+      [
+        "via GA-17, State Route 8, SR 8 or US-29.",
+        "via [address], [address], [address] or [address].",
+      ],
+      ["1234 Hwy 17; 0 Highway 17 N; 5 Old Hwy 17 S", "[address]; [address]; [address]"],
+      ["PO Box 123, P.O. Box 123, Post Office Box 123", "[address], [address], [address]"],
+      ["geocode failed for 12 main st", "geocode failed for [address]"],
+      ["geocode failed for 12 main st, Royston", "geocode failed for [address], Royston"],
+      ["bad row 1234 old county home rd.", "bad row [address]"],
+      ["bad row 12 MAIN street n (skipped)", "bad row [address] (skipped)"],
+      ["at 10 Pine Cir NE, Royston", "at [address], Royston"],
+      // The house number starts a token, and bare numbers aren't street names.
+      ["Key: SALE-123 at 10 Pine Cir", "Key: SALE-123 at [address]"],
+      ["rows 5 at 10 Pine Cir", "rows 5 at [address]"],
+    ];
+    for (const [message, shown] of redacted) {
+      expect(describeError(new SyncError(message))).toBe(shown);
+    }
+  });
+
+  it("redacts mailto links and URL credentials, keeping the host", () => {
+    expect(describeError(new SyncError("write to mailto:jane@x.com?subject=hi now"))).toBe(
+      "write to [email] now",
+    );
+    expect(
+      describeError(new SyncError("connect postgres://sync:s3cr@t@db.example.com:5432/app")),
+    ).toBe("connect postgres://[credentials]@db.example.com:5432/app");
+    expect(describeError(new SyncError("GET https://u:p@api.example.com/x failed"))).toBe(
+      "GET https://[credentials]@api.example.com/x failed",
+    );
+  });
+
+  it("doesn't take phrases, codes or keys for addresses", () => {
+    const kept = [
+      "3 runs the way it should",
+      "2 loops completed",
+      "5 place holders",
+      "HTTP 503 Service Unavailable",
+      "SQLSTATE 23505 at 2026-10-27T02:00:00.000Z",
+      "listing GAMLS-10345678 and K000123",
+      "Royston, GA 30662",
+      "tell us 29 times",
+      "https://api.example.com/v2/Property?$top=200",
+    ];
+    for (const message of kept) expect(describeError(new SyncError(message))).toBe(message);
+    // The trade-off: a lowercase phrase ending a sentence in a suffix word is redacted.
+    expect(describeError(new SyncError("ok after 3 runs the way."))).toBe("ok after [address]");
+  });
+
   it("leaves numbers, statuses, codes, host names and timestamps alone", () => {
     const kept = [
       "RESO request failed (503) for https://api.bridgedataoutput.com/api/v2/OData/gamls/Property",
