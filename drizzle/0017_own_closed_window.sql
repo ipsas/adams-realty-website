@@ -1,1 +1,0 @@
-ALTER TABLE "data_sources" ADD COLUMN "own_closed_synced_at" timestamp with time zone;

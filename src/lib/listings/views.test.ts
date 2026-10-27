@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ListingViewRow } from "./views";
 
 vi.mock("@/db", () => ({ db: {} }));
-const { isBotUserAgent, parseViewRange } = await import("./views");
+const { isBotUserAgent, parseViewRange, trafficOfficeLabel } = await import("./views");
 
 const now = new Date("2026-09-28T16:00:00Z"); // noon in Georgia
 
@@ -37,6 +38,31 @@ describe("isBotUserAgent", () => {
     expect(isBotUserAgent(null)).toBe(true);
     expect(isBotUserAgent("Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15")).toBe(
       false,
+    );
+  });
+});
+
+describe("trafficOfficeLabel (traffic page and CSV export)", () => {
+  const r: ListingViewRow = {
+    listingId: "l1",
+    mlsNumber: "10000001",
+    slug: "1-main-st",
+    address: "1 Main St",
+    city: "Royston",
+    fromFeed: true,
+    listOfficeName: null,
+    listOfficeMlsId: "RMCR",
+    officeLookupName: null,
+    isCompanyListing: false,
+    views: 3,
+  };
+
+  it("names the office by lookup, else MLS office ID, else a dash for a feed listing", () => {
+    expect(trafficOfficeLabel({ ...r, officeLookupName: "Re/Max Center" })).toBe("Re/Max Center");
+    expect(trafficOfficeLabel(r)).toBe("MLS Office ID RMCR");
+    expect(trafficOfficeLabel({ ...r, listOfficeMlsId: null })).toBe("—");
+    expect(trafficOfficeLabel({ ...r, listOfficeMlsId: null, fromFeed: false })).toBe(
+      "Adams Realty, Inc.",
     );
   });
 });

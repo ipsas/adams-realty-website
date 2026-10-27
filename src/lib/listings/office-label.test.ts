@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { cardColumns, type CardRow } from "./card";
 import { listingOfficeLabel } from "./office-label";
 
 const firm = { legalName: "Adams Realty, Inc." };
@@ -40,6 +41,57 @@ describe("listingOfficeLabel", () => {
     );
     expect(listingOfficeLabel({ listOfficeName: null, listOfficeMlsId: "  " }, firm)).toBeNull();
     expect(listingOfficeLabel({}, firm)).toBeNull();
+  });
+
+  it("uses the Office-resource name when the feed's is blank, after the feed's", () => {
+    expect(
+      listingOfficeLabel(
+        { listOfficeName: " ", officeLookupName: " Re/Max Center ", listOfficeMlsId: "RMCR" },
+        firm,
+      ),
+    ).toBe("Re/Max Center");
+    expect(
+      listingOfficeLabel(
+        { listOfficeName: "Peachtree Partners", officeLookupName: "Re/Max Center" },
+        firm,
+      ),
+    ).toBe("Peachtree Partners");
+  });
+
+  it("prefers the looked-up name to the firm's legal name", () => {
+    expect(
+      listingOfficeLabel(
+        { officeLookupName: "Adams Realty Inc", listOfficeMlsId: "ADAM01", isCompanyListing: true },
+        firm,
+      ),
+    ).toBe("Adams Realty Inc");
+  });
+
+  it("falls back to the MLS office ID when the lookup found nothing", () => {
+    for (const officeLookupName of [null, " ", undefined]) {
+      expect(listingOfficeLabel({ officeLookupName, listOfficeMlsId: "RMCR" }, firm)).toBe(
+        "MLS Office ID RMCR",
+      );
+    }
+  });
+
+  it("labels a card row (cardColumns selects the looked-up name)", () => {
+    expect(Object.keys(cardColumns)).toEqual(
+      expect.arrayContaining(["listOfficeName", "officeLookupName", "listOfficeMlsId"]),
+    );
+    const card: Pick<
+      CardRow,
+      "listOfficeName" | "officeLookupName" | "listOfficeMlsId" | "isCompanyListing"
+    > = {
+      listOfficeName: null,
+      officeLookupName: "Re/Max Center",
+      listOfficeMlsId: "RMCR",
+      isCompanyListing: false,
+    };
+    expect(listingOfficeLabel(card, firm)).toBe("Re/Max Center");
+    expect(listingOfficeLabel({ ...card, officeLookupName: null }, firm)).toBe(
+      "MLS Office ID RMCR",
+    );
   });
 
   it("never says Not provided", () => {

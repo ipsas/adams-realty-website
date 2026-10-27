@@ -1,5 +1,5 @@
 {
-  "id": "f30f9ff5-653a-4d63-91ac-4a09bf4428eb",
+  "id": "9184fa81-d5e2-49b3-b915-8f95dd830b91",
   "prevId": "e6c9dfca-30d0-48b5-a017-912711acab0c",
   "version": "7",
   "dialect": "postgresql",
@@ -1131,42 +1131,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "fireplaces_total": {
-          "name": "fireplaces_total",
-          "type": "smallint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "parking_total": {
-          "name": "parking_total",
-          "type": "smallint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "senior_community": {
-          "name": "senior_community",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lot_size_dimensions": {
-          "name": "lot_size_dimensions",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "zoning": {
-          "name": "zoning",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "association_yn": {
-          "name": "association_yn",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": false
-        },
         "hoa_fee": {
           "name": "hoa_fee",
           "type": "integer",
@@ -1188,12 +1152,6 @@
         "tax_year": {
           "name": "tax_year",
           "type": "smallint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "tax_assessed_value": {
-          "name": "tax_assessed_value",
-          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },
@@ -2598,6 +2556,38 @@
           ]
         }
       },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.mls_offices": {
+      "name": "mls_offices",
+      "schema": "",
+      "columns": {
+        "office_mls_id": {
+          "name": "office_mls_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "office_name": {
+          "name": "office_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false

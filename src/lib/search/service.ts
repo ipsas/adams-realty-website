@@ -4,7 +4,12 @@ import { site } from "@/config/site";
 import { listings } from "@/db/schema";
 import { formatStreet } from "@/lib/format";
 import { listingContact } from "@/lib/listings/attribution-contact";
-import { selectCards, withPhotos, type ListingCardData } from "@/lib/listings/card";
+import {
+  officeLookupName,
+  selectCards,
+  withPhotos,
+  type ListingCardData,
+} from "@/lib/listings/card";
 import { listingOfficeLabel } from "@/lib/listings/office-label";
 import { PAGE_SIZE, type SearchCriteria } from "./params";
 import { resolveScope } from "./place";
@@ -132,6 +137,7 @@ export async function searchMapPins(c: SearchCriteria, scope?: LocationScope): P
       featured: listings.isFeatured,
       office: listings.listOfficeName,
       listOfficeMlsId: listings.listOfficeMlsId,
+      officeLookupName: officeLookupName(),
       attributionPhone: listings.attributionPhone,
       attributionEmail: listings.attributionEmail,
       listAgentId: listings.listAgentId,
@@ -191,6 +197,7 @@ type PinRow = {
   featured: boolean;
   office: string | null;
   listOfficeMlsId?: string | null;
+  officeLookupName?: string | null;
   attributionPhone: string | null;
   attributionEmail: string | null;
   listAgentId: string | null;
@@ -236,6 +243,7 @@ export async function locationPins(
       "listings"."is_featured" as "featured",
       "listings"."list_office_name" as "office", "listings"."is_company_listing" as "company",
       "listings"."list_office_mls_id" as "listOfficeMlsId",
+      ${officeLookupName()} as "officeLookupName",
       "listings"."attribution_phone" as "attributionPhone",
       "listings"."attribution_email" as "attributionEmail",
       "listings"."list_agent_id" as "listAgentId",
@@ -273,6 +281,7 @@ export function toPins(rows: PinRow[]): MapPin[] {
           {
             listOfficeName: r.office,
             listOfficeMlsId: r.listOfficeMlsId,
+            officeLookupName: r.officeLookupName,
             isCompanyListing: r.company,
           },
           site,

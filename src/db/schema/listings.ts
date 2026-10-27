@@ -629,6 +629,17 @@ export const syncQuarantine = pgTable(
 );
 
 /**
+ * Listing office names by MLS office ID, from the feed's RESO Office resource
+ * (src/lib/mls/office-lookup.ts), for listings whose feed sends no
+ * ListOfficeName. `office_name` is null when the feed didn't know the ID.
+ */
+export const mlsOffices = pgTable("mls_offices", {
+  officeMlsId: text("office_mls_id").primaryKey(),
+  officeName: text("office_name"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
  * Location autocomplete's place names (neighborhoods, cities, ZIPs) with live
  * listing counts. A materialized view created by hand in
  * drizzle/0006_sync_budget_and_places.sql (drizzle-kit ignores `.existing()`

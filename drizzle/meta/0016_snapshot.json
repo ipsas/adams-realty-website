@@ -1,6 +1,6 @@
 {
-  "id": "c40b0f3f-089c-48d8-87ca-b6f95fca2236",
-  "prevId": "f30f9ff5-653a-4d63-91ac-4a09bf4428eb",
+  "id": "f30f9ff5-653a-4d63-91ac-4a09bf4428eb",
+  "prevId": "9184fa81-d5e2-49b3-b915-8f95dd830b91",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -742,25 +742,6 @@
         },
         "sync_cursor_key": {
           "name": "sync_cursor_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reject_streak": {
-          "name": "reject_streak",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "reject_streak_cursor": {
-          "name": "reject_streak_cursor",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reject_streak_cursor_key": {
-          "name": "reject_streak_cursor_key",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -2621,6 +2602,38 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.mls_offices": {
+      "name": "mls_offices",
+      "schema": "",
+      "columns": {
+        "office_mls_id": {
+          "name": "office_mls_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "office_name": {
+          "name": "office_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.open_houses": {
       "name": "open_houses",
       "schema": "",
@@ -2710,118 +2723,6 @@
           "tableTo": "listings",
           "columnsFrom": [
             "listing_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.sync_quarantine": {
-      "name": "sync_quarantine",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "source_id": {
-          "name": "source_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "listing_key": {
-          "name": "listing_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "mls_number": {
-          "name": "mls_number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "modification_timestamp": {
-          "name": "modification_timestamp",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "cursor": {
-          "name": "cursor",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cursor_key": {
-          "name": "cursor_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "first_seen_at": {
-          "name": "first_seen_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "last_seen_at": {
-          "name": "last_seen_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "sync_quarantine_source_key_idx": {
-          "name": "sync_quarantine_source_key_idx",
-          "columns": [
-            {
-              "expression": "source_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "listing_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "sync_quarantine_source_id_data_sources_id_fk": {
-          "name": "sync_quarantine_source_id_data_sources_id_fk",
-          "tableFrom": "sync_quarantine",
-          "tableTo": "data_sources",
-          "columnsFrom": [
-            "source_id"
           ],
           "columnsTo": [
             "id"

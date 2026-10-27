@@ -7,8 +7,12 @@ import { db } from "@/db";
 import { can } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { formatNumber } from "@/lib/format";
-import { listingOfficeLabel } from "@/lib/listings/office-label";
-import { getDailyViewTotals, getListingViews, parseViewRange } from "@/lib/listings/views";
+import {
+  getDailyViewTotals,
+  getListingViews,
+  parseViewRange,
+  trafficOfficeLabel,
+} from "@/lib/listings/views";
 
 export const metadata = { title: "Listing traffic" };
 
@@ -88,7 +92,7 @@ export default async function TrafficPage(props: PageProps<"/dashboard/traffic">
                   </Link>
                 </Td>
                 <Td>{r.mlsNumber ?? "—"}</Td>
-                <Td>{listingOfficeLabel(r, site) ?? (r.fromFeed ? "—" : site.legalName)}</Td>
+                <Td>{trafficOfficeLabel(r)}</Td>
                 <Td className="text-right tabular">{formatNumber(r.views)}</Td>
               </tr>
             ))}

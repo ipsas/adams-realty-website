@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { dataSources } from "@/db/schema";
 import { refreshPlaces } from "@/lib/listings/places";
 import { ownOfficeIds } from "./gamls";
+import { OFFICE_MIN_REMAINING_MS, officeLookupStore, refreshOffices } from "./office-lookup";
 import { missingCredentials, ResoWebApiProvider } from "./reso/provider";
 import { runSync, type RunSyncOptions, type SyncResult } from "./sync-engine";
 import { createSyncStore } from "./sync-store";
@@ -76,10 +77,11 @@ export async function syncSource(sourceId: string, opts: SyncOptions = {}): Prom
   const { provider, ...runOpts } = opts;
   const store = createSyncStore(source);
   let result: SyncResult;
+  let feed: ListingProvider | undefined;
   try {
     result = await runSync(
       store,
-      () => provider ?? createProvider(source, { deadline: runOpts.deadline }),
+      () => (feed = provider ?? createProvider(source, { deadline: runOpts.deadline })),
       // The source's config decides, after the caller's options, so they can't drop it.
       { ...runOpts, liveOnly: source.config.liveOnly === true },
     );
@@ -89,6 +91,14 @@ export async function syncSource(sourceId: string, opts: SyncOptions = {}): Prom
     throw new SyncFailedError(e, changed);
   }
   if (result.changed) await refreshPlacesQuietly();
+  // Office names for listings the feed sent without one (best effort, never throws).
+  const fetchOffices = feed?.fetchOffices?.bind(feed);
+  const timeLeft = (runOpts.deadline ?? Infinity) - Date.now();
+  if (fetchOffices && result.mode !== "purge" && timeLeft >= OFFICE_MIN_REMAINING_MS) {
+    const named = await refreshOffices({ fetchOffices, ...officeLookupStore(db, source.id) });
+    // New office names change the cached cards, so the caller's updateTag must run.
+    if (named > 0 && !result.changed) return { ...result, changed: true };
+  }
   return result;
 }
 

@@ -43,4 +43,14 @@ describe("toPins", () => {
     expect(mine.attributionEmail).toBe("contracts.adamsrealty@gmail.com");
     expect(other.attributionEmail).toBe("jane@brokerage.com");
   });
+
+  it("names another firm's office by its looked-up name, else its MLS office ID", () => {
+    const other = { ...row, office: null, company: false, listOfficeMlsId: "RMCR" };
+    const [named, unknown] = toPins([
+      { ...other, officeLookupName: "Re/Max Center" },
+      { ...other, id: "l2", officeLookupName: null },
+    ]);
+    expect(named.office).toBe("Re/Max Center");
+    expect(unknown.office).toBe("MLS Office ID RMCR");
+  });
 });

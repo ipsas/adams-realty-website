@@ -1,7 +1,15 @@
 import { and, asc, between, eq, sql } from "drizzle-orm";
 import type { Executor } from "@/db";
 import { listingViews, listings } from "@/db/schema";
+import { site } from "@/config/site";
 import { addDays, marketToday } from "@/lib/areas/stats";
+import { officeLookupName } from "./card";
+import { listingOfficeLabel } from "./office-label";
+
+/** The traffic page's and CSV export's "Listing office" cell. */
+export function trafficOfficeLabel(r: ListingViewRow): string {
+  return listingOfficeLabel(r, site) ?? (r.fromFeed ? "—" : site.legalName);
+}
 
 /**
  * Listing page views, kept so traffic statistics can be shared with Georgia
@@ -42,6 +50,7 @@ export type ListingViewRow = {
   listOfficeName: string | null;
   /** For listingOfficeLabel when the feed sends no office name. */
   listOfficeMlsId: string | null;
+  officeLookupName: string | null;
   isCompanyListing: boolean;
   views: number;
 };
@@ -66,6 +75,7 @@ export async function getListingViews(
       fromFeed: listings.fromFeed,
       listOfficeName: listings.listOfficeName,
       listOfficeMlsId: listings.listOfficeMlsId,
+      officeLookupName: officeLookupName(),
       isCompanyListing: listings.isCompanyListing,
       views,
     })

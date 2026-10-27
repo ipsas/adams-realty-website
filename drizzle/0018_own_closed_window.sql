@@ -1,0 +1,1 @@
+ALTER TABLE "data_sources" ADD COLUMN IF NOT EXISTS "own_closed_synced_at" timestamp with time zone;

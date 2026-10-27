@@ -1,6 +1,6 @@
 {
-  "id": "b236d214-0f2c-49b5-a06a-6b20f22cb854",
-  "prevId": "c40b0f3f-089c-48d8-87ca-b6f95fca2236",
+  "id": "c40b0f3f-089c-48d8-87ca-b6f95fca2236",
+  "prevId": "f30f9ff5-653a-4d63-91ac-4a09bf4428eb",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -762,12 +762,6 @@
         "reject_streak_cursor_key": {
           "name": "reject_streak_cursor_key",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "own_closed_synced_at": {
-          "name": "own_closed_synced_at",
-          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -2623,6 +2617,38 @@
           ]
         }
       },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.mls_offices": {
+      "name": "mls_offices",
+      "schema": "",
+      "columns": {
+        "office_mls_id": {
+          "name": "office_mls_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "office_name": {
+          "name": "office_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false

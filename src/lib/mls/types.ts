@@ -118,6 +118,12 @@ export interface ListingProvider {
    * or no company office IDs).
    */
   readonly ownClosed?: OwnClosedFeed | null;
+  /**
+   * Optional: the feed's offices with these MLS office IDs (RESO Office
+   * resource), in one request; IDs the feed doesn't know are left out. Names
+   * the listing office when the feed sends no ListOfficeName (./office-lookup.ts).
+   */
+  fetchOffices?(ids: string[]): Promise<MlsOffice[]>;
 }
 
 /**
@@ -132,3 +138,6 @@ export interface OwnClosedFeed {
   /** Just their keys, which the live-only purge keeps besides the live ones. */
   fetchKeys(closedSince: string): AsyncIterable<string[]>;
 }
+
+/** One office from the feed's Office resource. */
+export type MlsOffice = { officeMlsId: string; officeName: string | null };

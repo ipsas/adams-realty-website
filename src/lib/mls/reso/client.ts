@@ -24,6 +24,8 @@ export type ResoClientConfig = {
   deadline?: number;
   /** Default REQUEST_TIMEOUT_MS. */
   requestTimeoutMs?: number;
+  /** Default MAX_RETRIES. */
+  maxRetries?: number;
   /** Injected clock and sleep (tests). */
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -80,7 +82,7 @@ export class ResoClient {
       // Bad credentials won't fix themselves; a busy or failing server might.
       throw res.status === 429 || res.status >= 500
         ? new Error(message)
-        : new ResoHttpError(message);
+        : new ResoHttpError(message, res.status);
     }
     const json = (await res.json()) as { access_token: string; expires_in?: number };
     this.accessToken = {
@@ -93,6 +95,7 @@ export class ResoClient {
   private async get<T>(url: string): Promise<ODataPage<T>> {
     const limit = Math.min(this.now() + MAX_PAGE_MS, this.config.deadline ?? Infinity);
     let lastProblem = "";
+    let lastStatus: number | undefined;
     for (let attempt = 0; ; attempt++) {
       if (this.now() >= limit) {
         throw new Error(
@@ -110,19 +113,21 @@ export class ResoClient {
         if (res.status !== 429 && res.status < 500) {
           throw new ResoHttpError(
             `RESO request failed (${res.status}) for ${redact(url)}: ${await res.text()}`,
+            res.status,
           );
         }
         lastProblem = `HTTP ${res.status}`;
+        lastStatus = res.status;
         retryAfter = Number(res.headers.get("retry-after"));
       } catch (e) {
         if (e instanceof ResoHttpError) throw e;
         // A timeout (ours) or a network error: worth another try.
         lastProblem = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+        lastStatus = undefined;
       }
-      if (attempt >= MAX_RETRIES) {
-        throw new Error(
-          `RESO request failed after ${attempt + 1} attempts for ${redact(url)}: ${lastProblem}`,
-        );
+      if (attempt >= (this.config.maxRetries ?? MAX_RETRIES)) {
+        const message = `RESO request failed after ${attempt + 1} attempts for ${redact(url)}: ${lastProblem}`;
+        throw lastStatus ? new ResoHttpError(message, lastStatus) : new Error(message);
       }
       const delay = Math.min(
         Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 2 ** attempt * 1000,
@@ -145,7 +150,15 @@ export class ResoClient {
   }
 }
 
-class ResoHttpError extends Error {}
+/** A response not worth retrying; `status` is its HTTP code. */
+export class ResoHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
 
 function redact(url: string): string {
   return url.replace(/(access_token|token)=[^&]+/gi, "$1=***");
