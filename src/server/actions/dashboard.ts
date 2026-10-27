@@ -4,6 +4,7 @@ import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { site } from "@/config/site";
 import { db } from "@/db";
 import {
   agents,
@@ -409,7 +410,7 @@ export async function saveListing(
     listAgentName: agent?.name ?? null,
     listAgentPhone: agent?.phone ?? null,
     listAgentEmail: agent?.email ?? null,
-    listOfficeName: "Adams Realty",
+    listOfficeName: site.legalName,
     listOfficeMlsId: null,
     sourceModifiedAt: new Date(),
     statusChangedAt:

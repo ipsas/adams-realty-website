@@ -8,17 +8,42 @@ import { trafficOfficeLabel, type ListingViewRow } from "./views";
 const firm = { legalName: "Adams Realty, Inc." };
 
 describe("listingOfficeLabel", () => {
-  it("prefers the feed's ListOfficeName", () => {
+  it("prefers the feed's ListOfficeName for another firm's listing", () => {
     expect(
       listingOfficeLabel(
         {
           listOfficeName: " Peachtree Partners ",
-          listOfficeMlsId: "ADAM99",
-          isCompanyListing: true,
+          officeLookupName: "Re/Max Center",
+          listOfficeMlsId: "PEACH1",
+          isCompanyListing: false,
         },
         firm,
       ),
     ).toBe("Peachtree Partners");
+  });
+
+  it("names the firm for its own feed listing even when the feed sends an office name", () => {
+    expect(
+      listingOfficeLabel(
+        {
+          listOfficeName: "Adams Realty Royston",
+          officeLookupName: "Adams Realty Inc",
+          listOfficeMlsId: "ADAM01",
+          isCompanyListing: true,
+        },
+        firm,
+      ),
+    ).toBe("Adams Realty, Inc.");
+  });
+
+  it("names the firm for a manual dashboard listing over its stored office name", () => {
+    // Rows saved before the dashboard stored site.legalName carry "Adams Realty".
+    expect(
+      listingOfficeLabel(
+        { listOfficeName: "Adams Realty", listOfficeMlsId: null, isCompanyListing: true },
+        site,
+      ),
+    ).toBe("Adams Realty, Inc.");
   });
 
   it("ignores an empty or whitespace feed name", () => {
