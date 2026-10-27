@@ -3,6 +3,8 @@ import {
   EXCLUDED_FIELD_KEYS,
   EXCLUDED_FIELDS,
   isExcludedField,
+  isRestrictedValue,
+  redactAccessCodes,
   withoutExcludedFields,
 } from "./excluded-fields";
 import { COMPENSATION_FIELDS } from "./public-fields";
@@ -45,5 +47,75 @@ describe("excluded fields", () => {
         lockBoxType: ["Supra"],
       }),
     ).toEqual({ security: ["Smoke Detector(s)"] });
+  });
+
+  it("drops access values (lockbox, codes, showing instructions) from feature lists", () => {
+    expect(
+      withoutExcludedFields({
+        security: ["Security System", "Alarm code 1234", "Smoke Detector(s)", "Fire Alarm"],
+        community: ["Gated Community", "Gate code 4455"],
+        laundry: ["Washer/Dryer Combo"],
+        exterior: ["Lockbox on porch", "Porch"],
+      }),
+    ).toEqual({
+      security: ["Security System", "Smoke Detector(s)", "Fire Alarm"],
+      community: ["Gated Community"],
+      laundry: ["Washer/Dryer Combo"],
+      exterior: ["Porch"],
+    });
+  });
+});
+
+describe("isRestrictedValue", () => {
+  it("matches access and showing phrases in any case, with or without digits", () => {
+    for (const v of [
+      "Alarm code 1234",
+      "ALARM CODE: 9876",
+      "lockbox",
+      "Lock Box on side door",
+      "LockBox - Supra",
+      "Combo 1234",
+      "combo: 55-12",
+      "Combo lock on gate",
+      "gate code 4455",
+      "Access code #2020",
+      "Door code is 1111",
+      "Showing instructions: call listing agent",
+      "See showing instruction",
+      "Key under mat",
+    ])
+      expect(isRestrictedValue(v), v).toBe(true);
+  });
+
+  it("leaves normal preset values alone", () => {
+    for (const v of [
+      "Security System",
+      "Gated Community",
+      "Smoke Detector(s)",
+      "Fire Alarm",
+      "Carbon Monoxide Detector(s)",
+      "Security Gate",
+      "Keyless Entry",
+      "Washer/Dryer Combo",
+      "Showing Room",
+      "Codes Compliant",
+    ])
+      expect(isRestrictedValue(v), v).toBe(false);
+  });
+});
+
+describe("redactAccessCodes", () => {
+  it("masks the digits after an access phrase and keeps the rest of the remarks", () => {
+    expect(redactAccessCodes("Lovely ranch. Gate code 4455. Alarm code: 1234 on entry.")).toBe(
+      "Lovely ranch. Gate code ****. Alarm code: **** on entry.",
+    );
+    expect(redactAccessCodes("Lockbox combo is 12-34 at the side door")).toBe(
+      "Lockbox combo is **** at the side door",
+    );
+  });
+
+  it("leaves remarks without an access code unchanged", () => {
+    const text = "3 bedrooms, 2 baths, fire alarm, built 1998 on 2.5 acres in a gated community.";
+    expect(redactAccessCodes(text)).toBe(text);
   });
 });

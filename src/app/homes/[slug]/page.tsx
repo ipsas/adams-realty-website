@@ -64,6 +64,7 @@ import {
 } from "@/lib/format";
 import { listingContact } from "@/lib/listings/attribution-contact";
 import { hoaFact, listingDetailGroups } from "@/lib/listings/detail-fields";
+import { redactAccessCodes, withoutExcludedFields } from "@/lib/listings/excluded-fields";
 import {
   formatAcres,
   formatPricePerAcre,
@@ -99,7 +100,7 @@ export async function generateMetadata(props: PageProps<"/homes/[slug]">): Promi
         .join(", ");
   const title = `${formatFullAddress(l)} | ${facts ? `${facts} | ` : ""}${formatPrice(l.listPrice)}`;
   const description = l.description?.trim()
-    ? listingMetaDescription(l.description)
+    ? listingMetaDescription(redactAccessCodes(l.description))
     : `${statusLabel(l.status, l.transactionType)} in ${l.city}, ${l.state}.`;
   return {
     title: { absolute: `${title} | ${site.name}` },
@@ -383,7 +384,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                 {l.description ? (
                   <Expandable collapsedHeight="9rem">
                     <p className="leading-relaxed whitespace-pre-line text-ink-soft">
-                      {l.description}
+                      {redactAccessCodes(l.description)}
                     </p>
                   </Expandable>
                 ) : (
@@ -814,7 +815,9 @@ function FeatureSection({
     isSingleStory: boolean;
   };
 }) {
-  const groups = FEATURE_GROUPS.map(([k, label]) => [label, features[k] ?? []] as const).filter(
+  // Guarded like "Property details": no excluded key or access value (lockbox, alarm code…).
+  const safe = withoutExcludedFields(features ?? {});
+  const groups = FEATURE_GROUPS.map(([k, label]) => [label, safe[k] ?? []] as const).filter(
     ([, items]) => items.length,
   );
   const highlights = [
@@ -886,7 +889,7 @@ function JsonLd({ data }: { data: ListingDetail }) {
     name: formatFullAddress(l),
     url: `${env.NEXT_PUBLIC_SITE_URL.replace(/\/+$/, "")}/homes/${l.slug}`,
     datePosted: l.listDate ?? undefined,
-    description: l.description ?? undefined,
+    description: l.description ? redactAccessCodes(l.description) : undefined,
     image: data.media
       .filter((m) => m.kind === "photo")
       .slice(0, 8)
