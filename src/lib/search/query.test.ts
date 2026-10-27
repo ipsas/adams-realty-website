@@ -8,6 +8,7 @@ import {
   lakeGuide,
   MAX_PLAUSIBLE_LOT_SQFT,
   normalizeLocationQuery,
+  soldWithin,
   type LocationScope,
 } from "./query";
 
@@ -47,6 +48,12 @@ describe("buildWhere", () => {
     const { sql, params } = render({ mode: "sold", soldWithinDays: "90" });
     expect(sql).toContain(`"listings"."close_date" >=`);
     expect(params).toEqual(["closed", "sale", "2026-06-27", "commercial"]);
+  });
+
+  it("counts the sold window from the New York calendar date", () => {
+    // 10pm EDT on Oct 26 is Oct 27 in UTC: the window still starts at Oct 26 minus 365 days.
+    const where = soldWithin(365, new Date("2026-10-27T02:00:00Z"));
+    expect(dialect.sqlToQuery(where[2]!).params).toEqual(["2025-10-26"]);
   });
 
   it("matches ZIP codes exactly", () => {

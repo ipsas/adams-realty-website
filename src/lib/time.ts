@@ -55,3 +55,24 @@ export function upcomingDays(
     fmt.format(new Date(now.getTime() + (i + 1) * 86_400_000)),
   );
 }
+
+/**
+ * The market's calendar date (YYYY-MM-DD in `site.market.timeZone`) `days` days
+ * before `now`: a window of exactly that many local days, whatever the UTC date or DST.
+ */
+export function marketDateDaysAgo(
+  days: number,
+  now: Date = new Date(),
+  timeZone: string = site.market.timeZone,
+): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const part = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+  // Calendar math on the local date, at UTC midnight: no DST in it.
+  const today = Date.UTC(part("year"), part("month") - 1, part("day"));
+  return new Date(today - days * 86_400_000).toISOString().slice(0, 10);
+}

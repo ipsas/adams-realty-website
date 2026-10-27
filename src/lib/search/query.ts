@@ -19,6 +19,7 @@ import { site } from "@/config/site";
 import { listings, openHouses } from "@/db/schema";
 import { areaCondition, normalizedMatch } from "@/lib/areas/match";
 import { publicConditions } from "@/lib/listings/visibility";
+import { marketDateDaysAgo } from "@/lib/time";
 import { allowsPriceReduced, type SearchCriteria } from "./params";
 
 type Status = (typeof listings.status.enumValues)[number];
@@ -133,9 +134,11 @@ export function listedWithin(days: number, now: Date = new Date()): SQL {
 /**
  * Sold (a closed sale) in the last `days` days: sold mode's filter, and the agent
  * page's sales count and sold cards, which must match what the sold search lists.
+ * Counted in America/New_York local days (`marketDateDaysAgo`).
  */
 export function soldWithin(days: number = DEFAULT_SOLD_WINDOW_DAYS, now: Date = new Date()): SQL[] {
-  const since = new Date(now.getTime() - days * 86_400_000).toISOString().slice(0, 10);
+  // The market's calendar date, like the purge's own-closed cutoff (`purgeScope`).
+  const since = marketDateDaysAgo(days, now);
   // Separate conditions, so sold mode's indexes still match each (indexes.test.ts).
   return [
     eq(listings.status, "closed"),

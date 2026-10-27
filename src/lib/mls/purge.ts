@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, lt, or, sql, gte, type SQL } from "drizzle-orm";
-import { site } from "@/config/site";
 import { inquiries, listings, savedListings } from "@/db/schema";
+import { marketDateDaysAgo } from "@/lib/time";
 import type { PurgeScope } from "./types";
 
 /**
@@ -72,16 +72,7 @@ export function purgeOverdue(
  * `liveOnly`: the source's feed only sends live statuses (`DataSourceConfig.liveOnly`).
  */
 export function purgeScope(now: Date, opts: { liveOnly?: boolean } = {}): PurgeScope {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: site.market.timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(now);
-  const part = (type: string) => Number(parts.find((p) => p.type === type)?.value);
-  // Calendar math on the local date, at UTC midnight: no DST in it.
-  const today = Date.UTC(part("year"), part("month") - 1, part("day"));
-  const closedSince = new Date(today - PURGE_SOLD_DAYS * 86_400_000).toISOString().slice(0, 10);
+  const closedSince = marketDateDaysAgo(PURGE_SOLD_DAYS, now);
   return opts.liveOnly ? { closedSince, liveOnly: true } : { closedSince };
 }
 
