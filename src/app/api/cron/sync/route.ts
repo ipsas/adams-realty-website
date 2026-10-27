@@ -39,7 +39,8 @@ const BUDGET_MS = (maxDuration - 45) * 1000;
  * morning summary (src/lib/leads/digest.ts), so it goes out by about 7:15
  * Eastern: before 7 a.m. it does nothing, and it never sends twice a day.
  * Before it, lead and assignment notices whose send failed are retried from
- * `email_outbox` (src/lib/email-outbox.ts; a few per run, best effort).
+ * `email_outbox` (src/lib/email-outbox.ts; a few per run within the sync's
+ * budget, best effort).
  * Neither outcome changes the status. Then listings with no `keyword_tsv`
  * get one (`backfillKeywordTsv`, a batch per run in the time left; best
  * effort, not in the status). `email.configured` says whether
@@ -67,7 +68,7 @@ export async function GET(request: NextRequest) {
     revalidateTag(LISTINGS_TAG, "max");
   }
   if (emailConfigured()) {
-    await retryLeadEmails().catch((e) =>
+    await retryLeadEmails({ deadline: started + BUDGET_MS }).catch((e) =>
       console.error(`[cron] email outbox failed: ${describeError(e)}`),
     );
   }

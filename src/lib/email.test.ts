@@ -18,8 +18,15 @@ vi.mock("@/lib/email-batch", () => ({
   },
 }));
 
-const { emailConfigured, parseRetryAfter, sendEmail, sendTransactional, RETRY_WAIT_CAP_MS } =
-  await import("./email");
+const {
+  emailConfigured,
+  parseRetryAfter,
+  sendEmail,
+  sendTransactional,
+  RETRY_ATTEMPTS,
+  RETRY_WAIT_CAP_MS,
+  SEND_TIMEOUT_MS,
+} = await import("./email");
 import type { Email } from "./email";
 
 const RESET_URL = "https://adams.example/reset-password/tok_SECRET123?callbackURL=%2F";
@@ -39,9 +46,24 @@ beforeEach(() => {
   ({ output } = captureConsole());
 });
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
+
+/** A Resend that never answers: the request only ends when aborted, as fetch does. */
+function hangs() {
+  const fetch = vi.fn<typeof globalThis.fetch>(
+    (_url, init) =>
+      new Promise((_resolve, reject) =>
+        init!.signal!.addEventListener("abort", () =>
+          reject(new DOMException("This operation was aborted", "AbortError")),
+        ),
+      ),
+  );
+  vi.stubGlobal("fetch", fetch);
+  return fetch;
+}
 
 describe("sendEmail with no RESEND_API_KEY", () => {
   beforeEach(() => {
@@ -124,8 +146,40 @@ describe("sendEmail with a key", () => {
         reply_to: "pat@adams.example",
         headers: { "List-Unsubscribe": "<https://adams.example/u/tok_UNSUB>" },
       }),
+      signal: expect.any(AbortSignal),
     });
     expect(output()).toEqual(["[email] kind=password-reset to_domain=example.com status=sent"]);
+  });
+
+  it("clears its timeout once Resend answers", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("{}")),
+    );
+    expect(await sendEmail(email())).toEqual({ ok: true });
+    expect(vi.getTimerCount()).toBe(0);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("{}", { status: 500 })),
+    );
+    expect(await sendEmail(email())).toMatchObject({ ok: false, status: 500 });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("aborts a request with no answer after SEND_TIMEOUT_MS and reports it as a timeout", async () => {
+    vi.useFakeTimers();
+    const fetch = hangs();
+    let settled = false;
+    const pending = sendEmail(email()).finally(() => (settled = true));
+    await vi.advanceTimersByTimeAsync(SEND_TIMEOUT_MS - 1);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await pending).toEqual({ ok: false, reason: "send_failed", timedOut: true });
+    expect(fetch.mock.calls[0][1]!.signal!.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(output()).toEqual(["[email] kind=password-reset to_domain=example.com status=timeout"]);
+    expect(output().join("\n")).not.toMatch(/jordan\.buyer|tok_SECRET123|reset:abc|aborted/);
   });
 
   it("falls back to EMAIL_REPLY_TO and sends no Idempotency-Key header without an idempotency key", async () => {
@@ -276,6 +330,24 @@ describe("sendTransactional", () => {
     expect(keys[0]).toMatch(/^[0-9a-f-]{36}$/);
     expect(keys[1]).toBe(keys[0]);
     expect(h.counted).toEqual([1]);
+  });
+
+  it("retries a timed-out request with the same key, and gives up after RETRY_ATTEMPTS", async () => {
+    vi.useFakeTimers();
+    const fetch = hangs();
+    const pending = sendTransactional(email({ idempotencyKey: undefined }), { sleep });
+    await vi.advanceTimersByTimeAsync(RETRY_ATTEMPTS * SEND_TIMEOUT_MS);
+    expect(await pending).toEqual({ ok: false, reason: "send_failed", timedOut: true });
+    expect(fetch).toHaveBeenCalledTimes(RETRY_ATTEMPTS);
+    const keys = fetch.mock.calls.map(
+      ([, init]) => (init!.headers as Record<string, string>)["Idempotency-Key"],
+    );
+    expect(keys[0]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(new Set(keys).size).toBe(1);
+    expect(sleeps).toEqual([250, 500]);
+    expect(output().filter((l) => l.endsWith("status=timeout"))).toHaveLength(RETRY_ATTEMPTS);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(h.counted).toEqual([]);
   });
 
   it("tries batch kinds once: their guard defers them", async () => {

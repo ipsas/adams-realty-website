@@ -44,7 +44,8 @@ export type EmailKind =
  * `rate_limited`: Resend answered 429 (its send rate or daily quota), so batch
  * runs stop for the rest of the run. Every other failure is `send_failed`.
  * `status` is Resend's HTTP code (none when the request itself failed), and
- * `retryAfterMs` its Retry-After, when it sent one.
+ * `retryAfterMs` its Retry-After, when it sent one. `timedOut`: no answer
+ * within SEND_TIMEOUT_MS (a failed request, so no status).
  */
 export type SendResult =
   | { ok: true }
@@ -53,6 +54,7 @@ export type SendResult =
       reason: "email_not_configured" | "send_failed" | "rate_limited";
       status?: number;
       retryAfterMs?: number;
+      timedOut?: true;
     };
 
 export type SendEmail = (email: Email) => Promise<SendResult>;
@@ -83,14 +85,24 @@ function recipientDomains(to: Email["to"]): string {
  * outcome and, for an HTTP error, its status code. Never the address, subject,
  * body, links or Resend's reply.
  */
-function logSend(email: Email, status: "sent" | "failed" | "not_configured", http?: number) {
+function logSend(
+  email: Email,
+  status: "sent" | "failed" | "timeout" | "not_configured",
+  http?: number,
+) {
   const line =
     `[email] kind=${email.kind} to_domain=${recipientDomains(email.to)} status=${status}` +
     (http ? ` http=${http}` : "");
   if (status === "sent") console.info(line);
-  else if (status === "failed") console.error(line);
-  else console.warn(line);
+  else if (status === "not_configured") console.warn(line);
+  else console.error(line);
 }
+
+/**
+ * How long one Resend request may take before it's abandoned: a hung request
+ * would otherwise hold a password reset, a dashboard action or the cron.
+ */
+export const SEND_TIMEOUT_MS = 8000;
 
 let warnedNotConfigured = false;
 
@@ -98,7 +110,8 @@ let warnedNotConfigured = false;
  * Sends transactional email through Resend's HTTP API. Never throws: the
  * result says whether it went. With no API key, nothing is sent anywhere
  * (production, previews and dev alike) and the result is
- * `email_not_configured`, so callers don't mark the email as sent.
+ * `email_not_configured`, so callers don't mark the email as sent. A request
+ * with no answer after SEND_TIMEOUT_MS is aborted and fails (`timedOut`).
  */
 export async function sendEmail(email: Email): Promise<SendResult> {
   if (!env.RESEND_API_KEY) {
@@ -110,6 +123,8 @@ export async function sendEmail(email: Email): Promise<SendResult> {
     return { ok: false, reason: "email_not_configured" };
   }
   let res: Response;
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), SEND_TIMEOUT_MS);
   try {
     res = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -127,10 +142,17 @@ export async function sendEmail(email: Email): Promise<SendResult> {
         reply_to: email.replyTo ?? env.EMAIL_REPLY_TO,
         headers: email.headers,
       }),
+      signal: abort.signal,
     });
   } catch {
+    if (abort.signal.aborted) {
+      logSend(email, "timeout");
+      return { ok: false, reason: "send_failed", timedOut: true };
+    }
     logSend(email, "failed");
     return { ok: false, reason: "send_failed" };
+  } finally {
+    clearTimeout(timer);
   }
   if (!res.ok) {
     logSend(email, "failed", res.status);
@@ -170,7 +192,7 @@ export const RETRY_WAIT_CAP_MS = 3000;
 /** The wait after the first failed try when Resend sends no Retry-After; doubled after each. */
 const RETRY_BASE_MS = 250;
 
-/** A 429, a 5xx or no answer at all (the request failed) is worth another try; other 4xx never are. */
+/** A 429, a 5xx or no answer at all (the request failed or timed out) is worth another try; other 4xx never are. */
 function retryable(res: SendResult): boolean {
   if (res.ok || res.reason === "email_not_configured") return false;
   return res.reason === "rate_limited" || res.status === undefined || res.status >= 500;
@@ -181,13 +203,15 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
 /**
  * `sendEmail` for transactional mail (password resets, lead notices and
  * copies, assignment notices, sync alerts), retried in the request on a 429,
- * a 5xx or a failed request: up to RETRY_ATTEMPTS tries, waiting Resend's
+ * a 5xx or a failed or timed-out request: up to RETRY_ATTEMPTS tries, waiting Resend's
  * Retry-After or else 250 ms, then 500 ms, and never more than
  * RETRY_WAIT_CAP_MS in all (a longer Retry-After ends it, and the failure is
  * returned). A wrapper rather than part of `sendEmail`, so the batch runs and
  * the outbox (src/lib/email-outbox.ts), which defer on their own, still try
  * once; batch kinds passed here are sent once too. Each try logs its own line;
  * a send that goes is counted once (by the `sendEmail` that sent it).
+ * So the caller waits at most RETRY_ATTEMPTS × SEND_TIMEOUT_MS plus
+ * RETRY_WAIT_CAP_MS (about 27 s) for a send.
  *
  * Every try carries the same idempotency key (a random one if the email has
  * none), so a try whose reply was lost can't make the next one send twice.

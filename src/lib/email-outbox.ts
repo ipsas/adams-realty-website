@@ -28,12 +28,18 @@ export const OUTBOX_RUN_LIMIT = 10;
 const BACKOFF = sql`interval '15 minutes'`;
 /** A claimed row is due again after this, should its run die before settling it. */
 const LEASE = sql`interval '10 minutes'`;
+/** No new row is started with less than this before the deadline: a row can take a send timeout and a few queries. */
+export const OUTBOX_MIN_TIME_MS = 60_000;
 
-/** A failed send's reason for `last_status`: 'http_<code>', or 'network' when no answer came. */
+/**
+ * A failed send's reason for `last_status`: 'http_<code>', 'timeout' when
+ * Resend didn't answer in time, or 'network' when the request failed.
+ */
 export function outboxStatus(res: SendResult | null): string {
   if (!res) return "error";
   if (res.ok) return "sent";
   if (res.reason === "email_not_configured") return "not_configured";
+  if (res.timedOut) return "timeout";
   return res.status ? `http_${res.status}` : "network";
 }
 
@@ -90,6 +96,15 @@ export async function claimDueEmails(db: Executor, limit: number): Promise<Outbo
     .returning();
 }
 
+/** Hands back claimed rows this run didn't try: due now, their attempts unchanged. */
+export async function releaseClaims(db: Executor, ids: OutboxRow["id"][]): Promise<void> {
+  if (ids.length === 0) return;
+  await db
+    .update(emailOutbox)
+    .set({ nextAttemptAt: sql`now()`, updatedAt: sql`now()` })
+    .where(and(inArray(emailOutbox.id, ids), eq(emailOutbox.state, "pending")));
+}
+
 /** Records a failed try: due again after the backoff, or dead after OUTBOX_MAX_ATTEMPTS. */
 export async function recordFailure(
   db: Executor,
@@ -130,20 +145,31 @@ export type OutboxDeps = {
   /** The email as it would be sent now; null when its lead or recipient is gone. */
   rebuild: (row: OutboxRow) => Promise<Email | null>;
   limit?: number;
+  /** Epoch ms the run must be done by (the cron's budget); no limit when absent. */
+  deadline?: number;
 };
 
 export type OutboxRun = { sent: number; retry: number; dead: number; gone: number };
 
 /**
- * Sends the due notices once each (see the top of this file). Stops early on a
- * 429: the rows it claimed but didn't try are due again when their lease ends.
- * A row that fails to rebuild or settle is logged and left to its lease.
+ * Sends the due notices once each (see the top of this file). Starts no row
+ * with less than OUTBOX_MIN_TIME_MS before the deadline, and stops early on a
+ * 429: the rows it claimed but didn't try are handed back (`releaseClaims`),
+ * due again with no attempt spent. A row that fails to rebuild or settle is
+ * logged and left to its lease.
  */
 export async function processEmailOutbox(deps: OutboxDeps): Promise<OutboxRun> {
   const db = deps.db ?? defaultDb;
   const run: OutboxRun = { sent: 0, retry: 0, dead: 0, gone: 0 };
+  const timeLeft = () =>
+    deps.deadline === undefined || deps.deadline - Date.now() >= OUTBOX_MIN_TIME_MS;
+  if (!timeLeft()) return run;
   const rows = await claimDueEmails(db, deps.limit ?? OUTBOX_RUN_LIMIT);
-  for (const row of rows) {
+  for (const [i, row] of rows.entries()) {
+    if (!timeLeft()) {
+      await releaseUntried(db, rows.slice(i));
+      break;
+    }
     const tag = `[email-outbox] kind=${row.kind} id=${row.id}`;
     try {
       const email = await deps.rebuild(row);
@@ -174,10 +200,21 @@ export async function processEmailOutbox(deps: OutboxDeps): Promise<OutboxRun> {
         console.warn(`${tag} status=retry attempts=${attempts} last=${last}`);
         run.retry++;
       }
-      if (res && !res.ok && res.reason === "rate_limited") break;
+      if (res && !res.ok && res.reason === "rate_limited") {
+        await releaseUntried(db, rows.slice(i + 1));
+        break;
+      }
     } catch (e) {
       console.error(`${tag} failed: ${describeError(e)}`);
     }
   }
   return run;
+}
+
+/** `releaseClaims`, logged and left to the lease should it fail. */
+async function releaseUntried(db: Executor, rows: OutboxRow[]): Promise<void> {
+  await releaseClaims(
+    db,
+    rows.map((r) => r.id),
+  ).catch((e) => console.error(`[email-outbox] release failed: ${describeError(e)}`));
 }

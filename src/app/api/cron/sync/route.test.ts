@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
   prunes: 0,
   pruneFails: false,
   outboxRuns: 0,
+  outboxOpts: [] as Array<Record<string, unknown>>,
   outboxFails: false,
   backfills: [] as Array<Record<string, unknown>>,
   backfillFails: false,
@@ -29,8 +30,9 @@ vi.mock("@/lib/search/keyword-backfill", () => ({
   },
 }));
 vi.mock("@/lib/leads/outbox", () => ({
-  retryLeadEmails: async () => {
+  retryLeadEmails: async (opts: Record<string, unknown>) => {
     h.outboxRuns++;
+    h.outboxOpts.push(opts);
     if (h.outboxFails) throw new Error("relation email_outbox does not exist");
     return { sent: 0, retry: 0, dead: 0, gone: 0 };
   },
@@ -100,6 +102,7 @@ beforeEach(() => {
   h.prunes = 0;
   h.pruneFails = false;
   h.outboxRuns = 0;
+  h.outboxOpts.length = 0;
   h.outboxFails = false;
   h.configured = false;
   h.backfills.length = 0;
@@ -159,6 +162,15 @@ describe("GET /api/cron/sync", () => {
     await call();
     await call("?purge=1");
     expect(h.outboxRuns).toBe(2);
+  });
+
+  it("gives the outbox the sync's deadline", async () => {
+    h.configured = true;
+    const before = Date.now();
+    await call();
+    const deadline = h.outboxOpts[0].deadline as number;
+    expect(deadline).toBeGreaterThanOrEqual(before + (maxDuration - 45) * 1000);
+    expect(deadline).toBeLessThanOrEqual(Date.now() + (maxDuration - 45) * 1000);
   });
 
   it("logs one line when the outbox fails, and still answers for the sync alone", async () => {

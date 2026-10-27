@@ -109,7 +109,13 @@ export async function rebuildLeadEmail(
 
 /** The sync cron's outbox step: queued lead notices, each sent once (`sendEmail`). */
 export function retryLeadEmails(
-  opts: { db?: Executor; send?: SendEmail; siteUrl?: string; inbox?: string } = {},
+  opts: {
+    db?: Executor;
+    send?: SendEmail;
+    siteUrl?: string;
+    inbox?: string;
+    deadline?: number;
+  } = {},
 ): Promise<OutboxRun> {
   const db = opts.db ?? defaultDb;
   const deps = {
@@ -121,5 +127,6 @@ export function retryLeadEmails(
     db,
     send: opts.send ?? sendEmail,
     rebuild: (row) => rebuildLeadEmail(deps, row),
+    deadline: opts.deadline,
   });
 }

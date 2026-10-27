@@ -13,6 +13,7 @@ import {
   claimDueEmails,
   enqueueEmail,
   OUTBOX_MAX_ATTEMPTS,
+  OUTBOX_MIN_TIME_MS,
   processEmailOutbox,
   type OutboxItem,
 } from "./email-outbox";
@@ -137,6 +138,35 @@ describe("processEmailOutbox", () => {
     // Dead rows are never claimed again.
     await due();
     expect(await claimDueEmails(db, 10)).toEqual([]);
+  });
+
+  it("starts no row once the deadline is near, and hands back the untried claims", async () => {
+    captureConsole();
+    for (let i = 0; i < 3; i++)
+      await enqueueEmail(db, { ...office(randomUUID()), lastStatus: "http_503" });
+    await due();
+    // Only Date is faked: the pg client keeps its real timers.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const deadline = Date.now() + OUTBOX_MIN_TIME_MS + 5_000;
+      // The first send takes a send timeout's worth of time, leaving under a minute.
+      const send = vi.fn(async () => {
+        vi.setSystemTime(Date.now() + 8_000);
+        return failed;
+      });
+      const run = await processEmailOutbox({ db, send, rebuild: async () => email, deadline });
+      expect(run).toEqual({ sent: 0, retry: 1, dead: 0, gone: 0 });
+      expect(send).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+    const all = await rows();
+    expect(all.filter((r) => r.attempts === 2)).toHaveLength(1);
+    // The two untried rows: attempts unchanged and due now, not after the lease.
+    const untried = all.filter((r) => r.attempts === 1);
+    expect(untried).toHaveLength(2);
+    const claimed = await claimDueEmails(db, 10);
+    expect(claimed.map((r) => r.id).sort()).toEqual(untried.map((r) => r.id).sort());
   });
 
   it("rebuilds the notice from the lead as it is now, sends it once, and deletes the row", async () => {
