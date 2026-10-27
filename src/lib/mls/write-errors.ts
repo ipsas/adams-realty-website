@@ -89,9 +89,13 @@ export function describeError(error: unknown): string {
   return fields.length ? `${message} (${fields.join(", ")})` : message;
 }
 
-/** A page fails whole when more than this fraction of its rows are rejected… */
+/** A page fails whole when every row, or more than this fraction of its rows, is rejected… */
 export const MAX_REJECTED_FRACTION = 0.5;
-/** …provided it has at least this many rows (a page whose every row is rejected always fails). */
+/**
+ * …provided it has at least this many rows. A smaller page never fails: its
+ * rejected rows are skipped even when all are, so a lone permanently bad
+ * record can't stall the incremental sync.
+ */
 export const MIN_ROWS_FOR_REJECTED_FRACTION = 10;
 
 /**
@@ -129,10 +133,11 @@ export function isRowLevelError(error: unknown): boolean {
  * throws, e.g. by running in a savepoint). If a batch fails because of a
  * record, it's split in halves and each retried, down to single records: every
  * good record is written, and each one that fails alone is reported to
- * `onRowFailed` and skipped. Other errors are rethrown. When every record
- * fails, or more than MAX_REJECTED_FRACTION of at least
- * MIN_ROWS_FOR_REJECTED_FRACTION, throws PageRejectedError: the caller's
- * transaction must then roll back the records that were written.
+ * `onRowFailed` and skipped. Other errors are rethrown. When there are at least
+ * MIN_ROWS_FOR_REJECTED_FRACTION records and every one, or more than
+ * MAX_REJECTED_FRACTION of them, fails, throws PageRejectedError: the caller's
+ * transaction must then roll back the records that were written. Fewer records
+ * never throw, even if all fail.
  */
 export async function writeIsolated<T, R>(
   items: T[],
@@ -161,10 +166,8 @@ export async function writeIsolated<T, R>(
   };
   await attempt(items);
   if (
-    failed.length &&
-    (failed.length === items.length ||
-      (items.length >= MIN_ROWS_FOR_REJECTED_FRACTION &&
-        failed.length > items.length * MAX_REJECTED_FRACTION))
+    items.length >= MIN_ROWS_FOR_REJECTED_FRACTION &&
+    (failed.length === items.length || failed.length > items.length * MAX_REJECTED_FRACTION)
   ) {
     throw new PageRejectedError(failed.length, items.length, describeError(firstError));
   }

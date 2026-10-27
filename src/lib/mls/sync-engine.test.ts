@@ -556,13 +556,25 @@ describe("runSync: time budget and resume", () => {
     expect(store.cursor).toEqual({ modifiedAt: new Date(modifiedOf(records[9])), key: null });
   });
 
-  it("on a page under 10 rows, skips rejected rows unless all are, as before", async () => {
+  it("on a page under 10 rows, skips rejected rows, as before", async () => {
     const { provider, records } = feed(1, 9);
     for (const i of [0, 2, 4, 6, 8]) store.rejectKeys.add(keyOf(records[i]));
     const result = await runSync(store, provider, { now: clock });
     expect(result).toMatchObject({ status: "succeeded", upserted: 4 });
     expect(result.skipped).toEqual({ write_failed: 5 });
     expect(store.cursor).toEqual({ modifiedAt: new Date(modifiedOf(records[8])), key: null });
+  });
+
+  it("skips a lone bad record on a 1-row page and advances past it", async () => {
+    // A permanently bad record alone on the incremental page must not stall the cron.
+    const { provider, records } = feed(1, 1);
+    store.rejectKeys.add(keyOf(records[0]));
+    const result = await runSync(store, provider, { now: clock });
+    expect(result).toMatchObject({ status: "succeeded", upserted: 0 });
+    expect(result.skipped).toEqual({ write_failed: 1 });
+    expect(store.live()).toBe(0);
+    expect(store.cursor).toEqual({ modifiedAt: new Date(modifiedOf(records[0])), key: null });
+    expect(store.runs[0]).toMatchObject({ status: "succeeded", error: undefined });
   });
 
   it("adds up the values the sanitizer nulled", async () => {

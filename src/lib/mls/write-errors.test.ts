@@ -179,17 +179,21 @@ describe("writeIsolated", () => {
       vi.fn(),
     );
 
-  it("fails the page when every row is rejected, however small it is", async () => {
-    await expect(rejecting(1, new Set([0]))).rejects.toThrow(
+  it("fails a page of 10 or more rows when every row is rejected", async () => {
+    await expect(rejecting(10, new Set(Array.from({ length: 10 }, (_, i) => i)))).rejects.toThrow(
       new PageRejectedError(
-        1,
-        1,
+        10,
+        10,
         'value "[redacted]" is out of range for type integer (code: 22003)',
       ),
     );
-    await expect(rejecting(3, new Set([0, 1, 2]))).rejects.toThrow(
-      /^3 of 3 rows rejected on page; not advancing cursor\. First error: value "\[redacted\]"/,
-    );
+  });
+
+  it("never fails a page under 10 rows, even when every row is rejected", async () => {
+    const one = await rejecting(1, new Set([0]));
+    expect(one).toEqual({ results: [], failed: [0] });
+    const three = await rejecting(3, new Set([0, 1, 2]));
+    expect(three).toEqual({ results: [], failed: [0, 1, 2] });
   });
 
   it("fails a page of 10 or more rows when more than half are rejected", async () => {
@@ -203,7 +207,7 @@ describe("writeIsolated", () => {
 
   it("skips isolated rows below the thresholds, as before", async () => {
     expect((await rejecting(10, new Set([3]))).failed).toEqual([3]);
-    // Under 10 rows, only a page rejected whole fails.
+    // Under 10 rows, rejected rows are only skipped.
     const small = await rejecting(9, new Set([0, 1, 2, 3, 4]));
     expect(small.failed).toEqual([0, 1, 2, 3, 4]);
     expect(small.results).toEqual([5, 6, 7, 8]);

@@ -28,6 +28,7 @@ import { upsertListing } from "@/lib/listings/persist";
 import { refreshPlaces } from "@/lib/listings/places";
 import { SyncFailedError, syncSource } from "@/lib/mls/sync";
 import type { NormalizedListing, NormalizedMedia, NormalizedOpenHouse } from "@/lib/mls/types";
+import { describeError } from "@/lib/mls/write-errors";
 import { audit } from "../audit";
 
 async function requireStaff(): Promise<Actor> {
@@ -538,7 +539,9 @@ export async function deleteListing(id: string) {
  */
 async function listingsChanged() {
   updateTag(LISTINGS_TAG);
-  await refreshPlaces(db).catch((e) => console.error("Refreshing autocomplete places failed:", e));
+  await refreshPlaces(db).catch((e) =>
+    console.error(`Refreshing autocomplete places failed: ${describeError(e)}`),
+  );
 }
 
 // ---------------------------------------------------------------------------
