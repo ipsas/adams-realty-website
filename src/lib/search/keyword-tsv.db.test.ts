@@ -94,6 +94,18 @@ describe("upsertListings", () => {
     expect(after.tsv).toContain("'headlin'");
     expect(after.ver).toBe(KEYWORD_TSV_VERSION);
   });
+
+  // The trigger can't tell the version written again from one left alone (0027): one more
+  // backfill rewrite, the same vector.
+  it("leaves a row at the current version stale on a full update with new text", async () => {
+    await insertListings(source, [full(1, { description: RANCH })]);
+    await insertListings(source, [full(1, { description: "Bright bungalow." })]);
+    const [{ tsv, ver }] = await rows();
+    expect(tsv).toContain("'bungalow'");
+    expect(ver).toBeNull();
+    expect(await backfillKeywordTsv(db)).toBe(1);
+    expect((await rows())[0]).toMatchObject({ tsv, ver: KEYWORD_TSV_VERSION });
+  });
 });
 
 describe("listings_keyword_tsv_stale trigger", () => {
@@ -157,6 +169,41 @@ describe("listings_keyword_tsv_stale trigger", () => {
       update listings set description = 'Bright bungalow.',
         keyword_tsv = to_tsvector('english', 'Bright bungalow.') where id = ${id}`);
     expect((await rows())[0].tsv).toContain("'bungalow'");
+  });
+
+  it("nulls the version, keeping the vector, on a write that sets keyword_tsv but not its version", async () => {
+    const { id } = await filled();
+    // An upsert from a deploy older than 0026: new text and its unmasked vector, no version.
+    const text = "Bright bungalow. Gate code 7788.";
+    await db.execute(sql`
+      update listings set description = ${text},
+        keyword_tsv = to_tsvector('english', ${text}), updated_at = now() where id = ${id}`);
+    const [row] = await rows();
+    expect(row.tsv).toContain("'7788'");
+    expect(row.ver).toBeNull();
+    // The backfill then rewrites it, masked.
+    expect(await backfillKeywordTsv(db)).toBe(1);
+    const [after] = await rows();
+    expect(after.tsv).toContain("'bungalow'");
+    expect(after.tsv).not.toContain("7788");
+    expect(after.ver).toBe(KEYWORD_TSV_VERSION);
+    // Its partial write: no vector, still no version.
+    await db.execute(sql`update listings set headline = 'New headline', keyword_tsv = null`);
+    expect((await rows())[0]).toMatchObject({ tsv: null, ver: null });
+  });
+
+  it("keeps a new version written along with the vector", async () => {
+    const { id } = await filled();
+    await db.execute(
+      sql`update listings set keyword_tsv_ver = ${KEYWORD_TSV_VERSION - 1} where id = ${id}`,
+    );
+    await db.execute(sql`
+      update listings set description = 'Bright bungalow.',
+        keyword_tsv = to_tsvector('english', 'Bright bungalow.'),
+        keyword_tsv_ver = ${KEYWORD_TSV_VERSION} where id = ${id}`);
+    const [row] = await rows();
+    expect(row.tsv).toContain("'bungalow'");
+    expect(row.ver).toBe(KEYWORD_TSV_VERSION);
   });
 });
 
