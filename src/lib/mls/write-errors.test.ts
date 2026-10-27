@@ -174,6 +174,53 @@ describe("describeError", () => {
     expect(long).toHaveLength(MAX_ERROR_LENGTH);
     expect(long.endsWith("…")).toBe(true);
   });
+
+  it("redacts unquoted email and street addresses in every message it returns", () => {
+    expect(describeError(new Error("no agent for jane.doe+idx@example.co.uk, skipping"))).toBe(
+      "Error: no agent for [email], skipping",
+    );
+    expect(describeError(new Error("geocode failed for 69 Mill Street, Royston"))).toBe(
+      "Error: geocode failed for [address], Royston",
+    );
+    expect(describeError(new Error("bad row 1234 OLD COUNTY HOME RD and 5 Elm Ct."))).toBe(
+      "Error: bad row [address] and [address]",
+    );
+    expect(describeError(new Error("near 210B Lake Hartwell Pkwy at 9 E Main St"))).toBe(
+      "Error: near [address] at [address]",
+    );
+    // Our own and the RESO client's messages, and Postgres ones, too.
+    expect(describeError(new SyncError("Listing at 12 Peachtree Rd: ask bob@x.com"))).toBe(
+      "Listing at [address]: ask [email]",
+    );
+    expect(describeError(new Error("RESO feed error for 7 Oak Dr"))).toBe(
+      "RESO feed error for [address]",
+    );
+    expect(
+      describeError(pgError("42P01", "relation for a@b.io does not exist", { table: "12 X Way" })),
+    ).toBe("relation for [email] does not exist (code: 42P01, table: [address])");
+    // Before the length cap, so a cut-off address can't slip through.
+    const long = describeError(new Error(`${"x".repeat(180)} at 1234 Long Branch Avenue`));
+    expect(long).not.toContain("1234");
+    expect(long).toContain("[address]");
+  });
+
+  it("leaves numbers, statuses, codes, host names and timestamps alone", () => {
+    const kept = [
+      "RESO request failed (503) for https://api.bridgedataoutput.com/api/v2/OData/gamls/Property",
+      "10 of 200 rows rejected on page; not advancing cursor",
+      "page at cursor 2026-10-27T02:00:00.000Z/K000123 failed 3 runs in a row",
+      "fetched 200 records the way it was asked; 3 Streets",
+      "Purge cap: 2650 of 53000 listings would be removed",
+      "connect ECONNREFUSED 10.0.0.1:5432 to postgres://sync@db.example.com/app",
+    ];
+    for (const message of kept) expect(describeError(new SyncError(message))).toBe(message);
+    expect(describeError(pgError("57P01", "terminating connection"))).toBe(
+      "terminating connection (code: 57P01)",
+    );
+    expect(describeError(new Error("timeout after 30000 ms"))).toBe(
+      "Error: timeout after 30000 ms",
+    );
+  });
 });
 
 describe("redactDetail", () => {

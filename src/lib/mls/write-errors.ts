@@ -102,11 +102,35 @@ function isSafeError(e: unknown): e is Error {
  * and the rest is cut to MAX_ERROR_LENGTH, behind the error's name.
  */
 function redactUnknown(e: unknown): string {
-  const text = (e instanceof Error ? `${e.name}: ${e.message}` : String(e)).replace(
-    /(?<!\w)('[^'\n]*'|"[^"\n]*"|`[^`\n]*`)/g,
-    (quoted) => `${quoted[0]}${REDACTED}${quoted[0]}`,
+  // Before the cut, so a cut-off address can't slip past redactPersonal.
+  const text = redactPersonal(
+    (e instanceof Error ? `${e.name}: ${e.message}` : String(e)).replace(
+      /(?<!\w)('[^'\n]*'|"[^"\n]*"|`[^`\n]*`)/g,
+      (quoted) => `${quoted[0]}${REDACTED}${quoted[0]}`,
+    ),
   );
   return text.length > MAX_ERROR_LENGTH ? `${text.slice(0, MAX_ERROR_LENGTH - 1)}…` : text;
+}
+
+/** An email address; not a URL's `user@host` (nothing before it may be part of one). */
+const EMAIL = /(?<![\w.%+\-:/])[\w.%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}\b/gi;
+
+const STREET_SUFFIXES =
+  "St|Street|Rd|Road|Ave|Avenue|Dr|Drive|Ln|Lane|Ct|Court|Hwy|Highway|Blvd|Way|Pkwy|Cir";
+
+/**
+ * A street address, conservatively: a house number, 1–4 words, then a street
+ * suffix as written ("St") or in capitals ("ST"), so "3 runs the way" isn't one.
+ */
+const STREET_ADDRESS = new RegExp(
+  String.raw`\b\d{1,6}[A-Za-z]?(?:\s+[A-Za-z0-9'.-]+){1,4}?\s+` +
+    String.raw`(?:${STREET_SUFFIXES}|${STREET_SUFFIXES.toUpperCase()})\b\.?`,
+  "g",
+);
+
+/** `text` with its email addresses and street addresses replaced by placeholders. */
+export function redactPersonal(text: string): string {
+  return text.replace(EMAIL, "[email]").replace(STREET_ADDRESS, "[address]");
 }
 
 /**
@@ -117,9 +141,14 @@ function redactUnknown(e: unknown): string {
  * the cause as `.cause`; that wrapper (a whole page's SQL and values) is
  * skipped, as is any other wrapper around a Postgres error (SyncFailedError).
  * Any other error shows as it is only when it's ours (isSafeError), otherwise
- * redacted (redactUnknown).
+ * redacted (redactUnknown). Whatever it returns has its email and street
+ * addresses redacted (redactPersonal).
  */
 export function describeError(error: unknown): string {
+  return redactPersonal(describeUnredacted(error));
+}
+
+function describeUnredacted(error: unknown): string {
   const pg = pgError(error);
   if (!pg) {
     const inner = causeChain(error).find((e) => !(e instanceof DrizzleQueryError));
