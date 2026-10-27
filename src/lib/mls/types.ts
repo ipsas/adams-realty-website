@@ -21,6 +21,7 @@ export type NormalizedListing = Omit<
   | "fromFeed"
   | "publicSince"
   | "keywordTsv"
+  | "keywordTsvVer"
 > & {
   /** The listing agent's MLS ID, used to link to our agent profiles. */
   listAgentMlsId: string | null;

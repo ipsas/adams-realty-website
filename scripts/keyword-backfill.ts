@@ -1,8 +1,10 @@
 /**
- * Fills listings.keyword_tsv where it is null, so a deploy serves keyword
- * search from fresh vectors before traffic switches (scripts/vercel-build.mjs
- * runs it after migrations; a migration that resets keyword_tsv, like 0024,
- * leaves every row null). Safe to re-run: it only fills null rows.
+ * Rewrites stale listings.keyword_tsv vectors (null, or built under an older
+ * KEYWORD_TSV_VERSION: src/lib/search/keyword-text.ts), so a deploy serves keyword
+ * search from current vectors before traffic switches (scripts/vercel-build.mjs
+ * runs it after migrations). Short batches, each its own transaction; a stale row
+ * stays searchable with its old vector until rewritten. Safe to re-run: it only
+ * rewrites stale rows. With none left it records the version in app_flags.
  *
  *   npx tsx scripts/keyword-backfill.ts
  *
@@ -18,8 +20,10 @@ import { describeError } from "@/lib/mls/write-errors";
 import {
   backfillKeywordTsv,
   backfillUntilDone,
-  countMissingKeywordTsv,
+  countStaleKeywordTsv,
+  recordKeywordTsvVersion,
 } from "@/lib/search/keyword-backfill";
+import { KEYWORD_TSV_VERSION } from "@/lib/search/keyword-text";
 
 const LIMIT = 2000;
 /** Batches per progress line. */
@@ -29,22 +33,28 @@ async function main() {
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is not set.");
   const minutes = Number(process.env.KEYWORD_BACKFILL_MINUTES);
   const started = Date.now();
+  const seconds = () => Math.round((Date.now() - started) / 1000);
   const deadline = started + (minutes > 0 ? minutes : 20) * 60_000;
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2 });
   const db = drizzle(pool, { schema });
   try {
     const { filled, remaining } = await backfillUntilDone({
       fill: (deadline) => backfillKeywordTsv(db, { limit: LIMIT, batches: BATCHES, deadline }),
-      remaining: () => countMissingKeywordTsv(db),
+      remaining: () => countStaleKeywordTsv(db),
       deadline,
       progress: (filled, remaining) =>
-        console.info(`Keyword backfill: filled ${filled}, remaining ${remaining}`),
+        console.info(
+          `Keyword backfill: rewrote ${filled}, remaining ${remaining}, seconds ${seconds()}`,
+        ),
     });
-    const seconds = Math.round((Date.now() - started) / 1000);
     console.info(
-      `Keyword backfill: filled ${filled}, remaining ${remaining}, seconds ${seconds}` +
-        (remaining ? " (the sync cron fills the rest)" : ""),
+      `Keyword backfill: rewrote ${filled}, remaining ${remaining}, seconds ${seconds()}` +
+        (remaining ? " (the sync cron rewrites the rest)" : ""),
     );
+    // False if a write made a row stale since the count: the sync cron records it later.
+    if (remaining === 0 && (await recordKeywordTsvVersion(db))) {
+      console.info(`Keyword backfill: vectors at version ${KEYWORD_TSV_VERSION}`);
+    }
   } finally {
     await pool.end();
   }

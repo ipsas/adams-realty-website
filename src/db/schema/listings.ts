@@ -375,6 +375,12 @@ export const listings = pgTable(
      * `backfillKeywordTsv` fills it.
      */
     keywordTsv: tsvector("keyword_tsv"),
+    /**
+     * The `KEYWORD_TSV_VERSION` `keywordTsv` was built under. NULL when
+     * `keyword_tsv` is NULL or was built by code that predates the version
+     * (stale): `backfillKeywordTsv` rewrites NULL and older-version rows.
+     */
+    keywordTsvVer: smallint("keyword_tsv_ver"),
   },
   (t) => [
     uniqueIndex("listings_source_key_idx").on(t.sourceId, t.listingKey),
@@ -390,9 +396,9 @@ export const listings = pgTable(
     index("listings_mls_number_idx").on(t.mlsNumber),
     index("listings_search_idx").using("gin", t.searchVector),
     index("listings_keyword_tsv_idx").using("gin", t.keywordTsv),
-    // The backfill's `keyword_tsv is null order by id`: once every row is filled, an
-    // empty index instead of a walk of the whole primary key on each cron run.
-    index("listings_keyword_tsv_missing_idx").on(t.id).where(sql.raw(`"keyword_tsv" is null`)),
+    // The backfill's stale rows (`keyword_tsv_ver is null or < KEYWORD_TSV_VERSION`):
+    // once every row is current, a short index scan instead of a walk of the table.
+    index("listings_keyword_tsv_ver_idx").on(t.keywordTsvVer),
     index("listings_location_idx").using("gin", t.locationVector),
     // Trigram indexes (pg_trgm, see migrations): address autocomplete, and the
     // location box's and autocomplete's city/neighborhood prefix matches.

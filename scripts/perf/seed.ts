@@ -31,7 +31,7 @@ import path from "node:path";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Client, Pool } from "pg";
-import { keywordText } from "@/lib/search/keyword-text";
+import { KEYWORD_TSV_VERSION, keywordText } from "@/lib/search/keyword-text";
 import { adminUrl, assertPerfUrl, PERF_DB, PERF_URL, SMALL_BOX } from "./perf-db";
 
 const url = assertPerfUrl(PERF_URL);
@@ -382,6 +382,7 @@ const COLS = [
   "removed_at",
   // Inserted as to_tsvector of the text (insertRows), as upsertListings stores it.
   "keyword_tsv",
+  "keyword_tsv_ver",
 ] as const;
 
 type Fixture = Partial<{ city: City; lat: number; lng: number; street: string; plan: Plan }>;
@@ -570,6 +571,7 @@ function makeListing(i: number, sourceId: string, plan: Plan, fx: Fixture = {}) 
       mlsNumber: String(10_100_000 + i),
       description,
     }),
+    KEYWORD_TSV_VERSION,
   ];
 }
 

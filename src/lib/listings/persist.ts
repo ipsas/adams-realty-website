@@ -8,7 +8,12 @@ import {
   type DataSourceConfig,
 } from "@/db/schema";
 import type { NormalizedListing, NormalizedMedia, NormalizedOpenHouse } from "@/lib/mls/types";
-import { KEYWORD_FIELDS, keywordText, keywordTsv } from "@/lib/search/keyword-text";
+import {
+  KEYWORD_FIELDS,
+  KEYWORD_TSV_VERSION,
+  keywordText,
+  keywordTsv,
+} from "@/lib/search/keyword-text";
 import { sanitizeNumeric } from "./sanitize";
 import { listingSlug } from "./slug";
 import { isIdxHidden } from "./visibility";
@@ -174,6 +179,7 @@ export async function upsertListings(
         // Right for an insert (a field left undefined gets its column default, empty);
         // an update without every keyword field nulls it instead (`set` below).
         keywordTsv: keywordTsv(keywordText(fields)),
+        keywordTsvVer: KEYWORD_TSV_VERSION,
       },
     });
   }
@@ -209,7 +215,7 @@ export async function upsertListings(
             // Slug is deliberately not updated: URLs stay stable even if the address is corrected.
             set: {
               ...excludedSet(setKeys),
-              ...(!keywordsComplete && { keywordTsv: null }),
+              ...(!keywordsComplete && { keywordTsv: null, keywordTsvVer: null }),
               updatedAt: now,
             },
           })

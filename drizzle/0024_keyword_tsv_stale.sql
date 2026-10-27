@@ -6,6 +6,7 @@
 -- the column leaves it NULL, and ON CONFLICT DO UPDATE runs this UPDATE trigger. A persist.ts
 -- write whose new text yields the identical vector (only a masked code changed) is nulled too,
 -- which is harmless: the backfill writes the same vector back.
+-- An earlier version of this file also nulled every vector; databases that applied it are unaffected by this edit (the migrator tracks applied migrations by timestamp).
 CREATE FUNCTION listings_keyword_tsv_stale() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF (NEW.address_line1, NEW.city, NEW.postal_code, NEW.neighborhood, NEW.mls_number,
@@ -23,9 +24,4 @@ CREATE TRIGGER listings_keyword_tsv_stale
   BEFORE UPDATE OF address_line1, city, postal_code, neighborhood, mls_number,
     headline, property_sub_type, description, features
   ON listings
-  FOR EACH ROW EXECUTE FUNCTION listings_keyword_tsv_stale();--> statement-breakpoint
--- The masker changed (redactAccessCodes, src/lib/listings/excluded-fields.ts), so every stored
--- vector may hold a code it now masks: rebuild them all. The deploy build refills them before
--- traffic switches (scripts/keyword-backfill.ts, run by scripts/vercel-build.mjs); the sync cron
--- finishes any left. WHERE: a database where nothing was filled rewrites no rows.
-UPDATE listings SET keyword_tsv = NULL WHERE keyword_tsv IS NOT NULL;
+  FOR EACH ROW EXECUTE FUNCTION listings_keyword_tsv_stale();

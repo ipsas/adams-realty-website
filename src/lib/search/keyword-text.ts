@@ -14,7 +14,16 @@ export type KeywordFields = {
   features?: unknown;
 };
 
-/** Must match the columns of the listings_keyword_tsv_stale trigger (drizzle/0024). */
+/**
+ * The version of what `keyword_tsv` indexes, stored with each vector
+ * (`listings.keyword_tsv_ver`). Bump it whenever `keywordText` or `redactAccessCodes`
+ * (src/lib/listings/excluded-fields.ts) changes what is indexed: the build backfill
+ * and the sync cron then rewrite every older row in short batches
+ * (src/lib/search/keyword-backfill.ts); until then searches use its old vector.
+ */
+export const KEYWORD_TSV_VERSION = 2;
+
+/** Must match the columns of the listings_keyword_tsv_stale trigger (drizzle/0024, 0026). */
 export const KEYWORD_FIELDS = [
   "addressLine1",
   "city",
@@ -33,7 +42,7 @@ export const KEYWORD_FIELDS = [
  * anywhere in `features` (never its keys) are masked on their own with the
  * listing page's masker, then "/" is read as a space (the parser takes
  * "room/kitchen/dining" or "Washer/Dryer" as one word). A change here (or to the
- * masker) needs a migration resetting keyword_tsv, as drizzle/0024 does.
+ * masker) that changes what is indexed needs a `KEYWORD_TSV_VERSION` bump.
  */
 export function keywordText(l: KeywordFields): string {
   const parts = [

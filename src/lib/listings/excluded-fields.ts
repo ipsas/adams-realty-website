@@ -169,8 +169,8 @@ export function isRestrictedValue(value: string): boolean {
 
 /**
  * Public remarks with any access code masked ("gate code 4455" reads "gate code ****").
- * listings.keyword_tsv stores its output: a change here needs a migration resetting
- * keyword_tsv (as drizzle/0024 does), or stored vectors keep what it used to let through.
+ * listings.keyword_tsv stores its output: a change here needs a KEYWORD_TSV_VERSION bump
+ * (src/lib/search/keyword-text.ts), or stored vectors keep what it used to let through.
  */
 export function redactAccessCodes(text: string): string {
   return text.replace(ACCESS_CODE, `$1$2${MASK}`);

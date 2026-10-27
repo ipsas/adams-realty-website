@@ -33,12 +33,14 @@
  * (previewListingCounts). A failure there only logs; it never fails the build.
  *
  * Keyword vectors (production and preview, last before `next build`):
- * scripts/keyword-backfill.ts fills listings.keyword_tsv where it is null (a
- * migration may reset them all, as 0024 does), so the deployment searches fresh
- * vectors when traffic switches. It runs for up to KEYWORD_BACKFILL_MINUTES
- * (default 20); rows left then are logged and the build continues (the sync
- * cron, every 15 minutes, finishes them). An error only logs a warning and the
- * build continues; null rows fall back to the slower match until filled.
+ * scripts/keyword-backfill.ts rewrites stale listings.keyword_tsv vectors (null,
+ * or built under an older KEYWORD_TSV_VERSION, which a masker change bumps) in
+ * short batches, so the deployment searches current vectors when traffic
+ * switches. It runs for up to KEYWORD_BACKFILL_MINUTES (default 20); rows left
+ * then are logged and the build continues (the sync cron, every 15 minutes,
+ * finishes them). An error only logs a warning and the build continues; until
+ * rewritten, an older-version row keeps its old vector and a null row falls back
+ * to the slower match.
  */
 import { execSync } from "node:child_process";
 import pg from "pg";

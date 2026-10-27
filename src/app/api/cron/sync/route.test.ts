@@ -21,6 +21,8 @@ const h = vi.hoisted(() => ({
   backfills: [] as Array<Record<string, unknown>>,
   backfillFails: false,
   backfilled: 7,
+  recorded: false,
+  recordFails: false,
   order: [] as string[],
 }));
 vi.mock("@/db", () => ({ db: {} }));
@@ -30,6 +32,11 @@ vi.mock("@/lib/search/keyword-backfill", () => ({
     h.order.push("backfill");
     if (h.backfillFails) throw new Error("connection terminated");
     return h.backfilled;
+  },
+  recordKeywordTsvVersion: async () => {
+    h.order.push("record");
+    if (h.recordFails) throw new Error("connection terminated");
+    return h.recorded;
   },
 }));
 vi.mock("@/lib/leads/outbox", () => ({
@@ -78,6 +85,7 @@ vi.mock("next/cache", () => ({
 
 const { GET, maxDuration } = await import("./route");
 const { LISTINGS_TAG } = await import("@/lib/listings/cache-tags");
+const { KEYWORD_TSV_VERSION } = await import("@/lib/search/keyword-text");
 
 const result = (over: Partial<SyncResult> = {}): SyncResult => ({
   fetched: 0,
@@ -120,6 +128,8 @@ beforeEach(() => {
   h.backfills.length = 0;
   h.backfillFails = false;
   h.backfilled = 7;
+  h.recorded = false;
+  h.recordFails = false;
   h.order.length = 0;
   h.outcomes = [{ source: "gamls", ok: true, result: result() }];
 });
@@ -251,25 +261,49 @@ describe("GET /api/cron/sync", () => {
     expect(await res.json()).toMatchObject({ digests: { ok: true } });
   });
 
-  it("fills missing keyword vectors after the sync, within the sync's budget, and logs how many", async () => {
+  it("rewrites stale keyword vectors after the sync, within the sync's budget, and logs how many", async () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => {});
     const before = Date.now();
     for (const query of ["", "?purge=1"]) expect((await call(query)).status).toBe(200);
-    expect(h.order).toEqual(["sync", "backfill", "sync", "backfill"]);
+    expect(h.order).toEqual(["sync", "backfill", "record", "sync", "backfill", "record"]);
     const deadline = h.backfills[0].deadline as number;
     expect(deadline).toBeGreaterThanOrEqual(before + (maxDuration - 45) * 1000);
     expect(deadline).toBeLessThanOrEqual(Date.now() + (maxDuration - 45) * 1000);
-    expect(info.mock.calls).toContainEqual(["[cron] keyword search: filled 7 listings"]);
+    expect(info.mock.calls).toContainEqual(["[cron] keyword search: rewrote 7 listings"]);
+    // Stale rows remain: no version line.
+    expect(info.mock.calls.filter(([line]) => String(line).includes("version"))).toEqual([]);
     info.mockRestore();
   });
 
-  it("logs nothing for the keyword backfill once there is nothing left to fill", async () => {
+  it("logs the keyword vector version once no stale row remains", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    h.recorded = true;
+    expect((await call()).status).toBe(200);
+    expect(info.mock.calls).toContainEqual([
+      `[cron] keyword search: vectors at version ${KEYWORD_TSV_VERSION}`,
+    ]);
+    info.mockRestore();
+  });
+
+  it("logs nothing, and records nothing, once there is nothing left to rewrite", async () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => {});
     h.backfilled = 0;
     expect((await call()).status).toBe(200);
     expect(h.backfills).toHaveLength(1);
+    expect(h.order).not.toContain("record");
     expect(info.mock.calls.filter(([line]) => String(line).includes("keyword"))).toEqual([]);
     info.mockRestore();
+  });
+
+  it("logs one line when recording the version fails, and still answers for the sync", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    h.recordFails = true;
+    expect((await call()).status).toBe(200);
+    expect(errors.mock.calls).toEqual([
+      [expect.stringMatching(/^\[cron\] keyword backfill failed: /)],
+    ]);
+    vi.restoreAllMocks();
   });
 
   it("logs one line when the keyword backfill fails, and still answers for the sync", async () => {

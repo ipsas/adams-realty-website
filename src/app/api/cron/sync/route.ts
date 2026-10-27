@@ -9,7 +9,8 @@ import { runLeadDigests } from "@/lib/leads/digest";
 import { retryLeadEmails } from "@/lib/leads/outbox";
 import { LISTINGS_TAG } from "@/lib/listings/cache-tags";
 import { syncAllSources } from "@/lib/mls/sync";
-import { backfillKeywordTsv } from "@/lib/search/keyword-backfill";
+import { backfillKeywordTsv, recordKeywordTsvVersion } from "@/lib/search/keyword-backfill";
+import { KEYWORD_TSV_VERSION } from "@/lib/search/keyword-text";
 import { describeError } from "@/lib/mls/write-errors";
 
 export const maxDuration = 300;
@@ -43,9 +44,11 @@ const BUDGET_MS = (maxDuration - 45) * 1000;
  * Before it, lead and assignment notices whose send failed are retried from
  * `email_outbox` (src/lib/email-outbox.ts; a few per run within the sync's
  * budget, best effort).
- * Neither outcome changes the status. Then listings with no `keyword_tsv`
- * get one (`backfillKeywordTsv`, batch after batch in the time left; best
- * effort, not in the status, logged when it filled any). `email.configured` says whether
+ * Neither outcome changes the status. Then listings with a stale `keyword_tsv`
+ * (null, or an older KEYWORD_TSV_VERSION) get it rewritten (`backfillKeywordTsv`,
+ * batch after batch in the time left; best effort, not in the status, logged when
+ * it rewrote any, and then, with none left, the version recorded in app_flags
+ * by `recordKeywordTsvVersion`). `email.configured` says whether
  * RESEND_API_KEY is set (false: nothing is being sent).
  */
 export async function GET(request: NextRequest) {
@@ -86,12 +89,16 @@ export async function GET(request: NextRequest) {
     },
   );
   // Last, so it only uses time left over within the sync's budget.
-  await backfillKeywordTsv(db, { deadline: started + BUDGET_MS }).then(
-    (filled) => {
-      if (filled > 0) console.info(`[cron] keyword search: filled ${filled} listings`);
-    },
-    (e) => console.error(`[cron] keyword backfill failed: ${describeError(e)}`),
-  );
+  await backfillKeywordTsv(db, { deadline: started + BUDGET_MS })
+    .then(async (rewrote) => {
+      if (rewrote === 0) return;
+      console.info(`[cron] keyword search: rewrote ${rewrote} listings`);
+      // Only after a run that wrote: with no stale row left, the version is recorded.
+      if (await recordKeywordTsvVersion(db)) {
+        console.info(`[cron] keyword search: vectors at version ${KEYWORD_TSV_VERSION}`);
+      }
+    })
+    .catch((e) => console.error(`[cron] keyword backfill failed: ${describeError(e)}`));
   const failed = results.some((r) => !r.ok);
   return NextResponse.json(
     { results, digests, email: { configured: emailConfigured() } },
