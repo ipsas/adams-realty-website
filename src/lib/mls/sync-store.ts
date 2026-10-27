@@ -155,7 +155,7 @@ export function createSyncStore(source: SourceRow): PostgresSyncStore {
         .where(eq(dataSources.id, source.id));
     },
 
-    async writePage(page, cursor, { skipUnchanged, quarantine }) {
+    async writePage(page, cursor, { skipUnchanged, quarantine, maxQuarantined }) {
       agentIdsByMlsId ??= new Map(
         (
           await db
@@ -187,7 +187,7 @@ export function createSyncStore(source: SourceRow): PostgresSyncStore {
               }),
             ),
           (n, error) => rejected.push({ n, reason: describeError(error) }),
-          { allowRejected: quarantine !== undefined },
+          { allowRejected: quarantine !== undefined, maxQuarantined },
         );
         for (const { n, reason } of rejected) {
           logs.push(

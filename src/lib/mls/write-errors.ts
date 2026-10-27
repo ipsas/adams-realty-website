@@ -179,6 +179,34 @@ export class PageRejectedError extends SyncError {
 }
 
 /**
+ * A run quarantines at most this many records. A page whose rejected rows
+ * would take the run past it is not quarantined: the run fails with
+ * QuarantineRefusedError (so the cron alert fires) and the cursor stays put,
+ * so a feed whose records are nearly all rejected can't drain into
+ * sync_quarantine. It must stay above MAX_REJECTED_FRACTION of the feed's
+ * page size (200 records: a page fails with 101 rejected), or no full page
+ * could ever be quarantined.
+ */
+export const QUARANTINE_MAX_PER_RUN = 150;
+
+/**
+ * A page due for quarantine that must not be: too many rejected rows for the
+ * run (QUARANTINE_MAX_PER_RUN), or every row of it (at least
+ * MIN_ROWS_FOR_REJECTED_FRACTION) rejected, which means a schema or feed
+ * problem, not bad records. Nothing of the page is written or quarantined, the
+ * cursor stays, and every run fails so until someone fixes the cause.
+ */
+export class QuarantineRefusedError extends SyncError {
+  constructor(rejected: number, total: number, why: string, firstReason: string) {
+    super(
+      `${rejected} of ${total} rows rejected on a page due for quarantine; ${why}, so nothing ` +
+        `was quarantined and the cursor stays. First error: ${firstReason}`,
+    );
+    this.name = "QuarantineRefusedError";
+  }
+}
+
+/**
  * The error is the record's fault, not the database's or the connection's:
  * an unstorable value (InvalidRowError), or a Postgres data exception (SQLSTATE
  * class 22, e.g. 22003 numeric out of range) or integrity violation (class 23).
@@ -199,7 +227,10 @@ export function isRowLevelError(error: unknown): boolean {
  * records and every one, or more than MAX_REJECTED_FRACTION of them, fails,
  * throws PageRejectedError (unless `opts.allowRejected`: the page is being
  * quarantined): the caller's transaction must then roll back the records that
- * were written. Fewer records never throw, even if all fail. `items` are the
+ * were written. Fewer records never throw, even if all fail. A quarantined
+ * page throws QuarantineRefusedError instead when every one of at least
+ * MIN_ROWS_FOR_REJECTED_FRACTION records fails, or more than
+ * `opts.maxQuarantined` do. `items` are the
  * page's records handed to the database: the base of the fraction.
  * `onRowFailed` is called for each skipped record only once the page is known
  * not to throw; a caller in a transaction should still hold its logs until it
@@ -209,7 +240,7 @@ export async function writeIsolated<T, R>(
   items: T[],
   write: (batch: T[]) => Promise<R[]>,
   onRowFailed: (item: T, error: unknown) => void,
-  opts: { allowRejected?: boolean } = {},
+  opts: { allowRejected?: boolean; maxQuarantined?: number } = {},
 ): Promise<{ results: R[]; failed: T[] }> {
   const results: R[] = [];
   const failed: T[] = [];
@@ -239,6 +270,17 @@ export async function writeIsolated<T, R>(
     (failed.length === items.length || failed.length > items.length * MAX_REJECTED_FRACTION)
   ) {
     throw new PageRejectedError(failed.length, items.length, describeError(firstError));
+  }
+  if (opts.allowRejected && failed.length) {
+    const why =
+      items.length >= MIN_ROWS_FOR_REJECTED_FRACTION && failed.length === items.length
+        ? "the whole page was rejected (a schema or feed problem?)"
+        : opts.maxQuarantined !== undefined && failed.length > opts.maxQuarantined
+          ? `more than the run's quarantine cap allows (${opts.maxQuarantined} left of ${QUARANTINE_MAX_PER_RUN})`
+          : null;
+    if (why) {
+      throw new QuarantineRefusedError(failed.length, items.length, why, describeError(firstError));
+    }
   }
   failed.forEach((item, i) => onRowFailed(item, errors[i]));
   return { results, failed };

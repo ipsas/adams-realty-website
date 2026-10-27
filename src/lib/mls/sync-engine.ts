@@ -13,6 +13,7 @@ import {
   describeError,
   PageRejectedError,
   QUARANTINE_AFTER_FAILURES,
+  QUARANTINE_MAX_PER_RUN,
   SyncError,
 } from "./write-errors";
 
@@ -151,14 +152,16 @@ export interface SyncStore {
    * record whose ModificationTimestamp matches the stored row isn't rewritten.
    * With `quarantine` (the streak of the runs that failed on this page), the
    * page never fails for its rejected rows: they're skipped, logged by id and
-   * kept in sync_quarantine, and an ALERT is logged (describeQuarantine).
+   * kept in sync_quarantine, and an ALERT is logged (describeQuarantine);
+   * unless more than `maxQuarantined` of them, or all, are rejected: then it
+   * throws QuarantineRefusedError and writes nothing (writeIsolated).
    * Every record written is taken out of sync_quarantine. Skipped records are
    * logged only once the page is committed.
    */
   writePage(
     page: MapResult[],
     cursor: SyncCursor | null,
-    opts: { skipUnchanged: boolean; quarantine?: RejectionStreak },
+    opts: { skipUnchanged: boolean; quarantine?: RejectionStreak; maxQuarantined?: number },
   ): Promise<PageOutcome>;
   /** Progress plus heartbeat, after every page. */
   heartbeat(runId: string, counts: SyncCounts): Promise<void>;
@@ -534,7 +537,11 @@ export async function runSync(
               (result.skipped.still_quarantined ?? 0) + kept.skipped;
           }
         }
-        const outcome = await store.writePage(items, next, { skipUnchanged, quarantine });
+        const outcome = await store.writePage(items, next, {
+          skipUnchanged,
+          quarantine,
+          maxQuarantined: quarantine ? QUARANTINE_MAX_PER_RUN - result.quarantined : undefined,
+        });
         if (quarantine && outcome.quarantined) {
           result.quarantined += outcome.quarantined;
           quarantineNote = describeQuarantine(quarantine, outcome.quarantined);

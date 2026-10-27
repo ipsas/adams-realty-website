@@ -6,6 +6,7 @@ import {
   isRowLevelError,
   MAX_ERROR_LENGTH,
   PageRejectedError,
+  QuarantineRefusedError,
   redactDetail,
   SyncError,
   writeIsolated,
@@ -287,6 +288,57 @@ describe("writeIsolated", () => {
     expect(out).toEqual({ results: [6, 7, 8, 9], failed: [0, 1, 2, 3, 4, 5] });
     expect(onRowFailed.mock.calls.map((c) => c[0])).toEqual([0, 1, 2, 3, 4, 5]);
     expect(describeError(onRowFailed.mock.calls[0][1])).toContain("out of range");
+  });
+
+  it("refuses to quarantine a page of 10 or more rows when every row is rejected", async () => {
+    const onRowFailed = vi.fn();
+    const all = writeIsolated(
+      Array.from({ length: 10 }, (_, i) => i),
+      async () => {
+        throw outOfRange();
+      },
+      onRowFailed,
+      { allowRejected: true },
+    );
+    await expect(all).rejects.toThrow(QuarantineRefusedError);
+    await expect(all).rejects.toThrow(
+      /^10 of 10 rows rejected on a page due for quarantine; the whole page/,
+    );
+    expect(onRowFailed).not.toHaveBeenCalled();
+    // A smaller page is quarantined even when all of it is rejected.
+    const small = await writeIsolated(
+      [0, 1, 2],
+      async () => {
+        throw outOfRange();
+      },
+      vi.fn(),
+      { allowRejected: true },
+    );
+    expect(small.failed).toEqual([0, 1, 2]);
+  });
+
+  it("refuses to quarantine more rows than the run has left, and allows exactly that many", async () => {
+    const items = Array.from({ length: 10 }, (_, i) => i);
+    const write = async (batch: number[]) => {
+      if (batch.some((i) => i < 6)) throw outOfRange();
+      return batch;
+    };
+    const onRowFailed = vi.fn();
+    await expect(
+      writeIsolated(items, write, onRowFailed, { allowRejected: true, maxQuarantined: 5 }),
+    ).rejects.toThrow(
+      /^6 of 10 rows .*more than the run's quarantine cap allows \(5 left of 150\)/,
+    );
+    expect(onRowFailed).not.toHaveBeenCalled();
+    const out = await writeIsolated(items, write, vi.fn(), {
+      allowRejected: true,
+      maxQuarantined: 6,
+    });
+    expect(out.failed).toHaveLength(6);
+    // Without allowRejected the cap plays no part: the page fails as rejected.
+    await expect(writeIsolated(items, write, vi.fn(), { maxQuarantined: 0 })).rejects.toThrow(
+      PageRejectedError,
+    );
   });
 
   it("skips isolated rows below the thresholds, as before", async () => {
