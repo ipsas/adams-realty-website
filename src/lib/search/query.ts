@@ -18,6 +18,7 @@ import { findArea, normalizeAreaName, type Area } from "@/config/areas";
 import { site } from "@/config/site";
 import { listings, openHouses } from "@/db/schema";
 import { areaCondition, normalizedMatch } from "@/lib/areas/match";
+import { ACCESS_CODE_PG, ACCESS_CODE_PG_REPLACEMENT } from "@/lib/listings/excluded-fields";
 import { publicConditions } from "@/lib/listings/visibility";
 import { marketDateDaysAgo } from "@/lib/time";
 import { allowsPriceReduced, type SearchCriteria } from "./params";
@@ -27,6 +28,12 @@ type Status = (typeof listings.status.enumValues)[number];
 const BUY_STATUSES: Status[] = ["active", "coming_soon"];
 const PENDING_STATUSES: Status[] = ["active_under_contract", "pending"];
 export const DEFAULT_SOLD_WINDOW_DAYS = 365;
+
+/** search_vector's text with the description as the listing page shows it (`redactAccessCodes`). */
+const shownSearchText = sql`to_tsvector('english', concat_ws(' ',
+  ${listings.addressLine1}, ${listings.city}, ${listings.postalCode}, ${listings.neighborhood},
+  ${listings.mlsNumber}, ${listings.headline}, ${listings.propertySubType},
+  regexp_replace(${listings.description}, ${ACCESS_CODE_PG}, ${ACCESS_CODE_PG_REPLACEMENT}, 'gi')))`;
 
 const STATE = `(?:${site.market.state}|${site.market.stateName})`;
 const COUNTRY_SUFFIX = /,?\s*(?:USA|U\.S\.A\.|US|United States)\s*$/i;
@@ -219,7 +226,12 @@ export function buildConditions(
   if (c.age55 === "only") conds.push(eq(listings.seniorCommunity, true));
   else if (c.age55 === "exclude") conds.push(sql`${listings.seniorCommunity} is not true`);
   // Keywords search the listing text (headline, description), apart from the location box.
-  if (c.kw) conds.push(sql`${listings.searchVector} @@ websearch_to_tsquery('english', ${c.kw})`);
+  // search_vector (indexed) holds the raw description; the match must also hold on the
+  // text as shown, codes masked, so a keyword search can't confirm a lockbox code.
+  if (c.kw) {
+    const kw = sql`websearch_to_tsquery('english', ${c.kw})`;
+    conds.push(sql`${listings.searchVector} @@ ${kw}`, sql`${shownSearchText} @@ ${kw}`);
+  }
   if (c.priceReduced && allowsPriceReduced(c.mode)) {
     conds.push(
       isNotNull(listings.originalListPrice),

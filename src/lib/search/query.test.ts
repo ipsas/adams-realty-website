@@ -1,5 +1,6 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
+import { ACCESS_CODE_PG } from "@/lib/listings/excluded-fields";
 import { DEFAULT_CRITERIA, parseSearchParams, SORTS } from "./params";
 import {
   buildOrderBy,
@@ -199,6 +200,9 @@ describe("acreage, HOA, keyword, price-reduced, 55+ and fireplace filters", () =
     expect(sql).toContain(`"listings"."search_vector" @@ websearch_to_tsquery('english', $`);
     expect(sql).not.toContain("location_vector");
     expect(params).toContain("barn workshop");
+    // …and again on the text as shown, access codes masked, so a code can't be searched.
+    expect(sql).toContain(`regexp_replace("listings"."description", $`);
+    expect(params).toContain(ACCESS_CODE_PG);
     const both = render({ q: "Atlanta", kw: "dock" });
     expect(both.sql).toContain("location_vector");
     expect(both.sql).toContain("search_vector");

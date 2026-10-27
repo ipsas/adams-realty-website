@@ -7,6 +7,7 @@ import {
   redactAccessCodes,
   withoutExcludedFields,
 } from "./excluded-fields";
+import { NO_CODE, WITH_CODE } from "./access-code-cases";
 import { COMPENSATION_FIELDS } from "./public-fields";
 
 describe("excluded fields", () => {
@@ -117,5 +118,41 @@ describe("redactAccessCodes", () => {
   it("leaves remarks without an access code unchanged", () => {
     const text = "3 bedrooms, 2 baths, fire alarm, built 1998 on 2.5 acres in a gated community.";
     expect(redactAccessCodes(text)).toBe(text);
+  });
+});
+
+describe("access code masking", () => {
+  it.each(NO_CODE)("leaves %j unchanged", (text) => {
+    expect(redactAccessCodes(text)).toBe(text);
+    expect(redactAccessCodes(`Lovely home. ${text}. Call today.`)).toBe(
+      `Lovely home. ${text}. Call today.`,
+    );
+  });
+
+  it.each(WITH_CODE)("masks the whole code in %j", (text, code) => {
+    const masked = redactAccessCodes(`Lovely home. ${text}. Call today.`);
+    expect(masked).toContain("****");
+    expect(masked).not.toContain(code);
+    expect(masked.replace("Lovely home. ", "")).not.toMatch(/\d/);
+    expect(masked).toMatch(/^Lovely home\. .*\*\*\*\*#?\. Call today\.$/);
+  });
+
+  it("keeps the remarks of 256 Adams Place as written", () => {
+    const text = "Open floor plan with dining combo, 2-car garage and a fenced yard.";
+    expect(redactAccessCodes(text)).toBe(text);
+  });
+
+  it("drops coded items from feature lists and keeps the rest", () => {
+    expect(
+      withoutExcludedFields({
+        interior: ["Dining Combo", "Keypad Entry", "Keypad 1234"],
+        garage: ["Garage code 5678", "Attached"],
+        exterior: ["Lockbox: 4521", "Porch"],
+      }),
+    ).toEqual({
+      interior: ["Dining Combo", "Keypad Entry"],
+      garage: ["Attached"],
+      exterior: ["Porch"],
+    });
   });
 });
