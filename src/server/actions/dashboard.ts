@@ -23,6 +23,7 @@ import { geocodeAddress } from "@/lib/geocode";
 import { afterResponse } from "@/lib/leads/deliver";
 import { sendLeadAssignedEmail } from "@/lib/leads/notify";
 import { LISTINGS_TAG } from "@/lib/listings/cache-tags";
+import { editorAssociationYN } from "@/lib/listings/detail-fields";
 import { lotSizeToSqft } from "@/lib/listings/land";
 import { upsertListing } from "@/lib/listings/persist";
 import { refreshPlaces } from "@/lib/listings/places";
@@ -375,7 +376,8 @@ export async function saveListing(
     seniorCommunity: existing?.seniorCommunity ?? null,
     lotSizeDimensions: existing?.lotSizeDimensions ?? null,
     zoning: existing?.zoning ?? null,
-    associationYN: d.hoaFee ? true : (existing?.associationYN ?? null),
+    // Follows the fee alone (the editor has no HOA checkbox): see editorAssociationYN.
+    associationYN: editorAssociationYN(d.hoaFee),
     hoaFee: d.hoaFee ?? null,
     hoaFrequency: d.hoaFee ? "monthly" : null,
     taxAnnualAmount: d.taxAnnualAmount ?? null,

@@ -1,4 +1,5 @@
 import { isNullLike } from "@/lib/format";
+import { EXCLUDED_FIELDS, withoutExcludedFields } from "@/lib/listings/excluded-fields";
 import { normalizeTaxYear } from "@/lib/listings/tax-year";
 import type { MapResult, NormalizedListing, NormalizedMedia, NormalizedOpenHouse } from "../types";
 
@@ -287,35 +288,8 @@ function mapOpenHouses(rows: ResoOpenHouse[] | undefined): NormalizedOpenHouse[]
   return out;
 }
 
-/**
- * Fields Georgia MLS forbids on public displays (IDX agreement, Exhibit C
- * "Mandatory Exclusion"), by their RESO names. The mapper reads none of them,
- * so they are never stored or rendered; mapper.test.ts proves it with a
- * record that carries every one.
- */
-export const EXCLUDED_FIELDS = [
-  "ListingAgreement",
-  "ListingContractDate",
-  "OnMarketDate",
-  "ExpirationDate",
-  "PrivateRemarks",
-  "ShowingContactName",
-  "ShowingContactPhone",
-  "PrivateOfficeRemarks",
-  "OfficeRemarks",
-  "ShowingRequirements",
-  "ShowingInstructions",
-  // Showing instructions and property security (IDX Agreement §14; R&R Art. III-2 §12(b)).
-  "LockBoxType",
-  "LockBoxLocation",
-  "LockBoxSerialNumber",
-  "OccupantName",
-  "OccupantPhone",
-  "OccupantType",
-  "OwnerName",
-  "OwnerPhone",
-  "AccessCode",
-] as const;
+// The Georgia MLS excluded fields (Exhibit C) now live with their runtime guard.
+export { EXCLUDED_FIELDS };
 
 /** The first non-empty value among keys ending in `suffix` (vendor prefixes vary: GAMLS_, BR_…). */
 function bySuffix(p: ResoProperty, suffix: string): string | null {
@@ -515,7 +489,8 @@ export function mapResoProperty(p: ResoProperty): MapResult {
 
     headline: null,
     description: str(p.PublicRemarks),
-    features: {
+    // Guarded: no excluded field (showings, lockbox, compensation…) ever becomes a feature list.
+    features: withoutExcludedFields({
       interior: list(p.InteriorFeatures),
       exterior: list(p.ExteriorFeatures),
       appliances: list(p.Appliances),
@@ -559,7 +534,7 @@ export function mapResoProperty(p: ResoProperty): MapResult {
         horse: p.HorseAmenities,
         spa: p.SpaFeatures,
       }),
-    },
+    }),
     schools: {
       district: str(p.HighSchoolDistrict) ?? undefined,
       elementary: str(p.ElementarySchool) ?? undefined,

@@ -203,12 +203,14 @@ export function buildConditions(
   if (c.maxYear !== undefined) conds.push(lte(listings.yearBuilt, c.maxYear));
   if (c.maxHoa !== undefined)
     conds.push(or(isNull(listings.hoaFee), sql`${monthlyHoa} <= ${c.maxHoa}`));
+  // The same rule as the listing page (hoaStatus in src/lib/listings/detail-fields.ts):
+  // a true AssociationYN or a fee is "yes"; otherwise AssociationYN false or a $0 fee is "no".
   if (c.hoa === "yes") {
     conds.push(sql`(${listings.associationYN} = true or ${listings.hoaFee} > 0)`);
   } else if (c.hoa === "no") {
     // An unknown AssociationYN counts as "no" only with a stated $0 fee.
     conds.push(
-      sql`(${listings.associationYN} = false or (${listings.associationYN} is null and ${listings.hoaFee} = 0))`,
+      sql`((${listings.associationYN} = false and (${listings.hoaFee} is null or ${listings.hoaFee} <= 0)) or (${listings.associationYN} is null and ${listings.hoaFee} = 0))`,
     );
   }
   if (c.age55 === "only") conds.push(eq(listings.seniorCommunity, true));

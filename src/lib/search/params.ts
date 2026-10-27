@@ -139,7 +139,7 @@ export type SearchCriteria = {
   hoa?: HoaFilter;
   /** Words in the listing text (search_vector), separate from the location box `q`. */
   kw?: string;
-  /** Priced below the original list price. Ignored in "sold" mode. */
+  /** Priced below the original list price. Not parsed, applied, counted or serialized in "sold" mode. */
   priceReduced?: boolean;
   /** 55+ communities: absent includes them. */
   age55?: Age55Filter;
@@ -169,11 +169,35 @@ function getAll(raw: RawParams, key: string): string[] {
   return Array.isArray(v) ? v : v === undefined ? [] : [v];
 }
 
+/**
+ * Plain decimal digits only: no sign, hex (0x10), exponent (1e3), Infinity or
+ * blank (which `Number` would read as 0). `numish` also takes one decimal point.
+ */
+const INT_TEXT = /^\d+$/;
+const DECIMAL_TEXT = /^\d+(?:\.\d+)?$/;
+
 const intish = (min: number, max: number) =>
-  z.coerce.number().int().min(min).max(max).optional().catch(undefined);
+  z
+    .string()
+    .trim()
+    .regex(INT_TEXT)
+    .transform(Number)
+    .pipe(z.number().int().min(min).max(max))
+    .optional()
+    .catch(undefined);
 
 const numish = (min: number, max: number) =>
-  z.coerce.number().min(min).max(max).optional().catch(undefined);
+  z
+    .string()
+    .trim()
+    .regex(DECIMAL_TEXT)
+    .transform(Number)
+    .pipe(z.number().min(min).max(max))
+    .optional()
+    .catch(undefined);
+
+/** A bounds coordinate: like DECIMAL_TEXT, with an optional minus sign. */
+const COORDINATE_TEXT = /^-?\d+(?:\.\d+)?$/;
 
 const flag = z
   .enum(["1", "true"])
@@ -195,8 +219,9 @@ function parseList<T extends string>(
 
 export function parseBounds(value: string | undefined): Bounds | undefined {
   if (!value) return undefined;
-  const parts = value.split(",").map(Number);
-  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return undefined;
+  const text = value.split(",").map((s) => s.trim());
+  if (text.length !== 4 || text.some((s) => !COORDINATE_TEXT.test(s))) return undefined;
+  const parts = text.map(Number);
   const [west, south, east, north] = parts;
   if (south < -90 || north > 90 || south >= north) return undefined;
   if (west < -180 || east > 180 || west >= east) return undefined;
@@ -219,13 +244,7 @@ export function parseSearchParams(raw: RawParams): SearchCriteria {
       .enum(SORTS)
       .catch("recommended")
       .parse(get(raw, "sort") ?? "recommended"),
-    page: z.coerce
-      .number()
-      .int()
-      .min(1)
-      .max(500)
-      .catch(1)
-      .parse(get(raw, "page") ?? 1),
+    page: intish(1, 500).parse(get(raw, "page")) ?? 1,
   };
 
   const q = get(raw, "q")?.trim().slice(0, 120);
@@ -251,7 +270,8 @@ export function parseSearchParams(raw: RawParams): SearchCriteria {
   assign("maxHoa", intish(0, 100_000).parse(get(raw, "maxHoa")));
   assign("hoa", z.enum(HOA_FILTERS).optional().catch(undefined).parse(get(raw, "hoa")));
   assign("age55", z.enum(AGE55_FILTERS).optional().catch(undefined).parse(get(raw, "age55")));
-  assign("priceReduced", flag.parse(get(raw, "priceReduced")));
+  // A sold listing is not "reduced": the filter is dropped in sold mode, not just unapplied.
+  if (c.mode !== "sold") assign("priceReduced", flag.parse(get(raw, "priceReduced")));
   assign("maxDaysOnMarket", intish(1, 3650).parse(get(raw, "maxDaysOnMarket")));
   assign("soldWithinDays", intish(1, 3650).parse(get(raw, "soldWithinDays")));
   assign("pending", flag.parse(get(raw, "pending")));
@@ -306,7 +326,7 @@ export function serializeCriteria(c: Partial<SearchCriteria>): URLSearchParams {
   if (c.pending) p.set("pending", "1");
   if (c.hoa) p.set("hoa", c.hoa);
   if (c.age55) p.set("age55", c.age55);
-  if (c.priceReduced) p.set("priceReduced", "1");
+  if (c.priceReduced && c.mode !== "sold") p.set("priceReduced", "1");
   for (const f of FEATURE_FLAGS) if (c[f]) p.set(f, "1");
   if (c.bounds) p.set("bounds", formatBounds(c.bounds));
   if (c.sort && c.sort !== "recommended") p.set("sort", c.sort);
@@ -351,7 +371,7 @@ export function countActiveFilters(c: SearchCriteria): number {
   if (c.maxHoa !== undefined) n++;
   if (c.hoa) n++;
   if (c.kw) n++;
-  if (c.priceReduced) n++;
+  if (c.priceReduced && c.mode !== "sold") n++;
   if (c.age55) n++;
   if (c.maxDaysOnMarket !== undefined) n++;
   if (c.pending) n++;

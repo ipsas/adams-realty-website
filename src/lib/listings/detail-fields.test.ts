@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { MAX_PLAUSIBLE_LOT_SQFT } from "@/lib/search/query";
-import { hoaFact, listingDetailGroups, type DetailListing } from "./detail-fields";
+import {
+  editorAssociationYN,
+  hoaFact,
+  hoaStatus,
+  listingDetailGroups,
+  type DetailListing,
+} from "./detail-fields";
+import { EXCLUDED_FIELD_KEYS, isExcludedField } from "./excluded-fields";
 
 const empty: DetailListing = {
   features: {},
@@ -141,9 +148,7 @@ describe("listingDetailGroups", () => {
     expect(rows({ taxAnnualAmount: 2345, taxYear: 2025 })["Annual tax amount"]).toBe(
       "$2,345 (2025)",
     );
-    expect(rows({ taxAnnualAmount: 2345, taxYear: 24 })["Annual tax amount"]).toBe(
-      "$2,345 (2024)",
-    );
+    expect(rows({ taxAnnualAmount: 2345, taxYear: 24 })["Annual tax amount"]).toBe("$2,345 (2024)");
     expect(rows({ taxAnnualAmount: 2345, taxYear: 1200 })["Annual tax amount"]).toBe("$2,345");
     expect(rows({ taxAnnualAmount: 2345 })["Annual tax amount"]).toBe("$2,345");
   });
@@ -165,6 +170,46 @@ describe("listingDetailGroups", () => {
     expect(labels.length).toBeGreaterThan(40);
     for (const label of labels) expect(label).not.toMatch(/compens|showing|lockbox|occupant/i);
   });
+
+  it("emits nothing excluded even when the listing and its features carry excluded keys", () => {
+    const SENTINEL = "EXCLUDED-VALUE";
+    const tainted = {
+      ...filled,
+      features: {
+        ...filled.features,
+        ...Object.fromEntries(
+          EXCLUDED_FIELD_KEYS.flatMap((k) => [
+            [k, [SENTINEL]],
+            [k.charAt(0).toLowerCase() + k.slice(1), [SENTINEL]],
+          ]),
+        ),
+      },
+      ...Object.fromEntries(EXCLUDED_FIELD_KEYS.map((k) => [k, SENTINEL])),
+    } as DetailListing;
+    const out = listingDetailGroups(tainted);
+    const rowsOut = out.flatMap((g) => g.rows);
+    expect(rowsOut.length).toBe(listingDetailGroups(filled).flatMap((g) => g.rows).length);
+    expect(JSON.stringify(out)).not.toContain(SENTINEL);
+    for (const r of rowsOut) expect(isExcludedField(r.label), r.label).toBe(false);
+  });
+
+  it("never shows a literal null, undefined or placeholder as a value or list item", () => {
+    const junk = ["null", "NULL", " Null ", "undefined", "Undefined", "None", "N/A", " "];
+    expect(
+      listingDetailGroups({
+        ...empty,
+        features: { sewer: junk, roof: ["undefined"], fencing: ["null", "n/a"] },
+        lotSizeDimensions: "null",
+        neighborhood: "undefined",
+        zoning: " NULL ",
+      }),
+    ).toEqual([]);
+    const r = rows({ features: { sewer: ["Septic Tank", "null", "undefined", "Public Sewer"] } });
+    expect(r.Sewer).toBe("Septic Tank, Public Sewer");
+    expect(JSON.stringify(listingDetailGroups({ ...filled, zoning: "null" }))).not.toMatch(
+      /null|undefined/i,
+    );
+  });
 });
 
 describe("hoaFact", () => {
@@ -173,9 +218,7 @@ describe("hoaFact", () => {
     expect(hoaFact({ associationYN: true, hoaFee: 150, hoaFrequency: "quarterly" })).toBe(
       "$150/qtr",
     );
-    expect(hoaFact({ associationYN: true, hoaFee: 600, hoaFrequency: "annually" })).toBe(
-      "$600/yr",
-    );
+    expect(hoaFact({ associationYN: true, hoaFee: 600, hoaFrequency: "annually" })).toBe("$600/yr");
   });
 
   it('says "None" only when the MLS says so', () => {
@@ -185,6 +228,45 @@ describe("hoaFact", () => {
 
   it("omits the fact when HOA is unknown", () => {
     expect(hoaFact({ associationYN: null, hoaFee: null, hoaFrequency: null })).toBeNull();
-    expect(hoaFact({ associationYN: true, hoaFee: null, hoaFrequency: null })).toBeNull();
+  });
+
+  it('says "Yes" for an association with no fee or a $0 fee (never "None" or "$0")', () => {
+    expect(hoaFact({ associationYN: true, hoaFee: null, hoaFrequency: null })).toBe("Yes");
+    expect(hoaFact({ associationYN: true, hoaFee: 0, hoaFrequency: "monthly" })).toBe("Yes");
+    expect(rows({ associationYN: true, hoaFee: 0 }).HOA).toBe("Yes");
+    expect(rows({ associationYN: true, hoaFee: 0 })["HOA fee"]).toBeUndefined();
+    expect(rows({ associationYN: true, hoaFee: null }).HOA).toBe("Yes");
+  });
+});
+
+describe("hoaStatus (the page's and the HOA filter's rule)", () => {
+  it("is yes for a true flag or a fee, no for a false flag or $0 fee, else unknown", () => {
+    expect(hoaStatus({ associationYN: true, hoaFee: null })).toBe(true);
+    expect(hoaStatus({ associationYN: true, hoaFee: 0 })).toBe(true);
+    expect(hoaStatus({ associationYN: null, hoaFee: 50 })).toBe(true);
+    expect(hoaStatus({ associationYN: false, hoaFee: 50 })).toBe(true);
+    expect(hoaStatus({ associationYN: false, hoaFee: null })).toBe(false);
+    expect(hoaStatus({ associationYN: null, hoaFee: 0 })).toBe(false);
+    expect(hoaStatus({ associationYN: null, hoaFee: null })).toBeNull();
+  });
+});
+
+describe("editorAssociationYN (dashboard listing editor)", () => {
+  it("sets the flag for a fee above $0 and clears it otherwise", () => {
+    expect(editorAssociationYN(250)).toBe(true);
+    expect(editorAssociationYN(0)).toBeNull();
+    expect(editorAssociationYN(undefined)).toBeNull();
+    expect(editorAssociationYN(null)).toBeNull();
+  });
+
+  it("so a cleared fee shows no HOA fact, and a $0 fee shows None", () => {
+    const after = (fee: number | undefined) => ({
+      associationYN: editorAssociationYN(fee),
+      hoaFee: fee ?? null,
+      hoaFrequency: fee ? ("monthly" as const) : null,
+    });
+    expect(hoaFact(after(250))).toBe("$250/mo");
+    expect(hoaFact(after(undefined))).toBeNull();
+    expect(hoaFact(after(0))).toBe("None");
   });
 });

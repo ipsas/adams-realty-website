@@ -89,7 +89,9 @@ describe("clearedFilters", () => {
     const busy = c(
       "q=Royston&mode=sold&sort=newest&minPrice=1&maxPrice=9&beds=3&baths=2&types=land&minSqft=1&maxSqft=9&minLotSqft=1&minYear=1990&maxYear=2000&maxHoa=100&maxDaysOnMarket=7&pending=1&pool=1&garage=1&waterfront=1&view=1&basement=1&newConstruction=1&singleStory=1&openHouse=1&virtualTour=1&ourListings=1&fireplace=1&minAcres=1&maxAcres=5&hoa=no&kw=barn&priceReduced=1&age55=exclude",
     );
-    expect(countActiveFilters(busy)).toBe(26);
+    // 26 filters in the URL; price reduced is dropped in sold mode.
+    expect(busy.priceReduced).toBeUndefined();
+    expect(countActiveFilters(busy)).toBe(25);
     const cleared = { ...busy, ...clearedFilters() };
     expect(countActiveFilters(cleared)).toBe(0);
     expect(cleared.q).toBe("Royston");

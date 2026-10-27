@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   clearedFilters,
   countActiveFilters,
+  DEFAULT_CRITERIA,
   describeCriteria,
   parseBounds,
   parseSearchParams,
@@ -19,9 +20,9 @@ import {
 
 describe("withPageHref", () => {
   it("sets the page and keeps every other parameter", () => {
-    expect(
-      withPageHref({ q: "Royston", page: "9", view: ["list", "1"], from: "Royston" }, 3),
-    ).toBe("/homes?q=Royston&view=list&view=1&from=Royston&page=3");
+    expect(withPageHref({ q: "Royston", page: "9", view: ["list", "1"], from: "Royston" }, 3)).toBe(
+      "/homes?q=Royston&view=list&view=1&from=Royston&page=3",
+    );
     expect(withPageHref(new URLSearchParams("page=4&sort=newest"), 2)).toBe(
       "/homes?sort=newest&page=2",
     );
@@ -124,6 +125,69 @@ describe("parseSearchParams", () => {
     });
     expect(c).toEqual({ mode: "buy", sort: "recommended", page: 1 });
   });
+
+  it("reads an empty or blank acreage bound as no bound, never 0", () => {
+    for (const v of ["", " ", "%20"]) {
+      const c = parseSearchParams(new URLSearchParams(`minAcres=${v}&maxAcres=${v}`));
+      expect(c.minAcres).toBeUndefined();
+      expect(c.maxAcres).toBeUndefined();
+    }
+    expect(parseSearchParams({ minAcres: "", maxAcres: " " })).toEqual(DEFAULT_CRITERIA);
+    expect(parseSearchParams({ minAcres: " 2 " }).minAcres).toBe(2);
+  });
+
+  it("accepts only plain decimal numbers in numeric params", () => {
+    const keys = [
+      "minPrice",
+      "maxPrice",
+      "beds",
+      "baths",
+      "minSqft",
+      "maxSqft",
+      "minLotSqft",
+      "minAcres",
+      "maxAcres",
+      "minYear",
+      "maxYear",
+      "maxHoa",
+      "maxDaysOnMarket",
+      "soldWithinDays",
+    ] as const;
+    const junk = [
+      ...["", " ", "0x10", "1e3", "1E3", "Infinity", "-Infinity", "NaN", "+5", "-5"],
+      ...["5.", ".5", "1.2.3", "0b11", "0o7", "1,000", "١٢"],
+    ];
+    for (const k of keys) {
+      for (const v of junk) {
+        expect(parseSearchParams({ [k]: v })[k], `${k}=${v}`).toBeUndefined();
+      }
+    }
+    for (const v of ["0x10", "1e2", "Infinity", "+2", " ", "2.5"]) {
+      expect(parseSearchParams({ page: v }).page, `page=${v}`).toBe(1);
+    }
+    // Plain decimals still parse; fractions only where they make sense.
+    expect(
+      parseSearchParams({ maxAcres: "0.25", baths: "1.5", beds: "3", page: "2" }),
+    ).toMatchObject({ maxAcres: 0.25, baths: 1.5, beds: 3, page: 2 });
+    expect(parseSearchParams({ minPrice: "250000", maxPrice: "250000.5" })).toMatchObject({
+      minPrice: 250000,
+    });
+    expect(parseSearchParams({ maxPrice: "250000.5" }).maxPrice).toBeUndefined();
+    expect(parseSearchParams({ beds: "2.5" }).beds).toBeUndefined();
+  });
+
+  it("drops price reduced in sold mode (a sold listing is not reduced)", () => {
+    const sold = parseSearchParams({ mode: "sold", priceReduced: "1" });
+    expect(sold.priceReduced).toBeUndefined();
+    expect(countActiveFilters(sold)).toBe(0);
+    expect(serializeCriteria(sold).has("priceReduced")).toBe(false);
+    // A criteria object that still carries it (e.g. after switching to sold) doesn't count or serialize it.
+    const carried = { ...DEFAULT_CRITERIA, mode: "sold" as const, priceReduced: true };
+    expect(countActiveFilters(carried)).toBe(0);
+    expect(serializeCriteria(carried).has("priceReduced")).toBe(false);
+    expect(parseSearchParams({ mode: "buy", priceReduced: "1" }).priceReduced).toBe(true);
+    expect(countActiveFilters({ ...carried, mode: "rent" })).toBe(1);
+  });
 });
 
 describe("parseBounds", () => {
@@ -131,6 +195,21 @@ describe("parseBounds", () => {
     expect(parseBounds("-97.7,30.3,-97.8,30.2")).toBeUndefined();
     expect(parseBounds("-200,30,-97,31")).toBeUndefined();
     expect(parseBounds("a,b,c,d")).toBeUndefined();
+  });
+
+  it("rejects blank, hex, exponent and infinite coordinates", () => {
+    expect(parseBounds("-97.8,,-97.7,30.3")).toBeUndefined();
+    expect(parseBounds("-97.8, ,-97.7,30.3")).toBeUndefined();
+    expect(parseBounds("-97.8,0x10,-97.7,30.3")).toBeUndefined();
+    expect(parseBounds("-97.8,3e1,-97.7,30.3")).toBeUndefined();
+    expect(parseBounds("-Infinity,30.2,-97.7,30.3")).toBeUndefined();
+    expect(parseBounds("-97.8,+30.2,-97.7,30.3")).toBeUndefined();
+    expect(parseBounds("-97.8,30.2,-97.7,30.3")).toEqual({
+      west: -97.8,
+      south: 30.2,
+      east: -97.7,
+      north: 30.3,
+    });
   });
 });
 

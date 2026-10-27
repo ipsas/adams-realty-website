@@ -144,6 +144,29 @@ describe("acreage, HOA, keyword, price-reduced, 55+ and fireplace filters", () =
     expect(sql.match(/"lot_size_sqft" <= \$/g)).toHaveLength(2);
   });
 
+  it("adds no acreage condition for an empty or blank bound (never a 0-acre bound)", () => {
+    const blanks: Record<string, string>[] = [
+      { minAcres: "" },
+      { maxAcres: " " },
+      { minAcres: "", maxAcres: "  " },
+    ];
+    for (const params of blanks) {
+      const { sql, params: values } = render(params);
+      expect(sql).not.toContain("lot_size_sqft");
+      expect(values).not.toContain(0);
+    }
+    const blankUrl = buildWhere(
+      parseSearchParams(new URLSearchParams("minAcres=&maxAcres=%20")),
+      now,
+    );
+    expect(dialect.sqlToQuery(blankUrl!).sql).not.toContain("lot_size_sqft");
+    // One real bound and one blank: only the real one applies.
+    const { sql, params } = render({ minAcres: "2", maxAcres: "" });
+    expect(sql).toContain(`"listings"."lot_size_sqft" >= $`);
+    expect(sql.match(/"lot_size_sqft" <= \$/g)).toHaveLength(1);
+    expect(params).toContain(2 * 43_560);
+  });
+
   it("keeps the legacy min lot size filter as it was", () => {
     const { sql, params } = render({ minLotSqft: "10890" });
     expect(sql).toContain(`"listings"."lot_size_sqft" >= $`);
@@ -158,8 +181,9 @@ describe("acreage, HOA, keyword, price-reduced, 55+ and fireplace filters", () =
 
   it("matches HOA no on AssociationYN false, or unknown with a $0 fee (not every unknown)", () => {
     const { sql } = render({ hoa: "no" });
+    // A fee above $0 is an HOA even beside a false flag, as the listing page shows it (hoaStatus).
     expect(sql).toContain(
-      `("listings"."association_yn" = false or ("listings"."association_yn" is null and "listings"."hoa_fee" = 0))`,
+      `(("listings"."association_yn" = false and ("listings"."hoa_fee" is null or "listings"."hoa_fee" <= 0)) or ("listings"."association_yn" is null and "listings"."hoa_fee" = 0))`,
     );
   });
 

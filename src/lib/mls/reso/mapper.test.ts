@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { isExcludedField } from "@/lib/listings/excluded-fields";
 import {
   attribution,
   compensation,
@@ -466,6 +467,19 @@ describe("Georgia MLS field rules", () => {
     expect(json).not.toContain("2026-01-03");
     expect(json).not.toContain("2026-12-31");
     expect(l.listDate).toBeNull();
+  });
+
+  it("never puts an excluded field into the feature lists", () => {
+    const l = mapOk({
+      ...withExcluded,
+      BuyerAgencyCompensation: `3% ${SENTINEL}`,
+      CompensationComments: `comments ${SENTINEL}`,
+      SecurityFeatures: ["Smoke Detector(s)"],
+    });
+    const keys = Object.keys(l.features ?? {});
+    expect(keys).toContain("security");
+    for (const k of keys) expect(isExcludedField(k), k).toBe(false);
+    expect(JSON.stringify(l.features)).not.toContain(SENTINEL);
   });
 
   it("dates the listing by OriginalEntryTimestamp", () => {

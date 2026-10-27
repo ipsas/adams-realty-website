@@ -1,11 +1,13 @@
 /**
  * The listing page's "Property details": the MLS's own values under standard
  * RESO labels, grouped. Pure. Empty values are left out, and nothing about
- * compensation, showings, lockboxes or occupants is ever listed here.
+ * compensation, showings, lockboxes or occupants is ever listed here: no row
+ * is read from, or labelled as, an excluded field (./excluded-fields.ts).
  */
 import type { ListingFeatures } from "@/db/schema";
 import { formatPrice, isNullLike } from "@/lib/format";
 import { MAX_PLAUSIBLE_LOT_SQFT } from "@/lib/search/query";
+import { isExcludedField, withoutExcludedFields } from "./excluded-fields";
 import { formatAcres } from "./land";
 import { normalizeTaxYear } from "./tax-year";
 
@@ -36,24 +38,52 @@ const FREQUENCY = { monthly: "month", quarterly: "quarter", annually: "year" } a
 const FREQUENCY_SHORT = { monthly: "mo", quarterly: "qtr", annually: "yr" } as const;
 
 /**
- * The facts grid's HOA: the fee when there is one, "None" only when the MLS says there is no
- * association (or a $0 fee), and null (no fact) when it doesn't say.
+ * Whether a listing has an HOA, the one rule for the page and the HOA search filter
+ * (buildConditions in src/lib/search/query.ts): a true AssociationYN or a fee above $0 is
+ * yes; otherwise AssociationYN false or a $0 fee is no; anything else is unknown (null).
+ */
+export function hoaStatus(l: Pick<HoaLike, "associationYN" | "hoaFee">): boolean | null {
+  if (l.associationYN === true || (l.hoaFee !== null && l.hoaFee > 0)) return true;
+  if (l.associationYN === false || l.hoaFee === 0) return false;
+  return null;
+}
+
+/**
+ * The dashboard editor's AssociationYN for its HOA fee (the editor has no HOA checkbox):
+ * a fee above $0 means there is an HOA; a cleared or $0 fee leaves it unknown (null), so a
+ * flag set by an earlier fee never outlives it. A $0 fee still reads "no" by `hoaStatus`.
+ */
+export function editorAssociationYN(hoaFee: number | null | undefined): boolean | null {
+  return hoaFee != null && hoaFee > 0 ? true : null;
+}
+
+/**
+ * The facts grid's HOA: the fee when there is one, "Yes" for an association with no fee
+ * stated, "None" only when the MLS says there is no association (or a $0 fee), and null
+ * (no fact) when it doesn't say.
  */
 export function hoaFact(l: HoaLike): string | null {
   if (l.hoaFee && l.hoaFee > 0) {
     return `${formatPrice(l.hoaFee)}/${FREQUENCY_SHORT[l.hoaFrequency ?? "monthly"]}`;
   }
-  return l.associationYN === false || l.hoaFee === 0 ? "None" : null;
+  const status = hoaStatus(l);
+  return status === null ? null : status ? "Yes" : "None";
 }
 
 function hoaYesNo(l: HoaLike): string | null {
-  if (l.associationYN === true || (l.hoaFee !== null && l.hoaFee > 0)) return "Yes";
-  if (l.associationYN === false || l.hoaFee === 0) return "No";
-  return null;
+  const status = hoaStatus(l);
+  return status === null ? null : status ? "Yes" : "No";
+}
+
+/** isNullLike, plus a literal "null" or "undefined" left in the data by a bad export. */
+function blank(s: string | null | undefined): boolean {
+  return isNullLike(s) || /^(null|undefined)$/i.test(s!.trim());
 }
 
 function list(items: string[] | undefined): string | null {
-  const kept = (items ?? []).map((s) => s?.trim()).filter(Boolean);
+  const kept = (items ?? [])
+    .filter((s): s is string => typeof s === "string" && !blank(s))
+    .map((s) => s.trim());
   return kept.length ? kept.join(", ") : null;
 }
 
@@ -62,7 +92,7 @@ function count(n: number | null): string | null {
 }
 
 function text(s: string | null): string | null {
-  return s && !isNullLike(s) ? s.trim() : null;
+  return s && !blank(s) ? s.trim() : null;
 }
 
 function money(n: number | null): string | null {
@@ -70,7 +100,8 @@ function money(n: number | null): string | null {
 }
 
 export function listingDetailGroups(l: DetailListing): DetailGroup[] {
-  const f = l.features ?? {};
+  // Guarded: features stored under an excluded key are never read.
+  const f: ListingFeatures = withoutExcludedFields(l.features ?? {});
   const taxYear = normalizeTaxYear(l.taxYear);
   const tax = money(l.taxAnnualAmount);
   const groups: [string, [string, string | null][]][] = [
@@ -169,7 +200,7 @@ export function listingDetailGroups(l: DetailListing): DetailGroup[] {
     .map(([title, rows]) => ({
       title,
       rows: rows
-        .filter((r): r is [string, string] => r[1] !== null)
+        .filter((r): r is [string, string] => r[1] !== null && !isExcludedField(r[0]))
         .map(([label, value]) => ({ label, value })),
     }))
     .filter((g) => g.rows.length > 0);
