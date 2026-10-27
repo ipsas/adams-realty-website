@@ -13,6 +13,8 @@ const empty: DetailListing = {
   features: {},
   fireplacesTotal: null,
   parkingTotal: null,
+  mainLevelBedrooms: null,
+  primaryBedroomOnMain: null,
   garageSpaces: null,
   lotSizeSqft: null,
   lotSizeDimensions: null,
@@ -80,6 +82,8 @@ const filled: DetailListing = {
   },
   fireplacesTotal: 2,
   parkingTotal: 4,
+  mainLevelBedrooms: 2,
+  primaryBedroomOnMain: true,
   garageSpaces: 2,
   lotSizeSqft: 43_560,
   lotSizeDimensions: "100 x 200",
@@ -115,6 +119,20 @@ describe("listingDetailGroups", () => {
         seniorCommunity: false,
       }),
     ).toEqual([]);
+  });
+
+  it("shows main-level bedrooms and the primary bedroom on main only when known", () => {
+    expect(rows({ mainLevelBedrooms: 2, primaryBedroomOnMain: true })).toMatchObject({
+      "Bedrooms on main level": "2",
+      "Primary bedroom on main": "Yes",
+    });
+    expect(rows({ mainLevelBedrooms: 0, primaryBedroomOnMain: false })).toMatchObject({
+      "Bedrooms on main level": "0",
+      "Primary bedroom on main": "No",
+    });
+    const unknown = rows({});
+    expect(unknown["Bedrooms on main level"]).toBeUndefined();
+    expect(unknown["Primary bedroom on main"]).toBeUndefined();
   });
 
   it("joins arrays with commas", () => {

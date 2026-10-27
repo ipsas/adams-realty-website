@@ -233,6 +233,14 @@ export const listings = pgTable(
     garageSpaces: smallint("garage_spaces"),
     fireplacesTotal: smallint("fireplaces_total"),
     parkingTotal: smallint("parking_total"),
+    /** RESO MainLevelBedrooms. Null when unknown (src/lib/mls/reso/mapper.ts: mainLevelBedroomFacts). */
+    mainLevelBedrooms: integer("main_level_bedrooms"),
+    /**
+     * The primary (master) bedroom is on the main level: from InteriorFeatures'
+     * "Master On Main Level", or every bedroom being on the main level. False only
+     * when no bedroom is; null when unknown.
+     */
+    primaryBedroomOnMain: boolean("primary_bedroom_on_main"),
     /** RESO SeniorCommunityYN: a 55+ community. Null when the feed doesn't say. */
     seniorCommunity: boolean("senior_community"),
     lotSizeDimensions: text("lot_size_dimensions"),
@@ -534,6 +542,11 @@ export const listings = pgTable(
     // listings by id. The migration adds INCLUDE (slug, updated_at) so a chunk
     // is an index-only scan.
     index("listings_live_id_idx").on(t.id).where(LIVE),
+    // The "bedroom on main level" and "primary bedroom on main" search filters.
+    index("listings_main_level_bedrooms_idx").on(t.mainLevelBedrooms),
+    index("listings_primary_on_main_idx")
+      .on(t.id)
+      .where(sql`${t.primaryBedroomOnMain} = true`),
   ],
 );
 

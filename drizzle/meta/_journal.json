@@ -204,6 +204,13 @@
       "when": 1793134107499,
       "tag": "0028_listings_county_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1793142229814,
+      "tag": "0029_main_level_bedrooms",
+      "breakpoints": true
     }
   ]
 }

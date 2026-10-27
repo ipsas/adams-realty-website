@@ -285,6 +285,9 @@ export function buildConditions(
   if (c.virtualTour) conds.push(isNotNull(listings.virtualTourUrl));
   if (c.ourListings) conds.push(eq(listings.isCompanyListing, true));
   if (c.fireplace) conds.push(gte(listings.fireplacesTotal, 1));
+  // Unknown (null) never matches either.
+  if (c.primaryOnMain) conds.push(eq(listings.primaryBedroomOnMain, true));
+  if (c.bedOnMain) conds.push(gte(listings.mainLevelBedrooms, 1));
   if (c.openHouse) {
     conds.push(
       sql`exists (select 1 from ${openHouses} where ${openHouses.listingId} = ${listings.id} and ${openHouses.endsAt} > ${now})`,

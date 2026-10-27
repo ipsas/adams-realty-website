@@ -9,8 +9,9 @@ import type { MapResult, NormalizedListing, NormalizedMedia, NormalizedOpenHouse
  * their ModificationTimestamp alone wouldn't make it.
  * 2: GAMLS2_Latitude/Longitude and Coordinates, placeholder subdivisions, 2-digit tax years.
  * 3: AssociationYN, detail columns (fireplaces, parking, 55+, assessed value, zoning…), more feature lists.
+ * 4: MainLevelBedrooms and primary bedroom on main.
  */
-export const RESO_MAPPER_VERSION = 3;
+export const RESO_MAPPER_VERSION = 4;
 
 /**
  * Maps a RESO Data Dictionary 2.x `Property` record (as returned by any
@@ -388,6 +389,68 @@ export function compensation(p: ResoProperty): {
   };
 }
 
+/**
+ * The InteriorFeatures values that put the primary bedroom on the main level,
+ * matched whole and case-insensitively. A full scan of the GAMLS feed on
+ * 2026-10-27 (all 403,824 Property records) found only this one; add a value
+ * only after it appears in the feed.
+ * Whitespace is ignored too, so the camelCase enum form ("MasterOnMainLevel") matches.
+ */
+export const PRIMARY_ON_MAIN_VALUES = ["Master On Main Level"] as const;
+const normalizeFeature = (v: string) => v.toLowerCase().replace(/\s+/g, "");
+const PRIMARY_ON_MAIN = new Set<string>(PRIMARY_ON_MAIN_VALUES.map(normalizeFeature));
+
+/**
+ * A non-negative whole number: a safe-integer JSON number, or a string of
+ * digits only (no sign, spaces, decimals, hex or exponent). Anything else is null.
+ */
+function strictNonNegInt(v: unknown): number | null {
+  if (typeof v === "number") return Number.isSafeInteger(v) && v >= 0 ? v : null;
+  if (typeof v === "string" && /^\d+$/.test(v)) {
+    const n = Number(v);
+    return Number.isSafeInteger(n) ? n : null;
+  }
+  return null;
+}
+
+/**
+ * Main-level bedrooms, from the structured fields only (never the remarks).
+ * `MainLevelBedrooms` and `BedroomsTotal` must be strict non-negative integers
+ * (strictNonNegInt). `MainLevelBedrooms` counts only when `BedroomsTotal` is
+ * known and it is no greater; otherwise unknown. The primary bedroom is on the
+ * main level when InteriorFeatures says so (a PRIMARY_ON_MAIN_VALUES value,
+ * exact once case and whitespace are ignored) or every bedroom is there, and
+ * isn't when no bedroom is; the flag with zero main-level bedrooms conflicts, so
+ * unknown. With `BedroomsTotal` 0 it is unknown whatever the flag or count say.
+ * A missing flag alone isn't a "no": many one-level homes don't carry it.
+ * The v4 remap (RESO_MAPPER_VERSION) fills both columns for stored rows.
+ * Exported for tests.
+ */
+export function mainLevelBedroomFacts(p: ResoProperty): {
+  mainLevelBedrooms: number | null;
+  primaryBedroomOnMain: boolean | null;
+} {
+  const total = strictNonNegInt(p.BedroomsTotal);
+  const raw = strictNonNegInt(p.MainLevelBedrooms);
+  const mainLevelBedrooms = raw !== null && total !== null && raw <= total ? raw : null;
+  // Raw values (list() humanizes): only PRIMARY_ON_MAIN_VALUES match, any case/spacing.
+  const features = p.InteriorFeatures;
+  const rawFeatures: unknown[] = Array.isArray(features)
+    ? features
+    : typeof features === "string"
+      ? features.split(/,\s*/)
+      : [];
+  const masterFlag = rawFeatures.some(
+    (v) => typeof v === "string" && PRIMARY_ON_MAIN.has(normalizeFeature(v)),
+  );
+  let primaryBedroomOnMain: boolean | null = null;
+  if (total === 0) primaryBedroomOnMain = null;
+  else if (masterFlag) primaryBedroomOnMain = mainLevelBedrooms === 0 ? null : true;
+  else if (total !== null && total >= 1 && mainLevelBedrooms === total) primaryBedroomOnMain = true;
+  else if (mainLevelBedrooms === 0) primaryBedroomOnMain = false;
+  return { mainLevelBedrooms, primaryBedroomOnMain };
+}
+
 export function mapResoProperty(p: ResoProperty): MapResult {
   const listingKey = str(p.ListingKey);
   if (!listingKey) return { ok: false, listingKey: null, reason: "missing_key" };
@@ -463,6 +526,7 @@ export function mapResoProperty(p: ResoProperty): MapResult {
     garageSpaces: int(p.GarageSpaces),
     fireplacesTotal: int(p.FireplacesTotal),
     parkingTotal: int(p.ParkingTotal),
+    ...mainLevelBedroomFacts(p),
     seniorCommunity: bool(p.SeniorCommunityYN),
     lotSizeDimensions: lotDimensions && !isNullLike(lotDimensions) ? lotDimensions : null,
     zoning: str(p.Zoning),

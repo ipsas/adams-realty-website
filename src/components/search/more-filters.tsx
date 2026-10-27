@@ -10,20 +10,7 @@ import {
   type FeatureFlag,
   type SearchCriteria,
 } from "@/lib/search/params";
-
-const FEATURE_LABELS: Record<FeatureFlag, string> = {
-  garage: "Garage",
-  pool: "Private pool",
-  waterfront: "Waterfront",
-  view: "View",
-  basement: "Basement",
-  newConstruction: "New construction",
-  singleStory: "Single story",
-  openHouse: "Open house",
-  virtualTour: "3D / virtual tour",
-  ourListings: "Adams Realty listings only",
-  fireplace: "Fireplace",
-};
+import { FEATURE_ARIA_LABELS, FEATURE_LABELS } from "./feature-labels";
 
 const SQFT = [500, 750, 1000, 1250, 1500, 1750, 2000, 2500, 3000, 3500, 4000, 5000, 7500];
 const ACRES: [number, string][] = [
@@ -101,11 +88,14 @@ export function MoreFilters({
   onClose,
   criteria,
   update,
+  bedOnMainUpdating,
 }: {
   open: boolean;
   onClose: () => void;
   criteria: SearchCriteria;
   update: (patch: Partial<SearchCriteria>) => void;
+  /** The mapper's remap hasn't filled the bedroom-on-main columns yet. */
+  bedOnMainUpdating: boolean;
 }) {
   const [d, setD] = useState<Draft>(() => pickDraft(criteria));
   // Start each opening from the current URL criteria.
@@ -333,11 +323,17 @@ export function MoreFilters({
               <Checkbox
                 key={f}
                 label={FEATURE_LABELS[f]}
+                aria-label={FEATURE_ARIA_LABELS[f]}
                 checked={!!d[f]}
                 onChange={(e) => set(f, e.target.checked || undefined)}
               />
             ))}
           </div>
+          {bedOnMainUpdating && (
+            <p className="mt-3 text-sm text-muted" role="status">
+              Bedroom-on-main data is still updating
+            </p>
+          )}
         </fieldset>
       </div>
     </Dialog>

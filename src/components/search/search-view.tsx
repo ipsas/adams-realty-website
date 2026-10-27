@@ -87,6 +87,7 @@ export function SearchView({
   signedIn,
   emptyHelp,
   mlsDisclaimer,
+  bedOnMainUpdating,
 }: {
   criteria: SearchCriteria;
   /** "Homes for sale in Hartwell", "Homes near Lake Hartwell", "Homes in this map area"… */
@@ -107,6 +108,8 @@ export function SearchView({
   emptyHelp?: EmptyHelp;
   /** Georgia MLS's IDX disclaimer, computed on the server (`mlsDisclaimer`). */
   mlsDisclaimer: string;
+  /** The bedroom-on-main data is still being filled in (`bedroomOnMainDataUpdating`). */
+  bedOnMainUpdating: boolean;
 }) {
   const { update, setView, isPending } = useSearchNav(criteria);
   const save = useSaveSearch(signedIn);
@@ -198,7 +201,12 @@ export function SearchView({
   return (
     // Fills the viewport under the header.
     <div className="flex h-[calc(100dvh-4rem)] flex-col" onClickCapture={onClickCapture}>
-      <FilterBar criteria={criteria} update={update} signedIn={signedIn} />
+      <FilterBar
+        criteria={criteria}
+        update={update}
+        signedIn={signedIn}
+        bedOnMainUpdating={bedOnMainUpdating}
+      />
 
       <div className="relative flex min-h-0 flex-1">
         {/* Results list. Below lg, the bottom padding clears the floating List/Map toggle

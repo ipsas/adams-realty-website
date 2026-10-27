@@ -280,6 +280,16 @@ describe("serializeCriteria", () => {
     expect(parseSearchParams(p)).toEqual(original);
   });
 
+  it("round-trips the main-level bedroom filters", () => {
+    const original = parseSearchParams({ primaryOnMain: "1", bedOnMain: "1" });
+    expect(original).toMatchObject({ primaryOnMain: true, bedOnMain: true });
+    const p = serializeCriteria(original);
+    expect(p.get("primaryOnMain")).toBe("1");
+    expect(p.get("bedOnMain")).toBe("1");
+    expect(parseSearchParams(p)).toEqual(original);
+    expect(parseSearchParams({ primaryOnMain: "0" }).primaryOnMain).toBeUndefined();
+  });
+
   it("omits defaults so URLs stay short", () => {
     expect(searchHref({ mode: "buy", sort: "recommended", page: 1 })).toBe("/homes");
     expect(searchHref({ mode: "rent", q: "Austin" })).toBe("/homes?q=Austin&mode=rent");
@@ -331,6 +341,15 @@ describe("describeCriteria and countActiveFilters", () => {
     });
     expect(countActiveFilters(c)).toBe(6);
     expect(countActiveFilters({ ...c, ...clearedFilters() })).toBe(0);
+  });
+
+  it("counts and clears the main-level bedroom filters", () => {
+    const c = parseSearchParams({ primaryOnMain: "1", bedOnMain: "1", beds: "3" });
+    expect(countActiveFilters(c)).toBe(3);
+    const cleared = { ...c, ...clearedFilters() };
+    expect(countActiveFilters(cleared)).toBe(0);
+    expect(serializeCriteria(cleared).has("primaryOnMain")).toBe(false);
+    expect(serializeCriteria(cleared).has("bedOnMain")).toBe(false);
   });
 });
 

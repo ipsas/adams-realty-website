@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { isExcludedField } from "@/lib/listings/excluded-fields";
 import {
@@ -5,6 +8,7 @@ import {
   compensation,
   EXCLUDED_FIELDS,
   list,
+  mainLevelBedroomFacts,
   mapPropertyType,
   mapResoProperty,
   mapStatus,
@@ -231,6 +235,13 @@ describe("mapResoProperty", () => {
     for (const s of ["None", "N/A", "-", ""]) {
       expect(mapOk({ ...base, LotSizeDimensions: s }).lotSizeDimensions, s).toBeNull();
     }
+  });
+
+  it("maps main-level bedrooms and the primary bedroom on main", () => {
+    expect(
+      mapOk({ ...base, MainLevelBedrooms: 1, InteriorFeatures: ["Master On Main Level"] }),
+    ).toMatchObject({ mainLevelBedrooms: 1, primaryBedroomOnMain: true });
+    expect(mapOk(base)).toMatchObject({ mainLevelBedrooms: null, primaryBedroomOnMain: null });
   });
 
   it("maps the extra feature lists, humanized, and leaves out empty ones", () => {
@@ -533,5 +544,180 @@ describe("Georgia MLS field rules", () => {
       buyerAgencyCompensation: null,
       compensationComments: null,
     });
+  });
+});
+
+describe("mainLevelBedroomFacts", () => {
+  const facts = (p: ResoProperty) => mainLevelBedroomFacts({ BedroomsTotal: 4, ...p });
+  const MASTER = { InteriorFeatures: ["High Ceilings", "Master On Main Level"] };
+
+  it("trusts the InteriorFeatures flag", () => {
+    expect(facts({ ...MASTER, MainLevelBedrooms: 1 })).toEqual({
+      mainLevelBedrooms: 1,
+      primaryBedroomOnMain: true,
+    });
+    // Comma-separated, and with no MainLevelBedrooms.
+    expect(facts({ InteriorFeatures: "Walk-In Closet(s), Master On Main Level" })).toEqual({
+      mainLevelBedrooms: null,
+      primaryBedroomOnMain: true,
+    });
+  });
+
+  it("matches only the feed's exact value, ignoring case and whitespace", () => {
+    for (const v of [
+      "Master On Main Level",
+      "master on main level",
+      "MASTER ON MAIN LEVEL",
+      "MasterOnMainLevel",
+      "masteronmainlevel",
+      " Master On Main Level",
+    ]) {
+      expect(facts({ InteriorFeatures: [v] }).primaryBedroomOnMain, v).toBe(true);
+    }
+    for (const v of [
+      "Primary On Main",
+      "Master Bedroom On Main Level",
+      "Master On Main",
+      "Master on Main Floor",
+      "Main Level Master",
+      "Owner's Suite on Main",
+      "Master Downstairs",
+      "Guest On Main",
+      "Master On Main Level Plus",
+      "MasterOnMainLevelX",
+    ]) {
+      expect(facts({ InteriorFeatures: [v] }).primaryBedroomOnMain, v).toBeNull();
+    }
+  });
+
+  it("calls the flag with no main-level bedroom a conflict (unknown)", () => {
+    expect(facts({ ...MASTER, MainLevelBedrooms: 0 })).toEqual({
+      mainLevelBedrooms: 0,
+      primaryBedroomOnMain: null,
+    });
+  });
+
+  it("is yes when every bedroom is on the main level", () => {
+    expect(facts({ MainLevelBedrooms: 4 })).toEqual({
+      mainLevelBedrooms: 4,
+      primaryBedroomOnMain: true,
+    });
+    expect(facts({ MainLevelBedrooms: "4" }).primaryBedroomOnMain).toBe(true);
+  });
+
+  it("is no when no bedroom is on the main level", () => {
+    expect(facts({ MainLevelBedrooms: 0 })).toEqual({
+      mainLevelBedrooms: 0,
+      primaryBedroomOnMain: false,
+    });
+  });
+
+  it("is unknown for some bedrooms on main and no flag", () => {
+    expect(facts({ MainLevelBedrooms: 2 })).toEqual({
+      mainLevelBedrooms: 2,
+      primaryBedroomOnMain: null,
+    });
+  });
+
+  it("is unknown without the field", () => {
+    expect(facts({})).toEqual({ mainLevelBedrooms: null, primaryBedroomOnMain: null });
+    expect(facts({ MainLevelBedrooms: null })).toEqual({
+      mainLevelBedrooms: null,
+      primaryBedroomOnMain: null,
+    });
+  });
+
+  it("drops a count above BedroomsTotal, negative or fractional", () => {
+    for (const v of [5, -1, 1.5, "abc"]) {
+      expect(facts({ MainLevelBedrooms: v }), String(v)).toEqual({
+        mainLevelBedrooms: null,
+        primaryBedroomOnMain: null,
+      });
+    }
+  });
+
+  const REJECTED: unknown[] = [
+    "2.0",
+    "0x2",
+    "1e0",
+    " 2 ",
+    "-1",
+    "+2",
+    "",
+    2.6,
+    -1,
+    NaN,
+    Infinity,
+    true,
+  ];
+
+  it("rejects a MainLevelBedrooms that isn't a strict non-negative integer", () => {
+    for (const v of REJECTED) {
+      expect(facts({ MainLevelBedrooms: v }).mainLevelBedrooms, String(v)).toBeNull();
+    }
+  });
+
+  it("rejects a BedroomsTotal that isn't a strict non-negative integer", () => {
+    for (const v of REJECTED) {
+      expect(mainLevelBedroomFacts({ BedroomsTotal: v, MainLevelBedrooms: 2 }), String(v)).toEqual({
+        mainLevelBedrooms: null,
+        primaryBedroomOnMain: null,
+      });
+    }
+  });
+
+  it("accepts a digit string or an integer for both fields", () => {
+    for (const total of [3, "3"]) {
+      for (const mlb of [3, "3"]) {
+        expect(
+          mainLevelBedroomFacts({ BedroomsTotal: total, MainLevelBedrooms: mlb }),
+          `${typeof total}/${typeof mlb}`,
+        ).toEqual({ mainLevelBedrooms: 3, primaryBedroomOnMain: true });
+      }
+    }
+  });
+
+  it("is unknown when BedroomsTotal is missing or invalid", () => {
+    for (const total of [undefined, "abc", 2.6]) {
+      for (const mlb of [99, 2]) {
+        expect(
+          mainLevelBedroomFacts({ BedroomsTotal: total, MainLevelBedrooms: mlb }),
+          `${String(total)}/${mlb}`,
+        ).toEqual({ mainLevelBedrooms: null, primaryBedroomOnMain: null });
+      }
+    }
+  });
+
+  it("leaves the primary bedroom unknown with no bedrooms at all", () => {
+    expect(mainLevelBedroomFacts({ BedroomsTotal: 0, MainLevelBedrooms: 0 })).toEqual({
+      mainLevelBedrooms: 0,
+      primaryBedroomOnMain: null,
+    });
+    expect(mainLevelBedroomFacts({ BedroomsTotal: 0, ...MASTER })).toEqual({
+      mainLevelBedrooms: null,
+      primaryBedroomOnMain: null,
+    });
+  });
+});
+
+describe("main_level_bedrooms migration", () => {
+  it("only adds columns and indexes: the v4 remap fills them, not an UPDATE", () => {
+    const dir = fileURLToPath(new URL("../../../../drizzle/", import.meta.url));
+    const files = readdirSync(dir).filter((f) => f.endsWith("_main_level_bedrooms.sql"));
+    expect(files).toHaveLength(1);
+    const migration = readFileSync(join(dir, files[0]), "utf8");
+    expect(migration).not.toMatch(/\bUPDATE\b/i);
+    expect(migration.trimEnd()).not.toMatch(/statement-breakpoint$/);
+  });
+
+  it("is idempotent: every ADD COLUMN and CREATE INDEX uses IF NOT EXISTS", () => {
+    const dir = fileURLToPath(new URL("../../../../drizzle/", import.meta.url));
+    const [file] = readdirSync(dir).filter((f) => f.endsWith("_main_level_bedrooms.sql"));
+    const migration = readFileSync(join(dir, file), "utf8");
+    expect(migration.match(/\bADD COLUMN\b/gi)).toHaveLength(2);
+    expect(migration.match(/\bADD COLUMN IF NOT EXISTS\b/gi)).toHaveLength(2);
+    expect(migration.match(/\bCREATE INDEX\b/gi)).toHaveLength(2);
+    expect(migration.match(/\bCREATE INDEX IF NOT EXISTS\b/gi)).toHaveLength(2);
+    expect(migration).not.toMatch(/\bUPDATE\b/i);
   });
 });

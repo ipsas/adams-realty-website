@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { getSession } from "@/lib/auth/session";
 import { mlsDisclaimer } from "@/lib/mls-copyright";
 import { gamlsLastSyncedAt } from "@/lib/mls/last-updated";
+import { bedroomOnMainDataUpdating } from "@/lib/search/bedroom-on-main-updating";
 import { lakeName, searchHeading } from "@/lib/search/heading";
 import {
   DEFAULT_CRITERIA,
@@ -67,11 +68,12 @@ export default async function SearchPage(props: PageProps<"/homes">) {
   const scope = await resolveScope(db, criteria);
   // Shared by this request's searches: after a timeout, none starts another query.
   const run = searchRun();
-  const [results, pins, session, lastSynced] = await Promise.all([
+  const [results, pins, session, lastSynced, bedOnMainUpdating] = await Promise.all([
     searchListings(criteria, scope, run),
     searchMapPins(criteria, scope, run),
     getSession(),
     gamlsLastSyncedAt(db),
+    bedroomOnMainDataUpdating(),
   ]);
   // Any timeout (the pins' too): the page says so instead of showing counts or "no homes".
   const incomplete = results.incomplete || run.timedOut;
@@ -101,6 +103,7 @@ export default async function SearchPage(props: PageProps<"/homes">) {
       signedIn={!!session}
       emptyHelp={!incomplete && results.total === 0 ? await emptyHelp(criteria, scope) : undefined}
       mlsDisclaimer={mlsDisclaimer(lastSynced)}
+      bedOnMainUpdating={bedOnMainUpdating}
     />
   );
 }

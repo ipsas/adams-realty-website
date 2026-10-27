@@ -105,6 +105,8 @@ export const FEATURE_FLAGS = [
   "virtualTour",
   "ourListings",
   "fireplace",
+  "primaryOnMain",
+  "bedOnMain",
 ] as const;
 export type FeatureFlag = (typeof FEATURE_FLAGS)[number];
 

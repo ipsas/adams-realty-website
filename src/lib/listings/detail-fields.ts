@@ -18,6 +18,8 @@ export type DetailListing = {
   features: ListingFeatures;
   fireplacesTotal: number | null;
   parkingTotal: number | null;
+  mainLevelBedrooms: number | null;
+  primaryBedroomOnMain: boolean | null;
   garageSpaces: number | null;
   lotSizeSqft: number | null;
   lotSizeDimensions: string | null;
@@ -108,6 +110,15 @@ export function listingDetailGroups(l: DetailListing): DetailGroup[] {
     [
       "Interior",
       [
+        // Known values only; 0 main-level bedrooms is a fact, unlike 0 fireplaces.
+        [
+          "Bedrooms on main level",
+          l.mainLevelBedrooms === null ? null : String(l.mainLevelBedrooms),
+        ],
+        [
+          "Primary bedroom on main",
+          l.primaryBedroomOnMain === null ? null : l.primaryBedroomOnMain ? "Yes" : "No",
+        ],
         ["Fireplaces", count(l.fireplacesTotal)],
         ["Fireplace features", list(f.fireplace)],
         ["Basement", list(f.basement)],

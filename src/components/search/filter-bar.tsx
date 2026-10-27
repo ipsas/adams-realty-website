@@ -41,10 +41,12 @@ const VISIBLE_TYPES: PropertyTypeValue[] = [
 export function FilterBar({
   criteria: c,
   update,
+  bedOnMainUpdating,
 }: {
   criteria: SearchCriteria;
   update: SearchUpdate;
   signedIn: boolean;
+  bedOnMainUpdating: boolean;
 }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const extra = countActiveFilters({
@@ -163,6 +165,7 @@ export function FilterBar({
         onClose={() => setMoreOpen(false)}
         criteria={c}
         update={update}
+        bedOnMainUpdating={bedOnMainUpdating}
       />
     </div>
   );
