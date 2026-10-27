@@ -127,6 +127,9 @@ describe("a preview branch claimed through search_path spoofs", () => {
     expect(lines).toContain("Database branch check: neon.project_id pg_settings source=none");
     expect(lines).toContain("Database branch check: host endpoint=none");
     expect(lines).toContain("Database branch check: neon.* role/database settings=0");
+    expect(lines).toContain(
+      "Database branch check: neon.branch_id has no pg_settings row; not trusted, ignored.",
+    );
     const { password, hostname } = new URL(testUrl());
     for (const line of lines) {
       expect(line).not.toContain("postgres://");
@@ -139,5 +142,79 @@ describe("a preview branch claimed through search_path spoofs", () => {
     const lines: string[] = [];
     expect(await neonBranchVerdict(testUrl(), "Test", (l) => lines.push(l))).toBe("refuse");
     expect(lines).toContain("Test branch check: project=null branch=null -> refuse");
+  });
+});
+
+/**
+ * Defaults a database owner or the role itself can store in
+ * pg_db_role_setting. On vanilla Postgres neon.* are placeholders with no
+ * pg_settings row, so SHOW reports the stored value.
+ */
+const SET_IDS = `set neon.project_id = '${PREVIEW_PROJECT}'`;
+const SET_BRANCH = `set neon.branch_id = '${PREVIEW_BRANCH}'`;
+
+function alterEach(target: string, action: string): string {
+  return `do $$ begin
+    execute format('alter ${target} ${action.replaceAll("'", "''")}', current_user, current_database());
+  end $$;`;
+}
+
+const TARGETS = [
+  ["ALTER DATABASE", "database %2$I"],
+  ["ALTER ROLE", "role %1$I"],
+  ["ALTER ROLE ... IN DATABASE", "role %1$I in database %2$I"],
+] as const;
+
+async function resetAll(): Promise<void> {
+  for (const [, target] of TARGETS) {
+    await admin(
+      alterEach(target, "reset neon.project_id") + alterEach(target, "reset neon.branch_id"),
+    );
+  }
+}
+
+describe.each(TARGETS)("a preview branch claimed through %s", (_, target) => {
+  beforeAll(resetAll);
+  afterAll(resetAll);
+
+  beforeAll(async () => {
+    await admin(alterEach(target, SET_IDS) + alterEach(target, SET_BRANCH));
+  });
+
+  it("does fool a plain pg client (the attack)", async () => {
+    expect(await showBranch(testUrl())).toBe(PREVIEW_BRANCH);
+  });
+
+  it("is refused by buildDbVerdict on a preview build", async () => {
+    process.env.VERCEL_ENV = "preview";
+    const lines: string[] = [];
+    expect(await buildDbVerdict(testUrl(), (l) => lines.push(l))).toBe("refuse");
+    expect(lines).toContain(
+      "Database branch check: env=preview project=null branch=null -> refuse",
+    );
+    expect(lines).toContain("Database branch check: neon.* role/database settings=2");
+    expect(lines).toContain(
+      "Database branch check: neon.* role/database settings exist; not trusted, ignored.",
+    );
+    expect(lines).toContain(
+      "Database branch check: neon.project_id has no pg_settings row; not trusted, ignored.",
+    );
+    expect(lines).toContain(
+      "Database branch check: neon.branch_id has no pg_settings row; not trusted, ignored.",
+    );
+    for (const line of lines) {
+      expect(line).not.toContain(PREVIEW_BRANCH);
+      expect(line).not.toContain(PREVIEW_PROJECT);
+    }
+  });
+
+  it("is refused by neonBranchVerdict", async () => {
+    const lines: string[] = [];
+    expect(await neonBranchVerdict(testUrl(), "Test", (l) => lines.push(l))).toBe("refuse");
+    expect(lines).toContain("Test branch check: project=null branch=null -> refuse");
+    expect(lines).toContain("Test branch check: neon.* role/database settings=2");
+    expect(lines).toContain(
+      "Test branch check: neon.* role/database settings exist; not trusted, ignored.",
+    );
   });
 });

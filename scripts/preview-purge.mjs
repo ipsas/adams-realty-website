@@ -10,9 +10,10 @@ import pg from "pg";
 import {
   buildDbDecision,
   checkBranch,
-  isUntrustedSettingSource,
+  isTrustedSettingSource,
   newBranchCheckClient,
   purgeDecision,
+  trustedNeonIds,
 } from "../src/lib/mls/preview-purge.mjs";
 
 export { buildDbDecision, checkBranch, purgeDecision };
@@ -28,9 +29,7 @@ const SOURCE_SLUGS = ["demo-mls", "gamls"];
 /** A setting's value, or null if it does not exist. */
 async function showSetting(client, name) {
   try {
-    const { rows } = await client.query("select pg_catalog.current_setting($1, true) as v", [
-      name,
-    ]);
+    const { rows } = await client.query("select pg_catalog.current_setting($1, true) as v", [name]);
     return rows[0]?.v || null;
   } catch {
     return null;
@@ -67,31 +66,32 @@ async function neonRoleSettingCount(client) {
 }
 
 /**
- * The connection's Neon ids. An id whose pg_settings source a client or
- * database owner can set is dropped (logged by setting and source, never the
- * value), so the verdict treats it as missing. No pg_settings row is fine:
- * the client was opened without startup options (newBranchCheckClient).
+ * The connection's Neon ids, as trustedNeonIds decides: an id is trusted only
+ * from a pg_settings row whose source is "configuration file" or "command
+ * line", and only when no neon.* role/database settings exist. An untrusted id
+ * is null (logged by condition, never the value), so the verdict treats it as
+ * missing.
  */
 async function neonIds(client, label, log) {
-  const ids = {};
-  for (const [key, name] of [
-    ["projectId", "neon.project_id"],
-    ["branchId", "neon.branch_id"],
-  ]) {
+  /** @type {Record<string, { source: string | null, value: string | null }>} */
+  const settings = {};
+  for (const name of ["neon.project_id", "neon.branch_id"]) {
     const { rows } = await client.query(
       "select source from pg_catalog.pg_settings where name OPERATOR(pg_catalog.=) $1",
       [name],
     );
     const source = rows[0]?.source ?? null;
     log(`${label} branch check: ${name} pg_settings source=${source ?? "none"}`);
-    if (isUntrustedSettingSource(source)) {
-      log(`${label} branch check: ${name} comes from source "${source}"; not trusted, ignored.`);
-      ids[key] = null;
-    } else {
-      ids[key] = await showSetting(client, name);
-    }
+    settings[name] = {
+      source,
+      value: isTrustedSettingSource(source) ? await showSetting(client, name) : null,
+    };
   }
-  return ids;
+  const roleSettings = await neonRoleSettingCount(client);
+  log(`${label} branch check: neon.* role/database settings=${roleSettings ?? "unreadable"}`);
+  const { projectId, branchId, reasons } = trustedNeonIds({ settings, roleSettings });
+  for (const reason of reasons) log(`${label} branch check: ${reason}; not trusted, ignored.`);
+  return { projectId, branchId };
 }
 
 async function counts(client) {
@@ -150,8 +150,6 @@ export async function buildDbVerdict(connectionString, log = console.log) {
   try {
     log(`Database branch check: host endpoint=${neonEndpointLabel(connectionString) ?? "none"}`);
     const { projectId, branchId } = await neonIds(client, "Database", log);
-    const n = await neonRoleSettingCount(client);
-    log(`Database branch check: neon.* role/database settings=${n ?? "unreadable"}`);
     const env = process.env.VERCEL_ENV;
     const verdict = buildDbDecision(env, { projectId, branchId });
     log(`Database branch check: env=${env} project=${projectId} branch=${branchId} -> ${verdict}`);

@@ -8,9 +8,10 @@ import {
   branchCheckConfig,
   buildDbDecision,
   checkBranch,
-  isUntrustedSettingSource,
+  isTrustedSettingSource,
   newBranchCheckClient,
   purgeDecision,
+  trustedNeonIds,
 } from "./preview-purge.mjs";
 
 const FORGED = `-c neon.branch_id=${PREVIEW_BRANCH} -c neon.project_id=${PREVIEW_PROJECT}`;
@@ -96,23 +97,110 @@ describe("neonEndpointLabel", () => {
   });
 });
 
-describe("isUntrustedSettingSource", () => {
-  it("distrusts sources a client or database owner can set", () => {
-    for (const s of ["client", "session", "user", "database", "database user"]) {
-      expect(isUntrustedSettingSource(s)).toBe(true);
+describe("isTrustedSettingSource", () => {
+  it("trusts only server-side sources", () => {
+    for (const s of ["configuration file", "command line"]) {
+      expect(isTrustedSettingSource(s)).toBe(true);
     }
   });
 
-  it("trusts server-side sources and a missing row", () => {
+  it("distrusts a missing row and every other source", () => {
     for (const s of [
-      "configuration file",
-      "command line",
-      "default",
-      "override",
       null,
       undefined,
+      "client",
+      "session",
+      "user",
+      "database",
+      "database user",
+      "default",
+      "override",
+      "environment variable",
     ]) {
-      expect(isUntrustedSettingSource(s)).toBe(false);
+      expect(isTrustedSettingSource(s)).toBe(false);
+    }
+  });
+});
+
+describe("trustedNeonIds", () => {
+  const fromConfig = {
+    "neon.project_id": { source: "configuration file", value: PREVIEW_PROJECT },
+    "neon.branch_id": { source: "configuration file", value: PREVIEW_BRANCH },
+  };
+
+  it("keeps both ids on Neon (configuration file, no role/database settings)", () => {
+    expect(trustedNeonIds({ settings: fromConfig, roleSettings: 0 })).toEqual({
+      projectId: PREVIEW_PROJECT,
+      branchId: PREVIEW_BRANCH,
+      reasons: [],
+    });
+  });
+
+  it("drops an id with no pg_settings row", () => {
+    const out = trustedNeonIds({
+      settings: { "neon.project_id": fromConfig["neon.project_id"] },
+      roleSettings: 0,
+    });
+    expect(out).toEqual({
+      projectId: PREVIEW_PROJECT,
+      branchId: null,
+      reasons: ["neon.branch_id has no pg_settings row"],
+    });
+  });
+
+  it("drops an id whose source is null", () => {
+    const out = trustedNeonIds({
+      settings: { ...fromConfig, "neon.project_id": { source: null, value: PREVIEW_PROJECT } },
+      roleSettings: 0,
+    });
+    expect(out).toEqual({
+      projectId: null,
+      branchId: PREVIEW_BRANCH,
+      reasons: ["neon.project_id has no pg_settings row"],
+    });
+  });
+
+  it('drops an id from source "database"', () => {
+    const out = trustedNeonIds({
+      settings: { ...fromConfig, "neon.branch_id": { source: "database", value: PREVIEW_BRANCH } },
+      roleSettings: 0,
+    });
+    expect(out).toEqual({
+      projectId: PREVIEW_PROJECT,
+      branchId: null,
+      reasons: ['neon.branch_id comes from source "database"'],
+    });
+  });
+
+  it("drops both ids if a neon.* role/database setting exists", () => {
+    const out = trustedNeonIds({ settings: fromConfig, roleSettings: 1 });
+    expect(out).toEqual({
+      projectId: null,
+      branchId: null,
+      reasons: ["neon.* role/database settings exist"],
+    });
+  });
+
+  it("drops both ids if the role/database settings are unreadable", () => {
+    const out = trustedNeonIds({ settings: fromConfig, roleSettings: null });
+    expect(out).toEqual({
+      projectId: null,
+      branchId: null,
+      reasons: ["neon.* role/database settings are unreadable"],
+    });
+  });
+
+  it("never puts a value in a reason", () => {
+    const { reasons } = trustedNeonIds({
+      settings: {
+        "neon.project_id": { source: "client", value: PREVIEW_PROJECT },
+        "neon.branch_id": { source: null, value: PREVIEW_BRANCH },
+      },
+      roleSettings: 2,
+    });
+    for (const r of reasons) {
+      expect(r).not.toContain(PREVIEW_PROJECT);
+      expect(r).not.toContain(PREVIEW_BRANCH);
     }
   });
 });

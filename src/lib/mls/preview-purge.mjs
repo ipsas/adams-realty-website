@@ -58,16 +58,58 @@ export function newBranchCheckClient(Client, connectionString) {
 }
 
 /**
- * pg_settings sources a client or database owner can set, so a Neon id from
- * one of them proves nothing about the branch.
+ * pg_settings sources a Neon id is trusted from: set on the server, which a
+ * client or database owner cannot do. ALTER SYSTEM also yields "configuration
+ * file" but needs superuser, which Neon does not give app roles. On Neon the
+ * ids come from the configuration file; on vanilla Postgres neon.* are
+ * placeholders with no pg_settings row, so an id set there (startup options,
+ * SET, ALTER DATABASE / ROLE) is never trusted.
  */
-export const UNTRUSTED_SETTING_SOURCES = ["client", "session", "user", "database", "database user"];
+export const TRUSTED_SETTING_SOURCES = ["configuration file", "command line"];
 
 /**
  * @param {string | null | undefined} source pg_settings.source, or null if there is no row
  */
-export function isUntrustedSettingSource(source) {
-  return source != null && UNTRUSTED_SETTING_SOURCES.includes(source);
+export function isTrustedSettingSource(source) {
+  return source != null && TRUSTED_SETTING_SOURCES.includes(source);
+}
+
+/** @typedef {{ source: string | null, value: string | null }} NeonSetting */
+
+/**
+ * Which of the connection's Neon ids to trust. An id is kept only if its
+ * pg_settings row has a trusted source and pg_db_role_setting holds no neon.*
+ * entry (ALTER DATABASE / ALTER ROLE / ALTER ROLE IN DATABASE); an unreadable
+ * count fails closed. Reasons name the condition, never a value.
+ * @param {{
+ *   settings: Record<string, NeonSetting | undefined>,
+ *   roleSettings: number | null,
+ * }} input settings by "neon.project_id"/"neon.branch_id"; roleSettings is the
+ *   count of neon.* entries in pg_db_role_setting, or null if unreadable
+ * @returns {{ projectId: string | null, branchId: string | null, reasons: string[] }}
+ */
+export function trustedNeonIds({ settings, roleSettings }) {
+  /** @type {string[]} */
+  const reasons = [];
+  const roleOk = roleSettings === 0;
+  if (roleSettings == null) reasons.push("neon.* role/database settings are unreadable");
+  else if (!roleOk) reasons.push("neon.* role/database settings exist");
+  /** @param {string} name */
+  const id = (name) => {
+    const source = settings[name]?.source ?? null;
+    if (source == null) {
+      reasons.push(`${name} has no pg_settings row`);
+      return null;
+    }
+    if (!isTrustedSettingSource(source)) {
+      reasons.push(`${name} comes from source "${source}"`);
+      return null;
+    }
+    return roleOk ? settings[name]?.value || null : null;
+  };
+  const projectId = id("neon.project_id");
+  const branchId = id("neon.branch_id");
+  return { projectId, branchId, reasons };
 }
 
 /**
