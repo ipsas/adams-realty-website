@@ -376,7 +376,7 @@ function popupNode(p: MapPin): HTMLElement {
       img.alt = site.mls.name;
       img.width = logo.width;
       img.height = logo.height;
-      img.className = "h-8 w-auto rounded-sm dark:bg-white dark:px-0.5";
+      img.className = "h-5 w-auto rounded-sm dark:bg-white dark:px-0.5";
       credit.append(img);
     }
     credit.append(mlsCopyrightShort());

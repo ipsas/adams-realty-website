@@ -167,7 +167,7 @@ Use your model table: Opus High for the work packages, and Xhigh if one gets stu
       confirms the IDX license allows statewide display.
 - [x] **Georgia MLS logo.** Done: the official GAMLS IDX logo is `public/brand/gamls_idx.png`,
       set in `site.mls.logo` (`src/config/site.ts`); feed cards, area tiles and map popups also
-      carry it at 24 px with "© <year> Georgia MLS". The IDX disclaimer is still a placeholder
+      carry it at 20 px with "© <year> Georgia MLS". The IDX disclaimer is still a placeholder
       (`site.mls.disclaimer`).
 - [x] **The firm's own Coming Soon, Withdrawn, Expired and Canceled listings.** Decided: hidden
       from the public like Georgia MLS ones (`drizzle/0011`). Agents still see and edit them in

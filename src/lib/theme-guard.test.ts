@@ -46,7 +46,7 @@ const ALLOW_WHITE: { file: string; classes: RegExp }[] = [
   },
   {
     file: "src/components/search/search-map.tsx",
-    classes: /^h-8 w-auto rounded-sm dark:bg-white dark:px-0\.5$/,
+    classes: /^h-5 w-auto rounded-sm dark:bg-white dark:px-0\.5$/,
   },
 ];
 
