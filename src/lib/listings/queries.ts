@@ -179,7 +179,11 @@ export async function getAgentListings(
         includeClosed ? or(live, and(...soldWithin())) : live,
       ),
     )
-    .orderBy(sql`${listings.status} = 'closed'`, sql`${listings.listDate} desc nulls last`)
+    .orderBy(
+      sql`${listings.status} = 'closed'`,
+      sql`${listings.listDate} desc nulls last`,
+      listings.id,
+    )
     .limit(limit);
   return withPhotos(db, rows);
 }
