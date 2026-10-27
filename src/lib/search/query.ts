@@ -132,9 +132,10 @@ export function defaultTypesCondition(): SQL {
 /**
  * Listed in the last `days` days: the "Days on market" filter, and the home
  * page's "New this week" count, which must match what its link lists.
+ * Counted in America/New_York local days (`marketDateDaysAgo`), like `soldWithin`.
  */
 export function listedWithin(days: number, now: Date = new Date()): SQL {
-  const since = new Date(now.getTime() - days * 86_400_000).toISOString().slice(0, 10);
+  const since = marketDateDaysAgo(days, now);
   return gte(listings.listDate, since);
 }
 

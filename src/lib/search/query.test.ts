@@ -7,6 +7,7 @@ import {
   buildWhere,
   hasLocation,
   lakeGuide,
+  listedWithin,
   MAX_PLAUSIBLE_LOT_SQFT,
   normalizeLocationQuery,
   soldWithin,
@@ -55,6 +56,15 @@ describe("buildWhere", () => {
     // 10pm EDT on Oct 26 is Oct 27 in UTC: the window still starts at Oct 26 minus 365 days.
     const where = soldWithin(365, new Date("2026-10-27T02:00:00Z"));
     expect(dialect.sqlToQuery(where[2]!).params).toEqual(["2025-10-26"]);
+  });
+
+  it("counts the listed-within window from the New York calendar date", () => {
+    // 10pm EDT on Oct 26 is Oct 27 in UTC: the window still starts at Oct 26 minus 7 days.
+    const late = listedWithin(7, new Date("2026-10-27T02:00:00Z"));
+    expect(dialect.sqlToQuery(late).params).toEqual(["2026-10-19"]);
+    // 00:30 EDT on Oct 27: the New York date has turned over too.
+    const after = listedWithin(7, new Date("2026-10-27T04:30:00Z"));
+    expect(dialect.sqlToQuery(after).params).toEqual(["2026-10-20"]);
   });
 
   it("matches ZIP codes exactly", () => {
