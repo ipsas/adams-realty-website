@@ -209,30 +209,76 @@ export class PageRejectedError extends SyncError {
 
 /**
  * A run quarantines at most this many records. A page whose rejected rows
- * would take the run past it is not quarantined: the run fails with
- * QuarantineRefusedError (so the cron alert fires) and the cursor stays put,
- * so a feed whose records are nearly all rejected can't drain into
- * sync_quarantine. It must stay above MAX_REJECTED_FRACTION of the feed's
- * page size (200 records: a page fails with 101 rejected), or no full page
- * could ever be quarantined.
+ * would take the run past it is not quarantined at first: the run fails with
+ * QuarantineRefusedError (admins are emailed) and the cursor stays put, so a
+ * feed whose records are nearly all rejected can't drain into sync_quarantine
+ * unnoticed. The refusal is bounded: on the QUARANTINE_ESCALATE_AT_REFUSAL-th
+ * refusal at the same cursor the page is quarantined regardless of this cap.
+ * It must stay above MAX_REJECTED_FRACTION of the feed's page size (200
+ * records: a page fails with 101 rejected), or no full page could ever be
+ * quarantined without that escalation.
  */
 export const QUARANTINE_MAX_PER_RUN = 150;
 
 /**
- * A page due for quarantine that must not be: too many rejected rows for the
- * run (QUARANTINE_MAX_PER_RUN), or every row of it (at least
+ * The refusal (QuarantineRefusedError) at one cursor that is not held but
+ * escalated: the page is quarantined anyway, past QUARANTINE_MAX_PER_RUN and
+ * even when every row was rejected, and the cursor moves on. Refusals 1–3
+ * hold the page (about an hour at the 15-minute cron), each emailing the
+ * admins; the 4th quarantines it and emails them that it did. Counted in the
+ * source's rejection streak (RejectionStreak), so it survives across runs.
+ */
+export const QUARANTINE_ESCALATE_AT_REFUSAL = 4;
+
+/**
+ * A page due for quarantine that must not be, yet: too many rejected rows for
+ * the run (QUARANTINE_MAX_PER_RUN), or every row of it (at least
  * MIN_ROWS_FOR_REJECTED_FRACTION) rejected, which means a schema or feed
- * problem, not bad records. Nothing of the page is written or quarantined, the
- * cursor stays, and every run fails so until someone fixes the cause.
+ * problem, not bad records. Nothing of the page is written or quarantined and
+ * the cursor stays; the run fails and admins are emailed. Bounded: the
+ * QUARANTINE_ESCALATE_AT_REFUSAL-th refusal at the same cursor quarantines
+ * the page anyway (writeIsolated's `escalate`), so the sync can't stall forever.
+ * `firstErrorClass` (errorClass) names the first rejection's kind, with no values.
  */
 export class QuarantineRefusedError extends SyncError {
-  constructor(rejected: number, total: number, why: string, firstReason: string) {
+  constructor(
+    readonly rejected: number,
+    readonly total: number,
+    why: string,
+    firstReason: string,
+    readonly firstErrorClass: string,
+  ) {
     super(
       `${rejected} of ${total} rows rejected on a page due for quarantine; ${why}, so nothing ` +
         `was quarantined and the cursor stays. First error: ${firstReason}`,
     );
     this.name = "QuarantineRefusedError";
   }
+}
+
+/**
+ * What kind of error rejected a row, with no row values, listing keys or
+ * messages: the SQLSTATE of a Postgres error (with its constraint, column
+ * and table names), the fields of an InvalidRowError, else the error's name.
+ * For alerts (email), where describeError's detail isn't wanted.
+ */
+export function errorClass(error: unknown): string {
+  const pg = pgError(error);
+  if (pg) {
+    const names = (["table", "column", "constraint"] as const)
+      .map((k) => (typeof pg[k] === "string" && pg[k] !== "" ? `${k} ${pg[k]}` : null))
+      .filter((n) => n !== null);
+    return redactPersonal(
+      `Postgres error ${String(pg.code)}${names.length ? ` (${names.join(", ")})` : ""}`,
+    );
+  }
+  const invalid = causeChain(error).find((e) => e instanceof InvalidRowError);
+  if (invalid) {
+    const fields = [...new Set(invalid.issues.map((i) => i.field))].join(", ");
+    return redactPersonal(`InvalidRowError (${fields})`);
+  }
+  const inner = causeChain(error).find((e) => !(e instanceof DrizzleQueryError));
+  return redactPersonal(inner instanceof Error ? inner.name : "Unknown error");
 }
 
 /**
@@ -259,7 +305,8 @@ export function isRowLevelError(error: unknown): boolean {
  * were written. Fewer records never throw, even if all fail. A quarantined
  * page throws QuarantineRefusedError instead when every one of at least
  * MIN_ROWS_FOR_REJECTED_FRACTION records fails, or more than
- * `opts.maxQuarantined` do. `items` are the
+ * `opts.maxQuarantined` do, unless `opts.escalate` (the refusal was escalated:
+ * QUARANTINE_ESCALATE_AT_REFUSAL): then it never refuses. `items` are the
  * page's records handed to the database: the base of the fraction.
  * `onRowFailed` is called for each skipped record only once the page is known
  * not to throw; a caller in a transaction should still hold its logs until it
@@ -269,7 +316,7 @@ export async function writeIsolated<T, R>(
   items: T[],
   write: (batch: T[]) => Promise<R[]>,
   onRowFailed: (item: T, error: unknown) => void,
-  opts: { allowRejected?: boolean; maxQuarantined?: number } = {},
+  opts: { allowRejected?: boolean; maxQuarantined?: number; escalate?: boolean } = {},
 ): Promise<{ results: R[]; failed: T[] }> {
   const results: R[] = [];
   const failed: T[] = [];
@@ -300,7 +347,7 @@ export async function writeIsolated<T, R>(
   ) {
     throw new PageRejectedError(failed.length, items.length, describeError(firstError));
   }
-  if (opts.allowRejected && failed.length) {
+  if (opts.allowRejected && !opts.escalate && failed.length) {
     const why =
       items.length >= MIN_ROWS_FOR_REJECTED_FRACTION && failed.length === items.length
         ? "the whole page was rejected (a schema or feed problem?)"
@@ -308,7 +355,13 @@ export async function writeIsolated<T, R>(
           ? `more than the run's quarantine cap allows (${opts.maxQuarantined} left of ${QUARANTINE_MAX_PER_RUN})`
           : null;
     if (why) {
-      throw new QuarantineRefusedError(failed.length, items.length, why, describeError(firstError));
+      throw new QuarantineRefusedError(
+        failed.length,
+        items.length,
+        why,
+        describeError(firstError),
+        errorClass(firstError),
+      );
     }
   }
   failed.forEach((item, i) => onRowFailed(item, errors[i]));

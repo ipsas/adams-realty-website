@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { InvalidRowError } from "@/lib/listings/sanitize";
 import {
   describeError,
+  errorClass,
   isRowLevelError,
   MAX_ERROR_LENGTH,
   PageRejectedError,
@@ -117,6 +118,23 @@ describe("describeError", () => {
     ]);
     expect(describeError(invalid)).toBe(invalid.message);
     expect(describeError("boom")).toBe("boom");
+  });
+
+  it("errorClass names the kind of error, with no values, keys or messages", () => {
+    expect(
+      errorClass(
+        pgError("23505", "duplicate key", {
+          table: "listings",
+          constraint: "listings_pkey",
+          detail: "Key (id)=(12 Main St) already exists.",
+        }),
+      ),
+    ).toBe("Postgres error 23505 (table listings, constraint listings_pkey)");
+    const invalid = new InvalidRowError("listing K1", [
+      { field: "listPrice", value: 3e9, reason: "out of range for integer" },
+    ]);
+    expect(errorClass(invalid)).toBe("InvalidRowError (listPrice)");
+    expect(errorClass(new TypeError("Cannot read 'x' of jane@example.com"))).toBe("TypeError");
   });
 
   it("keeps an encoding error's encoding, not its bytes (22021)", () => {
@@ -386,6 +404,35 @@ describe("writeIsolated", () => {
     await expect(writeIsolated(items, write, vi.fn(), { maxQuarantined: 0 })).rejects.toThrow(
       PageRejectedError,
     );
+  });
+
+  it("never refuses an escalated quarantine: the whole page, past the cap", async () => {
+    const items = Array.from({ length: 10 }, (_, i) => i);
+    const out = await writeIsolated(
+      items,
+      async () => {
+        throw outOfRange();
+      },
+      vi.fn(),
+      { allowRejected: true, maxQuarantined: 0, escalate: true },
+    );
+    expect(out.failed).toEqual(items);
+  });
+
+  it("a refusal carries its counts and the first error's class, without values", async () => {
+    const error = await writeIsolated(
+      Array.from({ length: 10 }, (_, i) => i),
+      async () => {
+        throw outOfRange();
+      },
+      vi.fn(),
+      { allowRejected: true },
+    ).catch((e: unknown) => e);
+    expect(error).toMatchObject({
+      rejected: 10,
+      total: 10,
+      firstErrorClass: "Postgres error 22003",
+    });
   });
 
   it("skips isolated rows below the thresholds, as before", async () => {

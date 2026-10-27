@@ -5,6 +5,7 @@ import { refreshPlaces } from "@/lib/listings/places";
 import { ownOfficeIds } from "./gamls";
 import { OFFICE_MIN_REMAINING_MS, officeLookupStore, refreshOffices } from "./office-lookup";
 import { missingCredentials, ResoWebApiProvider } from "./reso/provider";
+import { adminRecipients, sendSyncAlert } from "./sync-alerts";
 import { runSync, type RunSyncOptions, type SyncResult } from "./sync-engine";
 import { createSyncStore } from "./sync-store";
 import type { ListingProvider } from "./types";
@@ -68,8 +69,10 @@ export class SyncFailedError extends SyncError {
  * A live-only source also re-reads the firm's own closed sales (purge and
  * full runs, and incremental ones every 20 hours: OWN_CLOSED_INTERVAL_MS).
  * Afterwards, if anything changed (even in a run that then failed), the
- * autocomplete places are rebuilt. The caller revalidates the page caches (it
- * may not be inside Next): on failure, a SyncFailedError says whether to.
+ * autocomplete places are rebuilt. A refused or escalated quarantine emails
+ * the admins (./sync-alerts.ts) unless `opts.alert` replaces it. The caller
+ * revalidates the page caches (it may not be inside Next): on failure, a
+ * SyncFailedError says whether to.
  */
 export async function syncSource(sourceId: string, opts: SyncOptions = {}): Promise<SyncResult> {
   const [source] = await db.select().from(dataSources).where(eq(dataSources.id, sourceId));
@@ -83,7 +86,12 @@ export async function syncSource(sourceId: string, opts: SyncOptions = {}): Prom
       store,
       () => (feed = provider ?? createProvider(source, { deadline: runOpts.deadline })),
       // The source's config decides, after the caller's options, so they can't drop it.
-      { ...runOpts, liveOnly: source.config.liveOnly === true },
+      {
+        alert: (alert) =>
+          sendSyncAlert(source.slug, alert, { recipients: () => adminRecipients(db) }),
+        ...runOpts,
+        liveOnly: source.config.liveOnly === true,
+      },
     );
   } catch (e) {
     const changed = store.changedListings();

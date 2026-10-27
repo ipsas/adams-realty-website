@@ -17,6 +17,7 @@ import {
   type PageOutcome,
   type RejectionStreak,
   type RunOutcome,
+  type SyncAlert,
   type SyncCounts,
   type SyncCursor,
   type SyncMode,
@@ -34,6 +35,7 @@ import {
   describeError,
   PageRejectedError,
   QUARANTINE_AFTER_FAILURES,
+  QUARANTINE_ESCALATE_AT_REFUSAL,
   QUARANTINE_MAX_PER_RUN,
   QuarantineRefusedError,
   writeIsolated,
@@ -181,7 +183,13 @@ class MemoryStore implements SyncStore {
       skipUnchanged,
       quarantine,
       maxQuarantined,
-    }: { skipUnchanged: boolean; quarantine?: RejectionStreak; maxQuarantined?: number },
+      escalate,
+    }: {
+      skipUnchanged: boolean;
+      quarantine?: RejectionStreak;
+      maxQuarantined?: number;
+      escalate?: boolean;
+    },
   ): Promise<PageOutcome> {
     this.skipFlags.push(skipUnchanged);
     this.pageCursors.push(cursor);
@@ -226,7 +234,7 @@ class MemoryStore implements SyncStore {
         return batch;
       },
       (n, error) => rejected.push({ n, reason: describeError(error) }),
-      { allowRejected: quarantine !== undefined, maxQuarantined },
+      { allowRejected: quarantine !== undefined, maxQuarantined, escalate },
     ).catch((error: unknown) => {
       this.listings = snapshot;
       throw error;
@@ -897,8 +905,8 @@ describe("runSync: quarantine after repeated page rejections", () => {
     expect(store.runs.at(-1)!.error).toMatch(
       /^10 of 10 rows rejected on a page due for quarantine; the whole page was rejected/,
     );
-    // The streak stands, so every run fails (and alerts) until the cause is fixed.
-    expect(store.streak).toEqual({ at: page1End, failures: QUARANTINE_AFTER_FAILURES });
+    // The refusal counts in the streak, towards its escalation.
+    expect(store.streak).toEqual({ at: page1End, failures: QUARANTINE_AFTER_FAILURES + 1 });
     await expect(runSync(store, provider, { now: clock })).rejects.toThrow(QuarantineRefusedError);
     expect(store.cursor).toEqual(page1End);
   });
@@ -1030,6 +1038,174 @@ describe("runSync: quarantine after repeated page rejections", () => {
     seedLive(store, 10);
     await runSync(store, keyFeed(keysOf(10)).provider, { mode: "purge", now: clock });
     expect(store.streak).toEqual({ at, failures: 2 });
+  });
+});
+
+describe("runSync: a refused quarantine escalates on the 4th refusal", () => {
+  const positionAfter = (r: MapResult): SyncCursor => ({
+    modifiedAt: new Date(modifiedOf(r)),
+    key: keyOf(r),
+  });
+  let alerts: SyncAlert[];
+  const alert = async (a: SyncAlert) => {
+    alerts.push(a);
+  };
+  beforeEach(() => {
+    alerts = [];
+  });
+  /** QUARANTINE_AFTER_FAILURES rejections at the cursor, as before any refusal. */
+  const rejectUntilDue = async (provider: ListingProvider, mode?: SyncMode) => {
+    for (let run = 1; run <= QUARANTINE_AFTER_FAILURES; run++) {
+      await expect(runSync(store, provider, { mode, now: clock, alert })).rejects.toThrow(
+        PageRejectedError,
+      );
+    }
+    expect(alerts).toEqual([]);
+  };
+
+  for (const mode of ["incremental", "full"] as const) {
+    it(`${mode}: refusals 1-3 hold the cursor and alert; the 4th quarantines past the cap, advances and alerts`, async () => {
+      // 180 of 200 rows of page 2 rejected: more than QUARANTINE_MAX_PER_RUN.
+      const { provider, records } = feed(3);
+      for (const r of records.slice(200, 380)) store.rejectKeys.add(keyOf(r));
+      const page1End = positionAfter(records[199]);
+      await rejectUntilDue(provider, mode);
+      const expected = (refusal: number, escalated: boolean): SyncAlert => ({
+        mode,
+        at: page1End.modifiedAt,
+        atKey: page1End.key,
+        refusal,
+        escalated,
+        rejected: 180,
+        total: 200,
+        firstErrorClass: "Postgres error 22003",
+      });
+      for (let refusal = 1; refusal < QUARANTINE_ESCALATE_AT_REFUSAL; refusal++) {
+        await expect(runSync(store, provider, { mode, now: clock, alert })).rejects.toThrow(
+          QuarantineRefusedError,
+        );
+        expect(store.cursor).toEqual(page1End);
+        expect(store.quarantine.size).toBe(0);
+        expect(store.live()).toBe(200);
+        expect(store.streak).toEqual({
+          at: page1End,
+          failures: QUARANTINE_AFTER_FAILURES + refusal,
+        });
+        expect(alerts.at(-1)).toEqual(expected(refusal, false));
+      }
+      expect(alerts).toHaveLength(3);
+
+      const result = await runSync(store, provider, { mode, now: clock, alert });
+      expect(result).toMatchObject({ status: "partial", quarantined: 180 });
+      expect(store.quarantine.size).toBe(180);
+      expect(store.live()).toBe(200 + 20 + 200);
+      expect(store.cursor).toEqual({ modifiedAt: new Date(modifiedOf(records[599])), key: null });
+      expect(store.streak).toBeNull();
+      expect(alerts).toHaveLength(4);
+      expect(alerts.at(-1)).toEqual(expected(QUARANTINE_ESCALATE_AT_REFUSAL, true));
+      expect(store.runs.at(-1)!.error).toMatch(/refusal 4 at this cursor escalated/);
+    });
+  }
+
+  it("escalates a fully rejected page the same way", async () => {
+    const { provider, records } = feed(2, 10);
+    for (const r of records.slice(10)) store.rejectKeys.add(keyOf(r));
+    await rejectUntilDue(provider);
+    for (let refusal = 1; refusal < QUARANTINE_ESCALATE_AT_REFUSAL; refusal++) {
+      await expect(runSync(store, provider, { now: clock, alert })).rejects.toThrow(
+        /the whole page was rejected/,
+      );
+    }
+    expect(await runSync(store, provider, { now: clock, alert })).toMatchObject({
+      status: "partial",
+      quarantined: 10,
+    });
+    expect(store.cursor).toEqual({ modifiedAt: new Date(modifiedOf(records[19])), key: null });
+    expect(alerts.map((a) => [a.refusal, a.escalated])).toEqual([
+      [1, false],
+      [2, false],
+      [3, false],
+      [4, true],
+    ]);
+  });
+
+  it("the streak, refusals included, ends with a successful run", async () => {
+    const { provider, records } = feed(2);
+    const reject = (n: number) => {
+      store.rejectKeys = new Set(records.slice(200, 200 + n).map(keyOf));
+    };
+    reject(180);
+    await rejectUntilDue(provider);
+    for (let i = 0; i < 2; i++) {
+      await expect(runSync(store, provider, { now: clock, alert })).rejects.toThrow(
+        QuarantineRefusedError,
+      );
+    }
+    // The MLS fixes them before the escalation.
+    store.rejectKeys.clear();
+    expect(await runSync(store, provider, { now: clock, alert })).toMatchObject({
+      status: "succeeded",
+      quarantined: 0,
+    });
+    expect(store.streak).toBeNull();
+
+    // Broken again (new versions, at the new cursor): the count starts over, rejections first.
+    records.slice(200).forEach((r, i) => {
+      if (r.ok) r.listing.sourceModifiedAt = new Date(START + 1000 + i);
+    });
+    reject(180);
+    alerts = [];
+    await rejectUntilDue(provider);
+    await expect(runSync(store, provider, { now: clock, alert })).rejects.toThrow(
+      QuarantineRefusedError,
+    );
+    expect(alerts.map((a) => a.refusal)).toEqual([1]);
+  });
+
+  it("a refusal at another cursor starts over", async () => {
+    const { provider, records } = feed(3);
+    store.rejectKeys = new Set(records.slice(200, 380).map(keyOf));
+    await rejectUntilDue(provider);
+    for (let i = 0; i < 2; i++) {
+      await expect(runSync(store, provider, { now: clock, alert })).rejects.toThrow(
+        QuarantineRefusedError,
+      );
+    }
+    expect(store.streak!.failures).toBe(QUARANTINE_AFTER_FAILURES + 2);
+    // Page 2 fixed, page 3 broken: a new position, a new streak of rejections.
+    store.rejectKeys = new Set(records.slice(400, 580).map(keyOf));
+    await expect(runSync(store, provider, { now: clock, alert })).rejects.toThrow(
+      PageRejectedError,
+    );
+    expect(store.streak).toEqual({ at: positionAfter(records[399]), failures: 1 });
+    expect(alerts).toHaveLength(2);
+  });
+
+  it("an alert that fails to send is logged; the refusal still stands, the escalation still happens", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { provider, records } = feed(2);
+    for (const r of records.slice(200, 380)) store.rejectKeys.add(keyOf(r));
+    const failing = async () => {
+      throw new Error("Email send failed (500): 12 Main St is down");
+    };
+    for (let run = 1; run <= QUARANTINE_AFTER_FAILURES; run++) {
+      await expect(runSync(store, provider, { now: clock, alert: failing })).rejects.toThrow(
+        PageRejectedError,
+      );
+    }
+    for (let refusal = 1; refusal < QUARANTINE_ESCALATE_AT_REFUSAL; refusal++) {
+      await expect(runSync(store, provider, { now: clock, alert: failing })).rejects.toThrow(
+        QuarantineRefusedError,
+      );
+    }
+    expect(await runSync(store, provider, { now: clock, alert: failing })).toMatchObject({
+      status: "partial",
+      quarantined: 180,
+    });
+    const logged = error.mock.calls.map((c) => String(c[0]));
+    expect(logged.filter((l) => l.includes("sync alert email failed"))).toHaveLength(4);
+    expect(logged.join("\n")).not.toContain("12 Main St");
+    error.mockRestore();
   });
 });
 

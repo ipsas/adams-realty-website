@@ -13,7 +13,9 @@ import {
   describeError,
   PageRejectedError,
   QUARANTINE_AFTER_FAILURES,
+  QUARANTINE_ESCALATE_AT_REFUSAL,
   QUARANTINE_MAX_PER_RUN,
+  QuarantineRefusedError,
   SyncError,
 } from "./write-errors";
 
@@ -59,10 +61,13 @@ export type PageOutcome = {
 export type SyncCursor = FeedPosition;
 
 /**
- * Runs in a row that failed with PageRejectedError on the page starting at
- * `at` (the saved cursor then; null: the feed's start). A failure at another
- * position starts a new streak; a run that doesn't fail ends it. Other errors
- * (a lost connection, a timeout) neither count nor end it.
+ * Runs in a row that failed with PageRejectedError, or then with
+ * QuarantineRefusedError, on the page starting at `at` (the saved cursor then;
+ * null: the feed's start). A failure at another position starts a new streak;
+ * a run that doesn't fail ends it. Other errors (a lost connection, a timeout)
+ * neither count nor end it. Runs 1–QUARANTINE_AFTER_FAILURES are rejections;
+ * each later one is a refusal (refusalNumber), escalated at
+ * QUARANTINE_ESCALATE_AT_REFUSAL. Kept in `data_sources.reject_streak*`.
  */
 export type RejectionStreak = { at: SyncCursor | null; failures: number };
 
@@ -70,6 +75,31 @@ const samePosition = (a: SyncCursor | null, b: SyncCursor | null) =>
   a === null || b === null
     ? a === b
     : a.modifiedAt.getTime() === b.modifiedAt.getTime() && a.key === b.key;
+
+/** Which refusal (1…QUARANTINE_ESCALATE_AT_REFUSAL) a quarantine run at `streak` would be. */
+export const refusalNumber = (streak: RejectionStreak) =>
+  streak.failures - QUARANTINE_AFTER_FAILURES + 1;
+
+/**
+ * What admins are emailed (RunSyncOptions.alert) when a page due for
+ * quarantine is refused, or when the refusal is escalated. No row values and
+ * no listing keys: the cursor's timestamp, counts and the first error's class.
+ */
+export type SyncAlert = {
+  mode: SyncMode;
+  /** The refused page's position (cursor timestamp; null: the feed's start). */
+  at: Date | null;
+  /** Its position's listing key: only to tell positions apart (idempotency), never shown. */
+  atKey: string | null;
+  /** 1…QUARANTINE_ESCALATE_AT_REFUSAL. */
+  refusal: number;
+  /** The page was quarantined anyway and the cursor advanced. */
+  escalated: boolean;
+  rejected: number;
+  total: number;
+  /** errorClass of the first rejection. */
+  firstErrorClass: string;
+};
 
 /** What a quarantining run logs (as an ALERT) and records as its run's message. */
 export function describeQuarantine(streak: RejectionStreak, quarantined: number): string {
@@ -154,14 +184,20 @@ export interface SyncStore {
    * page never fails for its rejected rows: they're skipped, logged by id and
    * kept in sync_quarantine, and an ALERT is logged (describeQuarantine);
    * unless more than `maxQuarantined` of them, or all, are rejected: then it
-   * throws QuarantineRefusedError and writes nothing (writeIsolated).
+   * throws QuarantineRefusedError and writes nothing (writeIsolated). With
+   * `escalate` too (the refusal was escalated), it never refuses.
    * Every record written is taken out of sync_quarantine. Skipped records are
    * logged only once the page is committed.
    */
   writePage(
     page: MapResult[],
     cursor: SyncCursor | null,
-    opts: { skipUnchanged: boolean; quarantine?: RejectionStreak; maxQuarantined?: number },
+    opts: {
+      skipUnchanged: boolean;
+      quarantine?: RejectionStreak;
+      maxQuarantined?: number;
+      escalate?: boolean;
+    },
   ): Promise<PageOutcome>;
   /** Progress plus heartbeat, after every page. */
   heartbeat(runId: string, counts: SyncCounts): Promise<void>;
@@ -205,6 +241,12 @@ export type RunSyncOptions = {
   liveOnly?: boolean;
   /** A `running` run with no heartbeat for this long was cut off. Default: the cron's maxDuration. */
   staleAfterMs?: number;
+  /**
+   * Emails admins about a refused or escalated quarantine (SyncAlert); syncSource
+   * passes sendSyncAlert's. A failure is logged and never fails the run or
+   * masks the refusal. Default: none.
+   */
+  alert?: (alert: SyncAlert) => Promise<void>;
   /** Injected clock and sleep (tests). */
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -234,7 +276,8 @@ export type SyncResult = SyncCounts & {
   /**
    * Records quarantined (also counted in `skipped.write_failed`): their page
    * failed QUARANTINE_AFTER_FAILURES runs in a row, so it was written without
-   * them and the cursor moved past it. See sync_quarantine.
+   * them and the cursor moved past it (past QUARANTINE_MAX_PER_RUN when the
+   * refusal was escalated). See sync_quarantine.
    */
   quarantined: number;
   /** Removed listings deleted for good after a purge (PRUNE_REMOVED_AFTER_DAYS). */
@@ -400,6 +443,14 @@ export async function runSync(
   let remapVersion: number | undefined;
   let quarantineNote: string | undefined;
   const activeRunId = runId;
+  const sendAlert = async (alert: SyncAlert) => {
+    if (!opts.alert) return;
+    try {
+      await opts.alert(alert);
+    } catch (e) {
+      console.error(`[mls] sync alert email failed: ${describeError(e)}`);
+    }
+  };
   const countFetched = (items: MapResult[]) => {
     counts.fetched += items.length;
     for (const item of items) {
@@ -537,14 +588,47 @@ export async function runSync(
               (result.skipped.still_quarantined ?? 0) + kept.skipped;
           }
         }
-        const outcome = await store.writePage(items, next, {
-          skipUnchanged,
-          quarantine,
-          maxQuarantined: quarantine ? QUARANTINE_MAX_PER_RUN - result.quarantined : undefined,
-        });
+        let outcome: PageOutcome;
+        let escalated: number | undefined;
+        try {
+          outcome = await store.writePage(items, next, {
+            skipUnchanged,
+            quarantine,
+            maxQuarantined: quarantine ? QUARANTINE_MAX_PER_RUN - result.quarantined : undefined,
+          });
+        } catch (error) {
+          if (!(quarantine && error instanceof QuarantineRefusedError)) throw error;
+          // Refused (QUARANTINE_MAX_PER_RUN, or a whole page rejected): held,
+          // with admins emailed, until the refusal that escalates.
+          const refusal = Math.min(refusalNumber(quarantine), QUARANTINE_ESCALATE_AT_REFUSAL);
+          const alert: SyncAlert = {
+            mode,
+            at: cursor?.modifiedAt ?? null,
+            atKey: cursor?.key ?? null,
+            refusal,
+            escalated: false,
+            rejected: error.rejected,
+            total: error.total,
+            firstErrorClass: error.firstErrorClass,
+          };
+          if (refusal < QUARANTINE_ESCALATE_AT_REFUSAL) {
+            await sendAlert(alert);
+            throw error;
+          }
+          outcome = await store.writePage(items, next, {
+            skipUnchanged,
+            quarantine,
+            escalate: true,
+          });
+          escalated = refusal;
+          await sendAlert({ ...alert, escalated: true });
+        }
         if (quarantine && outcome.quarantined) {
           result.quarantined += outcome.quarantined;
           quarantineNote = describeQuarantine(quarantine, outcome.quarantined);
+          if (escalated) {
+            quarantineNote += ` (refusal ${escalated} at this cursor escalated: quarantined regardless of the per-run cap)`;
+          }
         }
         cursor = next;
         storedCursor = next;
@@ -579,8 +663,12 @@ export async function runSync(
     });
     return result;
   } catch (error) {
-    // Only a page of rejected rows counts towards a quarantine, never a lost connection.
-    if (error instanceof PageRejectedError && mode !== "purge") {
+    // Only a page of rejected rows, or a refused quarantine of one, counts
+    // towards a quarantine and its escalation, never a lost connection.
+    if (
+      (error instanceof PageRejectedError || error instanceof QuarantineRefusedError) &&
+      mode !== "purge"
+    ) {
       await store
         .recordRejection(cursor)
         .catch((e) => console.error(`[mls] recording a rejected page failed: ${describeError(e)}`));
