@@ -130,6 +130,7 @@ export type SearchCriteria = {
   maxSqft?: number;
   /** Legacy (old saved searches and URLs): the filters dialog writes minAcres instead. */
   minLotSqft?: number;
+  /** Acreage bounds; 0 is no bound (like blank), so neither is ever 0. */
   minAcres?: number;
   maxAcres?: number;
   minYear?: number;
@@ -234,6 +235,9 @@ export function formatBounds(b: Bounds): string {
   return [b.west, b.south, b.east, b.north].map(round).join(",");
 }
 
+/** An acreage bound of 0 is no bound: ">= 0 acres" would only hide unknown lot sizes. */
+const acreBound = (v: number | undefined) => (v !== undefined && v > 0 ? v : undefined);
+
 export function parseSearchParams(raw: RawParams): SearchCriteria {
   const c: SearchCriteria = {
     mode: z
@@ -263,8 +267,8 @@ export function parseSearchParams(raw: RawParams): SearchCriteria {
   assign("minSqft", intish(0, 1_000_000).parse(get(raw, "minSqft")));
   assign("maxSqft", intish(0, 1_000_000).parse(get(raw, "maxSqft")));
   assign("minLotSqft", intish(0, 1_000_000_000).parse(get(raw, "minLotSqft")));
-  assign("minAcres", numish(0, 100_000).parse(get(raw, "minAcres")));
-  assign("maxAcres", numish(0, 100_000).parse(get(raw, "maxAcres")));
+  assign("minAcres", acreBound(numish(0, 100_000).parse(get(raw, "minAcres"))));
+  assign("maxAcres", acreBound(numish(0, 100_000).parse(get(raw, "maxAcres"))));
   assign("minYear", intish(1700, 2100).parse(get(raw, "minYear")));
   assign("maxYear", intish(1700, 2100).parse(get(raw, "maxYear")));
   assign("maxHoa", intish(0, 100_000).parse(get(raw, "maxHoa")));
@@ -319,7 +323,7 @@ export function serializeCriteria(c: Partial<SearchCriteria>): URLSearchParams {
     "soldWithinDays",
   ] as const;
   for (const k of nums) {
-    const v = c[k];
+    const v = k === "minAcres" || k === "maxAcres" ? acreBound(c[k]) : c[k];
     if (v !== undefined && v !== null) p.set(k, String(v));
   }
   if (c.types?.length) p.set("types", c.types.join(","));
@@ -366,7 +370,7 @@ export function countActiveFilters(c: SearchCriteria): number {
   if (c.types?.length) n++;
   if (c.minSqft !== undefined || c.maxSqft !== undefined) n++;
   if (c.minLotSqft !== undefined) n++;
-  if (c.minAcres !== undefined || c.maxAcres !== undefined) n++;
+  if (acreBound(c.minAcres) !== undefined || acreBound(c.maxAcres) !== undefined) n++;
   if (c.minYear !== undefined || c.maxYear !== undefined) n++;
   if (c.maxHoa !== undefined) n++;
   if (c.hoa) n++;

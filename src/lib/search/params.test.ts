@@ -136,6 +136,21 @@ describe("parseSearchParams", () => {
     expect(parseSearchParams({ minAcres: " 2 " }).minAcres).toBe(2);
   });
 
+  it("reads an acreage bound of 0 as no bound: not parsed, serialized or counted", () => {
+    for (const v of ["0", "0.0", "00"]) {
+      expect(parseSearchParams({ minAcres: v, maxAcres: v })).toEqual(DEFAULT_CRITERIA);
+    }
+    // maxAcres=0 is not swapped into a 0..10 range: min 10 stays, with no max.
+    const c = parseSearchParams({ minAcres: "10", maxAcres: "0" });
+    expect([c.minAcres, c.maxAcres]).toEqual([10, undefined]);
+    const zeros = { ...DEFAULT_CRITERIA, minAcres: 0, maxAcres: 0 };
+    expect(serializeCriteria(zeros).has("minAcres")).toBe(false);
+    expect(serializeCriteria(zeros).has("maxAcres")).toBe(false);
+    expect(countActiveFilters(zeros)).toBe(0);
+    expect(countActiveFilters({ ...zeros, maxAcres: 5 })).toBe(1);
+    expect(serializeCriteria({ ...zeros, maxAcres: 5 }).get("maxAcres")).toBe("5");
+  });
+
   it("accepts only plain decimal numbers in numeric params", () => {
     const keys = [
       "minPrice",
