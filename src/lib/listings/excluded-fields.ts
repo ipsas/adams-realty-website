@@ -91,8 +91,12 @@ const RESTRICTED_VALUE = new RegExp(
  * - A plain "code" is a phrase before ":", "=", "#", "is" (and then takes 1-2 spelled-out
  *   digits, but no 2-digit number) or a 3+ digit number, but not after "zoning", "zip",
  *   "area" and the like.
- * - `NOT_CODE` is never a code, nor part of one: a code year ("2018 IBC"), a year of work
- *   ("2019 renovated"), a size ("20x30") or a number of units ("12 acres", "1234 sqft", "24 hr").
+ * - `NOT_CODE_START` is never a code: a code year ("2018 IBC"), a year of work ("2019
+ *   renovated") or a size ("20x30"). A number of units ("1234 sqft", "12 ac") right after
+ *   a code phrase is the code ("gate code 4455 feet from road" masks 4455).
+ * - `NOT_CODE` is never part of a code, after its first digit group: those, or a number of
+ *   units ("Keypad 1234 12 acres", "gate code 1234 2400 sqft"). A number starting with 0
+ *   is never a size.
  *
  * Postgres prefers the longest match where JS takes the first alternative that matches,
  * so alternatives are ordered longest first, and the words a phrase may skip are letters
@@ -106,11 +110,16 @@ const DIGIT_WORD = String.raw`(?:eleven|twelve|thirteen|fourteen|fifteen|sixteen
 const YEAR = String.raw`(?:19|20)\d\d\b`;
 const CODE_YEAR = String.raw`(?:19|20)\d\d\s+(?:ibc|irc|nec|iecc|building\s+code|code\s+compliant|edition)\b`;
 const WORK_YEAR = String.raw`(?:19|20)\d\d\s+(?:remodel|renovat|update|addition|install|built|build)`;
+// A size never starts with 0 ("gate code 0581 SF" is a code).
+const DIMENSION = String.raw`[1-9]\d*\s*x\s*\d`;
 const UNIT = String.raw`acres?|sq|sqft|sf|square\s+f(?:ee|oo)t|ft|feet|foot|car|beds?|bedrooms?|baths?|story|stories|miles?|min|hrs?|hours?`;
 // "ac" is acres only after a small number and before punctuation or the end ("2 ac."):
 // "gate code 1234 AC unit" is a code, then an air conditioner.
-const ACRES_AC = String.raw`\d{1,3}\s*ac\b(?=\s*(?:[.,;:)]|$))`;
-const NOT_CODE = String.raw`${CODE_YEAR}|${WORK_YEAR}|\d+\s*x\s*\d|\d+\s*(?:${UNIT})\b|${ACRES_AC}`;
+const ACRES_AC = String.raw`[1-9]\d{0,2}\s*ac\b(?=\s*(?:[.,;:)]|$))`;
+// Right after a code phrase a number with a unit is still the code ("lockbox code 0581 SF",
+// "gate code 4455 feet from road"): only a year or a dimension stops it there.
+const NOT_CODE_START = String.raw`${CODE_YEAR}|${WORK_YEAR}|${DIMENSION}`;
+const NOT_CODE = String.raw`${NOT_CODE_START}|[1-9]\d*\s*(?:${UNIT})\b|${ACRES_AC}`;
 const COMBO_YEAR = String.raw`\s*(?:[:=#]\s*|is\s+)?${YEAR}`;
 const STRONG = [
   String.raw`lock\s*box[\s-]+(?:code|combo)`,
@@ -144,7 +153,7 @@ const TOKEN = [
   // Letters and digits, but not an ordinal ("2nd").
   String.raw`(?=[0-9a-z]*\d)(?=[0-9a-z]*[a-z])(?![0-9]+(?:st|nd|rd|th)\b)[0-9a-z]{3,12}`,
 ].join("|");
-const ACCESS_CODE_SOURCE = String.raw`(${PREFIX})(?!${NOT_CODE})(?:${TOKEN})#?(?![0-9a-z]|-\d)|(\bkey\s+under\s+)[^.,;!?\n]{1,40}`;
+const ACCESS_CODE_SOURCE = String.raw`(${PREFIX})(?!${NOT_CODE_START})(?:${TOKEN})#?(?![0-9a-z]|-\d)|(\bkey\s+under\s+)[^.,;!?\n]{1,40}`;
 const ACCESS_CODE = new RegExp(ACCESS_CODE_SOURCE, "gi");
 const HAS_ACCESS_CODE = new RegExp(ACCESS_CODE_SOURCE, "i");
 const MASK = "****";
