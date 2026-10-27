@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  allowsPriceReduced,
   clearedFilters,
   countActiveFilters,
   DEFAULT_CRITERIA,
@@ -201,7 +202,21 @@ describe("parseSearchParams", () => {
     expect(countActiveFilters(carried)).toBe(0);
     expect(serializeCriteria(carried).has("priceReduced")).toBe(false);
     expect(parseSearchParams({ mode: "buy", priceReduced: "1" }).priceReduced).toBe(true);
-    expect(countActiveFilters({ ...carried, mode: "rent" })).toBe(1);
+    expect(countActiveFilters({ ...carried, mode: "buy" })).toBe(1);
+  });
+
+  it("drops price reduced in rent mode, exactly as in sold mode", () => {
+    const rent = parseSearchParams({ mode: "rent", priceReduced: "1" });
+    expect(rent.priceReduced).toBeUndefined();
+    expect(countActiveFilters(rent)).toBe(0);
+    expect(serializeCriteria(rent).has("priceReduced")).toBe(false);
+    const carried = { ...DEFAULT_CRITERIA, mode: "rent" as const, priceReduced: true };
+    expect(countActiveFilters(carried)).toBe(0);
+    expect(serializeCriteria(carried).has("priceReduced")).toBe(false);
+    expect(allowsPriceReduced("rent")).toBe(false);
+    expect(allowsPriceReduced("sold")).toBe(false);
+    expect(allowsPriceReduced("buy")).toBe(true);
+    expect(allowsPriceReduced(undefined)).toBe(true);
   });
 });
 

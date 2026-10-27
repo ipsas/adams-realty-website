@@ -198,11 +198,12 @@ describe("acreage, HOA, keyword, price-reduced, 55+ and fireplace filters", () =
     expect(both.params).toEqual(expect.arrayContaining(["Atlanta", "dock"]));
   });
 
-  it("matches price reduced against the original list price, except in sold mode", () => {
+  it("matches price reduced against the original list price, except in sold or rent mode", () => {
     const { sql } = render({ priceReduced: "1" });
     expect(sql).toContain(`"listings"."original_list_price" is not null`);
     expect(sql).toContain(`"listings"."list_price" < "listings"."original_list_price"`);
     expect(render({ priceReduced: "1", mode: "sold" }).sql).not.toContain("original_list_price");
+    expect(render({ priceReduced: "1", mode: "rent" }).sql).not.toContain("original_list_price");
   });
 
   it("filters 55+ communities: only, or exclude keeping unknowns", () => {

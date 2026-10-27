@@ -4,7 +4,12 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input, Select } from "@/components/ui/form";
 import { Dialog } from "@/components/ui/dialog";
-import { FEATURE_FLAGS, type FeatureFlag, type SearchCriteria } from "@/lib/search/params";
+import {
+  allowsPriceReduced,
+  FEATURE_FLAGS,
+  type FeatureFlag,
+  type SearchCriteria,
+} from "@/lib/search/params";
 
 const FEATURE_LABELS: Record<FeatureFlag, string> = {
   garage: "Garage",
@@ -148,7 +153,7 @@ export function MoreFilters({
             onChange={(e) => set("pending", e.target.checked || undefined)}
           />
         )}
-        {criteria.mode !== "sold" && (
+        {allowsPriceReduced(criteria.mode) && (
           <Checkbox
             label="Price reduced"
             checked={!!d.priceReduced}

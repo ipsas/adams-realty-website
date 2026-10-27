@@ -140,7 +140,7 @@ export type SearchCriteria = {
   hoa?: HoaFilter;
   /** Words in the listing text (search_vector), separate from the location box `q`. */
   kw?: string;
-  /** Priced below the original list price. Not parsed, applied, counted or serialized in "sold" mode. */
+  /** Priced below the original list price. Buy mode only: not parsed, applied, counted or serialized in "rent" or "sold". */
   priceReduced?: boolean;
   /** 55+ communities: absent includes them. */
   age55?: Age55Filter;
@@ -238,6 +238,12 @@ export function formatBounds(b: Bounds): string {
 /** An acreage bound of 0 is no bound: ">= 0 acres" would only hide unknown lot sizes. */
 const acreBound = (v: number | undefined) => (v !== undefined && v > 0 ? v : undefined);
 
+/**
+ * Whether the "price reduced" filter exists in a mode: a sold listing is not "reduced", and a
+ * rental's price is rent, not a reduced list price. Outside buy it is dropped, not just unapplied.
+ */
+export const allowsPriceReduced = (mode: SearchMode | undefined) => (mode ?? "buy") === "buy";
+
 export function parseSearchParams(raw: RawParams): SearchCriteria {
   const c: SearchCriteria = {
     mode: z
@@ -274,8 +280,7 @@ export function parseSearchParams(raw: RawParams): SearchCriteria {
   assign("maxHoa", intish(0, 100_000).parse(get(raw, "maxHoa")));
   assign("hoa", z.enum(HOA_FILTERS).optional().catch(undefined).parse(get(raw, "hoa")));
   assign("age55", z.enum(AGE55_FILTERS).optional().catch(undefined).parse(get(raw, "age55")));
-  // A sold listing is not "reduced": the filter is dropped in sold mode, not just unapplied.
-  if (c.mode !== "sold") assign("priceReduced", flag.parse(get(raw, "priceReduced")));
+  if (allowsPriceReduced(c.mode)) assign("priceReduced", flag.parse(get(raw, "priceReduced")));
   assign("maxDaysOnMarket", intish(1, 3650).parse(get(raw, "maxDaysOnMarket")));
   assign("soldWithinDays", intish(1, 3650).parse(get(raw, "soldWithinDays")));
   assign("pending", flag.parse(get(raw, "pending")));
@@ -330,7 +335,7 @@ export function serializeCriteria(c: Partial<SearchCriteria>): URLSearchParams {
   if (c.pending) p.set("pending", "1");
   if (c.hoa) p.set("hoa", c.hoa);
   if (c.age55) p.set("age55", c.age55);
-  if (c.priceReduced && c.mode !== "sold") p.set("priceReduced", "1");
+  if (c.priceReduced && allowsPriceReduced(c.mode)) p.set("priceReduced", "1");
   for (const f of FEATURE_FLAGS) if (c[f]) p.set(f, "1");
   if (c.bounds) p.set("bounds", formatBounds(c.bounds));
   if (c.sort && c.sort !== "recommended") p.set("sort", c.sort);
@@ -375,7 +380,7 @@ export function countActiveFilters(c: SearchCriteria): number {
   if (c.maxHoa !== undefined) n++;
   if (c.hoa) n++;
   if (c.kw) n++;
-  if (c.priceReduced && c.mode !== "sold") n++;
+  if (c.priceReduced && allowsPriceReduced(c.mode)) n++;
   if (c.age55) n++;
   if (c.maxDaysOnMarket !== undefined) n++;
   if (c.pending) n++;

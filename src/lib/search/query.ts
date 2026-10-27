@@ -19,7 +19,7 @@ import { site } from "@/config/site";
 import { listings, openHouses } from "@/db/schema";
 import { areaCondition, normalizedMatch } from "@/lib/areas/match";
 import { publicConditions } from "@/lib/listings/visibility";
-import type { SearchCriteria } from "./params";
+import { allowsPriceReduced, type SearchCriteria } from "./params";
 
 type Status = (typeof listings.status.enumValues)[number];
 
@@ -217,7 +217,7 @@ export function buildConditions(
   else if (c.age55 === "exclude") conds.push(sql`${listings.seniorCommunity} is not true`);
   // Keywords search the listing text (headline, description), apart from the location box.
   if (c.kw) conds.push(sql`${listings.searchVector} @@ websearch_to_tsquery('english', ${c.kw})`);
-  if (c.priceReduced && c.mode !== "sold") {
+  if (c.priceReduced && allowsPriceReduced(c.mode)) {
     conds.push(
       isNotNull(listings.originalListPrice),
       sql`${listings.listPrice} < ${listings.originalListPrice}`,
