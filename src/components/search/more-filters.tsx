@@ -29,7 +29,7 @@ const FEATURE_LABELS: Record<FeatureFlag, string> = {
 
 /** Accessible names where the visible label leaves out words people search by. */
 const FEATURE_ARIA_LABELS: Partial<Record<FeatureFlag, string>> = {
-  primaryOnMain: "Primary (master) bedroom on main floor",
+  primaryOnMain: "Primary bedroom on main (master bedroom on main floor)",
 };
 
 const SQFT = [500, 750, 1000, 1250, 1500, 1750, 2000, 2500, 3000, 3500, 4000, 5000, 7500];

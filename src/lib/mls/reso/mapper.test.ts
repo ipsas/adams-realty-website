@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { isExcludedField } from "@/lib/listings/excluded-fields";
 import {
@@ -613,10 +615,79 @@ describe("mainLevelBedroomFacts", () => {
         primaryBedroomOnMain: null,
       });
     }
-    // Without BedroomsTotal there is nothing to compare it to.
-    expect(mainLevelBedroomFacts({ MainLevelBedrooms: 5 })).toEqual({
-      mainLevelBedrooms: 5,
+  });
+
+  const REJECTED: unknown[] = [
+    "2.0",
+    "0x2",
+    "1e0",
+    " 2 ",
+    "-1",
+    "+2",
+    "",
+    2.6,
+    -1,
+    NaN,
+    Infinity,
+    true,
+  ];
+
+  it("rejects a MainLevelBedrooms that isn't a strict non-negative integer", () => {
+    for (const v of REJECTED) {
+      expect(facts({ MainLevelBedrooms: v }).mainLevelBedrooms, String(v)).toBeNull();
+    }
+  });
+
+  it("rejects a BedroomsTotal that isn't a strict non-negative integer", () => {
+    for (const v of REJECTED) {
+      expect(mainLevelBedroomFacts({ BedroomsTotal: v, MainLevelBedrooms: 2 }), String(v)).toEqual({
+        mainLevelBedrooms: null,
+        primaryBedroomOnMain: null,
+      });
+    }
+  });
+
+  it("accepts a digit string or an integer for both fields", () => {
+    for (const total of [3, "3"]) {
+      for (const mlb of [3, "3"]) {
+        expect(
+          mainLevelBedroomFacts({ BedroomsTotal: total, MainLevelBedrooms: mlb }),
+          `${typeof total}/${typeof mlb}`,
+        ).toEqual({ mainLevelBedrooms: 3, primaryBedroomOnMain: true });
+      }
+    }
+  });
+
+  it("is unknown when BedroomsTotal is missing or invalid", () => {
+    for (const total of [undefined, "abc", 2.6]) {
+      for (const mlb of [99, 2]) {
+        expect(
+          mainLevelBedroomFacts({ BedroomsTotal: total, MainLevelBedrooms: mlb }),
+          `${String(total)}/${mlb}`,
+        ).toEqual({ mainLevelBedrooms: null, primaryBedroomOnMain: null });
+      }
+    }
+  });
+
+  it("leaves the primary bedroom unknown with no bedrooms at all", () => {
+    expect(mainLevelBedroomFacts({ BedroomsTotal: 0, MainLevelBedrooms: 0 })).toEqual({
+      mainLevelBedrooms: 0,
       primaryBedroomOnMain: null,
     });
+    expect(mainLevelBedroomFacts({ BedroomsTotal: 0, ...MASTER })).toEqual({
+      mainLevelBedrooms: null,
+      primaryBedroomOnMain: null,
+    });
+  });
+});
+
+describe("0028_main_level_bedrooms migration", () => {
+  it("only adds columns and indexes: the v4 remap fills them, not an UPDATE", () => {
+    const migration = readFileSync(
+      fileURLToPath(new URL("../../../../drizzle/0028_main_level_bedrooms.sql", import.meta.url)),
+      "utf8",
+    );
+    expect(migration).not.toMatch(/\bUPDATE\b/i);
+    expect(migration.trimEnd()).not.toMatch(/statement-breakpoint$/);
   });
 });

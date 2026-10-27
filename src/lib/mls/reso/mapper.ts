@@ -393,27 +393,41 @@ export function compensation(p: ResoProperty): {
 const PRIMARY_ON_MAIN = /^(master|primary)( bedroom| suite)? on main( level)?$/i;
 
 /**
+ * A non-negative whole number: a safe-integer JSON number, or a string of
+ * digits only (no sign, spaces, decimals, hex or exponent). Anything else is null.
+ */
+function strictNonNegInt(v: unknown): number | null {
+  if (typeof v === "number") return Number.isSafeInteger(v) && v >= 0 ? v : null;
+  if (typeof v === "string" && /^\d+$/.test(v)) {
+    const n = Number(v);
+    return Number.isSafeInteger(n) ? n : null;
+  }
+  return null;
+}
+
+/**
  * Main-level bedrooms, from the structured fields only (never the remarks).
- * `MainLevelBedrooms` counts when it is a whole number no greater than
- * `BedroomsTotal`. The primary bedroom is on the main level when
- * InteriorFeatures says so or every bedroom is there, and isn't when no
- * bedroom is; the flag with zero main-level bedrooms conflicts, so unknown.
+ * `MainLevelBedrooms` and `BedroomsTotal` must be strict non-negative integers
+ * (strictNonNegInt). `MainLevelBedrooms` counts only when `BedroomsTotal` is
+ * known and it is no greater; otherwise unknown. The primary bedroom is on the
+ * main level when InteriorFeatures says so or every bedroom is there, and isn't
+ * when no bedroom is; the flag with zero main-level bedrooms conflicts, so
+ * unknown. With `BedroomsTotal` 0 it is unknown whatever the flag or count say.
  * A missing flag alone isn't a "no": many one-level homes don't carry it.
+ * The v4 remap (RESO_MAPPER_VERSION) fills both columns for stored rows.
  * Exported for tests.
  */
 export function mainLevelBedroomFacts(p: ResoProperty): {
   mainLevelBedrooms: number | null;
   primaryBedroomOnMain: boolean | null;
 } {
-  const total = int(p.BedroomsTotal);
-  const raw = num(p.MainLevelBedrooms);
-  const mainLevelBedrooms =
-    raw !== null && Number.isInteger(raw) && raw >= 0 && (total === null || raw <= total)
-      ? raw
-      : null;
+  const total = strictNonNegInt(p.BedroomsTotal);
+  const raw = strictNonNegInt(p.MainLevelBedrooms);
+  const mainLevelBedrooms = raw !== null && total !== null && raw <= total ? raw : null;
   const masterFlag = list(p.InteriorFeatures).some((v) => PRIMARY_ON_MAIN.test(v));
   let primaryBedroomOnMain: boolean | null = null;
-  if (masterFlag) primaryBedroomOnMain = mainLevelBedrooms === 0 ? null : true;
+  if (total === 0) primaryBedroomOnMain = null;
+  else if (masterFlag) primaryBedroomOnMain = mainLevelBedrooms === 0 ? null : true;
   else if (total !== null && total >= 1 && mainLevelBedrooms === total) primaryBedroomOnMain = true;
   else if (mainLevelBedrooms === 0) primaryBedroomOnMain = false;
   return { mainLevelBedrooms, primaryBedroomOnMain };
