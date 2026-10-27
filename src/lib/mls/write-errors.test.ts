@@ -262,6 +262,41 @@ describe("describeError", () => {
     );
   });
 
+  it("redacts phone numbers, SSNs, rural routes and units", () => {
+    const redacted: [string, string][] = [
+      ["call (706) 555-1234 or 706-555-1234", "call [phone] or [phone]"],
+      ["call 706.555.1234, +1 706 555 1234.", "call [phone], [phone]."],
+      ["call +1-706-555-1234 or 1-706-555-1234 now", "call [phone] or [phone] now"],
+      ["owner ssn 123-45-6789 rejected", "owner ssn [ssn] rejected"],
+      ["at RR 2 Box 14, Royston", "at [address], Royston"],
+      ["at Rural Route 3 Box 7 and rr 4", "at [address] and [address]"],
+      ["at RR 2 Box 14 Apt 3", "at [address]"],
+      ["moved to apt 4b, then Unit 12", "moved to [unit], then [unit]"],
+      ["ste 100 and SUITE 100; Suite #200", "[unit] and [unit]; [unit]"],
+      ["at 12 Main St apt 4b and 9 Oak Dr, Suite 100", "at [address] and [address]"],
+    ];
+    for (const [message, shown] of redacted) {
+      expect(describeError(new SyncError(message))).toBe(shown);
+    }
+    expect(describeError(new Error("no owner at 706-555-1234 apt 4b"))).toBe(
+      "Error: no owner at [phone] [unit]",
+    );
+  });
+
+  it("doesn't take codes, keys, durations or IDs for phones, SSNs or units", () => {
+    const kept = [
+      "HTTP 503 after 200 ms; SQLSTATE 23505",
+      "run at 2026-10-27T02:00:00.000Z took 1500 ms",
+      "listing SALE-123 and SALE-123-45-6789 and GAMLS-706-555-1234",
+      "unit tests passed; Suite B ran",
+      "id 7065551234 and 123456789",
+      "cursor 2026-10-27/K000123, version 10.0.0.1:5432",
+      "retry in 30 s, 5 min, 2 h",
+      "page 706 555 1234 rows",
+    ];
+    for (const message of kept) expect(describeError(new SyncError(message))).toBe(message);
+  });
+
   it("doesn't take phrases, codes or keys for addresses", () => {
     const kept = [
       "3 runs the way it should",

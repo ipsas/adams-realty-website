@@ -161,8 +161,13 @@ const HIGHWAY =
   String.raw`(?:${anyCase("State|US|GA")}|[uU]\.[sS]\.)\s+(?:${anyCase("Route|Rte")})${ROUTE_NUMBER}|` +
   String.raw`(?<![\w-])(?:US|GA|SR)[\s-]?\d{1,3}[A-Z]?\b`;
 
+/** A rural route, with its box: "RR 2 Box 14", "R.R. 2", "Rural Route 3, Box 7". */
+const RURAL_ROUTE =
+  String.raw`(?<![\w-])(?:${anyCase("RR")}|[rR]\.\s?[rR]\.|${anyCase("Rural")}\s+${anyCase("Route")})` +
+  String.raw`\s*#?\s*\d{1,4}\b(?:,?\s*${anyCase("Box")}\s*#?\s*\d{1,6}\b)?`;
+
 /**
- * An address: a PO box; a house number, 1–4 words and a street suffix (in
+ * An address: a PO box; a rural route; a house number, 1–4 words and a street suffix (in
  * any case; up to two more as written may follow: "Shoal Creek Rd", "Big Loop
  * Ext"), with a highway's number after "Hwy"/"Highway", then a direction and
  * unit; or a numbered highway, with or without a house number. A suffix
@@ -176,6 +181,7 @@ const HIGHWAY =
 const ADDRESS = new RegExp(
   String.raw`(?<![\w-])(?:${anyCase("PO")}|[pP]\.\s?[oO]\.|${anyCase("Post")}\s+${anyCase("Office")})\s*` +
     String.raw`${anyCase("Box")}\s*#?\s*\d{1,6}\b|` +
+    String.raw`${RURAL_ROUTE}${ADDRESS_TAIL}|` +
     String.raw`${HOUSE_NUMBER}(?:\s+${NAME_WORD}){1,4}?\s+` +
     String.raw`(?:(?:${CANONICAL_SUFFIX})\b|(?:${anyCase(STREET_SUFFIXES)})${LOOSE_SUFFIX_END})` +
     String.raw`(?:\s+(?:${CANONICAL_SUFFIX})\b){0,2}` +
@@ -184,16 +190,48 @@ const ADDRESS = new RegExp(
   "g",
 );
 
+/** Before and after a number that isn't part of a token (a key, a version, a host:port, a timestamp). */
+const NUMBER_START = String.raw`(?<![\w.:/+-])`;
+const NUMBER_END = String.raw`(?![\w-]|\.\d)`;
+
+/**
+ * A US phone number: "(706) 555-1234", "706-555-1234", "706.555.1234" (one
+ * separator throughout), "+1 706 555 1234". Ten bare digits are an ID, kept.
+ */
+const PHONE = new RegExp(
+  String.raw`(?:\+1[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?|` +
+    String.raw`${NUMBER_START}(?:1[\s.-]?)?\(\d{3}\)\s?\d{3}[\s.-]|` +
+    String.raw`${NUMBER_START}(?:1[.-])?\d{3}([.-])\d{3}\1)\d{4}${NUMBER_END}`,
+  "g",
+);
+
+/** A Social Security number: "123-45-6789". */
+const SSN = new RegExp(String.raw`${NUMBER_START}\d{3}-\d{2}-\d{4}${NUMBER_END}`, "g");
+
+/**
+ * A unit not attached to an address ("apt 4b", "Suite 100"; an attached one
+ * goes with its [address]): its designator must hold a digit, so "unit
+ * tests" or "Suite B" are kept.
+ */
+const UNIT = new RegExp(
+  String.raw`(?<![\w-])(?:${anyCase("Apt|Unit|Ste|Suite")})\b\.?\s*#?\s*(?=[A-Za-z]?\d)[A-Za-z0-9-]+\b`,
+  "g",
+);
+
 /**
  * `text` with URL credentials (`scheme://[credentials]@host`), `mailto:`
- * links and email addresses, and street addresses replaced by placeholders.
+ * links and email addresses, phone and Social Security numbers, street and
+ * rural addresses (with their unit) and lone units replaced by placeholders.
  */
 export function redactPersonal(text: string): string {
   return text
     .replace(URL_CREDENTIALS, "$1[credentials]@")
     .replace(MAILTO, "[email]")
     .replace(EMAIL, "[email]")
-    .replace(ADDRESS, "[address]");
+    .replace(SSN, "[ssn]")
+    .replace(PHONE, "[phone]")
+    .replace(ADDRESS, "[address]")
+    .replace(UNIT, "[unit]");
 }
 
 /**
@@ -204,8 +242,8 @@ export function redactPersonal(text: string): string {
  * the cause as `.cause`; that wrapper (a whole page's SQL and values) is
  * skipped, as is any other wrapper around a Postgres error (SyncFailedError).
  * Any other error shows as it is only when it's ours (isSafeError), otherwise
- * redacted (redactUnknown). Whatever it returns has its email and street
- * addresses redacted (redactPersonal).
+ * redacted (redactUnknown). Whatever it returns has its emails, phones, SSNs,
+ * addresses and units redacted (redactPersonal).
  */
 export function describeError(error: unknown): string {
   return redactPersonal(describeUnredacted(error));
