@@ -28,6 +28,7 @@ import {
   describeCriteria,
   listingNoun,
   noResultsCopy,
+  PAGE_SIZE,
   parseViewParam,
   searchHref,
   serializeCriteria,
@@ -44,7 +45,7 @@ import { listingSlugOf, placeKey, readPlace, writePlace } from "@/lib/search/res
 import type { NearbyTown } from "@/lib/search/place";
 import type { MapPin } from "@/lib/search/service";
 import { FilterBar } from "./filter-bar";
-import { Pagination } from "./pagination";
+import { Pagination, StepPagination } from "./pagination";
 import { SaveSearchButton, useSaveSearch, type SaveSearchState } from "./save-search-button";
 import { buildSearchHref, currentView, useSearchNav } from "./use-search-nav";
 
@@ -98,7 +99,7 @@ export function SearchView({
   /** Null when unknown (the count timed out). */
   total: number | null;
   pageCount: number;
-  /** A search query timed out: no totals, pager or "no homes match", only a notice. */
+  /** A search query timed out: no totals, numbered pager or "no homes match", only a notice. */
   incomplete: boolean;
   pins: MapPin[];
   maxPins: number;
@@ -110,10 +111,12 @@ export function SearchView({
   const { update, setView, isPending } = useSearchNav(criteria);
   const save = useSaveSearch(signedIn);
   const router = useRouter();
-  const { total, pageCount, empty } = resultsDisplay({
+  const { total, pageCount, empty, steps } = resultsDisplay({
     incomplete,
     total: totalIn,
+    page: criteria.page,
     pageCount: pageCountIn,
+    pageSize: PAGE_SIZE,
     itemCount: items.length,
   });
   const [highlighted, setHighlighted] = useState<string | null>(null);
@@ -171,6 +174,11 @@ export function SearchView({
   // Moving the map drops the town and searches every home in view (site review #5); the
   // town is kept as `from`, for "Back to Royston".
   const backToTown = () => update({ q: from, bounds: undefined });
+
+  const onPage = (page: number) => {
+    update({ page }, { push: true });
+    listRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   // IDX: Georgia MLS's credit and disclaimer, and the brokerage's name and license.
   const notice = (
@@ -295,14 +303,11 @@ export function SearchView({
                 />
               )
             )}
-            <Pagination
-              page={criteria.page}
-              pageCount={pageCount}
-              onPage={(page) => {
-                update({ page }, { push: true });
-                listRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-              }}
-            />
+            {steps ? (
+              <StepPagination page={criteria.page} {...steps} onPage={onPage} />
+            ) : (
+              <Pagination page={criteria.page} pageCount={pageCount} onPage={onPage} />
+            )}
             <div className="space-y-2 px-4 pb-6 text-xs text-muted">{notice}</div>
           </div>
         </div>

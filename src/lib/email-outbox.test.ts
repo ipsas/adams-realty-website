@@ -4,6 +4,7 @@ import type { Email } from "@/lib/email";
 import { captureConsole } from "@/test/console";
 import {
   isOutboxKind,
+  keyFirstUsedAt,
   OUTBOX_MIN_TIME_MS,
   outboxIdempotencyKey,
   outboxStatus,
@@ -123,6 +124,50 @@ describe("processEmailOutbox with a key that may have expired", () => {
       `[email-outbox] kind=lead-notice id=${ROW} status=dead last=key_expired`,
     );
     expect(output().join("\n")).not.toContain("Oak Street");
+  });
+
+  it("takes created_at for a row tried before first_tried_at existed (pre-0025)", async () => {
+    const { output } = captureConsole();
+    const sets: unknown[] = [];
+    const send = vi.fn();
+    const run = await processEmailOutbox({
+      db: fakeDb(
+        {
+          attempts: 3,
+          payload: null,
+          firstTriedAt: null,
+          createdAt: new Date(Date.now() - 23.5 * 60 * 60_000),
+        },
+        sets,
+      ),
+      send,
+      rebuild: async () => email,
+    });
+    expect(run).toEqual({ sent: 0, retry: 0, dead: 1, gone: 0 });
+    expect(send).not.toHaveBeenCalled();
+    expect(sets).toContainEqual(
+      expect.objectContaining({ state: "dead", lastStatus: "key_expired", payload: null }),
+    );
+    expect(output()).toContain(
+      `[email-outbox] kind=lead-notice id=${ROW} status=dead last=key_expired`,
+    );
+  });
+});
+
+describe("keyFirstUsedAt", () => {
+  const old = new Date(Date.now() - 23.5 * 60 * 60_000);
+  const recent = new Date(Date.now() - 60 * 60_000);
+
+  it("is a row's own first_tried_at, however old the row", () => {
+    expect(keyFirstUsedAt({ firstTriedAt: recent, attempts: 3, createdAt: old })).toBe(recent);
+  });
+
+  it("is null for a row the outbox hasn't tried yet", () => {
+    expect(keyFirstUsedAt({ firstTriedAt: null, attempts: 1, createdAt: old })).toBeNull();
+  });
+
+  it("is created_at for a row tried before first_tried_at existed", () => {
+    expect(keyFirstUsedAt({ firstTriedAt: null, attempts: 2, createdAt: old })).toBe(old);
   });
 });
 

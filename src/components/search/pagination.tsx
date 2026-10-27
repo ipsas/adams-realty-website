@@ -67,3 +67,34 @@ export function Pagination({
     </nav>
   );
 }
+
+/** The pager when the total is unknown (the count timed out): no page numbers or counts. */
+export function StepPagination({
+  page,
+  prev,
+  next,
+  onPage,
+}: {
+  page: number;
+  prev: boolean;
+  next: boolean;
+  onPage: (p: number) => void;
+}) {
+  if (!prev && !next) return null;
+  const btn =
+    "flex h-10 items-center gap-1 rounded-full px-4 text-sm font-medium text-ink-soft transition-colors hover:bg-sunken";
+  return (
+    <nav aria-label="Pagination" className="flex items-center justify-center gap-2 py-10">
+      {prev && (
+        <button type="button" className={btn} onClick={() => onPage(page - 1)}>
+          <ChevronLeft className="size-4" /> Previous
+        </button>
+      )}
+      {next && (
+        <button type="button" className={btn} onClick={() => onPage(page + 1)}>
+          Next <ChevronRight className="size-4" />
+        </button>
+      )}
+    </nav>
+  );
+}

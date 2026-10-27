@@ -174,6 +174,19 @@ export function outboxIdempotencyKey(rowId: OutboxRow["id"]): string {
   return `outbox/${rowId}`;
 }
 
+/**
+ * When the row's key was first used, for the OUTBOX_KEY_TTL_MS check: its
+ * first_tried_at, or null before its first outbox try. Every outbox try now
+ * stores first_tried_at before it sends, so a row tried already (attempts > 1)
+ * without one was tried before migration 0025 under the same key: its
+ * created_at stands in, the earliest that key can have been used.
+ */
+export function keyFirstUsedAt(
+  row: Pick<OutboxRow, "firstTriedAt" | "attempts" | "createdAt">,
+): Date | null {
+  return row.firstTriedAt ?? (row.attempts > 1 ? row.createdAt : null);
+}
+
 export type OutboxDeps = {
   db?: Executor;
   /** One try per row: the default is `sendEmail`, not the retrying `sendTransactional`. */
@@ -216,7 +229,8 @@ export async function processEmailOutbox(deps: OutboxDeps): Promise<OutboxRun> {
         continue;
       }
       // Resend may have dropped the key: a send now could go twice.
-      if (row.firstTriedAt && Date.now() - row.firstTriedAt.getTime() > OUTBOX_KEY_TTL_MS) {
+      const keyUsedAt = keyFirstUsedAt(row);
+      if (keyUsedAt && Date.now() - keyUsedAt.getTime() > OUTBOX_KEY_TTL_MS) {
         await markDead(db, row, "key_expired");
         console.error(`${tag} status=dead last=key_expired`);
         run.dead++;
@@ -239,7 +253,7 @@ export async function processEmailOutbox(deps: OutboxDeps): Promise<OutboxRun> {
           .update(emailOutbox)
           .set({
             payload,
-            firstTriedAt: sql`coalesce(${emailOutbox.firstTriedAt}, now())`,
+            firstTriedAt: sql`coalesce(${emailOutbox.firstTriedAt}, case when ${emailOutbox.attempts} > 1 then ${emailOutbox.createdAt} else now() end)`,
             updatedAt: sql`now()`,
           })
           .where(eq(emailOutbox.id, row.id));

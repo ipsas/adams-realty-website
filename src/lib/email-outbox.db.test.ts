@@ -219,17 +219,69 @@ describe("processEmailOutbox", () => {
     expect(await claimDueEmails(db, 10)).toEqual([]);
   });
 
+  it("marks a row tried before first_tried_at existed dead once created_at is past the key TTL", async () => {
+    const { output } = captureConsole();
+    await enqueueEmail(db, { ...office(leadId), lastStatus: "http_503" });
+    // As a pre-0025 row: tried by the outbox already, with no payload or first_tried_at.
+    await db.update(emailOutbox).set({
+      attempts: 3,
+      createdAt: sql`now() - interval '23 hours 30 minutes'`,
+    });
+    await due();
+    const send = vi.fn(async () => ({ ok: true as const }));
+    const run = await processEmailOutbox({ db, send, rebuild: async () => email });
+    expect(run).toEqual({ sent: 0, retry: 0, dead: 1, gone: 0 });
+    expect(send).not.toHaveBeenCalled();
+    const [row] = await rows();
+    expect(row).toMatchObject({ state: "dead", lastStatus: "key_expired", attempts: 3 });
+    expect(output()).toContain(
+      `[email-outbox] kind=lead-notice id=${row.id} status=dead last=key_expired`,
+    );
+  });
+
+  it("stores created_at as first_tried_at for a row tried before first_tried_at existed", async () => {
+    captureConsole();
+    await enqueueEmail(db, { ...office(leadId), lastStatus: "http_503" });
+    await db.update(emailOutbox).set({
+      attempts: 2,
+      createdAt: sql`now() - interval '2 hours'`,
+    });
+    await due();
+    await processEmailOutbox({ db, send: async () => failed, rebuild: async () => email });
+    const [row] = await rows();
+    expect(row.firstTriedAt).toEqual(row.createdAt);
+  });
+
+  it("keeps a new row's own first_tried_at, however old its created_at", async () => {
+    captureConsole();
+    await enqueueEmail(db, { ...office(leadId), lastStatus: "http_503" });
+    await db.update(emailOutbox).set({
+      attempts: 3,
+      createdAt: sql`now() - interval '23 hours 30 minutes'`,
+      firstTriedAt: sql`now() - interval '1 hour'`,
+      payload: { ...email, idempotencyKey: "outbox/x" },
+    });
+    const [before] = await rows();
+    await due();
+    const run = await processEmailOutbox({
+      db,
+      send: async () => failed,
+      rebuild: async () => email,
+    });
+    expect(run).toEqual({ sent: 0, retry: 1, dead: 0, gone: 0 });
+    const [row] = await rows();
+    expect(row.firstTriedAt).toEqual(before.firstTriedAt);
+  });
+
   it("sends the stored payload under the same key after the lead was edited or the admin renamed", async () => {
     captureConsole();
     const [agent] = await db.select().from(agents);
-    await db
-      .insert(users)
-      .values({
-        id: "andrea",
-        name: "Andrea Anderegg",
-        email: "andrea@adams.example",
-        role: "admin",
-      });
+    await db.insert(users).values({
+      id: "andrea",
+      name: "Andrea Anderegg",
+      email: "andrea@adams.example",
+      role: "admin",
+    });
     await db.insert(auditLogs).values({
       actorId: "andrea",
       action: "inquiry.assign",
