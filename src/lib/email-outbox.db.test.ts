@@ -131,6 +131,7 @@ describe("processEmailOutbox", () => {
         expect(Number(minutes)).toBeLessThanOrEqual(wait);
       } else {
         expect(row.state).toBe("dead");
+        expect(row.payload).toBeNull();
         expect(output()).toContain(
           `[email-outbox] kind=lead-notice id=${row.id} status=dead attempts=6 last=http_503`,
         );
@@ -142,7 +143,7 @@ describe("processEmailOutbox", () => {
     expect(await claimDueEmails(db, 10)).toEqual([]);
   });
 
-  it("retries a 409 concurrent under the same key, never marking the row dead for it", async () => {
+  it("retries a 409 concurrent under the same key, counting it as a try up to the cap", async () => {
     const { output } = captureConsole();
     await enqueueEmail(db, { ...office(leadId), lastStatus: "http_503" });
     const concurrent: SendResult = {
@@ -153,19 +154,123 @@ describe("processEmailOutbox", () => {
     };
     const keys: (string | undefined)[] = [];
     const send = vi.fn(async (e: Email) => (keys.push(e.idempotencyKey), concurrent));
-    // Past OUTBOX_MAX_ATTEMPTS: an in-progress request is not a failure to give up on.
-    for (let i = 0; i < OUTBOX_MAX_ATTEMPTS; i++) {
+    for (let attempts = 2; attempts <= OUTBOX_MAX_ATTEMPTS; attempts++) {
       await due();
       await processEmailOutbox({ db, send, rebuild: async () => email });
+      const [row] = await rows();
+      // Never dead for it before the cap.
+      expect(row).toMatchObject({
+        attempts,
+        state: attempts < OUTBOX_MAX_ATTEMPTS ? "pending" : "dead",
+        lastStatus: "409_concurrent",
+      });
     }
     const [row] = await rows();
-    expect(row).toMatchObject({
-      state: "pending",
-      attempts: OUTBOX_MAX_ATTEMPTS + 1,
-      lastStatus: "409_concurrent",
-    });
+    expect(row.payload).toBeNull();
     expect(new Set(keys)).toEqual(new Set([`outbox/${row.id}`]));
-    expect(output().filter((l) => l.includes("status=dead"))).toEqual([]);
+    expect(output().filter((l) => l.includes("status=dead"))).toEqual([
+      `[email-outbox] kind=lead-notice id=${row.id} status=dead attempts=${OUTBOX_MAX_ATTEMPTS} last=409_concurrent`,
+    ]);
+    await due();
+    expect(await claimDueEmails(db, 10)).toEqual([]);
+  });
+
+  it("stores the payload and first_tried_at on the first outbox try, before the send", async () => {
+    captureConsole();
+    await enqueueEmail(db, { ...office(leadId), lastStatus: "http_503" });
+    await due();
+    const [before] = await rows();
+    expect(before).toMatchObject({ payload: null, firstTriedAt: null });
+    let stored: (typeof before)[] = [];
+    const send = vi.fn(async () => ((stored = await rows()), failed));
+    await processEmailOutbox({ db, send, rebuild: async () => email });
+    const key = `outbox/${before.id}`;
+    expect(send).toHaveBeenCalledWith({ ...email, idempotencyKey: key });
+    expect(stored[0].payload).toEqual({ ...email, idempotencyKey: key });
+    expect(stored[0].firstTriedAt).toBeInstanceOf(Date);
+    const [after] = await rows();
+    expect(after).toMatchObject({ state: "pending", payload: { ...email, idempotencyKey: key } });
+    expect(after.firstTriedAt).toEqual(stored[0].firstTriedAt);
+  });
+
+  it("marks a row whose key may have expired dead, sending nothing", async () => {
+    const { output } = captureConsole();
+    await enqueueEmail(db, { ...office(leadId), lastStatus: "http_503" });
+    await db.update(emailOutbox).set({
+      payload: { ...email, idempotencyKey: "outbox/x" },
+      firstTriedAt: sql`now() - interval '23 hours 5 minutes'`,
+    });
+    await due();
+    const send = vi.fn(async () => ({ ok: true as const }));
+    const run = await processEmailOutbox({ db, send, rebuild: async () => email });
+    expect(run).toEqual({ sent: 0, retry: 0, dead: 1, gone: 0 });
+    expect(send).not.toHaveBeenCalled();
+    const [row] = await rows();
+    expect(row).toMatchObject({
+      state: "dead",
+      lastStatus: "key_expired",
+      attempts: 1,
+      payload: null,
+    });
+    expect(output()).toContain(
+      `[email-outbox] kind=lead-notice id=${row.id} status=dead last=key_expired`,
+    );
+    await due();
+    expect(await claimDueEmails(db, 10)).toEqual([]);
+  });
+
+  it("sends the stored payload under the same key after the lead was edited or the admin renamed", async () => {
+    captureConsole();
+    const [agent] = await db.select().from(agents);
+    await db
+      .insert(users)
+      .values({
+        id: "andrea",
+        name: "Andrea Anderegg",
+        email: "andrea@adams.example",
+        role: "admin",
+      });
+    await db.insert(auditLogs).values({
+      actorId: "andrea",
+      action: "inquiry.assign",
+      entityType: "inquiry",
+      entityId: leadId,
+      changes: { agentId: agent.id },
+    });
+    await enqueueEmail(db, { ...office(leadId), lastStatus: "http_503" });
+    await enqueueEmail(db, {
+      kind: "lead-assignment",
+      entityId: leadId,
+      recipientRole: "agent",
+      recipientId: agent.id,
+      lastStatus: "http_503",
+    });
+    const opts = { siteUrl: SITE, inbox: "office@adams.example" };
+    await due();
+    const first: Email[] = [];
+    await retryLeadEmails({ ...opts, send: async (e) => (first.push(e), failed) });
+    expect(first).toHaveLength(2);
+
+    await db
+      .update(inquiries)
+      .set({ message: "Changed: anything with a dock?" })
+      .where(eq(inquiries.id, leadId));
+    await db.update(users).set({ name: "Andrea Renamed" }).where(eq(users.id, "andrea"));
+    await due();
+    const second: Email[] = [];
+    const run = await retryLeadEmails({
+      ...opts,
+      send: async (e) => (second.push(e), { ok: true }),
+    });
+    expect(run).toEqual({ sent: 2, retry: 0, dead: 0, gone: 0 });
+    const byKind = (list: Email[], kind: Email["kind"]) => list.find((e) => e.kind === kind);
+    for (const kind of ["lead-notice", "lead-assignment"] as const)
+      expect(byKind(second, kind)).toEqual(byKind(first, kind));
+    expect(byKind(second, "lead-notice")?.text).toContain("Anything near the lake?");
+    expect(byKind(second, "lead-assignment")?.text).toContain(
+      "Andrea Anderegg assigned this lead to you.",
+    );
+    expect(await rows()).toEqual([]);
   });
 
   it("marks the row dead at once on a 409 invalid_idempotent_request, sending nothing else", async () => {
@@ -182,7 +287,12 @@ describe("processEmailOutbox", () => {
     expect(run).toEqual({ sent: 0, retry: 0, dead: 1, gone: 0 });
     expect(send).toHaveBeenCalledTimes(1);
     const [row] = await rows();
-    expect(row).toMatchObject({ state: "dead", attempts: 2, lastStatus: "409_payload_changed" });
+    expect(row).toMatchObject({
+      state: "dead",
+      attempts: 2,
+      lastStatus: "409_payload_changed",
+      payload: null,
+    });
     expect(output()).toContain(
       `[email-outbox] kind=lead-notice id=${row.id} status=dead attempts=2 last=409_payload_changed`,
     );
@@ -292,14 +402,12 @@ describe("processEmailOutbox", () => {
   it("falls back to 'Your broker' when the assigning admin is gone", async () => {
     captureConsole();
     const [agent] = await db.select().from(agents);
-    await db
-      .insert(users)
-      .values({
-        id: "andrea",
-        name: "Andrea Anderegg",
-        email: "andrea@adams.example",
-        role: "admin",
-      });
+    await db.insert(users).values({
+      id: "andrea",
+      name: "Andrea Anderegg",
+      email: "andrea@adams.example",
+      role: "admin",
+    });
     await db.insert(auditLogs).values({
       actorId: "andrea",
       action: "inquiry.assign",

@@ -10,6 +10,7 @@ import {
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
+import type { Email } from "@/lib/email";
 import type { SearchCriteria } from "@/lib/search/params";
 import { users } from "./auth";
 import { alertFrequency, inquiryStatus, inquiryType, tourType } from "./enums";
@@ -205,9 +206,10 @@ export const appFlags = pgTable("app_flags", {
 
 /**
  * Lead and assignment notices whose send still failed after the in-request
- * retries, tried again by the sync cron (src/lib/email-outbox.ts). References
- * only, never a body, subject, address, name, phone, token or link: the email
- * is rebuilt from the current lead and recipient when it is sent. `entity_id`
+ * retries, tried again by the sync cron (src/lib/email-outbox.ts). Queued by
+ * reference only; `payload` holds the email the first outbox try sent, so later
+ * tries send it unchanged under the same Resend key, and is cleared when the
+ * row goes dead (a sent row is deleted). `entity_id`
  * is the lead; the recipient is `recipient_role` ('agent': an agents.id,
  * 'admin': a users.id, 'office' and 'corrections': no id). One row per notice
  * and recipient. A logged table, so a queued notice survives a restart.
@@ -228,6 +230,10 @@ export const emailOutbox = pgTable(
     /** The last failure, e.g. 'http_503', 'http_429', 'network'. */
     lastStatus: text("last_status"),
     state: text("state").$type<"pending" | "dead">().notNull().default("pending"),
+    /** When the row's Resend key was first used (set before the first outbox send); Resend keeps a key 24 h. */
+    firstTriedAt: timestamp("first_tried_at", { withTimezone: true }),
+    /** The email the first outbox try sent, re-sent as is; NULL before that try and once dead. */
+    payload: jsonb("payload").$type<Email>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

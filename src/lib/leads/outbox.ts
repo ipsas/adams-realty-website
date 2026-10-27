@@ -11,9 +11,9 @@ import { emailSettingsUrl, leadAssignedEmail, leadEmailInput } from "./notify";
 
 /**
  * Rebuilds a queued lead notice (src/lib/email-outbox.ts) from the lead and
- * recipient as they are now (the outbox sends it under its own per-row key).
- * The body depends only on stored data, no clock or random value, so an
- * unchanged lead rebuilds to the same payload on every try. Null (the row is dropped) when the lead is gone
+ * recipient as they are now. The outbox sends the first outbox try's rebuild
+ * on every try, under its own per-row key; later rebuilds only check that the
+ * notice is still due. Null (the row is dropped) when the lead is gone
  * or now marked spam, or the recipient is gone, no longer the lead's agent,
  * no longer an admin who wants copies, or has no email.
  *

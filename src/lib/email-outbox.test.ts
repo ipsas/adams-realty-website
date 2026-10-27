@@ -20,11 +20,11 @@ const email: Email = {
 };
 
 /**
- * A db whose every query chain resolves to the one claimed row `ROW`, of
- * `kind`; each `.set(...)` value is pushed to `sets`.
+ * A db whose every query chain resolves to the one claimed row `ROW` (a
+ * pending lead notice, with `fields`); each `.set(...)` value is pushed to `sets`.
  */
-function fakeDb(kind = "lead-notice", sets: unknown[] = []): Executor {
-  const row = { id: ROW, kind, attempts: 1, state: "pending" };
+function fakeDb(fields: Record<string, unknown> = {}, sets: unknown[] = []): Executor {
+  const row = { id: ROW, kind: "lead-notice", attempts: 1, state: "pending", ...fields };
   const chain: object = new Proxy(() => {}, {
     get: (_t, prop) =>
       prop === "then"
@@ -60,13 +60,83 @@ describe("processEmailOutbox's key", () => {
   });
 });
 
+describe("processEmailOutbox's payload", () => {
+  it("is stored, with first_tried_at, on the first outbox try before it is sent", async () => {
+    captureConsole();
+    const sets: unknown[] = [];
+    const send = vi.fn(async () => {
+      // Already stored when the send starts.
+      expect(sets).toContainEqual(
+        expect.objectContaining({
+          payload: { ...email, idempotencyKey: `outbox/${ROW}` },
+          firstTriedAt: expect.anything(),
+        }),
+      );
+      return { ok: true as const };
+    });
+    await processEmailOutbox({ db: fakeDb({}, sets), send, rebuild: async () => email });
+    expect(send).toHaveBeenCalledWith({ ...email, idempotencyKey: `outbox/${ROW}` });
+  });
+
+  it("is what a later try sends, whatever the rebuild now says, and is not stored again", async () => {
+    captureConsole();
+    const sets: unknown[] = [];
+    const stored = { ...email, idempotencyKey: `outbox/${ROW}` };
+    const send = vi.fn(async () => ({ ok: true as const }));
+    const rebuild = vi.fn(async () => ({ ...email, text: "Jordan asked about 14 Oak Street." }));
+    const run = await processEmailOutbox({
+      db: fakeDb({ payload: stored, firstTriedAt: new Date(Date.now() - 60 * 60_000) }, sets),
+      send,
+      rebuild,
+    });
+    expect(run).toEqual({ sent: 1, retry: 0, dead: 0, gone: 0 });
+    // Rebuilt to check the lead and recipient are still there; not sent.
+    expect(rebuild).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(stored);
+    expect(sets.filter((s) => Object.hasOwn(s as object, "payload"))).toHaveLength(0);
+  });
+});
+
+describe("processEmailOutbox with a key that may have expired", () => {
+  it("sends nothing and marks the row dead, clearing its payload", async () => {
+    const { output } = captureConsole();
+    const sets: unknown[] = [];
+    const send = vi.fn();
+    const rebuild = vi.fn(async () => email);
+    const run = await processEmailOutbox({
+      db: fakeDb(
+        {
+          payload: { ...email, idempotencyKey: `outbox/${ROW}` },
+          firstTriedAt: new Date(Date.now() - 23.5 * 60 * 60_000),
+        },
+        sets,
+      ),
+      send,
+      rebuild,
+    });
+    expect(run).toEqual({ sent: 0, retry: 0, dead: 1, gone: 0 });
+    expect(send).not.toHaveBeenCalled();
+    expect(sets).toContainEqual(
+      expect.objectContaining({ state: "dead", lastStatus: "key_expired", payload: null }),
+    );
+    expect(output()).toContain(
+      `[email-outbox] kind=lead-notice id=${ROW} status=dead last=key_expired`,
+    );
+    expect(output().join("\n")).not.toContain("Oak Street");
+  });
+});
+
 describe("processEmailOutbox with a kind it doesn't know", () => {
   it("rebuilds and sends nothing, and marks the row dead", async () => {
     const { output } = captureConsole();
     const sets: unknown[] = [];
     const send = vi.fn();
     const rebuild = vi.fn(async () => email);
-    const run = await processEmailOutbox({ db: fakeDb("lead-mystery", sets), send, rebuild });
+    const run = await processEmailOutbox({
+      db: fakeDb({ kind: "lead-mystery" }, sets),
+      send,
+      rebuild,
+    });
     expect(run).toEqual({ sent: 0, retry: 0, dead: 1, gone: 0 });
     expect(rebuild).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();

@@ -7,17 +7,20 @@ import { describeError } from "@/lib/mls/write-errors";
 /**
  * The durable retry for lead and assignment notices (`email_outbox`). When a
  * notice still fails after `sendTransactional`'s in-request tries, `enqueue`
- * stores a reference to it (kind, lead id, recipient role and id), never its
- * content. The sync cron (every 15 minutes) runs `processEmailOutbox`: it
- * claims a few due rows, rebuilds each email from the database as it is now,
- * and sends it once. A sent notice's row is deleted; a failed one is tried
- * again after 15 min × 2^(attempts − 1), and after OUTBOX_MAX_ATTEMPTS tries
- * in all it is marked dead with one log line. A notice whose lead or recipient
- * is gone is deleted. A 409 for a same-key request still in progress is
- * retried like any failure (but never marks the row dead); a 409 for a key
- * already used with another payload marks it dead at once (see
- * `outboxIdempotencyKey`). A row of a kind this code doesn't know is marked
- * dead unsent.
+ * stores a reference to it (kind, lead id, recipient role and id). The sync
+ * cron (every 15 minutes) runs `processEmailOutbox`: it claims a few due rows
+ * and rebuilds each email from the database as it is now. The first outbox try
+ * stores that email (`payload`) and the time (`first_tried_at`) before sending
+ * it; later tries still rebuild, only to check the lead and recipient, and
+ * send the stored payload, so the row's key always carries the same request.
+ * The content is stored only while the row is pending: a sent row is deleted,
+ * and a dead one's payload cleared. A failed notice is tried again after
+ * 15 min × 2^(attempts − 1), and after OUTBOX_MAX_ATTEMPTS tries in all
+ * (a 409 for a same-key request still in progress counts as one) it is marked
+ * dead with one log line. A notice whose lead or recipient is gone is deleted.
+ * A row whose key may have expired, or a 409 for a key already used with
+ * another payload, is marked dead unsent (see `outboxIdempotencyKey`), as is a
+ * row of a kind this code doesn't know.
  */
 
 export type OutboxRow = typeof emailOutbox.$inferSelect;
@@ -45,6 +48,8 @@ const BACKOFF = sql`interval '15 minutes'`;
 const LEASE = sql`interval '10 minutes'`;
 /** No new row is started with less than this before the deadline: a row can take a send timeout and a few queries. */
 export const OUTBOX_MIN_TIME_MS = 60_000;
+/** A row's key is not used again this long after its first outbox try: Resend keeps a key 24 h. */
+export const OUTBOX_KEY_TTL_MS = 23 * 60 * 60_000;
 
 /**
  * A failed send's reason for `last_status`: 'http_<code>', '409_concurrent'
@@ -124,24 +129,25 @@ export async function releaseClaims(db: Executor, ids: OutboxRow["id"][]): Promi
 }
 
 /**
- * Records a failed try: due again after the backoff, or dead after
- * OUTBOX_MAX_ATTEMPTS. `state` overrides that: 'dead' ends the row now,
- * 'pending' keeps it due again whatever its attempts.
+ * Records a failed try: due again after the backoff, or dead (its payload
+ * cleared) after OUTBOX_MAX_ATTEMPTS, or now when `dead`.
  */
 export async function recordFailure(
   db: Executor,
   row: OutboxRow,
   lastStatus: string,
-  state?: OutboxRow["state"],
+  dead = false,
 ): Promise<{ attempts: number; state: OutboxRow["state"] }> {
+  const ends = dead
+    ? sql`true`
+    : sql`${emailOutbox.attempts} + 1 >= ${OUTBOX_MAX_ATTEMPTS}::integer`;
   const [r] = await db
     .update(emailOutbox)
     .set({
       attempts: sql`${emailOutbox.attempts} + 1`,
       lastStatus,
-      state:
-        state ??
-        sql`case when ${emailOutbox.attempts} + 1 >= ${OUTBOX_MAX_ATTEMPTS}::integer then 'dead' else 'pending' end`,
+      state: sql`case when ${ends} then 'dead' else 'pending' end`,
+      payload: sql`case when ${ends} then null else ${emailOutbox.payload} end`,
       nextAttemptAt: sql`now() + ${BACKOFF} * power(2, ${emailOutbox.attempts})`,
       updatedAt: sql`now()`,
     })
@@ -153,13 +159,16 @@ export async function recordFailure(
 /**
  * The Resend idempotency key for every outbox try of a row: one key per notice
  * row, so a try whose reply was lost after Resend accepted it can't make a
- * later try send the notice again. Resend keeps a key 24 h; the outbox gives
- * up well inside that (its tries are 15 + 30 + 60 + 120 + 240 min = 7 h 45 min
- * after the first, plus cron and lease slack). A rebuilt notice that changed
- * (lead edited, another inbox) gets a 409 `invalid_idempotent_request`: Resend
- * already holds a request for this row, so the row is marked dead rather than
- * sent again under another key. The in-request try's key differs, so a lost
- * reply there can still mean one duplicate notice: a duplicate beats a lost lead.
+ * later try send the notice again. Every try sends the payload stored on the
+ * first, so a lead edited since doesn't change the request. Resend keeps a key
+ * 24 h; the outbox's tries are 15 + 30 + 60 + 120 + 240 min = 7 h 45 min after
+ * the first, plus cron and lease slack, and a row whose first outbox try is
+ * over OUTBOX_KEY_TTL_MS old (a long outage) is marked dead rather than risk a
+ * duplicate. Should Resend still answer 409 `invalid_idempotent_request`, it
+ * already holds another request for this row, so the row is marked dead rather
+ * than sent again under another key. The in-request try's key differs, so a
+ * lost reply there can still mean one duplicate notice: a duplicate beats a
+ * lost lead.
  */
 export function outboxIdempotencyKey(rowId: OutboxRow["id"]): string {
   return `outbox/${rowId}`;
@@ -201,14 +210,19 @@ export async function processEmailOutbox(deps: OutboxDeps): Promise<OutboxRun> {
     try {
       // Never rebuilt as some other notice: kept dead, for a look, until pruned.
       if (!isOutboxKind(row.kind)) {
-        await db
-          .update(emailOutbox)
-          .set({ state: "dead", lastStatus: "unknown_kind", updatedAt: sql`now()` })
-          .where(eq(emailOutbox.id, row.id));
+        await markDead(db, row, "unknown_kind");
         console.error(`${tag} status=dead last=unknown_kind`);
         run.dead++;
         continue;
       }
+      // Resend may have dropped the key: a send now could go twice.
+      if (row.firstTriedAt && Date.now() - row.firstTriedAt.getTime() > OUTBOX_KEY_TTL_MS) {
+        await markDead(db, row, "key_expired");
+        console.error(`${tag} status=dead last=key_expired`);
+        run.dead++;
+        continue;
+      }
+      // Rebuilt on every try, to drop a notice whose lead or recipient is gone.
       const email = await deps.rebuild(row);
       if (!email) {
         await db.delete(emailOutbox).where(eq(emailOutbox.id, row.id));
@@ -216,9 +230,23 @@ export async function processEmailOutbox(deps: OutboxDeps): Promise<OutboxRun> {
         run.gone++;
         continue;
       }
+      const key = outboxIdempotencyKey(row.id);
+      let payload = row.payload;
+      if (!payload) {
+        // Stored before the send, so a try whose reply is lost leaves its request for the next.
+        payload = { ...email, idempotencyKey: key };
+        await db
+          .update(emailOutbox)
+          .set({
+            payload,
+            firstTriedAt: sql`coalesce(${emailOutbox.firstTriedAt}, now())`,
+            updatedAt: sql`now()`,
+          })
+          .where(eq(emailOutbox.id, row.id));
+      }
       let res: SendResult | null = null;
       try {
-        res = await deps.send({ ...email, idempotencyKey: outboxIdempotencyKey(row.id) });
+        res = await deps.send({ ...payload, idempotencyKey: key });
       } catch (e) {
         console.error(`${tag} send threw: ${describeError(e)}`);
       }
@@ -234,11 +262,7 @@ export async function processEmailOutbox(deps: OutboxDeps): Promise<OutboxRun> {
         db,
         row,
         last,
-        conflict === "invalid_idempotent_request"
-          ? "dead"
-          : conflict === "concurrent_idempotent_requests"
-            ? "pending"
-            : undefined,
+        conflict === "invalid_idempotent_request",
       );
       if (state === "dead") {
         console.error(`${tag} status=dead attempts=${attempts} last=${last}`);
@@ -279,6 +303,14 @@ export async function pruneEmailOutbox(db: Executor = defaultDb): Promise<number
       ),
     );
   return res.rowCount ?? 0;
+}
+
+/** Ends a row unsent, its payload cleared; attempts unchanged. */
+async function markDead(db: Executor, row: OutboxRow, lastStatus: string): Promise<void> {
+  await db
+    .update(emailOutbox)
+    .set({ state: "dead", lastStatus, payload: null, updatedAt: sql`now()` })
+    .where(eq(emailOutbox.id, row.id));
 }
 
 /** `releaseClaims`, logged and left to the lease should it fail. */
