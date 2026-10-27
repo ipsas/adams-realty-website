@@ -56,6 +56,21 @@ export function normalizedCountySql(value: AnyColumn | SQL): SQL {
   return sql`regexp_replace(${normalizedSql(value)}, ' county$', '')`;
 }
 
+/**
+ * A feed's county as shown: "HALL", "hall county" → "Hall County"; a
+ * mixed-case spelling keeps its capitals ("DeKalb" → "DeKalb County").
+ */
+export function countyDisplay(county: string): string {
+  const name = county.trim().replace(/\s+county$/i, "");
+  const shown =
+    name === name.toUpperCase() || name === name.toLowerCase()
+      ? name
+          .toLowerCase()
+          .replace(/(^|[\s\-'.])([a-z])/g, (_, p: string, c: string) => p + c.toUpperCase())
+      : name;
+  return `${shown} County`;
+}
+
 /** The listing has no county, or it is one of the area's. */
 export function inAreaCounties(area: Pick<Area, "counties">): SQL {
   return sql`(${listings.county} is null or ${normalizedCountySql(listings.county)} = any(${textArray(

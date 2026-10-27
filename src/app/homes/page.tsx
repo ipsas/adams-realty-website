@@ -86,7 +86,11 @@ export default async function SearchPage(props: PageProps<"/homes">) {
     <SearchView
       criteria={criteria}
       heading={searchHeading(criteria, scope)}
-      place={hasLocation(criteria) ? (scope.town ?? lakeName(criteria.q) ?? criteria.q) : undefined}
+      place={
+        hasLocation(criteria)
+          ? (scope.town ?? scope.county ?? lakeName(criteria.q) ?? criteria.q)
+          : undefined
+      }
       from={from}
       items={results.items}
       total={results.total}

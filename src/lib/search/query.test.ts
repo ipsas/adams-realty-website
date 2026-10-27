@@ -5,6 +5,7 @@ import { DEFAULT_CRITERIA, parseSearchParams, SORTS } from "./params";
 import {
   buildOrderBy,
   buildWhere,
+  countyKey,
   hasLocation,
   lakeGuide,
   listedWithin,
@@ -301,6 +302,50 @@ describe("a town search", () => {
     const { sql } = render({ q: "30643" }, { town: "Hartwell" });
     expect(sql).toContain(`"listings"."postal_code" = $`);
     expect(sql).not.toContain(`lower("listings"."city")`);
+  });
+});
+
+describe("a county search", () => {
+  it("matches the county only, however a feed spells it", () => {
+    const { sql, params } = render({ q: "Hall County" }, { county: "Hall County" });
+    expect(sql).toContain(`lower("listings"."county") like $`);
+    expect(sql).toContain(
+      `regexp_replace(btrim(regexp_replace(lower("listings"."county"), '[^a-z0-9]+', ' ', 'g')), ' county$', '') = $`,
+    );
+    expect(sql).not.toContain("location_vector");
+    expect(sql).not.toContain(`"listings"."city"`);
+    expect(sql).not.toContain("address_line1");
+    expect(params).toContain("hall%");
+    expect(params).toContain("hall");
+  });
+
+  it("a town in the scope wins over a county", () => {
+    const { sql } = render({ q: "Forsyth" }, { town: "Forsyth", county: "Forsyth County" });
+    expect(sql).toContain(`lower("listings"."city")`);
+    expect(sql).not.toContain(`"listings"."county"`);
+  });
+
+  it("a ZIP stays a ZIP", () => {
+    const { sql } = render({ q: "30501" }, { county: "Hall County" });
+    expect(sql).toContain(`"listings"."postal_code" = $`);
+    expect(sql).not.toContain(`"listings"."county"`);
+  });
+});
+
+describe("countyKey", () => {
+  it("reads '<Name> County', with any case, punctuation or state, and a bare name", () => {
+    expect(countyKey("Hall County")).toBe("hall");
+    expect(countyKey("hall county, ga")).toBe("hall");
+    expect(countyKey("HALL COUNTY, Georgia")).toBe("hall");
+    expect(countyKey("Hall")).toBe("hall");
+    expect(countyKey("  gwinnett ")).toBe("gwinnett");
+  });
+
+  it("is nothing for a ZIP, a lake guide, the state alone or no text", () => {
+    expect(countyKey("30501")).toBeUndefined();
+    expect(countyKey("Lake Lanier")).toBeUndefined();
+    expect(countyKey("Georgia")).toBeUndefined();
+    expect(countyKey(undefined)).toBeUndefined();
   });
 });
 

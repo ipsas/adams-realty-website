@@ -17,7 +17,12 @@ import {
 import { findArea, normalizeAreaName, type Area } from "@/config/areas";
 import { site } from "@/config/site";
 import { listings, openHouses } from "@/db/schema";
-import { areaCondition, normalizedMatch } from "@/lib/areas/match";
+import {
+  areaCondition,
+  normalizeCounty,
+  normalizedCountySql,
+  normalizedMatch,
+} from "@/lib/areas/match";
 import { ACCESS_CODE_PG, ACCESS_CODE_PG_REPLACEMENT } from "@/lib/listings/excluded-fields";
 import { publicConditions } from "@/lib/listings/visibility";
 import { marketDateDaysAgo } from "@/lib/time";
@@ -61,13 +66,34 @@ export function hasLocation(c: Pick<SearchCriteria, "q">): boolean {
 
 /**
  * What the location box's text turned out to be, resolved against the
- * listings (`resolveTown` in ./place.ts). Only a town changes the SQL: the
- * rest is known from the text alone.
+ * listings (`resolveScope` in ./place.ts). Only a town or a county changes the
+ * SQL: the rest is known from the text alone.
  */
 export type LocationScope = {
   /** The town `q` names exactly (a city some listing is in), as the listings spell it. */
   town?: string;
+  /** The county `q` names when it isn't a town ("Hall County", "Gwinnett"): "Hall County". */
+  county?: string;
 };
+
+/**
+ * The county key the location box may name ("Hall County", "hall county, GA",
+ * "Hall" → "hall"), or undefined for a ZIP or a lake guide. Whether such a
+ * county exists, and whether a town of the name comes first, is up to
+ * `resolveScope`.
+ */
+export function countyKey(q: string | undefined): string | undefined {
+  if (!q) return undefined;
+  const text = normalizeLocationQuery(q);
+  if (!text || /^\d{5}$/.test(text) || lakeGuide(q)) return undefined;
+  return normalizeCounty(text) || undefined;
+}
+
+/** Listings in the county (any spelling: "Hall", "HALL", "Hall County"), cheap LIKE first. */
+export function countyCondition(county: string): SQL {
+  const key = normalizeCounty(county);
+  return sql`(lower(${listings.county}) like ${`${key.split(" ")[0]}%`} and ${normalizedCountySql(listings.county)} = ${key})`;
+}
 
 /**
  * The area guide a lake search names ("Lake Hartwell", "Hartwell Lake",
@@ -83,7 +109,8 @@ export function lakeGuide(q: string | undefined): Area | undefined {
 /**
  * The location box. A town ("Hartwell") means homes in that town and nothing
  * else (site review #5: it used to pull in every "Lake Hartwell" home in
- * Lavonia and Toccoa too). Anything else matches where a listing is (address,
+ * Lavonia and Toccoa too); a county ("Hall County") likewise means homes in
+ * that county. Anything else matches where a listing is (address,
  * city, ZIP, neighborhood, lake, MLS number) through `location_vector`, never
  * the description, so "Atlanta" means homes in Atlanta, not every listing
  * "minutes from Atlanta". Each branch has an index (GIN, trigram, btree, or
@@ -94,6 +121,7 @@ function locationCondition(rawQ: string, scope: LocationScope): SQL | undefined 
   if (!q) return undefined;
   if (/^\d{5}$/.test(q)) return eq(listings.postalCode, q);
   if (scope.town) return normalizedMatch(listings.city, [normalizeAreaName(scope.town)]);
+  if (scope.county) return countyCondition(scope.county);
   const like = q.replace(/[%_\\]/g, "\\$&");
   // A guide name or alias ("Lake Hartwell", "Hartwell Lake", "Lanier") also
   // matches the way its guide does: the exact neighborhood or lake name, or

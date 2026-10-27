@@ -18,6 +18,7 @@ export function lakeName(q: string | undefined, town?: string): string | undefin
 /**
  * The results heading (site review #5), which follows the search:
  * - a town: "Homes for sale in Hartwell" (the town as the listings spell it);
+ * - a county: "Homes for sale in Hall County" (for a bare "Hall" too);
  * - a lake: "Homes near Lake Hartwell";
  * - a moved map: "Homes in this map area";
  * - otherwise the place as typed, or the state: "Land for sale in Georgia".
@@ -25,10 +26,11 @@ export function lakeName(q: string | undefined, town?: string): string | undefin
  */
 export function searchHeading(
   c: Pick<SearchCriteria, "mode" | "types" | "q" | "bounds">,
-  scope: { town?: string } = {},
+  scope: { town?: string; county?: string } = {},
 ): string {
   if (c.q && hasLocation(c)) {
     if (scope.town) return `${listingNoun(c)} in ${scope.town}`;
+    if (scope.county) return `${listingNoun(c)} in ${scope.county}`;
     const lake = lakeName(c.q);
     if (lake) return `${listingNoun(c, { bare: true })} near ${lake}`;
     return `${listingNoun(c)} in ${c.q}`;

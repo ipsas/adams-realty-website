@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { lakeGuidesMatching, lakeOf, MAX_AREA_SUGGESTIONS, shapeAreaSuggestions } from "./suggest";
+import { countyDisplay } from "@/lib/areas/match";
+import {
+  countyPrefix,
+  lakeGuidesMatching,
+  lakeOf,
+  MAX_AREA_SUGGESTIONS,
+  shapeAreaSuggestions,
+} from "./suggest";
 
 const row = (kind: string, label: string, sublabel: string | null, n: number) => ({
   kind,
@@ -88,6 +95,56 @@ describe("location suggestions (site review #5)", () => {
       ["Athens", "GA"],
       ["Atherton", "No homes listed right now"],
     ]);
+  });
+
+  it("offers a county first when the text names it, and drops a neighborhood of its name", () => {
+    for (const term of ["Hall", "Hall Co", "Hall County", "hall county, GA"]) {
+      const out = shapeAreaSuggestions(
+        term,
+        [
+          row("neighborhood", "Hall County", "Clermont", 1),
+          row("neighborhood", "Hall Farm", "Comer", 2),
+        ],
+        [],
+        [{ county: "HALL", n: 412 }],
+      );
+      expect(out[0]).toEqual({
+        kind: "county",
+        label: "Hall County",
+        sublabel: "County",
+        value: "Hall County",
+        count: 412,
+      });
+      expect(out.map((s) => s.label)).toEqual(["Hall County", "Hall Farm"]);
+    }
+  });
+
+  it("puts a county the text only starts after the places", () => {
+    const out = shapeAreaSuggestions(
+      "Hal",
+      [row("city", "Halcyon", "GA", 14)],
+      [],
+      [{ county: "Hall", n: 412 }],
+    );
+    expect(out.map((s) => [s.kind, s.label])).toEqual([
+      ["city", "Halcyon"],
+      ["county", "Hall County"],
+    ]);
+  });
+
+  it("reads the county name typed so far", () => {
+    expect(countyPrefix("Hall Co")).toBe("hall");
+    expect(countyPrefix("hall county, GA")).toBe("hall");
+    expect(countyPrefix("gwinnett")).toBe("gwinnett");
+    expect(countyPrefix("Gwin")).toBe("gwin");
+    expect(countyPrefix("30501")).toBe("");
+  });
+
+  it("shows a county as the feed spells it, title-cased when in capitals", () => {
+    expect(countyDisplay("HALL")).toBe("Hall County");
+    expect(countyDisplay("hall county")).toBe("Hall County");
+    expect(countyDisplay("DeKalb")).toBe("DeKalb County");
+    expect(countyDisplay("JEFF DAVIS COUNTY")).toBe("Jeff Davis County");
   });
 
   it("shows at most six areas, and a lake found by name always makes the cut", () => {

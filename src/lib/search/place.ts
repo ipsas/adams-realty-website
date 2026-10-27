@@ -2,11 +2,13 @@ import { and, isNotNull, sql } from "drizzle-orm";
 import { normalizeAreaName } from "@/config/areas";
 import type { Executor } from "@/db";
 import { listings } from "@/db/schema";
-import { normalizedMatch } from "@/lib/areas/match";
+import { countyDisplay, normalizedMatch } from "@/lib/areas/match";
 import { publicListing } from "@/lib/listings/visibility";
 import type { Bounds, SearchCriteria } from "./params";
 import {
   buildWhere,
+  countyCondition,
+  countyKey,
   lakeGuide,
   locationWhere,
   normalizeLocationQuery,
@@ -42,13 +44,37 @@ export async function resolveTown(
   return row?.city;
 }
 
-/** `resolveTown` as the search's location scope. */
+/**
+ * The county the location box names, when it isn't a town: "Hall County",
+ * "hall county, GA" or a bare "Hall" → "Hall County", if some public listing
+ * is there. Undefined otherwise.
+ */
+export async function resolveCounty(
+  ex: Executor,
+  q: string | undefined,
+): Promise<string | undefined> {
+  const key = countyKey(q);
+  if (!key) return undefined;
+  // max() prefers a mixed-case spelling ("Hall") over a feed's capitals ("HALL").
+  const [row] = await ex
+    .select({ county: sql<string | null>`max(${listings.county})` })
+    .from(listings)
+    .where(and(publicListing(), countyCondition(key)));
+  return row?.county ? countyDisplay(row.county) : undefined;
+}
+
+/**
+ * The search's location scope: a town (`resolveTown`) first, so "Forsyth"
+ * and "Gainesville" stay towns, else a county (`resolveCounty`).
+ */
 export async function resolveScope(
   ex: Executor,
   c: Pick<SearchCriteria, "q">,
 ): Promise<LocationScope> {
   const town = await resolveTown(ex, c.q);
-  return town ? { town } : {};
+  if (town) return { town };
+  const county = await resolveCounty(ex, c.q);
+  return county ? { county } : {};
 }
 
 type LatLng = { lat: number; lng: number };
