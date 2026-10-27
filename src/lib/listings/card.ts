@@ -38,6 +38,8 @@ export const cardColumns = {
   isCompanyListing: listings.isCompanyListing,
   isFeatured: listings.isFeatured,
   listOfficeName: listings.listOfficeName,
+  // IDX: the listing office when the feed sends no name (listingOfficeLabel).
+  listOfficeMlsId: listings.listOfficeMlsId,
   // IDX: the listing's own attribution contact, shown after the listing firm.
   attributionPhone: listings.attributionPhone,
   attributionEmail: listings.attributionEmail,

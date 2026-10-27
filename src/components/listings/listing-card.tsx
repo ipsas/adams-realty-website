@@ -23,6 +23,7 @@ import { site } from "@/config/site";
 import { listingContact } from "@/lib/listings/attribution-contact";
 import type { ListingCardData } from "@/lib/listings/card";
 import { landSummary } from "@/lib/listings/land";
+import { listingOfficeLabel } from "@/lib/listings/office-label";
 import { canShowDetails, primaryPhotoOnly } from "@/lib/listings/visibility";
 import { SaveButton } from "./save-button";
 
@@ -48,7 +49,7 @@ export function ListingCard({
   const restricted = !canShowDetails(l);
   const unavailable = l.removedAt !== null || restricted;
   // IDX: every card names the listing firm, as large as the other listing text.
-  const office = l.listOfficeName ?? (l.isCompanyListing ? site.legalName : null);
+  const office = listingOfficeLabel(l, site);
   // Again at render, so a card cached before the formatting still shows xxx-xxx-xxxx.
   const contact = listingContact(l);
   const price = sold && l.closePrice ? l.closePrice : l.listPrice;

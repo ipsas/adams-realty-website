@@ -44,6 +44,7 @@ export const alertListingColumns = {
   hideAddress: listings.hideAddress,
   primaryPhotoUrl: listings.primaryPhotoUrl,
   listOfficeName: listings.listOfficeName,
+  listOfficeMlsId: listings.listOfficeMlsId,
   isCompanyListing: listings.isCompanyListing,
 };
 

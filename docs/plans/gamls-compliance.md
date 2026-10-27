@@ -5,7 +5,7 @@ Required before real feed data goes public. This belongs to GA-A, or to its own 
 - **No public display of Coming Soon, Expired, On Hold or Withdrawn listings** from the feed (Exhibit A §17). The owner decided to hide the firm's own manually entered listings in these statuses too, so the rule covers every listing.
 - **Sold, On Hold, Withdrawn and Expired listings: primary photo only.** Every secondary photo is excluded (Exhibit A §16, Exhibit C notes). Under-contract and pending listings may show all photos.
 - **Source attribution:** show the Georgia MLS name and logo on the pages that show listing data, plus a copyright notice naming GAMLS as the copyright holder (§§7, 10). Every listing, including thumbnails and cards, names the listing firm prominently, in type no smaller than the median listing-data text (§7).
-- **Mandatory fields shown:** Listing Office, Listing ID, Status, Variable Compensation, Attribution Contact Phone and Attribution Contact Email. **Never shown:** Listing Agreement Type, Listing Contract Date, On Market Date, Expiration Date, Private Remarks, Showing Contact Name/Phone, Office Remarks and Showing Requirements (Exhibit C). If buyer-agency compensation is shown, Compensation Comments are shown with it. Audit the RESO mapper and the listing page against this table.
+- **Mandatory fields shown:** Listing Office, Listing ID, Status, Attribution Contact Phone and Attribution Contact Email. **Never shown:** Listing Agreement Type, Listing Contract Date, On Market Date, Expiration Date, Private Remarks, Showing Contact Name/Phone, Office Remarks and Showing Requirements (Exhibit C). Buyer-agency compensation is not shown at all (see below). Audit the RESO mapper and the listing page against this table.
 - **Corrections:** a published way for GAMLS to report a wrong listing (a direct phone and a dedicated email), with the fix or removal within one business day (§6).
 - **Traffic stats:** listing page views have to be made available to GAMLS on request (§9). Plan a simple per-listing view counter or an analytics export.
 - **Unbiased sort:** once the user picks a sort, results are ranked organically (§12). This already holds, since there's no paid placement.
@@ -49,6 +49,15 @@ Owner decisions since, now built:
   Royston, GA 30662). The details are `site.dmca` in `src/config/site.ts`; the public notice
   is `/terms#copyright` ("Copyright complaints (DMCA)", with what a notice must include under
   17 U.S.C. §512(c)(3)), linked from every page's footer.
+
+- **No buyer-broker compensation (GAMLS Rules & Regulations Art. V).** Buyer-agency
+  compensation, compensation comments and Variable Compensation (no longer in the May 2025
+  Exhibit C) are removed from every public page and payload: public queries don't select them
+  (`src/lib/listings/public-fields.ts`). The columns, mapper and sync are unchanged; no staff
+  dashboard view shows them.
+- **Listing office when the feed sends none.** gamls2 sends ListOfficeName empty, so every
+  display uses `listingOfficeLabel()`: feed ListOfficeName → the firm (its own listings) →
+  "MLS Office ID <id>". Resolving names via the feed's Office resource is a planned follow-up.
 
 Still with the owner: a dedicated corrections email if wanted, and confirming the feed's field
 names. HANDOFF.md section 6 lists these.

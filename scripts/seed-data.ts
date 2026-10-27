@@ -1524,7 +1524,8 @@ export const LAKE_FIXTURES = [
  * Demo-feed listings for the Georgia MLS IDX display rules
  * (src/lib/listings/visibility.ts), all in Decatur: one in each status the
  * rules hide, a sold one (primary photo only) and an active one carrying the
- * Exhibit C attribution and compensation fields. Tests find them by MLS
+ * Exhibit C attribution fields and stored compensation fields (which public
+ * pages must not show: Georgia MLS R&R Art. V). Tests find them by MLS
  * number; e2e/gamls.spec.ts uses them. The buyer demo account has the
  * withdrawn one saved, to show how a saved home the rules hide looks.
  */
