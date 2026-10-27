@@ -5,6 +5,7 @@ import {
   compensation,
   EXCLUDED_FIELDS,
   list,
+  mainLevelBedroomFacts,
   mapPropertyType,
   mapResoProperty,
   mapStatus,
@@ -231,6 +232,13 @@ describe("mapResoProperty", () => {
     for (const s of ["None", "N/A", "-", ""]) {
       expect(mapOk({ ...base, LotSizeDimensions: s }).lotSizeDimensions, s).toBeNull();
     }
+  });
+
+  it("maps main-level bedrooms and the primary bedroom on main", () => {
+    expect(
+      mapOk({ ...base, MainLevelBedrooms: 1, InteriorFeatures: ["MasterOnMainLevel"] }),
+    ).toMatchObject({ mainLevelBedrooms: 1, primaryBedroomOnMain: true });
+    expect(mapOk(base)).toMatchObject({ mainLevelBedrooms: null, primaryBedroomOnMain: null });
   });
 
   it("maps the extra feature lists, humanized, and leaves out empty ones", () => {
@@ -532,6 +540,83 @@ describe("Georgia MLS field rules", () => {
     expect(compensation({ CompensationComments: "orphan comment" })).toMatchObject({
       buyerAgencyCompensation: null,
       compensationComments: null,
+    });
+  });
+});
+
+describe("mainLevelBedroomFacts", () => {
+  const facts = (p: ResoProperty) => mainLevelBedroomFacts({ BedroomsTotal: 4, ...p });
+  const MASTER = { InteriorFeatures: ["High Ceilings", "Master On Main Level"] };
+
+  it("trusts the InteriorFeatures flag", () => {
+    expect(facts({ ...MASTER, MainLevelBedrooms: 1 })).toEqual({
+      mainLevelBedrooms: 1,
+      primaryBedroomOnMain: true,
+    });
+    // Comma-separated, and with no MainLevelBedrooms.
+    expect(facts({ InteriorFeatures: "Walk-In Closet(s), Master On Main Level" })).toEqual({
+      mainLevelBedrooms: null,
+      primaryBedroomOnMain: true,
+    });
+  });
+
+  it("matches the flag's spellings case-insensitively", () => {
+    for (const v of ["Primary Bedroom On Main", "master on main", "PRIMARY SUITE ON MAIN LEVEL"]) {
+      expect(facts({ InteriorFeatures: [v] }).primaryBedroomOnMain, v).toBe(true);
+    }
+    for (const v of ["Master Downstairs", "Guest On Main", "Master On Main Level Plus"]) {
+      expect(facts({ InteriorFeatures: [v] }).primaryBedroomOnMain, v).toBeNull();
+    }
+  });
+
+  it("calls the flag with no main-level bedroom a conflict (unknown)", () => {
+    expect(facts({ ...MASTER, MainLevelBedrooms: 0 })).toEqual({
+      mainLevelBedrooms: 0,
+      primaryBedroomOnMain: null,
+    });
+  });
+
+  it("is yes when every bedroom is on the main level", () => {
+    expect(facts({ MainLevelBedrooms: 4 })).toEqual({
+      mainLevelBedrooms: 4,
+      primaryBedroomOnMain: true,
+    });
+    expect(facts({ MainLevelBedrooms: "4" }).primaryBedroomOnMain).toBe(true);
+  });
+
+  it("is no when no bedroom is on the main level", () => {
+    expect(facts({ MainLevelBedrooms: 0 })).toEqual({
+      mainLevelBedrooms: 0,
+      primaryBedroomOnMain: false,
+    });
+  });
+
+  it("is unknown for some bedrooms on main and no flag", () => {
+    expect(facts({ MainLevelBedrooms: 2 })).toEqual({
+      mainLevelBedrooms: 2,
+      primaryBedroomOnMain: null,
+    });
+  });
+
+  it("is unknown without the field", () => {
+    expect(facts({})).toEqual({ mainLevelBedrooms: null, primaryBedroomOnMain: null });
+    expect(facts({ MainLevelBedrooms: null })).toEqual({
+      mainLevelBedrooms: null,
+      primaryBedroomOnMain: null,
+    });
+  });
+
+  it("drops a count above BedroomsTotal, negative or fractional", () => {
+    for (const v of [5, -1, 1.5, "abc"]) {
+      expect(facts({ MainLevelBedrooms: v }), String(v)).toEqual({
+        mainLevelBedrooms: null,
+        primaryBedroomOnMain: null,
+      });
+    }
+    // Without BedroomsTotal there is nothing to compare it to.
+    expect(mainLevelBedroomFacts({ MainLevelBedrooms: 5 })).toEqual({
+      mainLevelBedrooms: 5,
+      primaryBedroomOnMain: null,
     });
   });
 });

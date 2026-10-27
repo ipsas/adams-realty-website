@@ -23,6 +23,13 @@ const FEATURE_LABELS: Record<FeatureFlag, string> = {
   virtualTour: "3D / virtual tour",
   ourListings: "Adams Realty listings only",
   fireplace: "Fireplace",
+  primaryOnMain: "Primary bedroom on main",
+  bedOnMain: "Any bedroom on main level",
+};
+
+/** Accessible names where the visible label leaves out words people search by. */
+const FEATURE_ARIA_LABELS: Partial<Record<FeatureFlag, string>> = {
+  primaryOnMain: "Primary (master) bedroom on main floor",
 };
 
 const SQFT = [500, 750, 1000, 1250, 1500, 1750, 2000, 2500, 3000, 3500, 4000, 5000, 7500];
@@ -333,6 +340,7 @@ export function MoreFilters({
               <Checkbox
                 key={f}
                 label={FEATURE_LABELS[f]}
+                aria-label={FEATURE_ARIA_LABELS[f]}
                 checked={!!d[f]}
                 onChange={(e) => set(f, e.target.checked || undefined)}
               />

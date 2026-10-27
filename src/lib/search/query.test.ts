@@ -252,6 +252,26 @@ describe("acreage, HOA, keyword, price-reduced, 55+ and fireplace filters", () =
   });
 });
 
+describe("main-level bedroom filters", () => {
+  it("add nothing by default", () => {
+    const { sql } = render({});
+    expect(sql).not.toContain("primary_bedroom_on_main");
+    expect(sql).not.toContain("main_level_bedrooms");
+  });
+
+  it("match a known primary bedroom on main, never an unknown", () => {
+    const { sql, params } = render({ primaryOnMain: "1" });
+    expect(sql).toContain(`"listings"."primary_bedroom_on_main" = $`);
+    expect(params).toContain(true);
+  });
+
+  it("match at least one known bedroom on the main level", () => {
+    const { sql, params } = render({ bedOnMain: "1" });
+    expect(sql).toContain(`"listings"."main_level_bedrooms" >= $`);
+    expect(params).toContain(1);
+  });
+});
+
 describe("property types", () => {
   it("filters on any mix of types, commercial included", () => {
     const { sql, params } = render({ types: "land,farm_ranch,commercial" });

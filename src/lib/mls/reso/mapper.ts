@@ -9,8 +9,9 @@ import type { MapResult, NormalizedListing, NormalizedMedia, NormalizedOpenHouse
  * their ModificationTimestamp alone wouldn't make it.
  * 2: GAMLS2_Latitude/Longitude and Coordinates, placeholder subdivisions, 2-digit tax years.
  * 3: AssociationYN, detail columns (fireplaces, parking, 55+, assessed value, zoning…), more feature lists.
+ * 4: MainLevelBedrooms and primary bedroom on main.
  */
-export const RESO_MAPPER_VERSION = 3;
+export const RESO_MAPPER_VERSION = 4;
 
 /**
  * Maps a RESO Data Dictionary 2.x `Property` record (as returned by any
@@ -388,6 +389,36 @@ export function compensation(p: ResoProperty): {
   };
 }
 
+/** The InteriorFeatures value for a primary bedroom on the main level (Georgia MLS: "Master On Main Level"). */
+const PRIMARY_ON_MAIN = /^(master|primary)( bedroom| suite)? on main( level)?$/i;
+
+/**
+ * Main-level bedrooms, from the structured fields only (never the remarks).
+ * `MainLevelBedrooms` counts when it is a whole number no greater than
+ * `BedroomsTotal`. The primary bedroom is on the main level when
+ * InteriorFeatures says so or every bedroom is there, and isn't when no
+ * bedroom is; the flag with zero main-level bedrooms conflicts, so unknown.
+ * A missing flag alone isn't a "no": many one-level homes don't carry it.
+ * Exported for tests.
+ */
+export function mainLevelBedroomFacts(p: ResoProperty): {
+  mainLevelBedrooms: number | null;
+  primaryBedroomOnMain: boolean | null;
+} {
+  const total = int(p.BedroomsTotal);
+  const raw = num(p.MainLevelBedrooms);
+  const mainLevelBedrooms =
+    raw !== null && Number.isInteger(raw) && raw >= 0 && (total === null || raw <= total)
+      ? raw
+      : null;
+  const masterFlag = list(p.InteriorFeatures).some((v) => PRIMARY_ON_MAIN.test(v));
+  let primaryBedroomOnMain: boolean | null = null;
+  if (masterFlag) primaryBedroomOnMain = mainLevelBedrooms === 0 ? null : true;
+  else if (total !== null && total >= 1 && mainLevelBedrooms === total) primaryBedroomOnMain = true;
+  else if (mainLevelBedrooms === 0) primaryBedroomOnMain = false;
+  return { mainLevelBedrooms, primaryBedroomOnMain };
+}
+
 export function mapResoProperty(p: ResoProperty): MapResult {
   const listingKey = str(p.ListingKey);
   if (!listingKey) return { ok: false, listingKey: null, reason: "missing_key" };
@@ -463,6 +494,7 @@ export function mapResoProperty(p: ResoProperty): MapResult {
     garageSpaces: int(p.GarageSpaces),
     fireplacesTotal: int(p.FireplacesTotal),
     parkingTotal: int(p.ParkingTotal),
+    ...mainLevelBedroomFacts(p),
     seniorCommunity: bool(p.SeniorCommunityYN),
     lotSizeDimensions: lotDimensions && !isNullLike(lotDimensions) ? lotDimensions : null,
     zoning: str(p.Zoning),

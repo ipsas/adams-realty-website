@@ -374,6 +374,8 @@ export async function saveListing(
     garageSpaces: d.garageSpaces ?? null,
     fireplacesTotal: existing?.fireplacesTotal ?? null,
     parkingTotal: existing?.parkingTotal ?? null,
+    mainLevelBedrooms: existing?.mainLevelBedrooms ?? null,
+    primaryBedroomOnMain: existing?.primaryBedroomOnMain ?? null,
     seniorCommunity: existing?.seniorCommunity ?? null,
     lotSizeDimensions: existing?.lotSizeDimensions ?? null,
     zoning: existing?.zoning ?? null,
