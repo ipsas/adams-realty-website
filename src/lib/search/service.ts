@@ -25,7 +25,8 @@ import { buildOrderBy, buildWhere, hasLocation, type LocationScope } from "./que
 /**
  * The longest a public search statement may run (`statement_timeout`): any visitor's
  * URL can ask for an expensive search. Generous because Neon runs 2-5x slower than a
- * local box. Past it the page shows no results instead of hanging or failing. Mutable
+ * local box. Past it the page shows what came back and says it may be incomplete,
+ * instead of hanging or failing. Mutable
  * only so a db test can shorten it.
  */
 export const SEARCH_LIMITS = { statementTimeout: "5s" };
@@ -34,80 +35,121 @@ export const SEARCH_LIMITS = { statementTimeout: "5s" };
 const QUERY_CANCELED = "57014";
 
 /**
- * `run` in a transaction whose statements stop after `SEARCH_LIMITS.statementTimeout`;
- * on that timeout, one log line (never the search itself) and `fallback`. Nothing here
- * is cached, so a timed-out result isn't kept. Any other error is thrown.
+ * One page request's searches. The first timeout is recorded here; after it, every
+ * later search query gives its fallback without taking a pool connection, so a slow
+ * search can't hold more connections while the page is already incomplete.
+ */
+export type SearchRun = { timedOut: boolean };
+
+export const searchRun = (): SearchRun => ({ timedOut: false });
+
+/** Whether `e` is a statement timeout: on the error, or on drizzle's wrapper as `cause`. */
+function isTimeout(e: unknown): boolean {
+  const err = e as { code?: string; cause?: { code?: string } };
+  return err?.code === QUERY_CANCELED || err?.cause?.code === QUERY_CANCELED;
+}
+
+/** One log line, never the search itself. */
+function timedOut(run: SearchRun, kind: "results" | "count" | "pins") {
+  run.timedOut = true;
+  console.warn(`[search] timeout kind=${kind}`);
+}
+
+/**
+ * `query` in a transaction whose statements stop after `SEARCH_LIMITS.statementTimeout`;
+ * on that timeout, `fallback`, recorded on `run`. Nothing here is cached, so a timed-out
+ * result isn't kept. Any other error is thrown.
  */
 async function bounded<T>(
+  run: SearchRun,
   kind: "results" | "count" | "pins",
   fallback: T,
-  run: (tx: Executor) => Promise<T>,
+  query: (tx: Executor) => Promise<T>,
 ): Promise<T> {
+  if (run.timedOut) return fallback;
   try {
     return await db.transaction(async (tx) => {
       await tx.execute(
         sql.raw(`set local statement_timeout = '${SEARCH_LIMITS.statementTimeout}'`),
       );
-      return run(tx);
+      return query(tx);
     });
   } catch (e) {
-    const err = e as { code?: string; cause?: { code?: string } };
-    if (err?.code !== QUERY_CANCELED && err?.cause?.code !== QUERY_CANCELED) throw e;
-    console.warn(`[search] timeout kind=${kind}`);
+    if (!isTimeout(e)) throw e;
+    timedOut(run, kind);
     return fallback;
   }
 }
 
+async function countWhere(ex: Executor, where: SQL | undefined): Promise<number> {
+  const [{ total }] = await ex.select({ total: count() }).from(listings).where(where);
+  return total;
+}
+
 export type SearchResult = {
   items: ListingCardData[];
-  total: number;
+  /** Null when the count timed out (or wasn't run): unknown, never a guess. */
+  total: number | null;
   page: number;
   pageCount: number;
+  /** The results or the count timed out: `items` may be short, `total` unknown. */
+  incomplete: boolean;
 };
 
 /**
  * `scope` is whether `q` names a town (./place.ts); callers that already know
- * pass it, else it's looked up.
+ * pass it, else it's looked up. `run` is the page request's (`searchRun`).
  */
 export async function searchListings(
   c: SearchCriteria,
   scope?: LocationScope,
+  run: SearchRun = searchRun(),
 ): Promise<SearchResult> {
   const where = buildWhere(c, undefined, scope ?? (await resolveScope(db, c)));
   const offset = (c.page - 1) * PAGE_SIZE;
-  const [items, counted] = await Promise.all([
-    bounded("results", [], async (tx) =>
-      withPhotos(
+  // Results, then the count, on one connection: a timed-out page of results skips the count.
+  const { items, total } = await bounded(
+    run,
+    "results",
+    { items: [] as ListingCardData[], total: null as number | null },
+    async (tx) => {
+      const items = await withPhotos(
         tx,
         await selectCards(tx)
           .where(where)
           .orderBy(...buildOrderBy(c))
           .limit(PAGE_SIZE)
           .offset(offset),
-      ),
-    ),
-    bounded("count", null, async (tx) => {
-      const [{ total }] = await tx.select({ total: count() }).from(listings).where(where);
-      return total;
-    }),
-  ]);
-  // A timed-out count with a page of results: at least what's shown, never "0 homes" beside them.
-  const total = counted ?? (items.length ? offset + items.length : 0);
+      );
+      if (run.timedOut) return { items, total: null };
+      try {
+        // In a savepoint, so a timed-out count leaves the transaction (and the results) usable.
+        return { items, total: await tx.transaction((sp) => countWhere(sp, where)) };
+      } catch (e) {
+        if (!isTimeout(e)) throw e;
+        timedOut(run, "count");
+        return { items, total: null };
+      }
+    },
+  );
   return {
     items,
     total,
     page: c.page,
-    pageCount: Math.max(1, Math.ceil(total / PAGE_SIZE)),
+    // Unknown total: no page count to page or redirect by.
+    pageCount: total === null ? c.page : Math.max(1, Math.ceil(total / PAGE_SIZE)),
+    incomplete: total === null,
   };
 }
 
-/** How many listings match `c` (no page of results). */
-export async function countListings(c: SearchCriteria, scope?: LocationScope): Promise<number> {
+/** How many listings match `c` (no page of results); null on a timeout. */
+export async function countListings(
+  c: SearchCriteria,
+  scope?: LocationScope,
+  run: SearchRun = searchRun(),
+): Promise<number | null> {
   const where = buildWhere(c, undefined, scope ?? (await resolveScope(db, c)));
-  return bounded("count", 0, async (tx) => {
-    const [{ total }] = await tx.select({ total: count() }).from(listings).where(where);
-    return total;
-  });
+  return bounded(run, "count", null, (tx) => countWhere(tx, where));
 }
 
 export type MapPin = {
@@ -153,10 +195,16 @@ export const MAX_PINS = 750;
  * order, and walks even when that means tens of thousands of rows (sold homes
  * in Savannah: 20k rows, 70–130 ms, against 15 ms collected). So a location
  * search picks the way here (`walkPins`), from Postgres's own row estimates.
+ *
+ * A timeout gives no pins; the caller learns it from `run.timedOut`.
  */
-export async function searchMapPins(c: SearchCriteria, scope?: LocationScope): Promise<MapPin[]> {
+export async function searchMapPins(
+  c: SearchCriteria,
+  scope?: LocationScope,
+  run: SearchRun = searchRun(),
+): Promise<MapPin[]> {
   const resolved = scope ?? (await resolveScope(db, c));
-  return bounded("pins", [], async (tx) => {
+  return bounded(run, "pins", [], async (tx) => {
     if (hasLocation(c)) {
       // One after the other: a transaction's statements share its one connection.
       const matches = await estimateRows(tx, buildWhere(c, undefined, resolved));

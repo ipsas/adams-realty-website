@@ -1271,7 +1271,8 @@ function northeastCounties(): string[] {
  */
 async function assertStatewideFixtures() {
   const buy = (c: Partial<SearchCriteria>) =>
-    searchListings({ ...DEFAULT_CRITERIA, ...c }).then((r) => r.total);
+    // A timed-out count (null) fails the check.
+    searchListings({ ...DEFAULT_CRITERIA, ...c }).then((r) => r.total ?? 0);
   const live = async (where: ReturnType<typeof sql>) => {
     const [{ n }] = await db
       .execute<{ n: number }>(

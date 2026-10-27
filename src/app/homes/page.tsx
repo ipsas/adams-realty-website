@@ -19,7 +19,13 @@ import {
 } from "@/lib/search/params";
 import { centerOf, nearbyTowns, placeBounds, resolveScope } from "@/lib/search/place";
 import { hasLocation, type LocationScope } from "@/lib/search/query";
-import { countListings, MAX_PINS, searchListings, searchMapPins } from "@/lib/search/service";
+import {
+  countListings,
+  MAX_PINS,
+  searchListings,
+  searchMapPins,
+  searchRun,
+} from "@/lib/search/service";
 
 export async function generateMetadata(props: PageProps<"/homes">): Promise<Metadata> {
   const c = parseSearchParams(await props.searchParams);
@@ -59,14 +65,18 @@ export default async function SearchPage(props: PageProps<"/homes">) {
   const criteria = parseSearchParams(raw);
   // Whether `q` names a town: looked up once for the list, the pins and the heading.
   const scope = await resolveScope(db, criteria);
+  // Shared by this request's searches: after a timeout, none starts another query.
+  const run = searchRun();
   const [results, pins, session, lastSynced] = await Promise.all([
-    searchListings(criteria, scope),
-    searchMapPins(criteria, scope),
+    searchListings(criteria, scope, run),
+    searchMapPins(criteria, scope, run),
     getSession(),
     gamlsLastSyncedAt(db),
   ]);
+  // Any timeout (the pins' too): the page says so instead of showing counts or "no homes".
+  const incomplete = results.incomplete || run.timedOut;
   // A page past the last one would show the "no homes match" state: go to the last page.
-  if (results.total > 0 && criteria.page > results.pageCount) {
+  if (!incomplete && results.total && criteria.page > results.pageCount) {
     redirect(withPageHref(raw, results.pageCount));
   }
   // The town a moved map came from, for "Back to Royston" (only while searching the map).
@@ -81,10 +91,11 @@ export default async function SearchPage(props: PageProps<"/homes">) {
       items={results.items}
       total={results.total}
       pageCount={results.pageCount}
+      incomplete={incomplete}
       pins={pins}
       maxPins={MAX_PINS}
       signedIn={!!session}
-      emptyHelp={results.total === 0 ? await emptyHelp(criteria, scope) : undefined}
+      emptyHelp={!incomplete && results.total === 0 ? await emptyHelp(criteria, scope) : undefined}
       mlsDisclaimer={mlsDisclaimer(lastSynced)}
     />
   );
@@ -99,6 +110,8 @@ async function emptyHelp(c: SearchCriteria, scope: LocationScope): Promise<Empty
   const bounds = hasLocation(c) ? await placeBounds(db, c.q, scope) : (c.bounds ?? null);
   const place = hasLocation(c) || !!c.bounds;
   const others: SearchMode[] = c.mode === "buy" ? ["rent"] : ["buy"];
+  // One request's counts: after a timeout the rest give way, and a timed-out one is left out.
+  const run = searchRun();
   const [nearby, elsewhere] = await Promise.all([
     bounds ? nearbyTowns(db, c, centerOf(bounds), scope.town ?? c.q) : [],
     place
@@ -109,9 +122,12 @@ async function emptyHelp(c: SearchCriteria, scope: LocationScope): Promise<Empty
             count: await countListings(
               { mode, q: c.q, bounds: c.bounds, types: c.types, sort: "recommended", page: 1 },
               scope,
+              run,
             ),
           })),
-        ).then((rows) => rows.filter((r) => r.count > 0))
+        ).then((rows) =>
+          rows.filter((r): r is { mode: SearchMode; count: number } => (r.count ?? 0) > 0),
+        )
       : [],
   ]);
   return { placeBounds: hasLocation(c) ? bounds : null, nearby, elsewhere };

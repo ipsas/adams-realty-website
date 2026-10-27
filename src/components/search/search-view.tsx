@@ -38,6 +38,7 @@ import {
   type SortValue,
 } from "@/lib/search/params";
 import { markReturn } from "@/lib/return-nav";
+import { resultsDisplay } from "@/lib/search/display";
 import { recordSearch, setLastSearchView } from "@/lib/search/recent";
 import { listingSlugOf, placeKey, readPlace, writePlace } from "@/lib/search/restore";
 import type { NearbyTown } from "@/lib/search/place";
@@ -77,8 +78,9 @@ export function SearchView({
   place,
   from,
   items,
-  total,
-  pageCount,
+  total: totalIn,
+  pageCount: pageCountIn,
+  incomplete,
   pins,
   maxPins,
   signedIn,
@@ -93,8 +95,11 @@ export function SearchView({
   /** The town a moved map came from ("Back to Royston"). */
   from?: string;
   items: ListingCardData[];
-  total: number;
+  /** Null when unknown (the count timed out). */
+  total: number | null;
   pageCount: number;
+  /** A search query timed out: no totals, pager or "no homes match", only a notice. */
+  incomplete: boolean;
   pins: MapPin[];
   maxPins: number;
   signedIn: boolean;
@@ -105,6 +110,12 @@ export function SearchView({
   const { update, setView, isPending } = useSearchNav(criteria);
   const save = useSaveSearch(signedIn);
   const router = useRouter();
+  const { total, pageCount, empty } = resultsDisplay({
+    incomplete,
+    total: totalIn,
+    pageCount: pageCountIn,
+    itemCount: items.length,
+  });
   const [highlighted, setHighlighted] = useState<string | null>(null);
   const [searchAsMove, setSearchAsMove] = useState(true);
   const listRef = useRef<HTMLDivElement>(null);
@@ -212,10 +223,16 @@ export function SearchView({
                     <ArrowLeft className="size-4" /> Back to {from}
                   </Link>
                 )}
-                <p className="mt-0.5 text-sm text-muted" aria-live="polite">
-                  {formatNumber(total)} {total === 1 ? "result" : "results"}
-                  {countActiveFilters(criteria) > 0 && ` · ${describeCriteria(criteria)}`}
-                </p>
+                {total === null ? (
+                  <p className="mt-0.5 text-sm text-muted" role="status">
+                    This search took too long, so the results may be incomplete. Please try again.
+                  </p>
+                ) : (
+                  <p className="mt-0.5 text-sm text-muted" aria-live="polite">
+                    {formatNumber(total)} {total === 1 ? "result" : "results"}
+                    {countActiveFilters(criteria) > 0 && ` · ${describeCriteria(criteria)}`}
+                  </p>
+                )}
               </div>
               {/* On a phone the row takes the full width and the sort menu shrinks to what's
                   left (its longest label, "Acreage (most first)", would push Save search off
@@ -265,16 +282,18 @@ export function SearchView({
                 ))}
               </div>
             ) : (
-              <EmptyState
-                criteria={criteria}
-                place={place}
-                from={from}
-                help={emptyHelp}
-                save={save}
-                onBackToTown={backToTown}
-                onZoomOut={() => update({ bounds: undefined })}
-                onClearFilters={() => update(clearedFilters())}
-              />
+              empty && (
+                <EmptyState
+                  criteria={criteria}
+                  place={place}
+                  from={from}
+                  help={emptyHelp}
+                  save={save}
+                  onBackToTown={backToTown}
+                  onZoomOut={() => update({ bounds: undefined })}
+                  onClearFilters={() => update(clearedFilters())}
+                />
+              )
             )}
             <Pagination
               page={criteria.page}
@@ -332,7 +351,7 @@ export function SearchView({
                 )}
               </div>
             </div>
-            {pins.length >= maxPins && (
+            {total !== null && pins.length >= maxPins && (
               <p className="absolute bottom-8 left-1/2 -translate-x-1/2 rounded-full bg-shade/80 px-4 py-2 text-xs text-white shadow">
                 Showing the first {maxPins} of {formatNumber(total)} — zoom in to see more
               </p>

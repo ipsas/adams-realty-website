@@ -11,6 +11,7 @@ import {
   SEARCH_LIMITS,
   searchListings,
   searchMapPins,
+  searchRun,
 } from "./service";
 
 // A location search's pins are either walked off the order index or collected
@@ -109,14 +110,22 @@ describe("a search past its statement timeout", () => {
         await tx.execute(sql`lock table ${listings} in access exclusive mode`);
         expect(await searchListings(crit(""), {})).toEqual({
           items: [],
-          total: 0,
+          total: null,
           page: 1,
           pageCount: 1,
+          incomplete: true,
         });
-        expect(await countListings(crit(""), {})).toBe(0);
+        expect(await countListings(crit(""), {})).toBeNull();
         expect(await searchMapPins(crit(""), {})).toEqual([]);
+        expect(warn).toHaveBeenCalledWith("[search] timeout kind=pins");
+        // One request's run: after the first timeout, the rest give way without a query.
+        const run = searchRun();
+        expect(await searchMapPins(crit(""), {}, run)).toEqual([]);
+        expect(run.timedOut).toBe(true);
+        warn.mockClear();
+        expect((await searchListings(crit(""), {}, run)).incomplete).toBe(true);
+        expect(warn).not.toHaveBeenCalled();
       });
-      expect(warn).toHaveBeenCalledWith("[search] timeout kind=pins");
     } finally {
       SEARCH_LIMITS.statementTimeout = saved;
       warn.mockRestore();
