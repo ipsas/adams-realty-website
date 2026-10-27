@@ -91,7 +91,11 @@ export async function syncSource(sourceId: string, opts: SyncOptions = {}): Prom
   const fetchOffices = feed?.fetchOffices?.bind(feed);
   const timeLeft = (runOpts.deadline ?? Infinity) - Date.now();
   if (fetchOffices && result.mode !== "purge" && timeLeft >= OFFICE_MIN_REMAINING_MS) {
-    const named = await refreshOffices({ fetchOffices, ...officeLookupStore(db, source.id) });
+    const named = await refreshOffices({
+      fetchOffices,
+      ...officeLookupStore(db, source.id),
+      deadline: runOpts.deadline,
+    });
     // New office names change the cached cards, so the caller's updateTag must run.
     if (named > 0 && !result.changed) return { ...result, changed: true };
   }
