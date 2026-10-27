@@ -146,6 +146,18 @@ class MemoryStore implements SyncStore {
 
   /** Quarantined records by key, as in sync_quarantine. */
   quarantine = new Map<string, { reason: string; modified: number; at: SyncCursor | null }>();
+  /** Keys passed to each quarantinedVersions. */
+  quarantineLookups: string[][] = [];
+  async quarantinedVersions(keys: string[]) {
+    this.quarantineLookups.push(keys);
+    const held = new Map<string, Date | null>();
+    for (const key of keys) {
+      const q = this.quarantine.get(key);
+      if (q) held.set(key, new Date(q.modified));
+    }
+    return held;
+  }
+
   /** Lines logged after a page committed: skips, quarantines, alerts. */
   logs: string[] = [];
 
@@ -849,6 +861,106 @@ describe("runSync: quarantine after repeated page rejections", () => {
     store.rejectKeys.clear();
     expect(await runSync(store, provider, { now: clock })).toMatchObject({ status: "succeeded" });
     expect(store.streak).toBeNull();
+  });
+
+  /** Seeds `records` into sync_quarantine at their current ModificationTimestamp. */
+  const quarantineAsIs = (records: MapResult[]) => {
+    for (const r of records) {
+      store.quarantine.set(keyOf(r), { reason: "earlier", modified: modifiedOf(r), at: null });
+    }
+  };
+
+  it("skips quarantined rows the lookback re-reads unmodified: the run succeeds, no new streak", async () => {
+    // As QA_STALL_200: page 2 of 3 quarantined on the 4th run; its rows are still bad.
+    const { provider, records } = feed(3);
+    const bad = records.slice(200, 301).map(keyOf);
+    for (const k of bad) store.rejectKeys.add(k);
+    for (let run = 1; run <= QUARANTINE_AFTER_FAILURES; run++) {
+      await expect(runSync(store, provider, { now: clock })).rejects.toThrow(PageRejectedError);
+    }
+    expect(await runSync(store, provider, { now: clock })).toMatchObject({ quarantined: 101 });
+    store.logs = [];
+    const writes: string[][] = [];
+    const write = store.writePage.bind(store);
+    store.writePage = async (page, cursor, opts) => {
+      writes.push(page.map(keyOf));
+      return write(page, cursor, opts);
+    };
+
+    // The next run's lookback re-reads all 600, the quarantined 101 included.
+    const next = await runSync(store, provider, { now: clock });
+    expect(next).toMatchObject({
+      status: "succeeded",
+      fetched: 600,
+      unchanged: 499,
+      quarantined: 0,
+    });
+    expect(next.skipped).toEqual({ still_quarantined: 101 });
+    expect(writes.flat()).toHaveLength(499);
+    expect(writes.flat().some((k) => bad.includes(k))).toBe(false);
+    expect(store.streak).toBeNull();
+    expect(store.quarantine.size).toBe(101);
+    expect(store.logs).toEqual([]);
+    expect(store.cursor).toEqual({ modifiedAt: new Date(modifiedOf(records[599])), key: null });
+    expect(store.runs.at(-1)).toMatchObject({ status: "succeeded", error: undefined });
+    // Looked up by the page's keys, one lookup per page.
+    expect(store.quarantineLookups.slice(-3).map((keys) => keys.length)).toEqual([200, 200, 200]);
+  });
+
+  it("retries a quarantined key whose ModificationTimestamp is newer, and frees it on success", async () => {
+    const { provider, records } = feed(1, 10);
+    const key = keyOf(records[4]);
+    store.quarantine.set(key, {
+      reason: "earlier",
+      modified: modifiedOf(records[4]) - 60_000,
+      at: null,
+    });
+    const result = await runSync(store, provider, { now: clock });
+    expect(result).toMatchObject({ status: "succeeded", upserted: 10 });
+    expect(result.skipped).toEqual({});
+    expect(store.listings.has(key)).toBe(true);
+    expect(store.quarantine.has(key)).toBe(false);
+  });
+
+  it("still attempts a newer version that is rejected again (counted as rejected)", async () => {
+    const { provider, records } = feed(1, 10);
+    const key = keyOf(records[4]);
+    store.quarantine.set(key, {
+      reason: "earlier",
+      modified: modifiedOf(records[4]) - 60_000,
+      at: null,
+    });
+    store.rejectKeys.add(key);
+    const result = await runSync(store, provider, { now: clock });
+    expect(result).toMatchObject({ status: "succeeded", upserted: 9 });
+    expect(result.skipped).toEqual({ write_failed: 1 });
+  });
+
+  it("leaves skipped quarantined rows out of the rejected fraction's base", async () => {
+    // 10 quarantined (still bad) + 20 rows, 8 of them newly bad: 8 of 20, under half.
+    const { provider, records } = feed(1, 30);
+    quarantineAsIs(records.slice(0, 10));
+    for (const r of records.slice(0, 18)) store.rejectKeys.add(keyOf(r));
+    const ok = await runSync(store, provider, { now: clock });
+    expect(ok).toMatchObject({ status: "succeeded", upserted: 12 });
+    expect(ok.skipped).toEqual({ still_quarantined: 10, write_failed: 8 });
+
+    // 10 quarantined + 10 rows, 6 newly bad: 6 of 10 fails, as the skipped 10 don't dilute it.
+    store = new MemoryStore();
+    const small = feed(1, 20);
+    quarantineAsIs(small.records.slice(0, 10));
+    for (const r of small.records.slice(0, 16)) store.rejectKeys.add(keyOf(r));
+    await expect(runSync(store, small.provider, { now: clock })).rejects.toThrow(
+      /^6 of 10 rows rejected on page/,
+    );
+  });
+
+  it("a full run retries quarantined rows even when unmodified", async () => {
+    const { provider, records } = feed(1, 10);
+    quarantineAsIs(records.slice(0, 2));
+    const result = await runSync(store, provider, { mode: "full", now: clock });
+    expect(result).toMatchObject({ status: "succeeded", upserted: 10 });
+    expect(store.quarantine.size).toBe(0);
   });
 
   it("a purge neither counts towards nor ends a streak", async () => {

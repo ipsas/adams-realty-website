@@ -130,6 +130,16 @@ export function createSyncStore(source: SourceRow): PostgresSyncStore {
       return { at, failures: row?.failures ?? 1 };
     },
 
+    async quarantinedVersions(keys) {
+      const rows = await db
+        .select({ key: syncQuarantine.listingKey, at: syncQuarantine.modificationTimestamp })
+        .from(syncQuarantine)
+        .where(
+          and(eq(syncQuarantine.sourceId, source.id), inArray(syncQuarantine.listingKey, keys)),
+        );
+      return new Map(rows.map((r) => [r.key, r.at]));
+    },
+
     async ownClosedSyncedAt() {
       const [row] = await db
         .select({ at: dataSources.ownClosedSyncedAt })

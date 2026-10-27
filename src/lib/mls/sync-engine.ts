@@ -137,6 +137,11 @@ export interface SyncStore {
    * `at`: one more failure if the streak is at `at`, else a new streak of one.
    */
   recordRejection(at: SyncCursor | null): Promise<RejectionStreak>;
+  /**
+   * This source's quarantined records among `keys` (sync_quarantine): each
+   * one's ListingKey and the ModificationTimestamp it was quarantined at.
+   */
+  quarantinedVersions(keys: string[]): Promise<Map<string, Date | null>>;
   /** When the own-closed pass last completed (`data_sources.own_closed_synced_at`); null: never. */
   ownClosedSyncedAt(): Promise<Date | null>;
   /** Records that the own-closed pass read all of the firm's closed sales at `at`. */
@@ -212,11 +217,13 @@ export type SyncResult = SyncCounts & {
    */
   status: "succeeded" | "partial" | "skipped";
   /**
-   * Records not written, by reason: the mapper's, or `write_failed` for one
+   * Records not written, by reason: the mapper's, `write_failed` for one
    * Postgres rejected (logged; the run carries on and the cursor moves past it,
-   * unless too many of its page were rejected: see PageRejectedError).
+   * unless too many of its page were rejected: see PageRejectedError), or
+   * `still_quarantined` for one re-read unmodified since it was quarantined
+   * (see stillQuarantined).
    */
-  skipped: Partial<Record<MapSkipReason | "write_failed", number>>;
+  skipped: Partial<Record<MapSkipReason | "write_failed" | "still_quarantined", number>>;
   cursor: Date | null;
   mediaRowsWritten: number;
   /** Feed values the sanitizer stored as null instead (see PageOutcome.nulled). */
@@ -276,6 +283,26 @@ export const PURGE_RESERVE_MS = 120_000;
 
 export const PURGE_CAP_PREFIX = "Purge cap:";
 export const PURGE_SKIPPED_PREFIX = "Purge skipped:";
+
+/**
+ * The page without the records quarantined at their current
+ * ModificationTimestamp (`held`: SyncStore.quarantinedVersions). The lookback
+ * re-reads them on every run; they'd only be rejected again, and counted
+ * towards the page's rejected fraction, failing runs over records already set
+ * aside. A record modified since is written again (and leaves quarantine).
+ */
+export function stillQuarantined(
+  items: MapResult[],
+  held: Map<string, Date | null>,
+): { items: MapResult[]; skipped: number } {
+  const kept = items.filter((item) => {
+    if (!item.ok) return true;
+    const at = held.get(item.listing.listingKey);
+    const modified = item.listing.sourceModifiedAt;
+    return !(at && modified && at.getTime() === modified.getTime());
+  });
+  return { items: kept, skipped: items.length - kept.length };
+}
 
 export class PurgeCapError extends SyncError {
   constructor(
@@ -485,6 +512,9 @@ export async function runSync(
       }
       // A page that failed runs in a row starts at the cursor they left: this run's first.
       const streak = await store.rejectionStreak();
+      // A full run exists to repair stored rows, so it rewrites every one,
+      // and retries quarantined ones (as does a remap).
+      const skipUnchanged = mode !== "full" && !remap;
       for await (const page of feed.fetchUpdates(from)) {
         countFetched(page.items);
         // Only once the page is written: a failed page's run records the cursor before it.
@@ -493,11 +523,18 @@ export async function runSync(
           streak && streak.failures >= QUARANTINE_AFTER_FAILURES && samePosition(streak.at, cursor)
             ? streak
             : undefined;
-        const outcome = await store.writePage(page.items, next, {
-          // A full run exists to repair stored rows, so it rewrites every one.
-          skipUnchanged: mode !== "full" && !remap,
-          quarantine,
-        });
+        let items = page.items;
+        if (skipUnchanged) {
+          const keys = items.flatMap((item) => (item.ok ? [item.listing.listingKey] : []));
+          const held = keys.length ? await store.quarantinedVersions(keys) : new Map();
+          const kept = stillQuarantined(items, held);
+          items = kept.items;
+          if (kept.skipped) {
+            result.skipped.still_quarantined =
+              (result.skipped.still_quarantined ?? 0) + kept.skipped;
+          }
+        }
+        const outcome = await store.writePage(items, next, { skipUnchanged, quarantine });
         if (quarantine && outcome.quarantined) {
           result.quarantined += outcome.quarantined;
           quarantineNote = describeQuarantine(quarantine, outcome.quarantined);
