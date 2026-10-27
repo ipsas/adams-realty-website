@@ -283,6 +283,7 @@ export function toPins(rows: PinRow[]): MapPin[] {
             listOfficeMlsId: r.listOfficeMlsId,
             officeLookupName: r.officeLookupName,
             isCompanyListing: r.company,
+            fromFeed: r.fromFeed,
           },
           site,
         ),

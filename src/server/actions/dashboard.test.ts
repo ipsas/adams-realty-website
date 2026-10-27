@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Actor } from "@/lib/auth/permissions";
+import type { PersistOptions } from "@/lib/listings/persist";
 import type { NormalizedListing } from "@/lib/mls/types";
 
 // saveListing against mocked Drizzle chains: each `select` resolves to the
@@ -9,6 +10,7 @@ const h = vi.hoisted(() => {
     actor: null as Actor | null,
     selects: [] as unknown[][],
     upserts: [] as NormalizedListing[],
+    upsertOpts: [] as PersistOptions[],
     tags: [] as string[],
     placesRefreshed: 0,
   };
@@ -47,8 +49,14 @@ vi.mock("@/lib/mls/sync", () => ({
   },
 }));
 vi.mock("@/lib/listings/persist", () => ({
-  upsertListing: async (_tx: unknown, _source: unknown, n: NormalizedListing) => {
+  upsertListing: async (
+    _tx: unknown,
+    _source: unknown,
+    n: NormalizedListing,
+    opts: PersistOptions,
+  ) => {
     h.state.upserts.push(n);
+    h.state.upsertOpts.push(opts);
     return { id: LISTING_ID, created: false };
   },
 }));
@@ -156,6 +164,7 @@ beforeEach(() => {
     actor: listingAgent,
     selects: [],
     upserts: [],
+    upsertOpts: [],
     tags: [],
     placesRefreshed: 0,
   });
@@ -168,6 +177,15 @@ describe("saveListing", () => {
     expect(res.ok).toBe(true);
     expect(h.state.tags).toEqual(["listings"]);
     expect(h.state.placesRefreshed).toBe(1);
+  });
+
+  it("saves a manual listing as the firm's own, on create and on update", async () => {
+    queueUpdate();
+    expect((await saveListing({ ok: false }, form())).ok).toBe(true);
+    h.state.selects = [[source], [agent]];
+    // A new listing redirects to its edit page once saved.
+    await expect(saveListing({ ok: false }, form({ id: "" }))).rejects.toThrow("NEXT_REDIRECT");
+    expect(h.state.upsertOpts.map((o) => o.isCompanyListing)).toEqual([true, true]);
   });
 
   // Site review #8: the lot size is typed in acres (the default) or square feet.

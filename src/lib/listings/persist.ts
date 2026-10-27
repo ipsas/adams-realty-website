@@ -25,6 +25,8 @@ export type PersistOptions = {
   /** Explicit agent (manual listings). Wins over the MLS ID lookup. */
   listAgentId?: string | null;
   isFeatured?: boolean;
+  /** The dashboard editor: a manual listing is always the firm's own. */
+  isCompanyListing?: boolean;
   now?: Date;
   /**
    * MLS sync: leave a record alone when its `sourceModifiedAt` equals the
@@ -125,6 +127,7 @@ export async function upsertListings(
           : null;
     const fromFeed = source.kind !== "manual";
     const isCompanyListing =
+      opts.isCompanyListing ||
       source.kind === "manual" ||
       (!!n.listOfficeMlsId && (source.config.companyOfficeIds ?? []).includes(n.listOfficeMlsId));
 

@@ -48,6 +48,7 @@ export const alertListingColumns = {
   listOfficeMlsId: listings.listOfficeMlsId,
   officeLookupName: officeLookupName(),
   isCompanyListing: listings.isCompanyListing,
+  fromFeed: listings.fromFeed,
 };
 
 /** Most listings one alert email shows; the rest are a "see all" link away. */

@@ -479,7 +479,11 @@ export async function saveListing(
       tx,
       { id: source.id, slug: source.slug, kind: "manual", config: source.config },
       { ...normalized, media: [...photoMedia, ...keptMedia], openHouses: keptOpenHouses },
-      { listAgentId, isFeatured: can.featureListing(actor) ? d.isFeatured : undefined },
+      {
+        listAgentId,
+        isCompanyListing: true,
+        isFeatured: can.featureListing(actor) ? d.isFeatured : undefined,
+      },
     );
     await audit(tx, {
       actorId: actor.userId,

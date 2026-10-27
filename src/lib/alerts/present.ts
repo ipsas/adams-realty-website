@@ -45,6 +45,7 @@ export type AlertListing = {
   listOfficeMlsId?: string | null;
   officeLookupName?: string | null;
   isCompanyListing: boolean;
+  fromFeed?: boolean;
 };
 
 type Badge = { label: string; tone: BadgeTone };

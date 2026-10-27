@@ -46,6 +46,30 @@ describe("listingOfficeLabel", () => {
     ).toBe("Adams Realty, Inc.");
   });
 
+  it("names the firm for an old manual row saved without isCompanyListing", () => {
+    expect(
+      listingOfficeLabel(
+        {
+          listOfficeName: "Adams Realty",
+          listOfficeMlsId: null,
+          isCompanyListing: false,
+          fromFeed: false,
+        },
+        site,
+      ),
+    ).toBe("Adams Realty, Inc.");
+  });
+
+  it("leaves another firm's feed listing alone (fromFeed true or unknown)", () => {
+    const other = {
+      listOfficeName: "Peachtree Partners",
+      listOfficeMlsId: "PEACH1",
+      isCompanyListing: false,
+    };
+    expect(listingOfficeLabel({ ...other, fromFeed: true }, site)).toBe("Peachtree Partners");
+    expect(listingOfficeLabel(other, site)).toBe("Peachtree Partners");
+  });
+
   it("ignores an empty or whitespace feed name", () => {
     for (const listOfficeName of [null, "", "   ", undefined]) {
       expect(listingOfficeLabel({ listOfficeName, listOfficeMlsId: "ADAM99" }, firm)).toBe(
