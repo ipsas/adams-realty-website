@@ -391,6 +391,8 @@ export const listings = pgTable(
     index("listings_city_idx").on(t.city),
     // text_pattern_ops also serves the autocomplete's ZIP prefix (LIKE '306%').
     index("listings_postal_code_idx").on(t.postalCode.op("text_pattern_ops")),
+    // The county search's and autocomplete's prefilter (`lower(county) like 'hall%'`).
+    index("listings_county_idx").on(sql`lower(${t.county}) text_pattern_ops`),
     index("listings_list_agent_idx").on(t.listAgentId),
     index("listings_updated_idx").on(t.updatedAt),
     index("listings_mls_number_idx").on(t.mlsNumber),
