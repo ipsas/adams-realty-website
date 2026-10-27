@@ -1,5 +1,6 @@
 import pg from "pg";
 import { afterEach, describe, expect, it } from "vitest";
+import { neonEndpointLabel } from "../../../scripts/preview-purge.mjs";
 import {
   PREVIEW_BRANCH,
   PREVIEW_PROJECT,
@@ -68,6 +69,30 @@ describe("newBranchCheckClient", () => {
       connectionParameters = { options: "-c x=y" };
     }
     expect(() => newBranchCheckClient(Leaky, "postgres://u:p@h/app")).toThrow(/startup options/);
+  });
+});
+
+describe("neonEndpointLabel", () => {
+  it("returns only the ep- label of a .neon.tech host", () => {
+    const url =
+      "postgres://neondb_owner:s3cret@ep-cool-rain-a1b2c3-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require";
+    const label = neonEndpointLabel(url);
+    expect(label).toBe("ep-cool-rain-a1b2c3-pooler");
+    for (const leak of ["postgres://", "s3cret", "neondb_owner", "aws.neon.tech"]) {
+      expect(label).not.toContain(leak);
+    }
+  });
+
+  it("is null for other hosts, labels or non-URLs", () => {
+    for (const url of [
+      "postgres://u:p@localhost:5432/app",
+      "postgres://u:p@ep-x.neon.tech.evil.com/app",
+      "postgres://u:p@db.neon.tech/app",
+      "postgres://u:p@ep-x.example.com/app",
+      "not a url",
+    ]) {
+      expect(neonEndpointLabel(url)).toBeNull();
+    }
   });
 });
 

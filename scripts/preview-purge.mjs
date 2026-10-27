@@ -20,10 +20,47 @@ export { buildDbDecision, checkBranch, purgeDecision };
 /** The demo feed (scripts/seed.ts) and Georgia MLS via Bridge (src/lib/mls/gamls.ts). */
 const SOURCE_SLUGS = ["demo-mls", "gamls"];
 
+/*
+ * Branch-check SQL names every catalog object, function and operator by
+ * pg_catalog, so a user object earlier in search_path cannot shadow it.
+ */
+
+/** A setting's value, or null if it does not exist. */
 async function showSetting(client, name) {
   try {
-    const { rows } = await client.query(`SHOW ${name}`);
-    return Object.values(rows[0] ?? {})[0] || null;
+    const { rows } = await client.query("select pg_catalog.current_setting($1, true) as v", [
+      name,
+    ]);
+    return rows[0]?.v || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The first DNS label of the connection's host if it is a Neon endpoint id
+ * (ep-..., host under .neon.tech), else null. Never the full host.
+ * @param {string} connectionString
+ * @returns {string | null}
+ */
+export function neonEndpointLabel(connectionString) {
+  let hostname;
+  try {
+    hostname = new URL(connectionString).hostname;
+  } catch {
+    return null;
+  }
+  const label = hostname.split(".")[0];
+  return hostname.endsWith(".neon.tech") && /^ep-[a-z0-9-]+$/.test(label) ? label : null;
+}
+
+/** Rows of pg_db_role_setting with a neon.* entry, or null if unreadable. */
+async function neonRoleSettingCount(client) {
+  try {
+    const { rows } = await client.query(`select pg_catalog.count(*)::int as n
+      from pg_catalog.pg_db_role_setting s, pg_catalog.unnest(s.setconfig) c
+      where pg_catalog.starts_with(c, 'neon.')`);
+    return rows[0].n;
   } catch {
     return null;
   }
@@ -41,8 +78,12 @@ async function neonIds(client, label, log) {
     ["projectId", "neon.project_id"],
     ["branchId", "neon.branch_id"],
   ]) {
-    const { rows } = await client.query("select source from pg_settings where name = $1", [name]);
+    const { rows } = await client.query(
+      "select source from pg_catalog.pg_settings where name OPERATOR(pg_catalog.=) $1",
+      [name],
+    );
     const source = rows[0]?.source ?? null;
+    log(`${label} branch check: ${name} pg_settings source=${source ?? "none"}`);
     if (isUntrustedSettingSource(source)) {
       log(`${label} branch check: ${name} comes from source "${source}"; not trusted, ignored.`);
       ids[key] = null;
@@ -107,7 +148,10 @@ export async function buildDbVerdict(connectionString, log = console.log) {
   const client = newBranchCheckClient(pg.Client, connectionString);
   await client.connect();
   try {
+    log(`Database branch check: host endpoint=${neonEndpointLabel(connectionString) ?? "none"}`);
     const { projectId, branchId } = await neonIds(client, "Database", log);
+    const n = await neonRoleSettingCount(client);
+    log(`Database branch check: neon.* role/database settings=${n ?? "unreadable"}`);
     const env = process.env.VERCEL_ENV;
     const verdict = buildDbDecision(env, { projectId, branchId });
     log(`Database branch check: env=${env} project=${projectId} branch=${branchId} -> ${verdict}`);

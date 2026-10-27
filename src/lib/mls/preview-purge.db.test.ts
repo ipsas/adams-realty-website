@@ -1,5 +1,5 @@
 import pg from "pg";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { buildDbVerdict, neonBranchVerdict } from "../../../scripts/preview-purge.mjs";
 import { PREVIEW_BRANCH, PREVIEW_PROJECT } from "./preview-purge.mjs";
 
@@ -61,6 +61,83 @@ describe.each([
   it("is refused by neonBranchVerdict", async () => {
     const lines: string[] = [];
     expect(await neonBranchVerdict(url(), "Test", (l) => lines.push(l))).toBe("refuse");
+    expect(lines).toContain("Test branch check: project=null branch=null -> refuse");
+  });
+});
+
+async function admin(sql: string): Promise<void> {
+  const client = new pg.Client({ connectionString: testUrl() });
+  await client.connect();
+  try {
+    await client.query(sql);
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * Spoofs in schema public, put ahead of pg_catalog by the database's
+ * search_path, that an unqualified catalog read would resolve to.
+ */
+describe("a preview branch claimed through search_path spoofs", () => {
+  beforeAll(async () => {
+    await admin(`
+      create view public.pg_settings as
+        select n.name, 'configuration file'::text as source, null::text as setting
+        from (values ('neon.branch_id'), ('neon.project_id')) as n(name);
+      create function public.current_setting(text, boolean) returns text language sql as $$
+        select case $1 when 'neon.branch_id' then '${PREVIEW_BRANCH}'
+          when 'neon.project_id' then '${PREVIEW_PROJECT}' end
+      $$;
+      do $$ begin
+        execute format('alter database %I set search_path = public, pg_catalog', current_database());
+      end $$;`);
+  });
+
+  afterAll(async () => {
+    await admin(`
+      do $$ begin
+        execute format('alter database %I reset search_path', current_database());
+      end $$;
+      drop view if exists public.pg_settings;
+      drop function if exists public.current_setting(text, boolean);`);
+  });
+
+  it("does fool unqualified catalog reads (the attack)", async () => {
+    const client = new pg.Client({ connectionString: testUrl() });
+    await client.connect();
+    try {
+      const { rows } = await client.query(
+        "select source, current_setting(name, true) as v from pg_settings where name = 'neon.branch_id'",
+      );
+      expect(rows).toEqual([{ source: "configuration file", v: PREVIEW_BRANCH }]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it("is refused by buildDbVerdict on a preview build, logging no connection details", async () => {
+    process.env.VERCEL_ENV = "preview";
+    const lines: string[] = [];
+    expect(await buildDbVerdict(testUrl(), (l) => lines.push(l))).toBe("refuse");
+    expect(lines).toContain(
+      "Database branch check: env=preview project=null branch=null -> refuse",
+    );
+    expect(lines).toContain("Database branch check: neon.branch_id pg_settings source=none");
+    expect(lines).toContain("Database branch check: neon.project_id pg_settings source=none");
+    expect(lines).toContain("Database branch check: host endpoint=none");
+    expect(lines).toContain("Database branch check: neon.* role/database settings=0");
+    const { password, hostname } = new URL(testUrl());
+    for (const line of lines) {
+      expect(line).not.toContain("postgres://");
+      expect(line).not.toContain(hostname);
+      if (password) expect(line).not.toContain(password);
+    }
+  });
+
+  it("is refused by neonBranchVerdict", async () => {
+    const lines: string[] = [];
+    expect(await neonBranchVerdict(testUrl(), "Test", (l) => lines.push(l))).toBe("refuse");
     expect(lines).toContain("Test branch check: project=null branch=null -> refuse");
   });
 });
