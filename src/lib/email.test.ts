@@ -128,7 +128,7 @@ describe("sendEmail with a key", () => {
     expect(JSON.parse(String(init.body)).reply_to).toBe("office@adams.example");
   });
 
-  it("reports send_failed on an HTTP error and logs only the status code", async () => {
+  it("reports send_failed on an HTTP error and logs only kind, domain and status", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(
@@ -137,9 +137,7 @@ describe("sendEmail with a key", () => {
       ),
     );
     expect(await sendEmail(email())).toEqual({ ok: false, reason: "send_failed" });
-    expect(output()).toEqual([
-      "[email] kind=password-reset to_domain=example.com status=failed http_status=500",
-    ]);
+    expect(output()).toEqual(["[email] kind=password-reset to_domain=example.com status=failed"]);
   });
 
   it("reports send_failed when the request itself fails, without the error", async () => {

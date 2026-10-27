@@ -68,10 +68,8 @@ function recipientDomains(to: Email["to"]): string {
  * The one log line per send attempt: the template, the recipient domains and
  * the outcome. Never the address, subject, body, links or Resend's reply.
  */
-function logSend(email: Email, status: "sent" | "failed" | "not_configured", httpStatus?: number) {
-  const line =
-    `[email] kind=${email.kind} to_domain=${recipientDomains(email.to)} status=${status}` +
-    (httpStatus ? ` http_status=${httpStatus}` : "");
+function logSend(email: Email, status: "sent" | "failed" | "not_configured") {
+  const line = `[email] kind=${email.kind} to_domain=${recipientDomains(email.to)} status=${status}`;
   if (status === "sent") console.info(line);
   else if (status === "failed") console.error(line);
   else console.warn(line);
@@ -118,7 +116,7 @@ export async function sendEmail(email: Email): Promise<SendResult> {
     return { ok: false, reason: "send_failed" };
   }
   if (!res.ok) {
-    logSend(email, "failed", res.status);
+    logSend(email, "failed");
     return { ok: false, reason: "send_failed" };
   }
   logSend(email, "sent");
