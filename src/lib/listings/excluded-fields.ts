@@ -77,35 +77,44 @@ const RESTRICTED_VALUE = new RegExp(
 /**
  * An access code in free text: an explicit code phrase ("gate code", "lockbox", "Supra",
  * "code:"), then only separators (":", "#", "=") and at most two filler words ("is",
- * "box", "combo"), then the code itself: 3-10 digits, digit groups ("12-34", "1 2 3 4")
- * or a short code of letters and digits ("A12B"). A plain "combo" ("dining combo, 2-car
- * garage") or "code" is a phrase only right before ":", "=", "#" or "is", and "lockbox
- * on front door" has no code. "key under ..." masks the hiding place. Group 1 (or 2) is
- * what stays visible.
+ * "box", "combo"), then the whole code: 3-10 digits, spaced or dashed digit groups
+ * ("1234 5678", "12-34-56", "1 2 3 4"), spelled-out digits ("one two three four") or a
+ * short code of letters and digits ("A12B"). A plain "combo" ("dining combo, 2-car
+ * garage") or "code" is a phrase only right before ":", "=", "#" or "is" ("combo" also
+ * before a dashed or 4-digit code), and "lockbox on front door" has no code. A code-year
+ * reference ("code is 2018 IBC") is not a code. "key under ..." masks the hiding place.
+ * Group 1 (or 2) is what stays visible.
  *
  * `\b` is the only word-boundary escape used, so the same pattern runs in Postgres
  * (`\y`) for keyword search (`ACCESS_CODE_PG`).
  */
 const PHRASE = [
   String.raw`lock\s*box(?:\s+(?:code|combo))?`,
-  String.raw`(?:alarm|gate|garage|door|access|cbs)\s*code`,
+  String.raw`(?:alarm|gate|garage|door|access|cbs)[\s-]*code`,
   "alarm",
   "keypad",
   "supra",
   "cbs",
-  String.raw`(?<!(?:dining|living|kitchen|dryer|washer|family|breakfast)\s)combo(?=\s*(?:[:=#]|is\b))`,
+  String.raw`(?<!(?:dining|living|kitchen|dryer|washer|family|breakfast)\s)combo(?=\s*(?:[:=#]|is\b|\d{1,4}(?:-\d{1,4}){2}|\d{4}))`,
   String.raw`code(?=\s*(?:[:=#]|is\b))`,
 ].join("|");
 const FILLER = "is|box|code|combo|number|num|no|pin";
 const SEP = String.raw`[\s:#=]*(?:(?:${FILLER})\b[\s:#=.]*){0,2}`;
+const DIGIT_WORD = "zero|one|two|three|four|five|six|seven|eight|nine";
+// Digit groups: "1234 5678" or "12-34 56" (a lone digit after a space is not part of the
+// code: "alarm 1234 2 car garage"), dashed "1-2-3-4", or single digits "1 2 3 4".
 const TOKEN = [
+  String.raw`\d{2,10}(?:[\s-]\d{2,10}){1,9}`,
+  String.raw`\d{1,10}(?:-\d{1,10}){1,9}`,
   String.raw`\d(?:\s\d){2,9}`,
-  String.raw`\d{1,4}(?:-\d{1,4}){1,3}`,
   String.raw`\d{3,10}`,
+  String.raw`(?:${DIGIT_WORD})(?:[\s-]+(?:${DIGIT_WORD})){2,9}`,
   // Letters and digits, but not an ordinal ("2nd").
   String.raw`(?=[0-9a-z]*\d)(?=[0-9a-z]*[a-z])(?![0-9]+(?:st|nd|rd|th)\b)[0-9a-z]{3,8}`,
 ].join("|");
-const ACCESS_CODE_SOURCE = String.raw`(\b(?:${PHRASE})\b${SEP})(?:${TOKEN})#?(?![0-9a-z])|(\bkey\s+under\s+)[^.,;!?\n]{1,40}`;
+/** A building-code year ("2018 IBC", "2015 edition") is a reference, not a code. */
+const CODE_YEAR = String.raw`(?:19|20)\d\d\s+(?:ibc|irc|nec|iecc|building\s+code|code\s+compliant|edition)\b`;
+const ACCESS_CODE_SOURCE = String.raw`(\b(?:${PHRASE})\b${SEP})(?!${CODE_YEAR})(?:${TOKEN})#?(?![0-9a-z]|-\d)|(\bkey\s+under\s+)[^.,;!?\n]{1,40}`;
 const ACCESS_CODE = new RegExp(ACCESS_CODE_SOURCE, "gi");
 const HAS_ACCESS_CODE = new RegExp(ACCESS_CODE_SOURCE, "i");
 const MASK = "****";

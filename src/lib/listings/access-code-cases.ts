@@ -20,6 +20,21 @@ export const NO_CODE = [
   "Kitchen/dining combo: 2 windows",
   "Keypad 2nd door",
   "Codes compliant, 1998 build",
+  "code is 2018 IBC",
+  "building code: 2015 IECC",
+  "code: 2020 NEC",
+  "code is 2012 IRC",
+  "code is 2018 edition",
+  "code: 2021 building code",
+  "code is 1999 code compliant",
+  "dining combo 1234",
+];
+
+/** A code followed by other numbers: `masked` is the whole text with only the code masked. */
+export const CODE_THEN_TEXT: [string, string][] = [
+  ["alarm 1234 2 car garage", "alarm **** 2 car garage"],
+  ["code: 12-34-5, 3 bedrooms", "code: ****, 3 bedrooms"],
+  ["gate code 1234-5678 9012", "gate code ****"],
 ];
 
 /** A code phrase and its code; `code` must not survive in the masked text. */
@@ -43,4 +58,14 @@ export const WITH_CODE: [string, string][] = [
   ["CBS code 99887", "99887"],
   ["lock box 1 2 3 4", "1 2 3 4"],
   ["key under the mat", "mat"],
+  ["lockbox 1234 5678", "5678"],
+  ["combo: 12-34-56", "56"],
+  ["combo: 1-2-3-4", "4"],
+  ["alarm code 1 2 3 4", "4"],
+  ["gate code 1234-5678-9012-3456-78", "78"],
+  ["Gate-code 4521", "4521"],
+  ["Combo 1-2-3-4", "4"],
+  ["code is one two three four", "four"],
+  ["alarm code: five six seven eight", "eight"],
+  ["code is 2018", "2018"],
 ];

@@ -7,7 +7,7 @@ import {
   redactAccessCodes,
   withoutExcludedFields,
 } from "./excluded-fields";
-import { NO_CODE, WITH_CODE } from "./access-code-cases";
+import { CODE_THEN_TEXT, NO_CODE, WITH_CODE } from "./access-code-cases";
 import { COMPENSATION_FIELDS } from "./public-fields";
 
 describe("excluded fields", () => {
@@ -135,6 +135,10 @@ describe("access code masking", () => {
     expect(masked).not.toContain(code);
     expect(masked.replace("Lovely home. ", "")).not.toMatch(/\d/);
     expect(masked).toMatch(/^Lovely home\. .*\*\*\*\*#?\. Call today\.$/);
+  });
+
+  it.each(CODE_THEN_TEXT)("masks only the code in %j", (text, masked) => {
+    expect(redactAccessCodes(text)).toBe(masked);
   });
 
   it("keeps the remarks of 256 Adams Place as written", () => {

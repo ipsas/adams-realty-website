@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { listings } from "@/db/schema";
-import { NO_CODE, WITH_CODE } from "@/lib/listings/access-code-cases";
+import { CODE_THEN_TEXT, NO_CODE, WITH_CODE } from "@/lib/listings/access-code-cases";
 import {
   ACCESS_CODE_PG,
   ACCESS_CODE_PG_REPLACEMENT,
@@ -42,7 +42,7 @@ describe("keyword search", () => {
   });
 
   it("masks in Postgres exactly as on the page", async () => {
-    for (const text of [...NO_CODE, ...WITH_CODE.map(([t]) => t)].map(
+    for (const text of [...NO_CODE, ...[...WITH_CODE, ...CODE_THEN_TEXT].map(([t]) => t)].map(
       (t) => `Lovely home. ${t}. Call today.`,
     )) {
       const { rows } = await db.execute<{ masked: string }>(
