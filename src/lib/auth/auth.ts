@@ -5,9 +5,8 @@ import { nextCookies } from "better-auth/next-js";
 import { site } from "@/config/site";
 import { db } from "@/db";
 import { accounts, sessions, users, verifications } from "@/db/schema";
-import { sendEmail } from "@/lib/email";
-import { passwordResetEmail } from "@/lib/email-templates";
 import { env, vercelOrigins } from "@/lib/env";
+import { sendPasswordReset } from "./reset-email";
 import { checkSignUp } from "./sign-up-guard";
 
 export const auth = betterAuth({
@@ -26,13 +25,7 @@ export const auth = betterAuth({
     autoSignIn: true,
     revokeSessionsOnPasswordReset: true,
     async sendResetPassword({ user, url }) {
-      const email = passwordResetEmail({ name: user.name, url });
-      await sendEmail({
-        to: user.email,
-        subject: email.subject,
-        text: email.text,
-        html: email.html,
-      });
+      await sendPasswordReset({ user, url });
     },
   },
   socialProviders:

@@ -5,7 +5,7 @@ import type { Executor } from "@/db";
 import { agents, inquiries, listings } from "@/db/schema";
 import { displayAgentEmail } from "@/lib/agents/display-email";
 import { offersTours } from "@/lib/areas/firm-area";
-import type { Email } from "@/lib/email";
+import type { SendEmail } from "@/lib/email";
 import { countLeadToken, hitFormLimits, isKnownCustomer, retryPhrase } from "@/lib/form-guard";
 import { inquiryReply, withoutTour } from "@/lib/inquiry-reply";
 import { canShowDetails } from "@/lib/listings/visibility";
@@ -93,7 +93,7 @@ export type SubmitContext = {
 
 export type SubmitDeps = {
   db: Executor;
-  send: (email: Email) => Promise<void>;
+  send: SendEmail;
   siteUrl: string;
   /** Where unassigned leads are emailed (LEADS_INBOX, else the firm's inbox). */
   inbox: string;

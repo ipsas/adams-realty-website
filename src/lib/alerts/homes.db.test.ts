@@ -100,9 +100,22 @@ describe("saved-home alerts", () => {
     for (const c of changes) expect(c.events.length, ids.get(c.listing.id)).toBeGreaterThan(0);
   });
 
+  it("give the claim back when the email isn't sent, so the next run retries", async () => {
+    const stamps = () =>
+      db
+        .select({ listingId: savedListings.listingId, at: savedListings.lastNotifiedAt })
+        .from(savedListings)
+        .orderBy(savedListings.listingId);
+    const before = await stamps();
+    const notSent = async () => ({ ok: false as const, reason: "email_not_configured" as const });
+    const result = await runAlerts({ db, now, send: notSent });
+    expect(result.homes).toMatchObject({ emailed: 0, failed: 1 });
+    expect(await stamps()).toEqual(before);
+  });
+
   it("email the user about the visible changes and never the hidden homes", async () => {
     const sent: Email[] = [];
-    const result = await runAlerts({ db, now, send: async (e) => void sent.push(e) });
+    const result = await runAlerts({ db, now, send: async (e) => (sent.push(e), { ok: true }) });
     const digests = sent.filter((e) => e.to === "sam@example.com");
     expect(digests).toHaveLength(1);
     expect(result.homes.emailed).toBe(1);

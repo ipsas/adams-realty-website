@@ -18,7 +18,7 @@ let agentId: string;
 
 const deps = (over: Partial<SubmitDeps> = {}): SubmitDeps => ({
   db,
-  send: async (e: Email) => void sent.push(e),
+  send: async (e: Email) => (sent.push(e), { ok: true as const }),
   siteUrl: SITE,
   inbox: "office@adams.example",
   production: true,
@@ -143,6 +143,7 @@ describe("a new lead's emails", () => {
     const send = async (e: Email) => {
       if (e.to === "pat@adams.example") throw new Error("mailbox full");
       sent.push(e);
+      return { ok: true as const };
     };
     const res = await submitInquiry(form(), ctx(), deps({ send }));
     expect(res.ok).toBe(true);
@@ -166,7 +167,11 @@ describe("sendLeadAssignedEmail", () => {
       .returning();
     return row;
   }
-  const mail = { db, send: async (e: Email) => void sent.push(e), siteUrl: SITE };
+  const mail = {
+    db,
+    send: async (e: Email) => (sent.push(e), { ok: true as const }),
+    siteUrl: SITE,
+  };
 
   it("tells the agent who assigned it, links the lead, and lets them reply to the buyer", async () => {
     const row = await lead();

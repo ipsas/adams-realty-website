@@ -372,7 +372,9 @@ email notification is best-effort. Leads are never shared outside the company.
 - Server actions send with `afterResponse` (`src/lib/leads/deliver.ts`), i.e. Next's
   `after()`: on Vercel the function stays alive (`waitUntil`) until every email is sent,
   and the visitor doesn't wait for the mail provider. Each send is separate, so one failure
-  doesn't stop the others; failures are logged. Without `RESEND_API_KEY` emails are logged.
+  doesn't stop the others; failures are logged. Without `RESEND_API_KEY` nothing is sent:
+  `sendEmail` returns `email_not_configured`, alert and summary runs skip without claiming
+  anything, and each attempt logs one line (template, recipient domain, status), never the content.
 
 **Follow-up** (`src/lib/leads/attention.ts`, `working-hours.ts`, site review #9):
 

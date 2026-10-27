@@ -4,7 +4,7 @@ import { db as defaultDb, type Executor } from "@/db";
 import { agents, leadDigests, users } from "@/db/schema";
 import { displayAgentEmail } from "@/lib/agents/display-email";
 import { localClock, SEND_HOUR } from "@/lib/alerts/schedule";
-import { sendEmail, type Email } from "@/lib/email";
+import { emailConfigured, sendEmail, type SendEmail } from "@/lib/email";
 import { leadDigestEmail, type DigestLead, type DigestSection } from "@/lib/email-templates";
 import { env } from "@/lib/env";
 import { describeError } from "@/lib/mls/write-errors";
@@ -43,8 +43,11 @@ import { waitingLabel, WAIT_RULE } from "./working-hours";
 
 export type DigestRunResult = {
   ok: boolean;
-  /** Set when the run did nothing because it's before 7 a.m. local. */
-  skipped?: "before-send-hour";
+  /**
+   * Set when the run did nothing: it's before 7 a.m. local, or email isn't
+   * configured (no RESEND_API_KEY), so no summary is claimed for the day.
+   */
+  skipped?: "before-send-hour" | "email-not-configured";
   day: string;
   recipients: number;
   emailed: number;
@@ -67,7 +70,9 @@ type Recipient = {
 export type RunLeadDigestsOptions = {
   db?: Executor;
   now?: Date;
-  send?: (email: Email) => Promise<void>;
+  send?: SendEmail;
+  /** Whether email can be sent. Default: `emailConfigured()`, or true when `send` is given. */
+  configured?: boolean;
   siteUrl?: string;
   timeZone?: string;
   /** Epoch ms after which no new recipient is started. */
@@ -186,6 +191,10 @@ export async function runLeadDigests(opts: RunLeadDigestsOptions = {}): Promise<
     deferred: 0,
   };
   if (clock.hour < SEND_HOUR) return { ...result, skipped: "before-send-hour" };
+  if (!(opts.configured ?? (opts.send ? true : emailConfigured()))) {
+    console.warn("[digest] skipped: email not configured");
+    return { ...result, skipped: "email-not-configured" };
+  }
 
   const recipients = await digestRecipients(db);
   result.recipients = recipients.length;
@@ -213,13 +222,15 @@ export async function runLeadDigests(opts: RunLeadDigestsOptions = {}): Promise<
           siteUrl,
           timeZone,
         });
-        await send({
+        const sent = await send({
+          kind: "lead-digest",
           to: r.email,
           subject: email.subject,
           text: email.text,
           html: email.html,
           idempotencyKey: `lead-digest:${r.key}:${clock.date}`,
         });
+        if (!sent.ok) throw new Error(`email not sent (${sent.reason})`);
         await db
           .update(leadDigests)
           .set({ items })

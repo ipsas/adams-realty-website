@@ -60,7 +60,10 @@ export const makeSchema = (strict: boolean, e: Record<string, string | undefined
     GOOGLE_CLIENT_SECRET: optional,
     /** Bearer token Vercel Cron (or any scheduler) sends to /api/cron/*. */
     CRON_SECRET: optional,
-    /** Transactional email via Resend. Without it, emails are logged to the console. */
+    /**
+     * Transactional email via Resend. Optional so the app still boots without it, but then no
+     * email is sent: sendEmail reports `email_not_configured`.
+     */
     RESEND_API_KEY: optional,
     EMAIL_FROM: z.string().default("Adams Realty <hello@example.com>"),
     /** Reply-To for emails that don't set their own (e.g. the office inbox). Unset: none. */

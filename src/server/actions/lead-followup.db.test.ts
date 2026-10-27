@@ -21,7 +21,7 @@ vi.mock("@/lib/leads/deliver", () => ({
   afterResponse: (_label: string, task: () => Promise<unknown>) => void h.later.push(task),
 }));
 vi.mock("@/lib/email", () => ({
-  sendEmail: async (e: (typeof h.sent)[number]) => void h.sent.push(e),
+  sendEmail: async (e: (typeof h.sent)[number]) => (h.sent.push(e), { ok: true }),
 }));
 
 const { assignInquiry, updateInquiryStatus } = await import("./dashboard");

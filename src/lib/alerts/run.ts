@@ -2,7 +2,7 @@ import { eq, ne, sql } from "drizzle-orm";
 import { site } from "@/config/site";
 import { db as defaultDb, type Executor } from "@/db";
 import { savedSearches, users } from "@/db/schema";
-import { listUnsubscribeHeaders, sendEmail, type Email } from "@/lib/email";
+import { emailConfigured, listUnsubscribeHeaders, sendEmail, type SendEmail } from "@/lib/email";
 import { absoluteUrl, savedHomesUpdateEmail, savedSearchAlertEmail } from "@/lib/email-templates";
 import { gamlsLastSyncedAt } from "@/lib/mls/last-updated";
 import { describeError } from "@/lib/mls/write-errors";
@@ -36,6 +36,8 @@ import { HOME_ALERTS_SCOPE, unsubscribeUrls } from "./token";
 
 export type AlertRunResult = {
   ok: boolean;
+  /** Set when nothing was claimed or sent because email isn't configured (no RESEND_API_KEY). */
+  skipped?: "email-not-configured";
   searches: {
     due: number;
     evaluated: number;
@@ -53,7 +55,9 @@ export type AlertRunResult = {
 export type RunAlertsOptions = {
   db?: Executor;
   now?: Date;
-  send?: (email: Email) => Promise<void>;
+  send?: SendEmail;
+  /** Whether email can be sent. Default: `emailConfigured()`, or true when `send` is given. */
+  configured?: boolean;
   /** Epoch ms after which no new work starts. */
   deadline?: number;
   timeZone?: string;
@@ -84,6 +88,11 @@ export async function runAlerts(opts: RunAlertsOptions = {}): Promise<AlertRunRe
     homes: { users: 0, emailed: 0, skipped: 0, failed: 0, deferred: 0 },
     durationMs: 0,
   };
+  // Claiming advances last_alerted_at / last_notified_at: with no way to send, take nothing.
+  if (!(opts.configured ?? (opts.send ? true : emailConfigured()))) {
+    console.warn("[alerts] skipped: email not configured");
+    return { ...result, skipped: "email-not-configured", durationMs: Date.now() - started };
+  }
 
   // --- Saved searches -----------------------------------------------------
   const searches: SearchRow[] = await db
@@ -189,7 +198,7 @@ async function processSearch(
   db: Executor,
   search: SearchRow,
   now: Date,
-  send: (email: Email) => Promise<void>,
+  send: SendEmail,
 ): Promise<"skipped" | "evaluated" | "emailed"> {
   const claim = await claimSearch(db, search.id, now);
   if (!claim) return "skipped";
@@ -231,7 +240,8 @@ async function processSearch(
       disclaimers,
       mlsUpdatedAt,
     });
-    await send({
+    const sent = await send({
+      kind: "search-alert",
       to: search.email,
       subject: email.subject,
       text: email.text,
@@ -239,6 +249,8 @@ async function processSearch(
       headers: listUnsubscribeHeaders(links.oneClick),
       idempotencyKey: `search-alert:${search.id}:${now.toISOString()}`,
     });
+    // Not sent: the catch below gives the claim back, so the next run retries.
+    if (!sent.ok) throw new Error(`email not sent (${sent.reason})`);
     return "emailed";
   } catch (error) {
     await releaseSearch(db, search.id, claim.previous, now).catch(() => {});
@@ -256,7 +268,7 @@ async function processHomes(
   db: Executor,
   user: { userId: string; email: string; listingIds: string[] },
   now: Date,
-  send: (email: Email) => Promise<void>,
+  send: SendEmail,
 ): Promise<"skipped" | "evaluated" | "emailed"> {
   const claimed = await claimHomes(db, user.userId, user.listingIds, now);
   if (!claimed.length) return "skipped";
@@ -282,7 +294,8 @@ async function processHomes(
       disclaimers,
       mlsUpdatedAt,
     });
-    await send({
+    const sent = await send({
+      kind: "saved-home-digest",
       to: user.email,
       subject: email.subject,
       text: email.text,
@@ -290,6 +303,7 @@ async function processHomes(
       headers: listUnsubscribeHeaders(links.oneClick),
       idempotencyKey: `home-alert:${user.userId}:${now.toISOString()}`,
     });
+    if (!sent.ok) throw new Error(`email not sent (${sent.reason})`);
     return "emailed";
   } catch (error) {
     await releaseHomes(db, user.userId, claimed, now).catch(() => {});

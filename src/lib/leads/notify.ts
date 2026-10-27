@@ -4,7 +4,7 @@ import type { Executor } from "@/db";
 import { agents, inquiries, listings, users } from "@/db/schema";
 import { displayAgentEmail } from "@/lib/agents/display-email";
 import { toEmailListing } from "@/lib/alerts/present";
-import type { Email } from "@/lib/email";
+import type { Email, SendEmail } from "@/lib/email";
 import { leadNotificationEmail } from "@/lib/email-templates";
 import { formatCityLine, formatFullAddress, formatStreet } from "@/lib/format";
 import { describeError } from "@/lib/mls/write-errors";
@@ -29,7 +29,7 @@ import { describeError } from "@/lib/mls/write-errors";
 
 export type LeadMailDeps = {
   db: Executor;
-  send: (email: Email) => Promise<void>;
+  send: SendEmail;
   /** Absolute origin for links, e.g. https://adamsrealtyga.com. */
   siteUrl: string;
 };
@@ -121,11 +121,13 @@ export async function leadCopyRecipients(db: Executor) {
 
 const norm = (email: string) => email.trim().toLowerCase();
 
-/** Sends one email, logging (not throwing) a failure so the others still go out. */
+/**
+ * Sends one email; false when it didn't go. Never throws, so the others still
+ * go out. A send that reports failure was already logged (redacted) by sendEmail.
+ */
 async function trySend(send: LeadMailDeps["send"], email: Email, what: string): Promise<boolean> {
   try {
-    await send(email);
-    return true;
+    return (await send(email)).ok;
   } catch (e) {
     console.error(`[leads] ${what} failed: ${describeError(e)}`);
     return false;
@@ -156,6 +158,7 @@ export async function sendNewLeadEmails(
     await trySend(
       deps.send,
       {
+        kind: "lead-notice",
         to: lead.to,
         replyTo: lead.replyTo,
         subject: main.subject,
@@ -182,6 +185,7 @@ export async function sendNewLeadEmails(
       await trySend(
         deps.send,
         {
+          kind: "lead-copy",
           to: admin.email,
           replyTo: lead.replyTo,
           subject: copy.subject,
@@ -245,6 +249,7 @@ export async function sendLeadAssignedEmail(
   const ok = await trySend(
     deps.send,
     {
+      kind: "lead-assignment",
       to,
       replyTo: lead.email,
       subject: email.subject,

@@ -15,7 +15,7 @@ let agentId: string;
 
 const deps = () => ({
   db,
-  send: async (e: Email) => void sent.push(e),
+  send: async (e: Email) => (sent.push(e), { ok: true as const }),
   siteUrl: "https://adams.example",
   inbox: "office@adams.example",
   production: true,

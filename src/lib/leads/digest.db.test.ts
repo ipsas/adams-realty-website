@@ -12,7 +12,7 @@ import { runLeadDigests } from "./digest";
 const SITE = "https://adams.example";
 const et = (day: string, time: string) => new Date(`${day}T${time}:00-04:00`);
 let sent: Email[];
-const send = async (e: Email) => void sent.push(e);
+const send = async (e: Email) => (sent.push(e), { ok: true as const });
 const run = (now: Date, over: Parameters<typeof runLeadDigests>[0] = {}) =>
   runLeadDigests({ db, now, send, siteUrl: SITE, ...over });
 
@@ -117,8 +117,21 @@ describe("runLeadDigests", () => {
     const failing = async (e: Email) => {
       if (e.to === "pat@adams.example") throw new Error("provider down");
       sent.push(e);
+      return { ok: true as const };
     };
     const first = await run(et("2026-09-30", "07:05"), { send: failing });
+    expect(first).toMatchObject({ ok: false, failed: 1, emailed: 1 });
+    const retry = await run(et("2026-09-30", "08:05"));
+    expect(retry).toMatchObject({ ok: true, emailed: 1, alreadyDone: 2 });
+    expect(sent.map((e) => e.to)).toEqual(["andrea@adams.example", "pat@adams.example"]);
+  });
+
+  it("doesn't mark a summary that wasn't sent: the next run sends it", async () => {
+    const notSent = async (e: Email) =>
+      e.to === "pat@adams.example"
+        ? { ok: false as const, reason: "send_failed" as const }
+        : (sent.push(e), { ok: true as const });
+    const first = await run(et("2026-09-30", "07:05"), { send: notSent });
     expect(first).toMatchObject({ ok: false, failed: 1, emailed: 1 });
     const retry = await run(et("2026-09-30", "08:05"));
     expect(retry).toMatchObject({ ok: true, emailed: 1, alreadyDone: 2 });

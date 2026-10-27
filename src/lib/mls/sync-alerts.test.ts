@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Email } from "@/lib/email";
+import type { Email, SendEmail } from "@/lib/email";
+import { captureConsole } from "@/test/console";
 import { sendSyncAlert, syncAlertEmail, syncAlertKey } from "./sync-alerts";
 import type { SyncAlert } from "./sync-engine";
+
+vi.mock("@/lib/env", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@/lib/env")>();
+  return { ...mod, env: { ...mod.env, RESEND_API_KEY: undefined } };
+});
 
 const alert = (over: Partial<SyncAlert> = {}): SyncAlert => ({
   mode: "incremental",
@@ -41,7 +47,7 @@ describe("sync alerts", () => {
   });
 
   it("emails every admin, keyed by source, cursor and refusal, so a retry doesn't double-send", async () => {
-    const send = vi.fn<(email: Email) => Promise<void>>(async () => {});
+    const send = vi.fn<SendEmail>(async () => ({ ok: true }));
     await sendSyncAlert("gamls", alert({ refusal: 2 }), { recipients: admins, send });
     expect(send.mock.calls.map((c) => c[0].to)).toEqual([
       "broker@example.com",
@@ -63,6 +69,7 @@ describe("sync alerts", () => {
     const send = vi.fn(async (email: Email) => {
       if (email.to === "broker@example.com")
         throw new Error("Email send failed (500): broker@example.com");
+      return { ok: true as const };
     });
     await expect(
       sendSyncAlert("gamls", alert(), { recipients: admins, send }),
@@ -81,5 +88,18 @@ describe("sync alerts", () => {
       }),
     ).resolves.toBeUndefined();
     error.mockRestore();
+  });
+
+  it("with no Resend key: one redacted line per admin, nothing sent, nothing thrown", async () => {
+    const { output, restore } = captureConsole();
+    await expect(sendSyncAlert("gamls", alert(), { recipients: admins })).resolves.toBeUndefined();
+    expect(output().filter((l) => l.startsWith("[email]"))).toEqual([
+      "[email] kind=sync-alert to_domain=example.com status=not_configured",
+      "[email] kind=sync-alert to_domain=example.com status=not_configured",
+    ]);
+    const all = output().join("\n");
+    for (const s of ["broker@", "admin2@", "MLS sync gamls", "Rejected:", "K000199"])
+      expect(all).not.toContain(s);
+    restore();
   });
 });
