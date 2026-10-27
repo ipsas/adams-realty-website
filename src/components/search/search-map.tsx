@@ -21,6 +21,7 @@ import {
   swapDrawnStyle,
 } from "./map-setup";
 import { mlsLogoSrcSet } from "@/components/content/mls-attribution";
+import { fitPopupDelta, nextPopupStep, popupArea, scrollCap } from "./popup-fit";
 import { useMapTheme } from "@/components/theme/use-theme";
 import { readResolvedTheme } from "@/lib/theme";
 import { formatBaths, formatNumber, formatPrice, formatPriceShort } from "@/lib/format";
@@ -324,8 +325,17 @@ function pinFacts(p: MapPin): string {
   );
 }
 
-/** Popup contents built with DOM APIs (never innerHTML) — listing text comes from third-party feeds. */
-function popupNode(p: MapPin): HTMLElement {
+/**
+ * Below Tailwind's lg breakpoint, where search-view shows the map as its own view and it can be
+ * shorter than a popup. A media query (not the map's width) so it switches with the layout.
+ */
+const SMALL_SCREEN = "(max-width: 1023.98px)";
+
+/**
+ * Popup contents built with DOM APIs (never innerHTML) — listing text comes from third-party feeds.
+ * `small`: marks the photo and wraps price, facts and address so fitSmallPopup can compact them.
+ */
+function popupNode(p: MapPin, small = false): HTMLElement {
   const a = document.createElement("a");
   a.href = `/homes/${p.slug}`;
   a.className = "block w-60 text-ink no-underline";
@@ -335,6 +345,7 @@ function popupNode(p: MapPin): HTMLElement {
     img.src = photoUrl(p.photo, 480);
     img.alt = p.address;
     img.className = "h-32 w-full object-cover bg-sunken";
+    if (small) img.dataset.popupPhoto = "";
     img.onerror = () => img.remove();
     a.append(img);
   }
@@ -349,7 +360,12 @@ function popupNode(p: MapPin): HTMLElement {
   const addr = document.createElement("p");
   addr.className = "text-xs text-muted mt-0.5 truncate";
   addr.textContent = p.address;
-  body.append(price, facts, addr);
+  if (small) {
+    const head = document.createElement("div");
+    head.dataset.popupHead = "";
+    head.append(price, facts, addr);
+    body.append(head);
+  } else body.append(price, facts, addr);
   if (p.office) {
     // IDX: the listing firm, in the same size as the other listing text.
     const office = document.createElement("p");
@@ -384,6 +400,43 @@ function popupNode(p: MapPin): HTMLElement {
   }
   a.append(body);
   return a;
+}
+
+/**
+ * Small screens (QA L18-1): compacts the popup until it fits the map's height (a shorter photo,
+ * no photo, then a scrolling price/facts/address part; the firm line and the MLS credit stay
+ * whole), then pans so all of it is inside the map, clear of the overlay pill.
+ */
+function fitSmallPopup(
+  map: MapLibreMap,
+  popup: maplibregl.Popup,
+  content: HTMLElement,
+  overlay: Element | null | undefined,
+) {
+  const area = popupArea(
+    map.getContainer().getBoundingClientRect(),
+    overlay?.getBoundingClientRect().bottom,
+  );
+  const available = area.bottom - area.top;
+  const height = () => popup.getElement().getBoundingClientRect().height;
+  const photo = content.querySelector<HTMLImageElement>("[data-popup-photo]");
+  const head = content.querySelector<HTMLElement>("[data-popup-head]");
+  for (let step = nextPopupStep("full"); step && height() > available; step = nextPopupStep(step)) {
+    if (step === "short-photo" && photo) photo.classList.replace("h-32", "h-20");
+    else if (step === "no-photo" && photo) photo.hidden = true;
+    else if (step === "scroll" && head) {
+      const cap = scrollCap(head.getBoundingClientRect().height, height() - available);
+      head.style.maxHeight = `${cap}px`;
+      head.classList.add("overflow-y-auto");
+    }
+  }
+  // Pan, re-measure, and correct once more if needed (the anchor is pinned, so it can't flip).
+  for (let i = 0; i < 2; i++) {
+    const { dx, dy } = fitPopupDelta(popup.getElement().getBoundingClientRect(), area);
+    if (!dx && !dy) break;
+    // Programmatic: `movestart` sees no originalEvent, so this won't trigger a bounds search.
+    map.panBy([dx, dy], { animate: false });
+  }
 }
 
 export default function SearchMap({
@@ -510,17 +563,27 @@ export default function SearchMap({
         const pin = f ? latest.current.pinsById.get(f.properties?.id as string) : undefined;
         if (!pin) return;
         popup.current?.remove();
+        const small = window.matchMedia(SMALL_SCREEN).matches;
+        // Small screens: above a pin in the map's lower half, else below it, and pinned there so
+        // MapLibre can't flip it after fitSmallPopup measured it.
+        const anchor =
+          map.project([pin.lng, pin.lat]).y > map.getContainer().clientHeight / 2
+            ? "bottom"
+            : "top";
+        const content = popupNode(pin, small);
         popup.current = new maplibregl.Popup({
           offset: 16,
           closeButton: false,
           maxWidth: "260px",
+          ...(small ? { anchor } : {}),
         })
           .setLngLat([pin.lng, pin.lat])
-          .setDOMContent(popupNode(pin))
+          .setDOMContent(content)
           .addTo(map);
         // Keep the popup clear of the overlay over the map ("Search as I move the map").
         const overlay = container.current?.parentElement?.querySelector("[data-map-overlay]");
-        if (overlay) {
+        if (small) fitSmallPopup(map, popup.current, content, overlay);
+        else if (overlay) {
           const o = overlay.getBoundingClientRect();
           const r = popup.current.getElement().getBoundingClientRect();
           const overlaps =
