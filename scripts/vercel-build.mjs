@@ -3,6 +3,14 @@
  * agents and logins in an empty database, then build Next.js. Runs
  * automatically on Vercel because package.json defines "vercel-build".
  *
+ * Database guard (first, before any write): buildDbVerdict reads the
+ * connection's Neon ids. A production build writes only to the production
+ * branch, a preview build only to the preview branch (buildDbDecision in
+ * src/lib/mls/preview-purge.mjs). A production build on any other database, or
+ * a preview build on the production branch, fails the build; any other mismatch
+ * (or a development/local build) skips every database step below and still
+ * runs `next build`.
+ *
  * The build never inserts listings. Demo seed (for previews): set
  * SEED_DEMO_DATA=1 and SEED_PASSWORD (the password for the demo logins). It
  * runs `seed.ts --no-listings`, and only when the agents table is empty, so it
@@ -24,18 +32,19 @@
  * read-only report of listings per data source in the build log
  * (previewListingCounts). A failure there only logs; it never fails the build.
  *
- * Keyword vectors (every environment, last before `next build`):
+ * Keyword vectors (production and preview, last before `next build`):
  * scripts/keyword-backfill.ts fills listings.keyword_tsv where it is null (a
  * migration may reset them all, as 0024 does), so the deployment searches fresh
  * vectors when traffic switches. It runs for up to KEYWORD_BACKFILL_MINUTES
  * (default 20); rows left then are logged and the build continues (the sync
- * cron, every 15 minutes, finishes them). An error fails the build; a rerun
- * resumes, since it only fills null rows.
+ * cron, every 15 minutes, finishes them). An error only logs a warning and the
+ * build continues; null rows fall back to the slower match until filled.
  */
 import { execSync } from "node:child_process";
 import pg from "pg";
 import { shouldSyncFeed } from "../src/lib/mls/preview-sync.mjs";
 import {
+  buildDbVerdict,
   neonBranchVerdict,
   previewListingCounts,
   purgeDecision,
@@ -49,6 +58,26 @@ if (!process.env.DATABASE_URL) {
     "DATABASE_URL is not set — skipping migrations. Add a Postgres database (e.g. Neon) to the project.",
   );
 } else {
+  const db = await buildDbVerdict(process.env.DATABASE_URL);
+  if (db === "fatal") {
+    throw new Error(
+      "Database branch check failed: this build's database is not allowed for its environment; nothing migrated or written.",
+    );
+  }
+  if (db === "refuse") {
+    const reason = ["production", "preview"].includes(process.env.VERCEL_ENV ?? "")
+      ? "not the Neon preview project and branch"
+      : "not a production or preview build";
+    console.log(`Database steps skipped: ${reason}; nothing migrated or written.`);
+  } else {
+    await databaseSteps();
+  }
+}
+
+run("npx next build");
+
+/** Migrate, purge, seed, MLS sync, preview counts, keyword backfill; only after an "ok" check. */
+async function databaseSteps() {
   run("npx drizzle-kit migrate");
   const purge = purgeDecision(process.env);
   if (purge.run) {
@@ -101,7 +130,11 @@ if (!process.env.DATABASE_URL) {
       console.warn(`Preview listing counts failed: ${e instanceof Error ? e.message : e}`);
     }
   }
-  run("npx tsx scripts/keyword-backfill.ts");
+  try {
+    run("npx tsx scripts/keyword-backfill.ts");
+  } catch {
+    console.warn(
+      "Keyword backfill failed; continuing the build (the sync cron fills the rest; rows without a vector fall back to the slower match).",
+    );
+  }
 }
-
-run("npx next build");

@@ -3,6 +3,7 @@ import {
   PREVIEW_BRANCH,
   PREVIEW_PROJECT,
   PROD_BRANCH,
+  buildDbDecision,
   checkBranch,
   purgeDecision,
 } from "./preview-purge.mjs";
@@ -47,5 +48,35 @@ describe("checkBranch", () => {
   it("is fatal for the production branch, even with the preview project", () => {
     expect(checkBranch({ projectId: PREVIEW_PROJECT, branchId: PROD_BRANCH })).toBe("fatal");
     expect(checkBranch({ projectId: null, branchId: PROD_BRANCH })).toBe("fatal");
+  });
+});
+
+describe("buildDbDecision", () => {
+  const preview = { projectId: PREVIEW_PROJECT, branchId: PREVIEW_BRANCH };
+
+  it("production: ok only on the production branch, fatal on anything else", () => {
+    expect(
+      buildDbDecision("production", { projectId: PREVIEW_PROJECT, branchId: PROD_BRANCH }),
+    ).toBe("ok");
+    expect(buildDbDecision("production", preview)).toBe("fatal");
+    expect(buildDbDecision("production", { projectId: null, branchId: null })).toBe("fatal");
+  });
+
+  it("preview: follows checkBranch", () => {
+    expect(buildDbDecision("preview", preview)).toBe("ok");
+    expect(buildDbDecision("preview", { projectId: PREVIEW_PROJECT, branchId: PROD_BRANCH })).toBe(
+      "fatal",
+    );
+    expect(buildDbDecision("preview", { projectId: "other-project", branchId: "br-other" })).toBe(
+      "refuse",
+    );
+    expect(buildDbDecision("preview", { projectId: null, branchId: null })).toBe("refuse");
+  });
+
+  it("refuses in development or with no VERCEL_ENV", () => {
+    for (const env of ["development", undefined, ""]) {
+      expect(buildDbDecision(env, preview)).toBe("refuse");
+      expect(buildDbDecision(env, { projectId: null, branchId: PROD_BRANCH })).toBe("refuse");
+    }
   });
 });

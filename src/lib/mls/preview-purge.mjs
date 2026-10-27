@@ -30,3 +30,18 @@ export function checkBranch({ projectId, branchId }) {
   if (projectId === PREVIEW_PROJECT && branchId === PREVIEW_BRANCH) return "ok";
   return "refuse";
 }
+
+/**
+ * May the Vercel build write to this database (migrations, purge, seed, sync,
+ * keyword backfill)? Production builds only on the production branch, and any
+ * other database fails the build (the current deployment keeps serving);
+ * previews follow checkBranch; any other environment never writes.
+ * @param {string | undefined} vercelEnv
+ * @param {{ projectId?: string | null, branchId?: string | null }} ids
+ * @returns {"ok" | "refuse" | "fatal"}
+ */
+export function buildDbDecision(vercelEnv, { projectId, branchId }) {
+  if (vercelEnv === "production") return branchId === PROD_BRANCH ? "ok" : "fatal";
+  if (vercelEnv === "preview") return checkBranch({ projectId, branchId });
+  return "refuse";
+}

@@ -7,9 +7,9 @@
  * (src/db/schema). Logs Neon ids and counts only, never connection details.
  */
 import pg from "pg";
-import { checkBranch, purgeDecision } from "../src/lib/mls/preview-purge.mjs";
+import { buildDbDecision, checkBranch, purgeDecision } from "../src/lib/mls/preview-purge.mjs";
 
-export { checkBranch, purgeDecision };
+export { buildDbDecision, checkBranch, purgeDecision };
 
 /** The demo feed (scripts/seed.ts) and Georgia MLS via Bridge (src/lib/mls/gamls.ts). */
 const SOURCE_SLUGS = ["demo-mls", "gamls"];
@@ -62,6 +62,28 @@ export async function neonBranchVerdict(connectionString, label, log = console.l
   await client.connect();
   try {
     return await branchVerdict(client, label, log);
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * The build's database guard on its own connection: buildDbDecision for
+ * VERCEL_ENV and the connection's Neon ids. Logs ids only.
+ * @param {string} connectionString
+ * @param {(line: string) => void} [log]
+ * @returns {Promise<"ok" | "refuse" | "fatal">}
+ */
+export async function buildDbVerdict(connectionString, log = console.log) {
+  const client = new pg.Client({ connectionString });
+  await client.connect();
+  try {
+    const projectId = await showSetting(client, "neon.project_id");
+    const branchId = await showSetting(client, "neon.branch_id");
+    const env = process.env.VERCEL_ENV;
+    const verdict = buildDbDecision(env, { projectId, branchId });
+    log(`Database branch check: env=${env} project=${projectId} branch=${branchId} -> ${verdict}`);
+    return verdict;
   } finally {
     await client.end();
   }
