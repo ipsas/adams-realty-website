@@ -24,6 +24,15 @@ describe("searchHeading (site review #5)", () => {
     );
   });
 
+  it("names a county, for a bare name too", () => {
+    expect(searchHeading(c("q=Hall"), { county: "Hall County" })).toBe(
+      "Homes for sale in Hall County",
+    );
+    expect(searchHeading(c("q=hall county, ga"), { county: "Hall County" })).toBe(
+      "Homes for sale in Hall County",
+    );
+  });
+
   it("says 'near' for a lake", () => {
     expect(searchHeading(c("q=Lake Hartwell"))).toBe("Homes near Lake Hartwell");
     expect(searchHeading(c("q=Lanier"))).toBe("Homes near Lake Lanier");

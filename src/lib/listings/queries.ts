@@ -12,9 +12,15 @@ import {
   savedListings,
 } from "@/db/schema";
 import { firmAreaCondition } from "@/lib/areas/firm-area";
+import { normalizedCountySql } from "@/lib/areas/match";
 import { formatStreet } from "@/lib/format";
 import { defaultTypesCondition, listedWithin, soldWithin } from "@/lib/search/query";
-import { MAX_AREA_SUGGESTIONS, shapeAreaSuggestions, type Suggestion } from "@/lib/search/suggest";
+import {
+  countyPrefix,
+  MAX_AREA_SUGGESTIONS,
+  shapeAreaSuggestions,
+  type Suggestion,
+} from "@/lib/search/suggest";
 import { cardColumns, officeLookupName, selectCards, withPhotos } from "./card";
 import { publicListingColumns } from "./public-fields";
 import { canShowDetails, primaryPhotoOnly, publicListing } from "./visibility";
@@ -218,8 +224,10 @@ export async function getLocationSuggestions(term: string): Promise<Suggestion[]
   if (t.length < 2) return [];
   const escaped = t.replace(/[%_\\]/g, "\\$&");
   const live = and(publicListing(), inArray(listings.status, [...LIVE_STATUSES]));
+  const county = countyPrefix(t);
+  const countyKey = normalizedCountySql(listings.county);
 
-  const [areas, pastOnly, addresses] = await Promise.all([
+  const [areas, pastOnly, counties, addresses] = await Promise.all([
     db
       .select({ kind: places.kind, label: places.label, sublabel: places.sublabel, n: places.n })
       .from(places)
@@ -243,6 +251,23 @@ export async function getLocationSuggestions(term: string): Promise<Suggestion[]
       .groupBy(listings.city)
       .orderBy(sql`count(*) desc`, listings.city)
       .limit(MAX_AREA_SUGGESTIONS),
+    // Counties by name, the cheap LIKE before the normalized one; max() prefers
+    // a mixed-case spelling ("Hall") over a feed's capitals ("HALL").
+    county.length >= 2
+      ? db
+          .select({ county: sql<string>`max(${listings.county})`, n: sql<number>`count(*)::int` })
+          .from(listings)
+          .where(
+            and(
+              live,
+              sql`lower(${listings.county}) like ${`${county.split(" ")[0]}%`}`,
+              sql`${countyKey} like ${`${county}%`}`,
+            ),
+          )
+          .groupBy(countyKey)
+          .orderBy(sql`count(*) desc`)
+          .limit(3)
+      : Promise.resolve([]),
     /^\d*\s*[a-z]/i.test(t) && t.length >= 3
       ? db
           .select({
@@ -270,6 +295,7 @@ export async function getLocationSuggestions(term: string): Promise<Suggestion[]
       t,
       areas,
       pastOnly.map((r) => r.city),
+      counties,
     ),
     ...addresses.map((a) => ({
       kind: "address" as const,

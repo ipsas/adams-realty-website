@@ -8,6 +8,7 @@ import type { Suggestion } from "@/lib/listings/queries";
 
 const ICONS = {
   city: Building2,
+  county: Building2,
   neighborhood: MapPin,
   zip: Hash,
   address: Home,
