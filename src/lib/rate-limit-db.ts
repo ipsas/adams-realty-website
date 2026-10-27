@@ -1,4 +1,4 @@
-import { and, eq, lt, sql } from "drizzle-orm";
+import { lt, sql } from "drizzle-orm";
 import type { Executor } from "@/db";
 import { rateLimits } from "@/db/schema";
 
@@ -75,31 +75,6 @@ export async function hitRateLimits(
     retryAfter,
     exceeded: (exceeded as LimitWindow | null)?.name ?? null,
   };
-}
-
-/**
- * Gives back `units` that `hitRateLimits` counted at `now` (a reservation that
- * wasn't used). A window that has since restarted is left alone.
- */
-export async function refundRateLimits(
-  db: Executor,
-  subject: string,
-  windows: LimitWindow[],
-  now: Date,
-  units: number = 1,
-): Promise<void> {
-  const t = now.getTime();
-  for (const w of windows) {
-    await db
-      .update(rateLimits)
-      .set({ count: sql`greatest(${rateLimits.count} - ${units}, 0)` })
-      .where(
-        and(
-          eq(rateLimits.key, `${w.name}:${subject}`),
-          eq(rateLimits.windowStart, new Date(Math.floor(t / w.ms) * w.ms)),
-        ),
-      );
-  }
 }
 
 /** Deletes counters whose window started more than `maxAgeMs` ago (the longest window is a day). */

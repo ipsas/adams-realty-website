@@ -54,10 +54,10 @@ export type DigestRunResult = {
   emailed: number;
   /** Nothing needed attention: no email. */
   empty: number;
-  /** Already handled today by an earlier run. */
+  /** Already handled today by an earlier run (sent, or nothing to say); costs no batch send. */
   alreadyDone: number;
   failed: number;
-  /** Not started before the deadline or the batch-mail guard's stop; the next run picks them up. */
+  /** Not started before the deadline, the batch-mail guard's stop or a 429; the next run picks them up. */
   deferred: number;
 };
 
@@ -182,7 +182,7 @@ export async function runLeadDigests(opts: RunLeadDigestsOptions = {}): Promise<
   const siteUrl = opts.siteUrl ?? env.NEXT_PUBLIC_SITE_URL;
   const timeZone = opts.timeZone ?? site.market.timeZone;
   const deadline = opts.deadline ?? Number.POSITIVE_INFINITY;
-  const budget = opts.budget ?? createBatchBudget({ db, now });
+  const budget = opts.budget ?? createBatchBudget({ db });
   const clock = localClock(now, timeZone);
   const result: DigestRunResult = {
     ok: true,
@@ -202,7 +202,21 @@ export async function runLeadDigests(opts: RunLeadDigestsOptions = {}): Promise<
 
   const recipients = await digestRecipients(db);
   result.recipients = recipients.length;
+  // Already claimed today (sent, or nothing to say): skipped without a reservation,
+  // so a sync run after everyone's done costs these two queries and nothing more.
+  const claimedToday = new Set(
+    (
+      await db
+        .select({ recipient: leadDigests.recipient })
+        .from(leadDigests)
+        .where(eq(leadDigests.day, clock.date))
+    ).map((row) => row.recipient),
+  );
   for (const r of recipients) {
+    if (claimedToday.has(r.key)) {
+      result.alreadyDone++;
+      continue;
+    }
     // Out of time or of batch sends (email-batch.ts): the day stays unclaimed for the next run.
     const slot = Date.now() > deadline ? null : await budget.reserve(send);
     if (!slot) {
@@ -251,8 +265,12 @@ export async function runLeadDigests(opts: RunLeadDigestsOptions = {}): Promise<
         throw error;
       }
     } catch (error) {
-      result.failed++;
-      console.error(`[digest] ${r.key} failed: ${describeError(error)}`);
+      // A 429 is a planned deferral: the day was given back for the next run.
+      if (slot.rateLimited) result.deferred++;
+      else {
+        result.failed++;
+        console.error(`[digest] ${r.key} failed: ${describeError(error)}`);
+      }
     } finally {
       await slot.release();
     }

@@ -28,6 +28,11 @@ export async function findHomeCandidates(db: Executor, now: Date) {
       userId: savedListings.userId,
       listingId: savedListings.listingId,
       email: users.email,
+      /** Last emailed about this home, or saved: orders the digest in the run's work list. */
+      since:
+        sql<Date>`coalesce(${savedListings.lastNotifiedAt}, ${savedListings.createdAt})`.mapWith(
+          savedListings.createdAt,
+        ),
     })
     .from(savedListings)
     .innerJoin(users, eq(users.id, savedListings.userId))

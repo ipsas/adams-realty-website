@@ -11,9 +11,14 @@ const h = vi.hoisted(() => ({
   alerts: 0,
   alertOpts: [] as Array<Record<string, unknown>>,
   configured: false,
+  activations: 0,
+  alertResult: null as Record<string, unknown> | null,
 }));
 vi.mock("@/lib/email", () => ({ emailConfigured: () => h.configured }));
-vi.mock("@/lib/email-batch", () => ({ createBatchBudget: () => ({ budget: "shared" }) }));
+vi.mock("@/lib/email-batch", () => ({
+  createBatchBudget: () => ({ budget: "shared" }),
+  activateEmailAlerts: async () => void h.activations++,
+}));
 vi.mock("@/lib/cron-auth", () => ({
   isCronAuthorized: (r: Request) => r.headers.get("authorization") === "Bearer secret",
 }));
@@ -23,7 +28,7 @@ vi.mock("@/lib/alerts/run", () => ({
   runAlerts: async (opts: Record<string, unknown>) => {
     h.alerts++;
     h.alertOpts.push(opts);
-    return { ok: true, searches: {}, homes: {}, durationMs: 1 };
+    return h.alertResult ?? { ok: true, searches: {}, homes: {}, durationMs: 1 };
   },
 }));
 vi.mock("@/lib/leads/digest", () => ({
@@ -44,6 +49,8 @@ beforeEach(() => {
   h.alerts = 0;
   h.alertOpts = [];
   h.configured = false;
+  h.activations = 0;
+  h.alertResult = null;
 });
 
 describe("GET /api/cron/alerts", () => {
@@ -73,6 +80,22 @@ describe("GET /api/cron/alerts", () => {
     expect((await (await call()).json()).email).toEqual({ configured: false });
     h.configured = true;
     expect((await (await call()).json()).email).toEqual({ configured: true });
+  });
+
+  it("activates alerts (marks the backlog as seen) only when email is configured", async () => {
+    await call();
+    expect(h.activations).toBe(0);
+    h.configured = true;
+    await call();
+    expect(h.activations).toBe(1);
+    expect(h.alerts).toBe(2);
+  });
+
+  it("answers 200 when a 429 deferred the rest", async () => {
+    h.alertResult = { ok: true, rate_limited: true, deferred: 4, searches: {}, homes: {} };
+    const res = await call();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ rate_limited: true, deferred: 4 });
   });
 
   it("still runs the alerts when the summary fails", async () => {

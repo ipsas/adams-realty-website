@@ -177,3 +177,27 @@ export const rateLimits = pgTable("rate_limits", {
   windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
   count: integer("count").notNull().default(0),
 });
+
+/**
+ * Emails sent through Resend per UTC day (`period` = 'YYYY-MM-DD', from the
+ * database clock), for the batch-mail guard (src/lib/email-batch.ts): `batch`
+ * counts search alerts, saved-home digests and morning summaries, `total`
+ * every send (batch and transactional, per recipient). A logged table, unlike
+ * `rate_limits`, so the counts survive a crash or a compute restart.
+ */
+export const emailSendCounters = pgTable("email_send_counters", {
+  period: text("period").primaryKey(),
+  batch: integer("batch").notNull().default(0),
+  total: integer("total").notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Durable one-time markers, e.g. `email_alerts_activated` (the first alerts
+ * run with email configured marked older changes as seen: src/lib/email-batch.ts).
+ */
+export const appFlags = pgTable("app_flags", {
+  key: text("key").primaryKey(),
+  value: text("value"),
+  setAt: timestamp("set_at", { withTimezone: true }).notNull().defaultNow(),
+});

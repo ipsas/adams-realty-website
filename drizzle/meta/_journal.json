@@ -141,6 +141,13 @@
       "when": 1793080255802,
       "tag": "0019_expire_logged_reset_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1793087654740,
+      "tag": "0020_email_send_guard",
+      "breakpoints": true
     }
   ]
 }

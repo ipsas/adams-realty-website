@@ -1,3 +1,4 @@
+import { BATCH_EMAIL_KINDS, countSent } from "@/lib/email-batch";
 import { env } from "@/lib/env";
 
 export type Email = {
@@ -127,5 +128,12 @@ export async function sendEmail(email: Email): Promise<SendResult> {
     return { ok: false, reason: res.status === 429 ? "rate_limited" : "send_failed" };
   }
   logSend(email, "sent");
+  // Batch mail was counted when the guard reserved it. Counting is best effort:
+  // the email already went, so a failure here is logged and never fails the send.
+  if (!BATCH_EMAIL_KINDS.has(email.kind)) {
+    await countSent([email.to].flat().length).catch(() =>
+      console.error(`[email-batch] could not count a sent email (kind=${email.kind})`),
+    );
+  }
   return { ok: true };
 }

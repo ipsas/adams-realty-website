@@ -29,6 +29,10 @@ import { HOME_ALERTS_SCOPE, unsubscribeUrls } from "./token";
  * 2. Saved homes with price or status changes since the user was last
  *    emailed get one digest per user; `last_notified_at` advances.
  *
+ * Both share one work list, oldest first: by `last_alerted_at` (or creation)
+ * for a search, by the user's oldest `last_notified_at` (or save time) among
+ * their changed homes for a digest; ties by id.
+ *
  * Safe to re-run at any time: windows tile exactly, claims are atomic and
  * leased (overlapping runs skip each other's rows), and a failed send
  * releases its claim so the next run retries it. Work not started before the
@@ -52,6 +56,10 @@ export type AlertRunResult = {
     deferred: number;
   };
   homes: { users: number; emailed: number; skipped: number; failed: number; deferred: number };
+  /** Searches plus saved-home digests deferred to the next run. */
+  deferred: number;
+  /** Set when Resend answered 429: the rest was deferred, not failed. */
+  rate_limited?: true;
   durationMs: number;
 };
 
@@ -79,6 +87,12 @@ type SearchRow = {
   email: string;
 };
 
+type HomesUser = { userId: string; email: string; listingIds: string[] };
+
+type Work = { since: number; id: string } & (
+  { kind: "search"; search: SearchRow } | { kind: "homes"; user: HomesUser }
+);
+
 export async function runAlerts(opts: RunAlertsOptions = {}): Promise<AlertRunResult> {
   const started = Date.now();
   const db = opts.db ?? defaultDb;
@@ -86,12 +100,13 @@ export async function runAlerts(opts: RunAlertsOptions = {}): Promise<AlertRunRe
   const send = opts.send ?? sendEmail;
   const deadline = opts.deadline ?? Number.POSITIVE_INFINITY;
   const timeZone = opts.timeZone ?? site.market.timeZone;
-  const budget = opts.budget ?? createBatchBudget({ db, now });
+  const budget = opts.budget ?? createBatchBudget({ db });
 
   const result: AlertRunResult = {
     ok: true,
     searches: { due: 0, evaluated: 0, emailed: 0, skipped: 0, failed: 0, deferred: 0 },
     homes: { users: 0, emailed: 0, skipped: 0, failed: 0, deferred: 0 },
+    deferred: 0,
     durationMs: 0,
   };
   // Claiming advances last_alerted_at / last_notified_at: with no way to send, take nothing.
@@ -120,56 +135,73 @@ export async function runAlerts(opts: RunAlertsOptions = {}): Promise<AlertRunRe
   );
   result.searches.due = due.length;
 
-  for (const search of due) {
-    // Out of time or of batch sends (email-batch.ts): left unclaimed, still due next run.
-    const slot = Date.now() > deadline ? null : await budget.reserve(send);
-    if (!slot) {
-      result.searches.deferred++;
-      continue;
-    }
-    try {
-      const outcome = await processSearch(db, search, now, slot.send);
-      if (outcome === "skipped") result.searches.skipped++;
-      else result.searches.evaluated++;
-      if (outcome === "emailed") result.searches.emailed++;
-    } catch (error) {
-      result.searches.failed++;
-      console.error(`[alerts] saved search ${search.id} failed: ${describeError(error)}`);
-    } finally {
-      await slot.release();
-    }
-  }
-
   // --- Saved homes --------------------------------------------------------
   const candidates = await findHomeCandidates(db, now);
-  const byUser = new Map<string, { email: string; listingIds: string[] }>();
+  const byUser = new Map<string, { email: string; listingIds: string[]; since: number }>();
   for (const c of candidates) {
-    const entry = byUser.get(c.userId) ?? { email: c.email, listingIds: [] };
+    const entry = byUser.get(c.userId) ?? { email: c.email, listingIds: [], since: Infinity };
     entry.listingIds.push(c.listingId);
+    entry.since = Math.min(entry.since, c.since.getTime());
     byUser.set(c.userId, entry);
   }
   result.homes.users = byUser.size;
 
-  for (const [userId, { email, listingIds }] of byUser) {
+  // One work list, oldest first (last emailed, or saved if never), so when the
+  // batch budget is short every search and saved-home digest gets its turn
+  // instead of the same ones winning every day.
+  const work: Work[] = [
+    ...due.map((search): Work => ({
+      kind: "search",
+      since: (search.lastAlertedAt ?? search.createdAt).getTime(),
+      id: search.id,
+      search,
+    })),
+    ...[...byUser].map(([userId, { since, ...rest }]): Work => ({
+      kind: "homes",
+      since,
+      id: userId,
+      user: { userId, ...rest },
+    })),
+  ].sort((a, b) => a.since - b.since || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+
+  for (const item of work) {
+    const counts = item.kind === "search" ? result.searches : result.homes;
+    // Out of time or of batch sends (email-batch.ts): left unclaimed, still due next run.
     const slot = Date.now() > deadline ? null : await budget.reserve(send);
     if (!slot) {
-      result.homes.deferred++;
+      counts.deferred++;
       continue;
     }
     try {
-      const outcome = await processHomes(db, { userId, email, listingIds }, now, slot.send);
-      if (outcome === "skipped") result.homes.skipped++;
-      if (outcome === "emailed") result.homes.emailed++;
+      if (item.kind === "search") {
+        const outcome = await processSearch(db, item.search, now, slot.send);
+        if (outcome === "skipped") result.searches.skipped++;
+        else result.searches.evaluated++;
+        if (outcome === "emailed") result.searches.emailed++;
+      } else {
+        const outcome = await processHomes(db, item.user, now, slot.send);
+        if (outcome === "skipped") result.homes.skipped++;
+        if (outcome === "emailed") result.homes.emailed++;
+      }
     } catch (error) {
-      result.homes.failed++;
-      console.error(
-        `[alerts] saved-home digest for user ${userId} failed: ${describeError(error)}`,
-      );
+      if (slot.rateLimited) {
+        // A 429: planned deferral. The claim is back; the next run retries.
+        counts.deferred++;
+        result.rate_limited = true;
+      } else {
+        counts.failed++;
+        console.error(
+          item.kind === "search"
+            ? `[alerts] saved search ${item.id} failed: ${describeError(error)}`
+            : `[alerts] saved-home digest for user ${item.id} failed: ${describeError(error)}`,
+        );
+      }
     } finally {
       await slot.release();
     }
   }
 
+  result.deferred = result.searches.deferred + result.homes.deferred;
   result.ok = result.searches.failed === 0 && result.homes.failed === 0;
   result.durationMs = Date.now() - started;
   return result;
@@ -279,7 +311,7 @@ function newListingNotes(r: { wasPrice: number | null } & Parameters<typeof pric
 
 async function processHomes(
   db: Executor,
-  user: { userId: string; email: string; listingIds: string[] },
+  user: HomesUser,
   now: Date,
   send: SendEmail,
 ): Promise<"skipped" | "evaluated" | "emailed"> {

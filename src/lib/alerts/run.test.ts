@@ -6,10 +6,11 @@ import type { SendResult } from "@/lib/email";
 import { createBatchBudget } from "@/lib/email-batch";
 import { captureConsole } from "@/test/console";
 import { runAlerts } from "./run";
+import { localClock } from "./schedule";
 
 const h = vi.hoisted(() => ({
   env: {} as Record<string, unknown>,
-  homeCandidates: [] as { userId: string; listingId: string; email: string }[],
+  homeCandidates: [] as { userId: string; listingId: string; email: string; since: Date }[],
   homeClaims: [] as string[],
   homeReleases: [] as string[],
 }));
@@ -125,7 +126,13 @@ function searchDb(n: number) {
   return { db: db as unknown as Executor, claimed, released };
 }
 
-const unlimitedDaily = () => ({ take: async () => true, refund: async () => {} });
+const unlimitedCounter = () => ({ reserve: async () => "2026-09-30", refund: async () => {} });
+const home = (userId: string, listingId: string, since = new Date(NOW.getTime() - 60_000)) => ({
+  userId,
+  listingId,
+  email: `${userId}@example.com`,
+  since,
+});
 
 describe("alert run with no Resend key", () => {
   it("claims nothing (no last_alerted_at or last_notified_at advanced) and says it skipped", async () => {
@@ -147,9 +154,9 @@ describe("alert run under the batch-mail guard", () => {
   it("stops at the per-run cap and leaves the rest unclaimed and due", async () => {
     captureConsole();
     const { db, claimed, released } = searchDb(5);
-    h.homeCandidates = [{ userId: "h1", listingId: "l1", email: "h1@example.com" }];
+    h.homeCandidates = [home("h1", "l1")];
     const send = vi.fn(async (): Promise<SendResult> => ({ ok: true }));
-    const budget = createBatchBudget({ runCap: 3, daily: unlimitedDaily() });
+    const budget = createBatchBudget({ runCap: 3, counter: unlimitedCounter() });
     const res = await runAlerts({ db, now: NOW, send, budget });
     expect(claimed).toEqual(["s1", "s2", "s3"]);
     expect(released).toEqual([]);
@@ -161,14 +168,14 @@ describe("alert run under the batch-mail guard", () => {
     expect(res.ok).toBe(true);
   });
 
-  it("defers every item, claiming none, when the daily budget is used up", async () => {
+  it("defers every item, claiming none, when the budget is used up", async () => {
     const { output } = captureConsole();
     const { db, claimed } = searchDb(3);
-    h.homeCandidates = [{ userId: "h1", listingId: "l1", email: "h1@example.com" }];
+    h.homeCandidates = [home("h1", "l1")];
     const send = vi.fn(async (): Promise<SendResult> => ({ ok: true }));
     const budget = createBatchBudget({
       dailyLimit: 60,
-      daily: { take: async () => false, refund: async () => {} },
+      counter: { reserve: async () => null, refund: async () => {} },
     });
     const res = await runAlerts({ db, now: NOW, send, budget });
     expect(claimed).toEqual([]);
@@ -177,11 +184,11 @@ describe("alert run under the batch-mail guard", () => {
     expect(res.searches).toMatchObject({ due: 3, deferred: 3, emailed: 0 });
     expect(res.homes).toMatchObject({ deferred: 1 });
     expect(output().filter((l) => l.startsWith("[email-batch]"))).toEqual([
-      "[email-batch] daily budget (60) used up; the rest waits for tomorrow (UTC)",
+      "[email-batch] email budget used up (batch 60/day, all 85/day, 2700/month, UTC); the rest waits",
     ]);
   });
 
-  it("stops all batch sends on a 429: releases that claim, leaves the rest unclaimed, logs once", async () => {
+  it("defers on a 429: releases that claim, leaves the rest unclaimed, stays ok, logs once", async () => {
     const { output } = captureConsole();
     h.env.RESEND_API_KEY = "re_test_key";
     const fetch = vi.fn(
@@ -189,14 +196,12 @@ describe("alert run under the batch-mail guard", () => {
     );
     vi.stubGlobal("fetch", fetch);
     const { db, claimed, released } = searchDb(3);
-    h.homeCandidates = [
-      { userId: "h1", listingId: "l1", email: "h1@example.com" },
-      { userId: "h2", listingId: "l2", email: "h2@example.com" },
-    ];
-    const refunds = vi.fn(async () => {});
+    // Saved after the searches last ran, so they come after them.
+    h.homeCandidates = [home("h1", "l1"), home("h2", "l2")];
+    const refunds = vi.fn<(period: string) => Promise<void>>(async () => {});
     const budget = createBatchBudget({
       runCap: 50,
-      daily: { take: async () => true, refund: refunds },
+      counter: { reserve: async () => "2026-09-30", refund: refunds },
     });
     // No `send`: the real sendEmail, against a Resend that answers 429.
     const res = await runAlerts({ db, now: NOW, budget });
@@ -204,10 +209,12 @@ describe("alert run under the batch-mail guard", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(claimed).toEqual(["s1"]);
     expect(released).toEqual(["s1"]); // last_alerted_at given back: retried next run
-    expect(refunds).toHaveBeenCalledTimes(1);
-    expect(res.searches).toMatchObject({ due: 3, failed: 1, deferred: 2, emailed: 0 });
+    expect(refunds.mock.calls).toEqual([["2026-09-30"]]);
+    // A planned deferral, not a failure: the cron answers 200.
+    expect(res.searches).toMatchObject({ due: 3, failed: 0, deferred: 3, emailed: 0 });
     expect(h.homeClaims).toEqual([]);
     expect(res.homes).toMatchObject({ users: 2, deferred: 2, emailed: 0 });
+    expect(res).toMatchObject({ ok: true, rate_limited: true, deferred: 5 });
 
     const lines = output();
     expect(lines.filter((l) => l.startsWith("[email]"))).toEqual([
@@ -220,4 +227,116 @@ describe("alert run under the batch-mail guard", () => {
     for (const secret of ["pat1", "SUBJECT", "BODY", "tok_PAGE", "tok_ONE", "rate limit for"])
       expect(all).not.toContain(secret);
   });
+
+  it("counts non-429 failures as failed, and they use their run-cap place", async () => {
+    captureConsole();
+    const { db, claimed, released } = searchDb(4);
+    const send = vi.fn(async (): Promise<SendResult> => ({ ok: false, reason: "send_failed" }));
+    const budget = createBatchBudget({ runCap: 2, counter: unlimitedCounter() });
+    const res = await runAlerts({ db, now: NOW, send, budget });
+    expect(claimed).toEqual(["s1", "s2"]);
+    expect(released).toEqual(["s1", "s2"]);
+    expect(res.searches).toMatchObject({ failed: 2, deferred: 2 });
+    expect(res.ok).toBe(false);
+    expect(res.rate_limited).toBeUndefined();
+  });
+});
+
+describe("alert run order", () => {
+  it("puts saved searches and saved-home digests in one list, oldest first", async () => {
+    captureConsole();
+    const { db, claimed } = searchDb(3); // last alerted an hour ago
+    h.homeCandidates = [
+      home("h2", "l2", new Date(NOW.getTime() - 30 * 60_000)),
+      home("h1", "l1", new Date(NOW.getTime() - 2 * 3_600_000)),
+      home("h1", "l3", new Date(NOW.getTime() - 10 * 60_000)),
+    ];
+    const order: string[] = [];
+    const send = vi.fn(async (e: { to: string | string[] }): Promise<SendResult> => {
+      order.push(String(e.to).split("@")[0]);
+      return { ok: true };
+    });
+    const res = await runAlerts({
+      db,
+      now: NOW,
+      send,
+      budget: createBatchBudget({ runCap: 4, counter: unlimitedCounter() }),
+    });
+    // h1 keyed by its oldest home (2 h), the searches tie at 1 h (by id), h2 at 30 min.
+    expect(order).toEqual(["h1", "pat1", "pat2", "pat3"]);
+    expect(claimed).toEqual(["s1", "s2", "s3"]);
+    expect(res.homes).toMatchObject({ users: 2, emailed: 1, deferred: 1 });
+  });
+
+  it("emails every one of 200 stale daily searches within a week on 60 a day, never twice a day", async () => {
+    captureConsole();
+    const DAY = 86_400_000;
+    const HOUR = 3_600_000;
+    const start = new Date("2026-10-28T11:00:05Z"); // Wed 7:00:05 a.m. EDT
+    const searches = Array.from({ length: 200 }, (_, i) => ({
+      id: `s${i + 1}`,
+      userId: `u${i + 1}`,
+      name: `Search ${i + 1}`,
+      criteria: {},
+      alertFrequency: "daily",
+      lastAlertedAt: new Date(start.getTime() - 10 * DAY) as Date | null,
+      createdAt: new Date("2026-08-01T00:00:00Z"),
+      email: `p${i + 1}@example.com`,
+    }));
+    // saved_searches with claimSearch / releaseSearch semantics.
+    const chain = {
+      from: () => chain,
+      innerJoin: () => chain,
+      where: async () => searches.map((s) => ({ ...s })),
+    };
+    const db = {
+      select: () => chain,
+      execute: async (q: SQL) => {
+        const { sql, params } = dialect.sqlToQuery(q);
+        const row = searches.find((s) => params.includes(s.id))!;
+        const stamps = params.filter(
+          (p): p is string => typeof p === "string" && /^\d{4}-/.test(p),
+        );
+        if (sql.includes("from (select")) {
+          const [nowIso, leaseIso] = stamps;
+          if (row.lastAlertedAt && !(row.lastAlertedAt < new Date(leaseIso))) return { rows: [] };
+          const previous = row.lastAlertedAt;
+          row.lastAlertedAt = new Date(nowIso);
+          return { rows: [{ previous }] };
+        }
+        return { rows: [] };
+      },
+    } as unknown as Executor;
+
+    // email_send_counters in memory: batch per UTC day of the simulated clock.
+    let now = start;
+    const perDay = new Map<string, number>();
+    const counter = {
+      reserve: async (budget: number) => {
+        const day = now.toISOString().slice(0, 10);
+        if ((perDay.get(day) ?? 0) >= budget) return null;
+        perDay.set(day, (perDay.get(day) ?? 0) + 1);
+        return day;
+      },
+      refund: async (day: string) => void perDay.set(day, Math.max((perDay.get(day) ?? 0) - 1, 0)),
+    };
+
+    const sends: { to: string; localDay: string }[] = [];
+    for (let i = 0; i < 7 * 24; i++) {
+      now = new Date(start.getTime() + i * HOUR);
+      const at = now;
+      const send = async (e: { to: string | string[] }): Promise<SendResult> => {
+        sends.push({ to: String(e.to), localDay: localClock(at).date });
+        return { ok: true };
+      };
+      const budget = createBatchBudget({ runCap: 50, dailyLimit: 60, counter });
+      await runAlerts({ db, now, send, budget });
+    }
+
+    expect(Math.max(...perDay.values())).toBeLessThanOrEqual(60);
+    const emailed = new Set(sends.map((s) => s.to));
+    expect(searches.filter((s) => !emailed.has(s.email))).toEqual([]);
+    const sameDay = new Set(sends.map((s) => `${s.to}|${s.localDay}`));
+    expect(sends.length - sameDay.size).toBe(0);
+  }, 30_000);
 });

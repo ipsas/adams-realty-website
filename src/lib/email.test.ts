@@ -9,6 +9,8 @@ const h = vi.hoisted(() => ({
   },
 }));
 vi.mock("@/lib/env", () => ({ env: h.env }));
+// The send counter is tested in email-batch.test.ts.
+vi.mock("@/lib/email-batch", () => ({ BATCH_EMAIL_KINDS: new Set(), countSent: async () => {} }));
 
 const { emailConfigured, sendEmail } = await import("./email");
 import type { Email } from "./email";
