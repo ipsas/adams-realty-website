@@ -7,6 +7,7 @@ import { toEmailListing } from "@/lib/alerts/present";
 import type { Email } from "@/lib/email";
 import { leadNotificationEmail } from "@/lib/email-templates";
 import { formatCityLine, formatFullAddress, formatStreet } from "@/lib/format";
+import { describeError } from "@/lib/mls/write-errors";
 
 /**
  * Lead notification emails (site review #3):
@@ -126,7 +127,7 @@ async function trySend(send: LeadMailDeps["send"], email: Email, what: string): 
     await send(email);
     return true;
   } catch (e) {
-    console.error(`[leads] ${what} failed`, e);
+    console.error(`[leads] ${what} failed: ${describeError(e)}`);
     return false;
   }
 }

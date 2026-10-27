@@ -1,6 +1,19 @@
 import { purgeCap, purgeScope, MAX_PURGE_FRACTION, PRUNE_REMOVED_AFTER_DAYS } from "./purge";
-import type { FeedPosition, ListingProvider, MapResult, MapSkipReason, PurgeScope } from "./types";
-import { describeError } from "./write-errors";
+import { listingLabel } from "@/lib/listings/persist";
+import type {
+  FeedPosition,
+  ListingProvider,
+  MapResult,
+  MapSkipReason,
+  NormalizedListing,
+  PurgeScope,
+} from "./types";
+import {
+  describeError,
+  PageRejectedError,
+  QUARANTINE_AFTER_FAILURES,
+  SyncError,
+} from "./write-errors";
 
 /**
  * The sync's control flow — time budget, resume, purge rules — with no
@@ -32,6 +45,8 @@ export type PageOutcome = {
   mediaRowsWritten: number;
   /** Values the sanitizer stored as null (unstorable numerics, ./sanitize.ts). */
   nulled: number;
+  /** Records Postgres rejected on a quarantined page, kept in sync_quarantine (included in `failed`). */
+  quarantined: number;
 };
 
 /**
@@ -40,6 +55,36 @@ export type PageOutcome = {
  * caught up (see RunOutcome.caughtUp).
  */
 export type SyncCursor = FeedPosition;
+
+/**
+ * Runs in a row that failed with PageRejectedError on the page starting at
+ * `at` (the saved cursor then; null: the feed's start). A failure at another
+ * position starts a new streak; a run that doesn't fail ends it. Other errors
+ * (a lost connection, a timeout) neither count nor end it.
+ */
+export type RejectionStreak = { at: SyncCursor | null; failures: number };
+
+const samePosition = (a: SyncCursor | null, b: SyncCursor | null) =>
+  a === null || b === null
+    ? a === b
+    : a.modifiedAt.getTime() === b.modifiedAt.getTime() && a.key === b.key;
+
+/** What a quarantining run logs (as an ALERT) and records as its run's message. */
+export function describeQuarantine(streak: RejectionStreak, quarantined: number): string {
+  const at = streak.at ? `${streak.at.modifiedAt.toISOString()}/${streak.at.key ?? "-"}` : "start";
+  return (
+    `page at cursor ${at} failed ${streak.failures} runs in a row; ` +
+    `quarantined ${quarantined} rows (see sync_quarantine) and advanced`
+  );
+}
+
+/** A quarantined record's log line: ids only, and the redacted reason. */
+export function quarantineLine(slug: string, n: NormalizedListing, reason: string): string {
+  return (
+    `[mls] ${slug}: quarantined ${listingLabel(n)}, modified ` +
+    `${n.sourceModifiedAt?.toISOString() ?? "unknown"}: ${reason}`
+  );
+}
 
 export type RunOutcome = {
   status: "succeeded" | "partial" | "failed";
@@ -84,14 +129,26 @@ export interface SyncStore {
   savedCursor(): Promise<SyncCursor | null>;
   /** The mapper version of the last caught-up remap, and of a remap still underway. */
   mapperVersions(): Promise<MapperVersions>;
+  /** The current RejectionStreak, if any. */
+  rejectionStreak(): Promise<RejectionStreak | null>;
+  /**
+   * Counts a run that failed with PageRejectedError on the page starting at
+   * `at`: one more failure if the streak is at `at`, else a new streak of one.
+   */
+  recordRejection(at: SyncCursor | null): Promise<RejectionStreak>;
   /**
    * Writes one page and saves `cursor`, atomically. With `skipUnchanged`, a
    * record whose ModificationTimestamp matches the stored row isn't rewritten.
+   * With `quarantine` (the streak of the runs that failed on this page), the
+   * page never fails for its rejected rows: they're skipped, logged by id and
+   * kept in sync_quarantine, and an ALERT is logged (describeQuarantine).
+   * Every record written is taken out of sync_quarantine. Skipped records are
+   * logged only once the page is committed.
    */
   writePage(
     page: MapResult[],
     cursor: SyncCursor | null,
-    opts: { skipUnchanged: boolean },
+    opts: { skipUnchanged: boolean; quarantine?: RejectionStreak },
   ): Promise<PageOutcome>;
   /** Progress plus heartbeat, after every page. */
   heartbeat(runId: string, counts: SyncCounts): Promise<void>;
@@ -106,7 +163,8 @@ export interface SyncStore {
   pruneRemoved(before: Date): Promise<number>;
   /**
    * Records the outcome; a run that didn't fail also stamps the source's last
-   * sync, and one that caught up clears the cursor's key. With
+   * sync (and, unless a purge, ends the RejectionStreak), and one that caught
+   * up clears the cursor's key. With
    * `outcome.mapperVersion`, saves it as done (caught up) or as underway.
    */
   finishRun(runId: string, outcome: RunOutcome): Promise<void>;
@@ -145,6 +203,7 @@ export type SyncResult = SyncCounts & {
   /**
    * `skipped`: another run of this source was still going; nothing was done (recorded as such).
    * syncAllSources also reports a source without credentials as skipped (no run recorded).
+   * `partial` also when the run quarantined a page (`quarantined`).
    */
   status: "succeeded" | "partial" | "skipped";
   /**
@@ -157,6 +216,12 @@ export type SyncResult = SyncCounts & {
   mediaRowsWritten: number;
   /** Feed values the sanitizer stored as null instead (see PageOutcome.nulled). */
   nulled: number;
+  /**
+   * Records quarantined (also counted in `skipped.write_failed`): their page
+   * failed QUARANTINE_AFTER_FAILURES runs in a row, so it was written without
+   * them and the cursor moved past it. See sync_quarantine.
+   */
+  quarantined: number;
   /** Removed listings deleted for good after a purge (PRUNE_REMOVED_AFTER_DAYS). */
   pruned: number;
   /** Earlier runs found cut off and marked failed. */
@@ -193,7 +258,7 @@ export const PURGE_RESERVE_MS = 120_000;
 export const PURGE_CAP_PREFIX = "Purge cap:";
 export const PURGE_SKIPPED_PREFIX = "Purge skipped:";
 
-export class PurgeCapError extends Error {
+export class PurgeCapError extends SyncError {
   constructor(
     readonly missing: number,
     readonly inScope: number,
@@ -244,6 +309,7 @@ export async function runSync(
     cursor: null,
     mediaRowsWritten: 0,
     nulled: 0,
+    quarantined: 0,
     pruned: 0,
     staleRunsFailed: staleFailed,
     changed: false,
@@ -256,7 +322,7 @@ export async function runSync(
         "removed. Off-market listings stay up until a purge runs: run " +
         "`npm run mls:sync -- --purge`, and check that the purge's cron doesn't overlap a sync.";
       await store.recordSkipped(mode, "failed", error);
-      throw new Error(error);
+      throw new SyncError(error);
     }
     await store.recordSkipped(
       mode,
@@ -283,6 +349,7 @@ export async function runSync(
   // Set while the run rewrites every record for this mapper version, once the
   // saved cursor is this run's (so a later run may resume the remap from it).
   let remapVersion: number | undefined;
+  let quarantineNote: string | undefined;
   try {
     const feed = typeof provider === "function" ? provider() : provider;
     cursor = await store.savedCursor();
@@ -301,14 +368,14 @@ export async function runSync(
         }
       }
       if (!complete) {
-        throw new Error(
+        throw new SyncError(
           `Purge stopped: the feed's key list (${keys.size} keys so far) didn't finish downloading ` +
             "within the time budget, so nothing was removed. Run `npm run mls:sync -- --purge` from a workstation.",
         );
       }
       // An empty key list almost certainly means a feed outage, not an empty MLS.
       if (keys.size === 0) {
-        throw new Error(
+        throw new SyncError(
           "Purge stopped: the feed returned no listing keys (an outage?), so nothing was removed.",
         );
       }
@@ -348,6 +415,8 @@ export async function runSync(
           key: null,
         };
       }
+      // A page that failed runs in a row starts at the cursor they left: this run's first.
+      const streak = await store.rejectionStreak();
       for await (const page of feed.fetchUpdates(from)) {
         counts.fetched += page.items.length;
         for (const item of page.items) {
@@ -355,10 +424,19 @@ export async function runSync(
         }
         // Only once the page is written: a failed page's run records the cursor before it.
         const next = page.last ?? cursor;
+        const quarantine =
+          streak && streak.failures >= QUARANTINE_AFTER_FAILURES && samePosition(streak.at, cursor)
+            ? streak
+            : undefined;
         const outcome = await store.writePage(page.items, next, {
           // A full run exists to repair stored rows, so it rewrites every one.
           skipUnchanged: mode !== "full" && !remap,
+          quarantine,
         });
+        if (quarantine && outcome.quarantined) {
+          result.quarantined += outcome.quarantined;
+          quarantineNote = describeQuarantine(quarantine, outcome.quarantined);
+        }
         cursor = next;
         if (remap) remapVersion = version;
         counts.upserted += outcome.upserted;
@@ -379,20 +457,29 @@ export async function runSync(
       if (remap && status === "succeeded") remapVersion = version;
     }
 
+    // A quarantine is reported (partial, with its note), though the run caught up.
+    const reported = status === "succeeded" && result.quarantined ? "partial" : status;
     await store.finishRun(runId, {
-      status,
+      status: reported,
       counts,
       cursor: cursorDate(),
       caughtUp: mode !== "purge" && status === "succeeded",
       mapperVersion: remapVersion,
+      error: quarantineNote,
     });
     Object.assign(result, counts, {
-      status,
+      status: reported,
       cursor: cursorDate(),
       changed: counts.upserted > 0 || counts.removed > 0,
     });
     return result;
   } catch (error) {
+    // Only a page of rejected rows counts towards a quarantine, never a lost connection.
+    if (error instanceof PageRejectedError && mode !== "purge") {
+      await store
+        .recordRejection(cursor)
+        .catch((e) => console.error(`[mls] recording a rejected page failed: ${describeError(e)}`));
+    }
     await store.finishRun(runId, {
       status: "failed",
       counts,

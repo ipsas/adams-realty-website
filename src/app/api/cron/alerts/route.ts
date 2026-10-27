@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { runAlerts } from "@/lib/alerts/run";
 import { isCronAuthorized } from "@/lib/cron-auth";
 import { runLeadDigests } from "@/lib/leads/digest";
+import { describeError } from "@/lib/mls/write-errors";
 import { pruneRateLimits } from "@/lib/rate-limit-db";
 
 export const maxDuration = 300;
@@ -22,9 +23,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   // Housekeeping on the same schedule: anti-scraping counters older than two days.
-  await pruneRateLimits(db).catch((e) => console.error("[cron] rate limit prune failed", e));
+  await pruneRateLimits(db).catch((e) =>
+    console.error(`[cron] rate limit prune failed: ${describeError(e)}`),
+  );
   const digests = await runLeadDigests({ deadline: Date.now() + 30_000 }).catch((e) => {
-    console.error("[cron] morning summary failed", e);
+    console.error(`[cron] morning summary failed: ${describeError(e)}`);
     return { ok: false as const };
   });
   const result = await runAlerts({ deadline: Date.now() + 240_000 });

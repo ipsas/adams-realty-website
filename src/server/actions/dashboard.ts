@@ -747,9 +747,11 @@ export async function runSourceSync(sourceId: string) {
     const message =
       result.status === "skipped"
         ? "A sync of this feed is already running."
-        : result.status === "partial"
-          ? `Updated ${result.upserted} listings before the time limit; the next sync continues from there.`
-          : `Synced: ${result.upserted} updated, ${result.unchanged} unchanged.`;
+        : result.quarantined
+          ? `Synced, but ${result.quarantined} records couldn't be written and were quarantined (see the run's message).`
+          : result.status === "partial"
+            ? `Updated ${result.upserted} listings before the time limit; the next sync continues from there.`
+            : `Synced: ${result.upserted} updated, ${result.unchanged} unchanged.`;
     return { ok: result.status !== "skipped", message };
   } catch (e) {
     // Pages written before the failure are live: refresh the caches for them.

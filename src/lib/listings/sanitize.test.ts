@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { listingMedia, listings } from "@/db/schema";
-import { InvalidRowError, sanitizeNumeric } from "./sanitize";
+import { GEORGIA_BOUNDS, GEORGIA_MARGIN_DEG, InvalidRowError, sanitizeNumeric } from "./sanitize";
 
 const LABEL = "listing 3yd-GAMLS-10854420 (MLS 10854420)";
 
@@ -78,27 +78,50 @@ describe("sanitizeNumeric", () => {
     expect(out).toEqual({ bathrooms: null, latitude: null });
   });
 
-  it("allows negative coordinates, not infinite ones", () => {
-    const { out } = run({ latitude: -33.9, longitude: Number.NEGATIVE_INFINITY });
-    expect(out).toEqual({ latitude: -33.9, longitude: null });
+  it("allows negative coordinates, not infinite ones (which take their pair with them)", () => {
+    const { out, warn } = run({ latitude: 33.9, longitude: Number.NEGATIVE_INFINITY });
+    expect(out).toEqual({ latitude: null, longitude: null });
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(run({ latitude: 33.9, longitude: -84.3 }).out).toEqual({
+      latitude: 33.9,
+      longitude: -84.3,
+    });
   });
 
-  it("keeps coordinates up to ±90 / ±180, nulls those past them", () => {
+  it("keeps coordinates in Georgia's box plus the margin, nulls both outside it", () => {
+    const { minLat, maxLat, minLng, maxLng } = GEORGIA_BOUNDS;
+    const m = GEORGIA_MARGIN_DEG;
     for (const [latitude, longitude] of [
-      [90, 180],
-      [-90, -180],
+      [34.37, -83.11], // Royston
+      [minLat - m, minLng - m],
+      [maxLat + m, maxLng + m],
     ]) {
       const { out, warn } = run({ latitude, longitude });
       expect(out).toEqual({ latitude, longitude });
       expect(warn).not.toHaveBeenCalled();
     }
-    const { out, warn } = run({ latitude: 90.0001, longitude: -180.5 });
-    expect(out).toEqual({ latitude: null, longitude: null });
-    expect(warn.mock.calls[0][0]).toContain("latitude = 90.0001 is out of range for -90..90");
-    expect(warn.mock.calls[1][0]).toContain("out of range for -180..180");
-    expect(run({ latitude: -91, longitude: 181 }).out).toEqual({ latitude: null, longitude: null });
+    for (const [latitude, longitude] of [
+      [0, 0],
+      [-83.82, 34.3], // swapped: not swapped back
+      [maxLat + m + 0.01, -83.11],
+      [34.37, minLng - m - 0.01],
+      [30.27, -97.74], // Austin, TX
+      [90.0001, -180.5],
+    ]) {
+      const { out, warn } = run({ latitude, longitude });
+      expect(out, `${latitude},${longitude}`).toEqual({ latitude: null, longitude: null });
+      // One warning per value nulled: the nulled count.
+      expect(warn).toHaveBeenCalledTimes(2);
+    }
+    const { warn } = run({ latitude: 0, longitude: -83.11 });
+    expect(warn.mock.calls[0][0]).toContain("latitude = 0 is out of range for Georgia");
+    expect(warn.mock.calls[1][0]).toContain(
+      "longitude = -83.11 is unusable without its latitude; stored as null",
+    );
     // A double far past both: the bound applies, not the type's range.
     expect(run({ latitude: 1e39 }).out).toEqual({ latitude: null });
+    // A missing pair stays missing.
+    expect(run({ latitude: 0, longitude: null }).out).toEqual({ latitude: null, longitude: null });
   });
 
   it("refuses a NOT NULL column it can't null, so the row fails instead", () => {

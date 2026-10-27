@@ -5,6 +5,7 @@ import { savedSearches, users } from "@/db/schema";
 import { listUnsubscribeHeaders, sendEmail, type Email } from "@/lib/email";
 import { absoluteUrl, savedHomesUpdateEmail, savedSearchAlertEmail } from "@/lib/email-templates";
 import { gamlsLastSyncedAt } from "@/lib/mls/last-updated";
+import { describeError } from "@/lib/mls/write-errors";
 import {
   parseSearchParams,
   searchHref,
@@ -116,7 +117,7 @@ export async function runAlerts(opts: RunAlertsOptions = {}): Promise<AlertRunRe
       if (outcome === "emailed") result.searches.emailed++;
     } catch (error) {
       result.searches.failed++;
-      console.error(`[alerts] saved search ${search.id} failed`, error);
+      console.error(`[alerts] saved search ${search.id} failed: ${describeError(error)}`);
     }
   }
 
@@ -141,7 +142,9 @@ export async function runAlerts(opts: RunAlertsOptions = {}): Promise<AlertRunRe
       if (outcome === "emailed") result.homes.emailed++;
     } catch (error) {
       result.homes.failed++;
-      console.error(`[alerts] saved-home digest for user ${userId} failed`, error);
+      console.error(
+        `[alerts] saved-home digest for user ${userId} failed: ${describeError(error)}`,
+      );
     }
   }
 

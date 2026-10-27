@@ -6,7 +6,7 @@ import { missingCredentials, ResoWebApiProvider } from "./reso/provider";
 import { runSync, type RunSyncOptions, type SyncResult } from "./sync-engine";
 import { createSyncStore } from "./sync-store";
 import type { ListingProvider } from "./types";
-import { describeError } from "./write-errors";
+import { describeError, SyncError } from "./write-errors";
 
 export type { SyncMode, SyncResult } from "./sync-engine";
 
@@ -42,7 +42,7 @@ export function createProvider(
  * A sync that failed (the message is the cause's). `changed`: it wrote or
  * took down listings before failing, so caches still need refreshing.
  */
-export class SyncFailedError extends Error {
+export class SyncFailedError extends SyncError {
   constructor(
     cause: unknown,
     readonly changed: boolean,
@@ -95,12 +95,13 @@ async function refreshPlacesQuietly() {
   );
 }
 
-export type SourceSyncOutcome = { source: string } & (
+export type SourceSyncOutcome = { source: string } &
   /** `note`: why a source was skipped without a run (its credentials aren't set). */
-  | { ok: true; result: SyncResult; note?: string }
-  /** `changed`: listings were written before it failed, so caches need refreshing too. */
-  | { ok: false; error: string; changed: boolean }
-);
+  (
+    | { ok: true; result: SyncResult; note?: string }
+    /** `changed`: listings were written before it failed, so caches need refreshing too. */
+    | { ok: false; error: string; changed: boolean }
+  );
 
 /**
  * Syncs every active feed source. Failures in one source don't stop the others.
@@ -136,6 +137,7 @@ export async function syncAllSources(
           cursor: null,
           mediaRowsWritten: 0,
           nulled: 0,
+          quarantined: 0,
           pruned: 0,
           staleRunsFailed: 0,
           changed: false,

@@ -4,8 +4,10 @@ import { InvalidRowError } from "@/lib/listings/sanitize";
 import {
   describeError,
   isRowLevelError,
+  MAX_ERROR_LENGTH,
   PageRejectedError,
   redactDetail,
+  SyncError,
   writeIsolated,
 } from "./write-errors";
 
@@ -98,12 +100,78 @@ describe("describeError", () => {
       ["jane@example.com"],
       new Error("Connection terminated unexpectedly"),
     );
-    expect(describeError(lost)).toBe("Connection terminated unexpectedly");
+    expect(describeError(lost)).toBe("Error: Connection terminated unexpectedly");
   });
 
-  it("passes other errors through", () => {
-    expect(describeError(new Error("RESO request failed (503)"))).toBe("RESO request failed (503)");
+  it("passes our own errors through", () => {
+    expect(
+      describeError(new Error("RESO request failed (503) for https://x/?access_token=***")),
+    ).toBe("RESO request failed (503) for https://x/?access_token=***");
+    const own = new SyncError("Purge stopped: run `npm run mls:sync -- --purge`.");
+    expect(describeError(own)).toBe("Purge stopped: run `npm run mls:sync -- --purge`.");
+    const rejected = new PageRejectedError(6, 10, 'value "[redacted]" is out of range');
+    expect(describeError(rejected)).toBe(rejected.message);
+    const invalid = new InvalidRowError("listing K1", [
+      { field: "listPrice", value: 3e9, reason: "out of range for integer" },
+    ]);
+    expect(describeError(invalid)).toBe(invalid.message);
     expect(describeError("boom")).toBe("boom");
+  });
+
+  it("keeps an encoding error's encoding, not its bytes (22021)", () => {
+    const e = pgError("22021", 'invalid byte sequence for encoding "UTF8": 0x4a 0x61');
+    expect(describeError(e)).toBe(
+      'invalid byte sequence for encoding "UTF8": [redacted] (code: 22021)',
+    );
+    expect(describeError(e)).not.toContain("0x4a");
+  });
+
+  it("never shows a raise_exception's own text (P0001)", () => {
+    const e = pgError("P0001", "listing 12 Main St belongs to jane@example.com");
+    expect(describeError(e)).toBe("Database raised an exception (code: P0001)");
+  });
+
+  it("keeps a check violation's standard wording only (23514)", () => {
+    const standard = pgError(
+      "23514",
+      'new row for relation "listings" violates check constraint "listings_price_check"',
+    );
+    expect(describeError(standard)).toBe(
+      'new row for relation "listings" violates check constraint "listings_price_check" (code: 23514)',
+    );
+    const domain = pgError("23514", 'value for domain zip violates check constraint "zip_check"');
+    expect(describeError(domain)).toBe("Check constraint violated (code: 23514)");
+    const odd = pgError(
+      "23514",
+      'new row for relation "x" violates check constraint "y": 12 Main St',
+    );
+    expect(describeError(odd)).toBe("Check constraint violated (code: 23514)");
+  });
+
+  it("doesn't name the user of a failed login (28P01)", () => {
+    const e = pgError("28P01", 'password authentication failed for user "neondb_owner"');
+    expect(describeError(e)).toBe(
+      'password authentication failed for user "[redacted]" (code: 28P01)',
+    );
+  });
+
+  it("redacts quoted values in other errors, keeping their name, and caps their length", () => {
+    const type = new DrizzleQueryError(
+      "select …",
+      [],
+      new TypeError("Cannot read properties of undefined (reading 'jane@example.com')"),
+    );
+    expect(describeError(type)).toBe(
+      "TypeError: Cannot read properties of undefined (reading '[redacted]')",
+    );
+    expect(describeError(new Error('bad value "12 Main St" in `addr`'))).toBe(
+      'Error: bad value "[redacted]" in `[redacted]`',
+    );
+    // An apostrophe isn't a quote.
+    expect(describeError(new Error("feed doesn't answer"))).toBe("Error: feed doesn't answer");
+    const long = describeError(new Error("x".repeat(500)));
+    expect(long).toHaveLength(MAX_ERROR_LENGTH);
+    expect(long.endsWith("…")).toBe(true);
   });
 });
 
@@ -203,6 +271,22 @@ describe("writeIsolated", () => {
     // Exactly half is not more than half.
     const half = await rejecting(10, new Set([0, 2, 4, 6, 8]));
     expect(half.failed).toHaveLength(5);
+  });
+
+  it("reports skipped rows only once the page is known not to fail", async () => {
+    const onRowFailed = vi.fn();
+    const write = async (batch: number[]) => {
+      if (batch.some((i) => i < 6)) throw outOfRange();
+      return batch;
+    };
+    const items = Array.from({ length: 10 }, (_, i) => i);
+    await expect(writeIsolated(items, write, onRowFailed)).rejects.toThrow(PageRejectedError);
+    expect(onRowFailed).not.toHaveBeenCalled();
+    // Quarantining the page: it doesn't fail, and every rejected row is reported.
+    const out = await writeIsolated(items, write, onRowFailed, { allowRejected: true });
+    expect(out).toEqual({ results: [6, 7, 8, 9], failed: [0, 1, 2, 3, 4, 5] });
+    expect(onRowFailed.mock.calls.map((c) => c[0])).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(describeError(onRowFailed.mock.calls[0][1])).toContain("out of range");
   });
 
   it("skips isolated rows below the thresholds, as before", async () => {

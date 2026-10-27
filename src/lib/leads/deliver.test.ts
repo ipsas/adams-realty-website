@@ -31,8 +31,7 @@ describe("afterResponse", () => {
     });
     await expect(h.scheduled[0]()).resolves.toBeUndefined();
     expect(error).toHaveBeenCalledWith(
-      "[lead emails] failed after the response",
-      expect.any(Error),
+      "[lead emails] failed after the response: Error: provider down",
     );
     error.mockRestore();
   });

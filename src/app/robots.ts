@@ -3,6 +3,7 @@ import { DEMO_CONTENT_PATHS, demoDataMode } from "@/lib/demo-mode";
 import { env } from "@/lib/env";
 import { listingIndexingMode } from "@/lib/listings/indexing";
 import { listingSitemapUrls } from "@/lib/listings/sitemap-chunks";
+import { describeError } from "@/lib/mls/write-errors";
 import { previewPassword } from "@/lib/preview-gate";
 
 // Per request, so the preview gate (src/lib/preview-gate.ts) and demo-data mode
@@ -48,7 +49,9 @@ async function indexableListingCount(): Promise<number> {
     const { countSitemapListings } = await import("@/lib/listings/sitemap-query");
     return await countSitemapListings();
   } catch (err) {
-    console.error("robots.txt: couldn't count sitemap listings, listing no listing sitemaps.", err);
+    console.error(
+      `robots.txt: couldn't count sitemap listings, listing no listing sitemaps: ${describeError(err)}`,
+    );
     return 0;
   }
 }

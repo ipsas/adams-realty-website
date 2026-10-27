@@ -1,4 +1,5 @@
 import { after } from "next/server";
+import { describeError } from "@/lib/mls/write-errors";
 
 /**
  * Runs `task` (sending lead emails) after the response has gone to the
@@ -16,7 +17,7 @@ export function afterResponse(label: string, task: () => Promise<unknown>): void
     try {
       await task();
     } catch (e) {
-      console.error(`[${label}] failed after the response`, e);
+      console.error(`[${label}] failed after the response: ${describeError(e)}`);
     }
   });
 }

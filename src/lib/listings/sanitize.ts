@@ -31,11 +31,36 @@ const SPECS: Record<string, NumericSpec> = {
  */
 const SIGNED = new Set<Column>([listings.latitude, listings.longitude]);
 
+/**
+ * Georgia's rough bounding box (the listings' coverage, src/config/site.ts).
+ * A coordinate outside it, plus GEORGIA_MARGIN_DEG, is a feed error: 0,0, or
+ * latitude and longitude swapped.
+ */
+export const GEORGIA_BOUNDS = { minLat: 30.36, maxLat: 35.0, minLng: -85.61, maxLng: -80.84 };
+export const GEORGIA_MARGIN_DEG = 1;
+
 /** Columns with a narrower range than their type's (bounds included). */
-const BOUNDS = new Map<Column, { min: number; max: number }>([
-  [listings.latitude, { min: -90, max: 90 }],
-  [listings.longitude, { min: -180, max: 180 }],
+const BOUNDS = new Map<Column, { min: number; max: number; range: string }>([
+  [
+    listings.latitude,
+    {
+      min: GEORGIA_BOUNDS.minLat - GEORGIA_MARGIN_DEG,
+      max: GEORGIA_BOUNDS.maxLat + GEORGIA_MARGIN_DEG,
+      range: "Georgia",
+    },
+  ],
+  [
+    listings.longitude,
+    {
+      min: GEORGIA_BOUNDS.minLng - GEORGIA_MARGIN_DEG,
+      max: GEORGIA_BOUNDS.maxLng + GEORGIA_MARGIN_DEG,
+      range: "Georgia",
+    },
+  ],
 ]);
+
+/** Half a coordinate is no position: when one is nulled, so is the other. */
+const PAIRED: Record<string, string> = { latitude: "longitude", longitude: "latitude" };
 
 type ColumnRule = NumericSpec & { name: string; notNull: boolean; signed: boolean; range: string };
 
@@ -55,7 +80,7 @@ function numericRules(table: Table): Map<string, ColumnRule> {
         name: column.name,
         notNull: column.notNull,
         signed: SIGNED.has(column),
-        range: bounds ? `${bounds.min}..${bounds.max}` : spec.sqlType,
+        range: bounds?.range ?? spec.sqlType,
       });
     }
     rulesByTable.set(table, rules);
@@ -95,9 +120,9 @@ export class InvalidRowError extends Error {
 /**
  * `row` with every numeric column of `table` that holds a value Postgres would
  * reject (NaN, ±Infinity, out of the type's range, a fraction in an integer
- * column) or an impossible one (negative, or a latitude/longitude past ±90/±180)
- * set to null, each with a
- * warning naming `label`, the field and the raw value. Keys that aren't
+ * column) or an impossible one (negative, or a latitude/longitude outside
+ * GEORGIA_BOUNDS plus GEORGIA_MARGIN_DEG, which nulls both) set to null, each
+ * with a warning naming `label`, the field and the raw value. Keys that aren't
  * numeric columns are left alone; `undefined` stays undefined (not written).
  * Throws InvalidRowError when such a value is in a NOT NULL column.
  */
@@ -122,6 +147,17 @@ export function sanitizeNumeric<T extends object>(
     warn(`[listings] ${label}: ${field} = ${String(value)} is ${reason}; stored as null`);
     out ??= { ...row };
     (out as Record<string, unknown>)[field] = null;
+  }
+  const raw = row as Record<string, unknown>;
+  const sanitized = (out ?? {}) as Record<string, unknown>;
+  for (const [field, other] of Object.entries(PAIRED)) {
+    // Only a value nulled above takes its pair with it.
+    const wasNulled = rules.has(field) && raw[field] != null && sanitized[field] === null;
+    if (!wasNulled || raw[other] == null || sanitized[other] === null) continue;
+    warn(
+      `[listings] ${label}: ${other} = ${String(raw[other])} is unusable without its ${field}; stored as null`,
+    );
+    sanitized[other] = null;
   }
   if (fatal.length) throw new InvalidRowError(label, fatal);
   return out ?? row;

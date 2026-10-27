@@ -4,6 +4,7 @@ import { isCronAuthorized } from "@/lib/cron-auth";
 import { runLeadDigests } from "@/lib/leads/digest";
 import { LISTINGS_TAG } from "@/lib/listings/cache-tags";
 import { syncAllSources } from "@/lib/mls/sync";
+import { describeError } from "@/lib/mls/write-errors";
 
 export const maxDuration = 300;
 
@@ -49,7 +50,7 @@ export async function GET(request: NextRequest) {
   }
   const digests = await runLeadDigests({ deadline: started + (maxDuration - 15) * 1000 }).catch(
     (e) => {
-      console.error("[cron] morning summary failed", e);
+      console.error(`[cron] morning summary failed: ${describeError(e)}`);
       return { ok: false as const };
     },
   );

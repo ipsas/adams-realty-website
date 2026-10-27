@@ -51,15 +51,62 @@ export function redactDetail(detail: string): string | null {
   return `Key (${key[1]})=(${REDACTED})${suffix ? ` ${suffix[1]}.` : ""}`;
 }
 
+/** The standard wording of a 23514 on a table; anything else (a domain's, a trigger's) is dropped. */
+const CHECK_MESSAGE = /^new row for relation "[^"]*" violates check constraint( "[^"]*")?$/;
+
 /**
  * A data exception's message (SQLSTATE class 22) quotes the offending value,
  * e.g. `invalid input syntax for type integer: "abc"`: everything from its
- * first to its last double quote goes. Other classes quote only identifiers.
+ * first to its last double quote goes, except in an encoding error (22021,
+ * 22P05), which quotes the encoding's name and shows the value as bytes: the
+ * bytes go. A 28xxx names the user; a P0001 (`raise exception`) and an
+ * unrecognized 23514 can say anything. Other classes quote only identifiers.
  */
 function redactMessage(message: string, code: unknown): string {
-  return typeof code === "string" && code.startsWith("22")
-    ? message.replace(/"[\s\S]*"/, `"${REDACTED}"`)
-    : message;
+  if (typeof code !== "string") return message;
+  if (code === "22021" || code === "22P05") {
+    return message.replace(/0x[0-9a-f]{2}(\s+0x[0-9a-f]{2})*/gi, REDACTED);
+  }
+  if (code.startsWith("22")) return message.replace(/"[\s\S]*"/, `"${REDACTED}"`);
+  if (code.startsWith("28")) return message.replace(/user "[^"]*"/g, `user "${REDACTED}"`);
+  if (code === "P0001") return "Database raised an exception";
+  if (code === "23514" && !CHECK_MESSAGE.test(message)) return "Check constraint violated";
+  return message;
+}
+
+/** Longest message describeError shows for an error that isn't a Postgres one. */
+export const MAX_ERROR_LENGTH = 200;
+
+/**
+ * An error raised by the sync itself, whose message we wrote and which holds
+ * no feed or row values: describeError shows it as it is.
+ */
+export class SyncError extends Error {}
+
+/**
+ * Errors whose message is ours and already safe to show: the sync's own, an
+ * unstorable row's (InvalidRowError names only the listing, the field and
+ * the number), and the RESO client's (which redacts its URLs' tokens).
+ */
+function isSafeError(e: unknown): e is Error {
+  return (
+    e instanceof SyncError ||
+    e instanceof InvalidRowError ||
+    (e instanceof Error && /^RESO (request|feed|client|data source) /.test(e.message))
+  );
+}
+
+/**
+ * Any other error's message can quote a value (a TypeError's `Cannot read
+ * properties of undefined (reading 'x')`, a driver's): quoted substrings go,
+ * and the rest is cut to MAX_ERROR_LENGTH, behind the error's name.
+ */
+function redactUnknown(e: unknown): string {
+  const text = (e instanceof Error ? `${e.name}: ${e.message}` : String(e)).replace(
+    /(?<!\w)('[^'\n]*'|"[^"\n]*"|`[^`\n]*`)/g,
+    (quoted) => `${quoted[0]}${REDACTED}${quoted[0]}`,
+  );
+  return text.length > MAX_ERROR_LENGTH ? `${text.slice(0, MAX_ERROR_LENGTH - 1)}…` : text;
 }
 
 /**
@@ -69,13 +116,15 @@ function redactMessage(message: string, code: unknown): string {
  * Drizzle wraps driver errors in "Failed query: <sql> params: <values>" with
  * the cause as `.cause`; that wrapper (a whole page's SQL and values) is
  * skipped, as is any other wrapper around a Postgres error (SyncFailedError).
+ * Any other error shows as it is only when it's ours (isSafeError), otherwise
+ * redacted (redactUnknown).
  */
 export function describeError(error: unknown): string {
   const pg = pgError(error);
   if (!pg) {
     const inner = causeChain(error).find((e) => !(e instanceof DrizzleQueryError));
     if (inner === undefined) return "Database query failed";
-    return inner instanceof Error ? inner.message : String(inner);
+    return isSafeError(inner) ? inner.message : redactUnknown(inner);
   }
   const message = redactMessage(pg instanceof Error ? pg.message : String(pg), pg.code);
   const fields = (["code", "table", "column", "constraint", "detail"] as const)
@@ -89,21 +138,34 @@ export function describeError(error: unknown): string {
   return fields.length ? `${message} (${fields.join(", ")})` : message;
 }
 
-/** A page fails whole when every row, or more than this fraction of its rows, is rejected… */
+/**
+ * A page fails whole when every row, or more than this fraction of its rows, is rejected…
+ * Its rows are those handed to the database write: records the mapper skipped
+ * (MapSkipReason) count neither as rows nor as rejected.
+ */
 export const MAX_REJECTED_FRACTION = 0.5;
 /**
- * …provided it has at least this many rows. A smaller page never fails: its
- * rejected rows are skipped even when all are, so a lone permanently bad
- * record can't stall the incremental sync.
+ * …provided it has at least this many rows (written or rejected; mapper-skipped
+ * records not counted). A smaller page never fails: its rejected rows are
+ * skipped even when all are, so a lone permanently bad record can't stall the
+ * incremental sync.
  */
 export const MIN_ROWS_FOR_REJECTED_FRACTION = 10;
 
 /**
+ * A page that failed with PageRejectedError at the same cursor this many runs
+ * in a row is written on the next run regardless: its rejected rows are
+ * quarantined (sync_quarantine) and the cursor moves past it, so a page of bad
+ * records can't stall the sync forever. Runs 1–3 at a cursor fail; run 4 quarantines.
+ */
+export const QUARANTINE_AFTER_FAILURES = 3;
+
+/**
  * So many of a page's rows were rejected that the cause is systemic (a schema
  * mismatch, a mapper bug), not a bad record: the page must not be written, nor
- * the cursor moved past it.
+ * the cursor moved past it (until QUARANTINE_AFTER_FAILURES runs failed on it).
  */
-export class PageRejectedError extends Error {
+export class PageRejectedError extends SyncError {
   constructor(
     readonly rejected: number,
     readonly total: number,
@@ -132,20 +194,26 @@ export function isRowLevelError(error: unknown): boolean {
  * Writes `items` with `write` (which must undo its own partial work when it
  * throws, e.g. by running in a savepoint). If a batch fails because of a
  * record, it's split in halves and each retried, down to single records: every
- * good record is written, and each one that fails alone is reported to
- * `onRowFailed` and skipped. Other errors are rethrown. When there are at least
- * MIN_ROWS_FOR_REJECTED_FRACTION records and every one, or more than
- * MAX_REJECTED_FRACTION of them, fails, throws PageRejectedError: the caller's
- * transaction must then roll back the records that were written. Fewer records
- * never throw, even if all fail.
+ * good record is written, and each one that fails alone is skipped. Other
+ * errors are rethrown. When there are at least MIN_ROWS_FOR_REJECTED_FRACTION
+ * records and every one, or more than MAX_REJECTED_FRACTION of them, fails,
+ * throws PageRejectedError (unless `opts.allowRejected`: the page is being
+ * quarantined): the caller's transaction must then roll back the records that
+ * were written. Fewer records never throw, even if all fail. `items` are the
+ * page's records handed to the database: the base of the fraction.
+ * `onRowFailed` is called for each skipped record only once the page is known
+ * not to throw; a caller in a transaction should still hold its logs until it
+ * commits.
  */
 export async function writeIsolated<T, R>(
   items: T[],
   write: (batch: T[]) => Promise<R[]>,
   onRowFailed: (item: T, error: unknown) => void,
+  opts: { allowRejected?: boolean } = {},
 ): Promise<{ results: R[]; failed: T[] }> {
   const results: R[] = [];
   const failed: T[] = [];
+  const errors: unknown[] = [];
   let firstError: unknown;
   const attempt = async (batch: T[]): Promise<void> => {
     if (!batch.length) return;
@@ -156,7 +224,7 @@ export async function writeIsolated<T, R>(
       if (batch.length === 1) {
         if (!failed.length) firstError = error;
         failed.push(batch[0]);
-        onRowFailed(batch[0], error);
+        errors.push(error);
         return;
       }
       const mid = Math.ceil(batch.length / 2);
@@ -166,10 +234,12 @@ export async function writeIsolated<T, R>(
   };
   await attempt(items);
   if (
+    !opts.allowRejected &&
     items.length >= MIN_ROWS_FOR_REJECTED_FRACTION &&
     (failed.length === items.length || failed.length > items.length * MAX_REJECTED_FRACTION)
   ) {
     throw new PageRejectedError(failed.length, items.length, describeError(firstError));
   }
+  failed.forEach((item, i) => onRowFailed(item, errors[i]));
   return { results, failed };
 }

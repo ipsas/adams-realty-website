@@ -6,6 +6,7 @@ import { getActor } from "@/lib/auth/session";
 import { getLeadExportPage, isLeadStatus, type LeadExportCursor } from "@/lib/dashboard/queries";
 import { env } from "@/lib/env";
 import { formatFullAddress } from "@/lib/format";
+import { describeError } from "@/lib/mls/write-errors";
 import { audit } from "@/server/audit";
 import { LEAD_SOURCE_LABELS, LEAD_TYPE_LABELS, TOUR_TYPE_LABELS } from "../[id]/lead-format";
 import { CSV_BOM, csvDateTime, csvRow, exportFilename } from "./csv";
@@ -108,7 +109,7 @@ export async function GET(request: NextRequest) {
         else cursor = { createdAt: last.cursor, id: last.id };
       } catch (e) {
         // Abort the download rather than hand over a silently truncated file.
-        console.error("[leads export] failed", e);
+        console.error(`[leads export] failed: ${describeError(e)}`);
         controller.error(e);
       }
     },

@@ -1,9 +1,10 @@
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { agents, dataSources, listings, syncRuns } from "@/db/schema";
+import { agents, dataSources, listings, syncQuarantine, syncRuns } from "@/db/schema";
 import { listingLabel, upsertListings, type PersistSource } from "@/lib/listings/persist";
 import { pruneRemovedWhere, purgeCountQuery, purgeWhere } from "./purge";
-import type { SyncStore } from "./sync-engine";
+import { describeQuarantine, quarantineLine, type SyncStore } from "./sync-engine";
+import type { NormalizedListing } from "./types";
 import { describeError, writeIsolated } from "./write-errors";
 
 type SourceRow = typeof dataSources.$inferSelect;
@@ -94,7 +95,42 @@ export function createSyncStore(source: SourceRow): PostgresSyncStore {
       };
     },
 
-    async writePage(page, cursor, { skipUnchanged }) {
+    async rejectionStreak() {
+      const [row] = await db
+        .select({
+          failures: dataSources.rejectStreak,
+          cursor: dataSources.rejectStreakCursor,
+          key: dataSources.rejectStreakCursorKey,
+        })
+        .from(dataSources)
+        .where(eq(dataSources.id, source.id));
+      if (!row?.failures) return null;
+      return {
+        at: row.cursor ? { modifiedAt: row.cursor, key: row.key } : null,
+        failures: row.failures,
+      };
+    },
+
+    async recordRejection(at) {
+      const cursor = at?.modifiedAt ?? null;
+      const key = at?.key ?? null;
+      // One statement: SET reads the row as it was, so the comparison sees the old position.
+      const [row] = await db
+        .update(dataSources)
+        .set({
+          rejectStreak: sql`case when ${dataSources.rejectStreak} > 0
+            and ${dataSources.rejectStreakCursor} is not distinct from ${cursor}::timestamptz
+            and ${dataSources.rejectStreakCursorKey} is not distinct from ${key}::text
+            then ${dataSources.rejectStreak} + 1 else 1 end`,
+          rejectStreakCursor: cursor,
+          rejectStreakCursorKey: key,
+        })
+        .where(eq(dataSources.id, source.id))
+        .returning({ failures: dataSources.rejectStreak });
+      return { at, failures: row?.failures ?? 1 };
+    },
+
+    async writePage(page, cursor, { skipUnchanged, quarantine }) {
       agentIdsByMlsId ??= new Map(
         (
           await db
@@ -104,15 +140,19 @@ export function createSyncStore(source: SourceRow): PostgresSyncStore {
         ).map((a) => [a.mlsAgentId!, a.id]),
       );
       const agentMap = agentIdsByMlsId;
-      return db.transaction(async (tx) => {
+      // Logged once the page is committed: a rolled-back page skipped nothing.
+      const logs: string[] = [];
+      const outcome = await db.transaction(async (tx) => {
         const now = new Date();
+        const rows = page.flatMap((item) => (item.ok ? [item.listing] : []));
         // Each attempt in a savepoint, so a rejected statement doesn't abort
         // the page's transaction: a record Postgres rejects is skipped, the
         // rest of the page is written and the cursor still advances. Too many
         // rejected (PageRejectedError) fails the page: this transaction rolls
-        // back, cursor included.
+        // back, cursor included, unless the page is being quarantined.
+        const rejected: Array<{ n: NormalizedListing; reason: string }> = [];
         const { results, failed } = await writeIsolated(
-          page.flatMap((item) => (item.ok ? [item.listing] : [])),
+          rows,
           (batch) =>
             tx.transaction((sp) =>
               upsertListings(sp, persistSource, batch, {
@@ -121,12 +161,63 @@ export function createSyncStore(source: SourceRow): PostgresSyncStore {
                 now,
               }),
             ),
-          (n, error) =>
-            console.error(
-              `[mls] ${source.slug}: skipped ${listingLabel(n)}, which couldn't be written: ` +
-                describeError(error),
-            ),
+          (n, error) => rejected.push({ n, reason: describeError(error) }),
+          { allowRejected: quarantine !== undefined },
         );
+        for (const { n, reason } of rejected) {
+          logs.push(
+            quarantine
+              ? quarantineLine(source.slug, n, reason)
+              : `[mls] ${source.slug}: skipped ${listingLabel(n)}, which couldn't be written: ${reason}`,
+          );
+        }
+        if (quarantine && rejected.length) {
+          await tx
+            .insert(syncQuarantine)
+            .values(
+              // One row per key: a key twice in one upsert would fail it.
+              [...new Map(rejected.map((r) => [r.n.listingKey, r])).values()].map(
+                ({ n, reason }) => ({
+                  sourceId: source.id,
+                  listingKey: n.listingKey,
+                  mlsNumber: n.mlsNumber ?? null,
+                  modificationTimestamp: n.sourceModifiedAt ?? null,
+                  reason,
+                  cursor: quarantine.at?.modifiedAt ?? null,
+                  cursorKey: quarantine.at?.key ?? null,
+                  firstSeenAt: now,
+                  lastSeenAt: now,
+                }),
+              ),
+            )
+            .onConflictDoUpdate({
+              target: [syncQuarantine.sourceId, syncQuarantine.listingKey],
+              set: {
+                mlsNumber: sql`excluded.mls_number`,
+                modificationTimestamp: sql`excluded.modification_timestamp`,
+                reason: sql`excluded.reason`,
+                cursor: sql`excluded.cursor`,
+                cursorKey: sql`excluded.cursor_key`,
+                lastSeenAt: now,
+              },
+            });
+          logs.push(
+            `[mls] ALERT ${source.slug}: ${describeQuarantine(quarantine, rejected.length)}`,
+          );
+        }
+        // Records stored now are out of quarantine (they were modified again).
+        const failedKeys = new Set(failed.map((n) => n.listingKey));
+        const stored = rows.map((n) => n.listingKey).filter((k) => !failedKeys.has(k));
+        if (stored.length) {
+          await tx
+            .delete(syncQuarantine)
+            .where(
+              and(
+                eq(syncQuarantine.sourceId, source.id),
+                inArray(syncQuarantine.listingKey, stored),
+              ),
+            );
+        }
         const written = new Set(results.filter((r) => r.written).map((r) => r.id));
         const untouched = new Set(results.filter((r) => !r.written).map((r) => r.id));
 
@@ -162,8 +253,11 @@ export function createSyncStore(source: SourceRow): PostgresSyncStore {
           failed: failed.length,
           mediaRowsWritten: results.reduce((n, r) => n + r.mediaRowsWritten, 0),
           nulled: results.reduce((n, r) => n + r.nulled, 0),
+          quarantined: quarantine ? failed.length : 0,
         };
       });
+      for (const line of logs) console.error(line);
+      return outcome;
     },
 
     async heartbeat(runId, counts) {
@@ -199,7 +293,7 @@ export function createSyncStore(source: SourceRow): PostgresSyncStore {
 
     async finishRun(runId, outcome) {
       const now = new Date();
-      await db
+      const [run] = await db
         .update(syncRuns)
         .set({
           ...outcome.counts,
@@ -209,14 +303,20 @@ export function createSyncStore(source: SourceRow): PostgresSyncStore {
           cursor: outcome.cursor,
           error: outcome.error ?? null,
         })
-        .where(eq(syncRuns.id, runId));
+        .where(eq(syncRuns.id, runId))
+        .returning({ mode: syncRuns.mode });
       if (outcome.status !== "failed") {
         await db
           .update(dataSources)
-          // Caught up: the next run starts afresh, with the lookback.
-          .set(
-            outcome.caughtUp ? { lastSyncedAt: now, syncCursorKey: null } : { lastSyncedAt: now },
-          )
+          // Caught up: the next run starts afresh, with the lookback. A sync
+          // that didn't fail ends the rejection streak (a purge reads no page).
+          .set({
+            lastSyncedAt: now,
+            ...(run?.mode !== "purge"
+              ? { rejectStreak: 0, rejectStreakCursor: null, rejectStreakCursorKey: null }
+              : {}),
+            ...(outcome.caughtUp ? { syncCursorKey: null } : {}),
+          })
           .where(eq(dataSources.id, source.id));
       }
       if (outcome.mapperVersion !== undefined) {
@@ -226,7 +326,8 @@ export function createSyncStore(source: SourceRow): PostgresSyncStore {
           .update(dataSources)
           .set({
             config:
-              outcome.status === "succeeded" && outcome.caughtUp
+              // A run that quarantined a page is `partial`, yet read the whole feed.
+              outcome.status !== "failed" && outcome.caughtUp
                 ? sql`(${dataSources.config} - 'remappingTo') || jsonb_build_object('mapperVersion', ${v}::int)`
                 : sql`${dataSources.config} || jsonb_build_object('remappingTo', ${v}::int)`,
           })

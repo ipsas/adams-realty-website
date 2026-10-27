@@ -7,6 +7,7 @@ import { localClock, SEND_HOUR } from "@/lib/alerts/schedule";
 import { sendEmail, type Email } from "@/lib/email";
 import { leadDigestEmail, type DigestLead, type DigestSection } from "@/lib/email-templates";
 import { env } from "@/lib/env";
+import { describeError } from "@/lib/mls/write-errors";
 import {
   attentionCount,
   followUpOverdue,
@@ -234,7 +235,7 @@ export async function runLeadDigests(opts: RunLeadDigestsOptions = {}): Promise<
       }
     } catch (error) {
       result.failed++;
-      console.error(`[digest] ${r.key} failed`, error);
+      console.error(`[digest] ${r.key} failed: ${describeError(error)}`);
     }
   }
   result.ok = result.failed === 0;

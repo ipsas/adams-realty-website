@@ -87,6 +87,15 @@ export const dataSources = pgTable("data_sources", {
    * (UPDATE_LOOKBACK_MS in src/lib/mls/sync-engine.ts).
    */
   syncCursorKey: text("sync_cursor_key"),
+  /**
+   * Consecutive runs that failed with PageRejectedError on the page starting at
+   * (reject_streak_cursor, reject_streak_cursor_key); 0: none. After
+   * QUARANTINE_AFTER_FAILURES, that page's rejected rows are quarantined
+   * (sync_quarantine). See RejectionStreak in src/lib/mls/sync-engine.ts.
+   */
+  rejectStreak: integer("reject_streak").notNull().default(0),
+  rejectStreakCursor: timestamp("reject_streak_cursor", { withTimezone: true }),
+  rejectStreakCursorKey: text("reject_streak_cursor_key"),
   lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -584,6 +593,33 @@ export const syncRuns = pgTable(
     error: text("error"),
   },
   (t) => [index("sync_runs_source_idx").on(t.sourceId, t.startedAt)],
+);
+
+/**
+ * Feed records Postgres rejected on a page the sync quarantined (it failed
+ * QUARANTINE_AFTER_FAILURES runs in a row, src/lib/mls/write-errors.ts): not
+ * stored, kept here by id only, with the redacted reason. A record that's
+ * later written (the MLS modified it again) is taken out.
+ */
+export const syncQuarantine = pgTable(
+  "sync_quarantine",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sourceId: uuid("source_id")
+      .notNull()
+      .references(() => dataSources.id, { onDelete: "cascade" }),
+    listingKey: text("listing_key").notNull(),
+    mlsNumber: text("mls_number"),
+    modificationTimestamp: timestamp("modification_timestamp", { withTimezone: true }),
+    /** describeError's, values redacted. */
+    reason: text("reason").notNull(),
+    /** Where the quarantined page started (the saved cursor). */
+    cursor: timestamp("cursor", { withTimezone: true }),
+    cursorKey: text("cursor_key"),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("sync_quarantine_source_key_idx").on(t.sourceId, t.listingKey)],
 );
 
 /**

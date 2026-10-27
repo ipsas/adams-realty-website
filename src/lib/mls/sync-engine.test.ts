@@ -11,7 +11,10 @@ import {
   runSync,
   UPDATE_LOOKBACK_MS,
   type MapperVersions,
+  describeQuarantine,
+  quarantineLine,
   type PageOutcome,
+  type RejectionStreak,
   type RunOutcome,
   type SyncCounts,
   type SyncCursor,
@@ -25,7 +28,12 @@ import type {
   NormalizedListing,
   PurgeScope,
 } from "./types";
-import { describeError, PageRejectedError, writeIsolated } from "./write-errors";
+import {
+  describeError,
+  PageRejectedError,
+  QUARANTINE_AFTER_FAILURES,
+  writeIsolated,
+} from "./write-errors";
 
 // The engine against an in-memory store and a fake feed on a fake clock:
 // every page "takes" PAGE_MS, so a 300 s function is simulated instantly.
@@ -119,10 +127,30 @@ class MemoryStore implements SyncStore {
     return { ...this.versions };
   }
 
+  streak: RejectionStreak | null = null;
+  async rejectionStreak() {
+    return this.streak && { ...this.streak };
+  }
+  async recordRejection(at: SyncCursor | null) {
+    const same =
+      this.streak &&
+      (this.streak.at === null || at === null
+        ? this.streak.at === at
+        : this.streak.at.modifiedAt.getTime() === at.modifiedAt.getTime() &&
+          this.streak.at.key === at.key);
+    this.streak = { at, failures: same ? this.streak!.failures + 1 : 1 };
+    return { ...this.streak };
+  }
+
+  /** Quarantined records by key, as in sync_quarantine. */
+  quarantine = new Map<string, { reason: string; modified: number; at: SyncCursor | null }>();
+  /** Lines logged after a page committed: skips, quarantines, alerts. */
+  logs: string[] = [];
+
   async writePage(
     page: MapResult[],
     cursor: SyncCursor | null,
-    { skipUnchanged }: { skipUnchanged: boolean },
+    { skipUnchanged, quarantine }: { skipUnchanged: boolean; quarantine?: RejectionStreak },
   ): Promise<PageOutcome> {
     this.skipFlags.push(skipUnchanged);
     // Restored when the page fails, as the Postgres store's transaction rolls back.
@@ -141,8 +169,10 @@ class MemoryStore implements SyncStore {
     }
     // Batches through writeIsolated like the Postgres store; a batch holding a
     // rejected key fails whole, as Postgres fails the multi-row upsert.
+    const rows = page.flatMap((item) => (item.ok ? [item.listing] : []));
+    const rejected: Array<{ n: NormalizedListing; reason: string }> = [];
     const { failed } = await writeIsolated(
-      page.flatMap((item) => (item.ok ? [item.listing] : [])),
+      rows,
       async (batch) => {
         const bad = batch.find((n) => this.rejectKeys.has(n.listingKey));
         if (bad) throw outOfRange(bad.listingKey);
@@ -163,13 +193,40 @@ class MemoryStore implements SyncStore {
         }
         return batch;
       },
-      (n, error) => this.failures.push(`${n.listingKey}: ${describeError(error)}`),
+      (n, error) => rejected.push({ n, reason: describeError(error) }),
+      { allowRejected: quarantine !== undefined },
     ).catch((error: unknown) => {
       this.listings = snapshot;
       throw error;
     });
+    // "Committed": now the page's logs go out, as the Postgres store's do.
+    for (const { n, reason } of rejected) {
+      this.failures.push(`${n.listingKey}: ${reason}`);
+      if (quarantine) {
+        this.quarantine.set(n.listingKey, {
+          reason,
+          modified: n.sourceModifiedAt!.getTime(),
+          at: quarantine.at,
+        });
+        this.logs.push(quarantineLine("test", n, reason));
+      } else {
+        this.logs.push(`skipped ${n.listingKey}: ${reason}`);
+      }
+    }
+    if (quarantine && rejected.length) {
+      this.logs.push(`[mls] ALERT test: ${describeQuarantine(quarantine, rejected.length)}`);
+    }
+    for (const n of rows) if (!failed.includes(n)) this.quarantine.delete(n.listingKey);
     this.cursor = cursor;
-    return { upserted, unchanged, removed, failed: failed.length, mediaRowsWritten: 0, nulled: 0 };
+    return {
+      upserted,
+      unchanged,
+      removed,
+      failed: failed.length,
+      mediaRowsWritten: 0,
+      nulled: 0,
+      quarantined: quarantine ? failed.length : 0,
+    };
   }
 
   /** Keys Postgres "rejects" (an out-of-range value), and what was logged for them. */
@@ -232,9 +289,11 @@ class MemoryStore implements SyncStore {
     if (outcome.status !== "failed" && outcome.caughtUp && this.cursor) {
       this.cursor = { ...this.cursor, key: null };
     }
+    const mode = this.runs.find((r) => r.id === runId)!.mode;
+    if (outcome.status !== "failed" && mode !== "purge") this.streak = null;
     if (outcome.mapperVersion !== undefined) {
       this.versions =
-        outcome.status === "succeeded" && outcome.caughtUp
+        outcome.status !== "failed" && outcome.caughtUp
           ? { done: outcome.mapperVersion, remappingTo: null }
           : { ...this.versions, remappingTo: outcome.mapperVersion };
     }
@@ -577,6 +636,38 @@ describe("runSync: time budget and resume", () => {
     expect(store.runs[0]).toMatchObject({ status: "succeeded", error: undefined });
   });
 
+  it("leaves mapper-skipped records out of the rejected fraction: its base is the rows written", async () => {
+    const skippedRows = (n: number): MapResult[] =>
+      Array.from({ length: n }, (_, i) => ({
+        ok: false,
+        listingKey: `SKIP-${i}`,
+        reason: "missing_price",
+      }));
+    const pagesFeed = (items: MapResult[]): ListingProvider => ({
+      async *fetchUpdates() {
+        yield pageOf(items);
+      },
+      fetchActiveKeys: () => {
+        throw new Error("unused");
+      },
+    });
+    // 191 skipped by the mapper + 9 rows, all 9 rejected: under 10 rows, so only skipped.
+    const nine = Array.from({ length: 9 }, (_, i) => record(i));
+    for (const r of nine) store.rejectKeys.add(keyOf(r));
+    const ok = await runSync(store, pagesFeed([...skippedRows(191), ...nine]), { now: clock });
+    expect(ok).toMatchObject({ status: "succeeded", upserted: 0 });
+    expect(ok.skipped).toEqual({ missing_price: 191, write_failed: 9 });
+
+    // 191 skipped + 12 rows, 7 rejected: 7 of 12 is more than half, so the page fails.
+    const fresh = new MemoryStore();
+    const twelve = Array.from({ length: 12 }, (_, i) => record(100 + i));
+    for (const r of twelve.slice(0, 7)) fresh.rejectKeys.add(keyOf(r));
+    await expect(
+      runSync(fresh, pagesFeed([...skippedRows(191), ...twelve]), { now: clock }),
+    ).rejects.toThrow(/^7 of 12 rows rejected on page/);
+    expect(fresh.live()).toBe(0);
+  });
+
   it("adds up the values the sanitizer nulled", async () => {
     const write = store.writePage.bind(store);
     store.writePage = async (...args) => ({ ...(await write(...args)), nulled: 2 });
@@ -613,6 +704,145 @@ describe("runSync: time budget and resume", () => {
     };
     await expect(runSync(store, provider, { now: clock })).rejects.toThrow("503");
     expect(store.runs[0]).toMatchObject({ status: "failed", error: "RESO request failed (503)" });
+  });
+});
+
+describe("runSync: quarantine after repeated page rejections", () => {
+  const positionAfter = (r: MapResult): SyncCursor => ({
+    modifiedAt: new Date(modifiedOf(r)),
+    key: keyOf(r),
+  });
+  const connectionLost = () =>
+    new DrizzleQueryError(
+      'insert into "listings" …',
+      [],
+      Object.assign(new Error("Connection terminated unexpectedly"), { code: "57P01" }),
+    );
+
+  it("QA_STALL_200: fails 3 runs at the same cursor, quarantines on the 4th and advances; modified rows are stored later", async () => {
+    // 3 pages × 200, 101 bad rows on page 2.
+    const { provider, records } = feed(3);
+    const bad = records.slice(200, 301).map(keyOf);
+    for (const k of bad) store.rejectKeys.add(k);
+    const page1End = positionAfter(records[199]);
+    for (let run = 1; run <= QUARANTINE_AFTER_FAILURES; run++) {
+      await expect(runSync(store, provider, { now: clock })).rejects.toThrow(PageRejectedError);
+      expect(store.cursor).toEqual(page1End);
+      expect(store.streak).toEqual({ at: page1End, failures: run });
+    }
+    expect(store.live()).toBe(200);
+    // Rolled-back pages log no "skipped" lines.
+    expect(store.logs).toEqual([]);
+
+    const fourth = await runSync(store, provider, { now: clock });
+    expect(fourth).toMatchObject({ status: "partial", quarantined: 101, upserted: 99 + 200 });
+    expect(fourth.skipped).toEqual({ write_failed: 101 });
+    expect(store.live()).toBe(499);
+    expect(store.cursor).toEqual({ modifiedAt: new Date(modifiedOf(records[599])), key: null });
+    expect(store.streak).toBeNull();
+    expect([...store.quarantine.keys()]).toEqual(bad);
+    expect(store.quarantine.get(bad[0])).toEqual({
+      reason: 'value "[redacted]" is out of range for type integer (code: 22003)',
+      modified: modifiedOf(records[200]),
+      at: page1End,
+    });
+    const note =
+      `page at cursor ${page1End.modifiedAt.toISOString()}/${page1End.key} failed 3 runs in a row; ` +
+      "quarantined 101 rows (see sync_quarantine) and advanced";
+    expect(store.logs.filter((l) => l.includes("ALERT"))).toEqual([`[mls] ALERT test: ${note}`]);
+    const lines = store.logs.filter((l) => l.includes(": quarantined listing"));
+    expect(lines).toHaveLength(101);
+    expect(lines[0]).toBe(
+      `[mls] test: quarantined listing ${bad[0]}, modified ` +
+        `${new Date(modifiedOf(records[200])).toISOString()}: ` +
+        'value "[redacted]" is out of range for type integer (code: 22003)',
+    );
+    expect(store.logs.some((l) => l.startsWith("skipped"))).toBe(false);
+    expect(store.runs.at(-1)).toMatchObject({ status: "partial", error: note });
+
+    // The MLS fixes them: modified again, they're stored and leave quarantine.
+    store.rejectKeys.clear();
+    records.slice(200, 301).forEach((r, i) => {
+      if (r.ok) r.listing.sourceModifiedAt = new Date(START - 60_000 + i * 10);
+    });
+    const fifth = await runSync(store, provider, { now: clock });
+    expect(fifth).toMatchObject({ status: "succeeded", upserted: 101, quarantined: 0 });
+    expect(store.live()).toBe(600);
+    expect(store.quarantine.size).toBe(0);
+  });
+
+  it("gets past a 10-row tail page with 6 bad rows", async () => {
+    const { provider, records } = feed(2, 10);
+    for (const i of [10, 11, 13, 15, 17, 19]) store.rejectKeys.add(keyOf(records[i]));
+    for (let run = 1; run <= 3; run++) {
+      await expect(runSync(store, provider, { now: clock })).rejects.toThrow(/^6 of 10 rows/);
+    }
+    expect(store.cursor).toEqual(positionAfter(records[9]));
+    const result = await runSync(store, provider, { now: clock });
+    expect(result).toMatchObject({ status: "partial", upserted: 4, quarantined: 6 });
+    expect(store.cursor).toEqual({ modifiedAt: new Date(modifiedOf(records[19])), key: null });
+    expect(store.live()).toBe(14);
+  });
+
+  it("never counts or advances on a transient error, however often", async () => {
+    const { provider, records } = feed(2);
+    for (const r of records.slice(200)) store.rejectKeys.add(keyOf(r));
+    const page1End = positionAfter(records[199]);
+    for (let run = 0; run < 2; run++) {
+      await expect(runSync(store, provider, { now: clock })).rejects.toThrow(PageRejectedError);
+    }
+    expect(store.streak).toEqual({ at: page1End, failures: 2 });
+
+    // The connection drops on page 2, five runs in a row.
+    const write = store.writePage.bind(store);
+    let down = true;
+    store.writePage = async (page, cursor, opts) => {
+      if (down && page.some((i) => keyOf(i) === keyOf(records[200]))) throw connectionLost();
+      return write(page, cursor, opts);
+    };
+    for (let run = 0; run < 5; run++) {
+      await expect(runSync(store, provider, { now: clock })).rejects.toThrow(DrizzleQueryError);
+      expect(store.cursor).toEqual(page1End);
+    }
+    // Neither counted nor reset.
+    expect(store.streak).toEqual({ at: page1End, failures: 2 });
+    expect(store.quarantine.size).toBe(0);
+    expect(store.live()).toBe(200);
+
+    down = false;
+    await expect(runSync(store, provider, { now: clock })).rejects.toThrow(PageRejectedError);
+    expect(store.streak).toEqual({ at: page1End, failures: 3 });
+    expect(await runSync(store, provider, { now: clock })).toMatchObject({ quarantined: 200 });
+  });
+
+  it("starts a new streak when the failing page's position changes, and ends it when a run succeeds", async () => {
+    const { provider, records } = feed(3);
+    const reject = (from: number) => {
+      store.rejectKeys = new Set(records.slice(from, from + 101).map(keyOf));
+    };
+    reject(200);
+    for (let run = 0; run < 2; run++) {
+      await expect(runSync(store, provider, { now: clock })).rejects.toThrow(PageRejectedError);
+    }
+    expect(store.streak).toEqual({ at: positionAfter(records[199]), failures: 2 });
+
+    // Page 2 is fixed; page 3 breaks: a new position, a new streak.
+    reject(400);
+    await expect(runSync(store, provider, { now: clock })).rejects.toThrow(PageRejectedError);
+    expect(store.streak).toEqual({ at: positionAfter(records[399]), failures: 1 });
+    expect(store.quarantine.size).toBe(0);
+
+    store.rejectKeys.clear();
+    expect(await runSync(store, provider, { now: clock })).toMatchObject({ status: "succeeded" });
+    expect(store.streak).toBeNull();
+  });
+
+  it("a purge neither counts towards nor ends a streak", async () => {
+    const at = { modifiedAt: new Date(START - 60_000), key: "K000010" };
+    store.streak = { at, failures: 2 };
+    seedLive(store, 10);
+    await runSync(store, keyFeed(keysOf(10)).provider, { mode: "purge", now: clock });
+    expect(store.streak).toEqual({ at, failures: 2 });
   });
 });
 
