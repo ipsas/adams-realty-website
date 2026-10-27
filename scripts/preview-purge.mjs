@@ -7,7 +7,13 @@
  * (src/db/schema). Logs Neon ids and counts only, never connection details.
  */
 import pg from "pg";
-import { buildDbDecision, checkBranch, purgeDecision } from "../src/lib/mls/preview-purge.mjs";
+import {
+  buildDbDecision,
+  checkBranch,
+  isUntrustedSettingSource,
+  newBranchCheckClient,
+  purgeDecision,
+} from "../src/lib/mls/preview-purge.mjs";
 
 export { buildDbDecision, checkBranch, purgeDecision };
 
@@ -21,6 +27,30 @@ async function showSetting(client, name) {
   } catch {
     return null;
   }
+}
+
+/**
+ * The connection's Neon ids. An id whose pg_settings source a client or
+ * database owner can set is dropped (logged by setting and source, never the
+ * value), so the verdict treats it as missing. No pg_settings row is fine:
+ * the client was opened without startup options (newBranchCheckClient).
+ */
+async function neonIds(client, label, log) {
+  const ids = {};
+  for (const [key, name] of [
+    ["projectId", "neon.project_id"],
+    ["branchId", "neon.branch_id"],
+  ]) {
+    const { rows } = await client.query("select source from pg_settings where name = $1", [name]);
+    const source = rows[0]?.source ?? null;
+    if (isUntrustedSettingSource(source)) {
+      log(`${label} branch check: ${name} comes from source "${source}"; not trusted, ignored.`);
+      ids[key] = null;
+    } else {
+      ids[key] = await showSetting(client, name);
+    }
+  }
+  return ids;
 }
 
 async function counts(client) {
@@ -43,8 +73,7 @@ async function counts(client) {
 
 /** Reads the Neon ids from an open client, logs them (ids only) and returns checkBranch's verdict. */
 async function branchVerdict(client, label, log) {
-  const projectId = await showSetting(client, "neon.project_id");
-  const branchId = await showSetting(client, "neon.branch_id");
+  const { projectId, branchId } = await neonIds(client, label, log);
   const verdict = checkBranch({ projectId, branchId });
   log(`${label} branch check: project=${projectId} branch=${branchId} -> ${verdict}`);
   return verdict;
@@ -58,7 +87,7 @@ async function branchVerdict(client, label, log) {
  * @param {(line: string) => void} [log]
  */
 export async function neonBranchVerdict(connectionString, label, log = console.log) {
-  const client = new pg.Client({ connectionString });
+  const client = newBranchCheckClient(pg.Client, connectionString);
   await client.connect();
   try {
     return await branchVerdict(client, label, log);
@@ -75,11 +104,10 @@ export async function neonBranchVerdict(connectionString, label, log = console.l
  * @returns {Promise<"ok" | "refuse" | "fatal">}
  */
 export async function buildDbVerdict(connectionString, log = console.log) {
-  const client = new pg.Client({ connectionString });
+  const client = newBranchCheckClient(pg.Client, connectionString);
   await client.connect();
   try {
-    const projectId = await showSetting(client, "neon.project_id");
-    const branchId = await showSetting(client, "neon.branch_id");
+    const { projectId, branchId } = await neonIds(client, "Database", log);
     const env = process.env.VERCEL_ENV;
     const verdict = buildDbDecision(env, { projectId, branchId });
     log(`Database branch check: env=${env} project=${projectId} branch=${branchId} -> ${verdict}`);
@@ -97,7 +125,7 @@ export async function buildDbVerdict(connectionString, log = console.log) {
  * @param {(line: string) => void} [log]
  */
 export async function previewListingCounts(connectionString, log = console.log) {
-  const client = new pg.Client({ connectionString });
+  const client = newBranchCheckClient(pg.Client, connectionString);
   await client.connect();
   try {
     const verdict = await branchVerdict(client, "Listing counts", log);
@@ -140,7 +168,7 @@ export async function previewListingCounts(connectionString, log = console.log) 
  * @param {(line: string) => void} [log]
  */
 export async function purgePreviewListings(connectionString, log = console.log) {
-  const client = new pg.Client({ connectionString });
+  const client = newBranchCheckClient(pg.Client, connectionString);
   await client.connect();
   try {
     const verdict = await branchVerdict(client, "Preview purge", log);

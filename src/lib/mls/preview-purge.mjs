@@ -11,6 +11,66 @@ export const PREVIEW_BRANCH = "br-bitter-leaf-b82hdmgq";
 export const PROD_BRANCH = "br-dark-dawn-b83x0l0x";
 
 /**
+ * pg client config for the branch checks, with no client-supplied startup
+ * options: `-c neon.branch_id=...` in the URL's `options` parameter or in
+ * PGOPTIONS would make SHOW report any branch. Removes the URL parameter; pg
+ * falls back to process.env.PGOPTIONS whenever `options` is falsy, so the
+ * client must be built with newBranchCheckClient, which also ignores it.
+ * @param {string} connectionString
+ * @returns {{ connectionString: string }}
+ */
+export function branchCheckConfig(connectionString) {
+  let url;
+  try {
+    url = new URL(connectionString);
+  } catch {
+    throw new Error("Branch check: the database URL is not a URL.");
+  }
+  url.searchParams.delete("options");
+  return { connectionString: url.toString() };
+}
+
+/**
+ * A pg client for the branch checks: branchCheckConfig, built while PGOPTIONS
+ * is unset (pg reads it in the constructor), and refused if pg still resolved
+ * startup options (e.g. from pg.defaults).
+ * @template C
+ * @param {new (config: { connectionString: string }) => C} Client
+ * @param {string} connectionString
+ * @returns {C}
+ */
+export function newBranchCheckClient(Client, connectionString) {
+  const config = branchCheckConfig(connectionString);
+  const saved = process.env.PGOPTIONS;
+  delete process.env.PGOPTIONS;
+  let client;
+  try {
+    client = new Client(config);
+  } finally {
+    if (saved !== undefined) process.env.PGOPTIONS = saved;
+  }
+  /** @type {{ connectionParameters?: { options?: unknown } }} */
+  const resolved = /** @type {any} */ (client);
+  if (resolved.connectionParameters?.options) {
+    throw new Error("Branch check: pg resolved client startup options; refusing.");
+  }
+  return client;
+}
+
+/**
+ * pg_settings sources a client or database owner can set, so a Neon id from
+ * one of them proves nothing about the branch.
+ */
+export const UNTRUSTED_SETTING_SOURCES = ["client", "session", "user", "database", "database user"];
+
+/**
+ * @param {string | null | undefined} source pg_settings.source, or null if there is no row
+ */
+export function isUntrustedSettingSource(source) {
+  return source != null && UNTRUSTED_SETTING_SOURCES.includes(source);
+}
+
+/**
  * @param {Record<string, string | undefined>} env
  * @returns {{ run: boolean, reason: string }}
  */
