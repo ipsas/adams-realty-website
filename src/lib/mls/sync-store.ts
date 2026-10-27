@@ -108,7 +108,9 @@ export function createSyncStore(source: SourceRow): PostgresSyncStore {
         const now = new Date();
         // Each attempt in a savepoint, so a rejected statement doesn't abort
         // the page's transaction: a record Postgres rejects is skipped, the
-        // rest of the page is written and the cursor still advances.
+        // rest of the page is written and the cursor still advances. Too many
+        // rejected (PageRejectedError) fails the page: this transaction rolls
+        // back, cursor included.
         const { results, failed } = await writeIsolated(
           page.flatMap((item) => (item.ok ? [item.listing] : [])),
           (batch) =>
@@ -159,6 +161,7 @@ export function createSyncStore(source: SourceRow): PostgresSyncStore {
           removed,
           failed: failed.length,
           mediaRowsWritten: results.reduce((n, r) => n + r.mediaRowsWritten, 0),
+          nulled: results.reduce((n, r) => n + r.nulled, 0),
         };
       });
     },

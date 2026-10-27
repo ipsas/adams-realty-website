@@ -45,6 +45,7 @@ const result = (over: Partial<SyncResult> = {}): SyncResult => ({
   skipped: {},
   cursor: null,
   mediaRowsWritten: 0,
+  nulled: 0,
   pruned: 0,
   staleRunsFailed: 0,
   changed: false,

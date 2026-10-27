@@ -31,7 +31,13 @@ const SPECS: Record<string, NumericSpec> = {
  */
 const SIGNED = new Set<Column>([listings.latitude, listings.longitude]);
 
-type ColumnRule = NumericSpec & { name: string; notNull: boolean; signed: boolean };
+/** Columns with a narrower range than their type's (bounds included). */
+const BOUNDS = new Map<Column, { min: number; max: number }>([
+  [listings.latitude, { min: -90, max: 90 }],
+  [listings.longitude, { min: -180, max: 180 }],
+]);
+
+type ColumnRule = NumericSpec & { name: string; notNull: boolean; signed: boolean; range: string };
 
 const rulesByTable = new WeakMap<Table, Map<string, ColumnRule>>();
 
@@ -42,11 +48,14 @@ function numericRules(table: Table): Map<string, ColumnRule> {
     for (const [key, column] of Object.entries(getTableColumns(table))) {
       const spec = SPECS[column.columnType];
       if (!spec) continue;
+      const bounds = BOUNDS.get(column);
       rules.set(key, {
         ...spec,
+        ...bounds,
         name: column.name,
         notNull: column.notNull,
         signed: SIGNED.has(column),
+        range: bounds ? `${bounds.min}..${bounds.max}` : spec.sqlType,
       });
     }
     rulesByTable.set(table, rules);
@@ -59,7 +68,7 @@ function problem(value: unknown, rule: ColumnRule): string | null {
   if (typeof value !== "number") return "not a number";
   if (!Number.isFinite(value)) return "not a finite number";
   if (rule.integer && !Number.isInteger(value)) return `not a whole number (${rule.sqlType})`;
-  if (value < rule.min || value > rule.max) return `out of range for ${rule.sqlType}`;
+  if (value < rule.min || value > rule.max) return `out of range for ${rule.range}`;
   // A nonzero value too small for float4 underflows, which Postgres rejects too.
   if (rule.sqlType === "real" && value !== 0 && Math.fround(value) === 0) {
     return "out of range for real";
@@ -86,7 +95,8 @@ export class InvalidRowError extends Error {
 /**
  * `row` with every numeric column of `table` that holds a value Postgres would
  * reject (NaN, ±Infinity, out of the type's range, a fraction in an integer
- * column) or a negative one where that's impossible set to null, each with a
+ * column) or an impossible one (negative, or a latitude/longitude past ±90/±180)
+ * set to null, each with a
  * warning naming `label`, the field and the raw value. Keys that aren't
  * numeric columns are left alone; `undefined` stays undefined (not written).
  * Throws InvalidRowError when such a value is in a NOT NULL column.

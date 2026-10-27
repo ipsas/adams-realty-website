@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { NormalizedListing } from "@/lib/mls/types";
-import { diffEvents, mediaSignature, openHouseSignature } from "./persist";
+import { diffEvents, mediaSignature, openHouseSignature, sanitizeListing } from "./persist";
 import { listingSlug, shortHash } from "./slug";
 
 const now = new Date("2026-09-25T12:00:00Z");
@@ -162,5 +162,29 @@ describe("mediaSignature / openHouseSignature", () => {
     expect(openHouseSignature([a, { ...b, endsAt: new Date("2026-10-04T20:00:00Z") }])).not.toBe(
       openHouseSignature([a, b]),
     );
+  });
+});
+
+describe("sanitizeListing", () => {
+  it("counts the values it nulls, in the listing and its media", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const photo = {
+      sourceKey: null,
+      url: "https://x/1.jpg",
+      kind: "photo" as const,
+      caption: null,
+      width: -640,
+      height: 480,
+      sortOrder: 0,
+    };
+    const { listing: out, nulled } = sanitizeListing(
+      listing({ lotSizeSqft: 2_182_094_640, latitude: 91, media: [photo] }),
+    );
+    expect(nulled).toBe(3);
+    expect(out).toMatchObject({ lotSizeSqft: null, latitude: null, listPrice: 500000 });
+    expect(out.media[0]).toMatchObject({ width: null, height: 480 });
+    expect(warn).toHaveBeenCalledTimes(3);
+    expect(sanitizeListing(listing()).nulled).toBe(0);
+    warn.mockRestore();
   });
 });

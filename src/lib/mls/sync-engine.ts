@@ -30,6 +30,8 @@ export type PageOutcome = {
   failed: number;
   /** Rows written to listing_media and open_houses. */
   mediaRowsWritten: number;
+  /** Values the sanitizer stored as null (unstorable numerics, ./sanitize.ts). */
+  nulled: number;
 };
 
 /**
@@ -147,11 +149,14 @@ export type SyncResult = SyncCounts & {
   status: "succeeded" | "partial" | "skipped";
   /**
    * Records not written, by reason: the mapper's, or `write_failed` for one
-   * Postgres rejected (logged; the run carries on and the cursor moves past it).
+   * Postgres rejected (logged; the run carries on and the cursor moves past it,
+   * unless too many of its page were rejected: see PageRejectedError).
    */
   skipped: Partial<Record<MapSkipReason | "write_failed", number>>;
   cursor: Date | null;
   mediaRowsWritten: number;
+  /** Feed values the sanitizer stored as null instead (see PageOutcome.nulled). */
+  nulled: number;
   /** Removed listings deleted for good after a purge (PRUNE_REMOVED_AFTER_DAYS). */
   pruned: number;
   /** Earlier runs found cut off and marked failed. */
@@ -238,6 +243,7 @@ export async function runSync(
     skipped: {},
     cursor: null,
     mediaRowsWritten: 0,
+    nulled: 0,
     pruned: 0,
     staleRunsFailed: staleFailed,
     changed: false,
@@ -347,11 +353,13 @@ export async function runSync(
         for (const item of page.items) {
           if (!item.ok) result.skipped[item.reason] = (result.skipped[item.reason] ?? 0) + 1;
         }
-        if (page.last) cursor = page.last;
-        const outcome = await store.writePage(page.items, cursor, {
+        // Only once the page is written: a failed page's run records the cursor before it.
+        const next = page.last ?? cursor;
+        const outcome = await store.writePage(page.items, next, {
           // A full run exists to repair stored rows, so it rewrites every one.
           skipUnchanged: mode !== "full" && !remap,
         });
+        cursor = next;
         if (remap) remapVersion = version;
         counts.upserted += outcome.upserted;
         counts.unchanged += outcome.unchanged;
@@ -360,6 +368,7 @@ export async function runSync(
           result.skipped.write_failed = (result.skipped.write_failed ?? 0) + outcome.failed;
         }
         result.mediaRowsWritten += outcome.mediaRowsWritten;
+        result.nulled += outcome.nulled;
         await store.heartbeat(runId, counts);
         if (outOfTime()) {
           status = "partial";

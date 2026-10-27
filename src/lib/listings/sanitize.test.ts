@@ -63,14 +63,32 @@ describe("sanitizeNumeric", () => {
     expect(out).toEqual({ yearBuilt: null, bedrooms: null, livingAreaSqft: null });
   });
 
-  it("nulls a value past real's range, but keeps a large double", () => {
-    const { out } = run({ bathrooms: 1e39, latitude: 1e39 });
-    expect(out).toEqual({ bathrooms: null, latitude: 1e39 });
+  it("nulls a value past real's range", () => {
+    const { out } = run({ bathrooms: 1e39 });
+    expect(out).toEqual({ bathrooms: null });
   });
 
   it("allows negative coordinates, not infinite ones", () => {
     const { out } = run({ latitude: -33.9, longitude: Number.NEGATIVE_INFINITY });
     expect(out).toEqual({ latitude: -33.9, longitude: null });
+  });
+
+  it("keeps coordinates up to ±90 / ±180, nulls those past them", () => {
+    for (const [latitude, longitude] of [
+      [90, 180],
+      [-90, -180],
+    ]) {
+      const { out, warn } = run({ latitude, longitude });
+      expect(out).toEqual({ latitude, longitude });
+      expect(warn).not.toHaveBeenCalled();
+    }
+    const { out, warn } = run({ latitude: 90.0001, longitude: -180.5 });
+    expect(out).toEqual({ latitude: null, longitude: null });
+    expect(warn.mock.calls[0][0]).toContain("latitude = 90.0001 is out of range for -90..90");
+    expect(warn.mock.calls[1][0]).toContain("out of range for -180..180");
+    expect(run({ latitude: -91, longitude: 181 }).out).toEqual({ latitude: null, longitude: null });
+    // A double far past both: the bound applies, not the type's range.
+    expect(run({ latitude: 1e39 }).out).toEqual({ latitude: null });
   });
 
   it("refuses a NOT NULL column it can't null, so the row fails instead", () => {

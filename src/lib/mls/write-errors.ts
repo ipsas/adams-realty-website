@@ -1,3 +1,4 @@
+import { DrizzleQueryError } from "drizzle-orm";
 import { InvalidRowError } from "@/lib/listings/sanitize";
 
 /**
@@ -31,21 +32,84 @@ function pgError(error: unknown): DbErrorFields | undefined {
   );
 }
 
+const REDACTED = "[redacted]";
+
+/** What follows `Key (cols)=(values)` in a 23505/23503 detail, when it holds no values. */
+const KEY_DETAIL_SUFFIX =
+  /\) (already exists|is not present in table "[^"]*"|is still referenced from table "[^"]*")\.$/;
+
 /**
- * The real reason a write failed, for logs and the run record: the Postgres
- * message with its code, table, column, constraint and detail. Drizzle wraps
- * driver errors in "Failed query: <sql> params: <values>" with the Postgres
- * error as `.cause`; that wrapper (a whole page's SQL and values) is skipped,
- * as is any other wrapper around a Postgres error (SyncFailedError).
+ * A Postgres `detail` without the row's values (they can be an address or an
+ * email): the columns of `Key (cols)=(values) …` and the fact of `Failing row
+ * contains (…)` are kept; any other detail is dropped (null).
+ */
+export function redactDetail(detail: string): string | null {
+  if (detail.startsWith("Failing row contains (")) return `Failing row contains (${REDACTED}).`;
+  const key = /^Key \((.+?)\)=\(/.exec(detail);
+  if (!key) return null;
+  const suffix = KEY_DETAIL_SUFFIX.exec(detail);
+  return `Key (${key[1]})=(${REDACTED})${suffix ? ` ${suffix[1]}.` : ""}`;
+}
+
+/**
+ * A data exception's message (SQLSTATE class 22) quotes the offending value,
+ * e.g. `invalid input syntax for type integer: "abc"`: everything from its
+ * first to its last double quote goes. Other classes quote only identifiers.
+ */
+function redactMessage(message: string, code: unknown): string {
+  return typeof code === "string" && code.startsWith("22")
+    ? message.replace(/"[\s\S]*"/, `"${REDACTED}"`)
+    : message;
+}
+
+/**
+ * The real reason a write failed, for logs, the run record, the dashboard and
+ * the cron response: the Postgres message with its code, table, column,
+ * constraint and detail, with row values redacted (redactMessage, redactDetail).
+ * Drizzle wraps driver errors in "Failed query: <sql> params: <values>" with
+ * the cause as `.cause`; that wrapper (a whole page's SQL and values) is
+ * skipped, as is any other wrapper around a Postgres error (SyncFailedError).
  */
 export function describeError(error: unknown): string {
   const pg = pgError(error);
-  if (!pg) return error instanceof Error ? error.message : String(error);
-  const message = pg instanceof Error ? pg.message : String(pg);
+  if (!pg) {
+    const inner = causeChain(error).find((e) => !(e instanceof DrizzleQueryError));
+    if (inner === undefined) return "Database query failed";
+    return inner instanceof Error ? inner.message : String(inner);
+  }
+  const message = redactMessage(pg instanceof Error ? pg.message : String(pg), pg.code);
   const fields = (["code", "table", "column", "constraint", "detail"] as const)
-    .filter((k) => typeof pg[k] === "string" && pg[k] !== "")
-    .map((k) => `${k}: ${String(pg[k])}`);
+    .map((k) => {
+      const value = pg[k];
+      if (typeof value !== "string" || value === "") return null;
+      const shown = k === "detail" ? redactDetail(value) : value;
+      return shown === null ? null : `${k}: ${shown}`;
+    })
+    .filter((f) => f !== null);
   return fields.length ? `${message} (${fields.join(", ")})` : message;
+}
+
+/** A page fails whole when more than this fraction of its rows are rejected… */
+export const MAX_REJECTED_FRACTION = 0.5;
+/** …provided it has at least this many rows (a page whose every row is rejected always fails). */
+export const MIN_ROWS_FOR_REJECTED_FRACTION = 10;
+
+/**
+ * So many of a page's rows were rejected that the cause is systemic (a schema
+ * mismatch, a mapper bug), not a bad record: the page must not be written, nor
+ * the cursor moved past it.
+ */
+export class PageRejectedError extends Error {
+  constructor(
+    readonly rejected: number,
+    readonly total: number,
+    firstReason: string,
+  ) {
+    super(
+      `${rejected} of ${total} rows rejected on page; not advancing cursor. First error: ${firstReason}`,
+    );
+    this.name = "PageRejectedError";
+  }
 }
 
 /**
@@ -65,7 +129,10 @@ export function isRowLevelError(error: unknown): boolean {
  * throws, e.g. by running in a savepoint). If a batch fails because of a
  * record, it's split in halves and each retried, down to single records: every
  * good record is written, and each one that fails alone is reported to
- * `onRowFailed` and skipped. Other errors are rethrown.
+ * `onRowFailed` and skipped. Other errors are rethrown. When every record
+ * fails, or more than MAX_REJECTED_FRACTION of at least
+ * MIN_ROWS_FOR_REJECTED_FRACTION, throws PageRejectedError: the caller's
+ * transaction must then roll back the records that were written.
  */
 export async function writeIsolated<T, R>(
   items: T[],
@@ -74,6 +141,7 @@ export async function writeIsolated<T, R>(
 ): Promise<{ results: R[]; failed: T[] }> {
   const results: R[] = [];
   const failed: T[] = [];
+  let firstError: unknown;
   const attempt = async (batch: T[]): Promise<void> => {
     if (!batch.length) return;
     try {
@@ -81,6 +149,7 @@ export async function writeIsolated<T, R>(
     } catch (error) {
       if (!isRowLevelError(error)) throw error;
       if (batch.length === 1) {
+        if (!failed.length) firstError = error;
         failed.push(batch[0]);
         onRowFailed(batch[0], error);
         return;
@@ -91,5 +160,13 @@ export async function writeIsolated<T, R>(
     }
   };
   await attempt(items);
+  if (
+    failed.length &&
+    (failed.length === items.length ||
+      (items.length >= MIN_ROWS_FOR_REJECTED_FRACTION &&
+        failed.length > items.length * MAX_REJECTED_FRACTION))
+  ) {
+    throw new PageRejectedError(failed.length, items.length, describeError(firstError));
+  }
   return { results, failed };
 }

@@ -41,6 +41,8 @@ export type UpsertResult = {
   written: boolean;
   /** Rows written to listing_media and open_houses (deletes not counted). */
   mediaRowsWritten: number;
+  /** Values of the listing (and its media) the sanitizer stored as null. */
+  nulled: number;
 };
 
 type EventInsert = typeof listingEvents.$inferInsert;
@@ -82,7 +84,12 @@ export async function upsertListings(
   if (!items.length) return [];
   const now = opts.now ?? new Date();
   const byKey = new Map<string, NormalizedListing>();
-  for (const n of items) byKey.set(n.listingKey, sanitizeListing(n));
+  const nulledByKey = new Map<string, number>();
+  for (const n of items) {
+    const { listing, nulled } = sanitizeListing(n);
+    byKey.set(n.listingKey, listing);
+    nulledByKey.set(n.listingKey, nulled);
+  }
   const keys = [...byKey.keys()];
 
   const previousRows = await tx
@@ -136,6 +143,7 @@ export async function upsertListings(
         created: false,
         written: false,
         mediaRowsWritten: 0,
+        nulled: nulledByKey.get(n.listingKey)!,
       });
       continue;
     }
@@ -262,6 +270,7 @@ export async function upsertListings(
         written: true,
         mediaRowsWritten:
           (mediaChanged ? n.media.length : 0) + (opensChanged ? n.openHouses.length : 0),
+        nulled: nulledByKey.get(n.listingKey)!,
       });
     }
     if (staleMedia.length) {
@@ -286,14 +295,25 @@ export function listingLabel(n: Pick<NormalizedListing, "listingKey" | "mlsNumbe
 
 /**
  * The listing with values its numeric columns (and its media's) can't hold
- * nulled, so one bad feed value can't fail the batch (./sanitize.ts).
+ * nulled, so one bad feed value can't fail the batch (./sanitize.ts), and how
+ * many values that was.
  */
-function sanitizeListing(n: NormalizedListing): NormalizedListing {
+export function sanitizeListing(n: NormalizedListing): {
+  listing: NormalizedListing;
+  nulled: number;
+} {
   const label = listingLabel(n);
-  return {
-    ...sanitizeNumeric(listings, n, label),
-    media: n.media.map((m) => sanitizeNumeric(listingMedia, m, label)),
+  let nulled = 0;
+  // sanitizeNumeric warns once per value it nulls.
+  const warn = (message: string) => {
+    nulled++;
+    console.warn(message);
   };
+  const listing = {
+    ...sanitizeNumeric(listings, n, label, warn),
+    media: n.media.map((m) => sanitizeNumeric(listingMedia, m, label, warn)),
+  };
+  return { listing, nulled };
 }
 
 function definedKeys(row: object): string[] {

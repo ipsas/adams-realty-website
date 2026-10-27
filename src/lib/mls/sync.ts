@@ -90,7 +90,9 @@ export async function syncSource(sourceId: string, opts: SyncOptions = {}): Prom
 
 /** Stale suggestions aren't worth failing a sync that already committed. */
 async function refreshPlacesQuietly() {
-  await refreshPlaces(db).catch((e) => console.error("Refreshing autocomplete places failed:", e));
+  await refreshPlaces(db).catch((e) =>
+    console.error(`Refreshing autocomplete places failed: ${describeError(e)}`),
+  );
 }
 
 export type SourceSyncOutcome = { source: string } & (
@@ -133,6 +135,7 @@ export async function syncAllSources(
           skipped: {},
           cursor: null,
           mediaRowsWritten: 0,
+          nulled: 0,
           pruned: 0,
           staleRunsFailed: 0,
           changed: false,

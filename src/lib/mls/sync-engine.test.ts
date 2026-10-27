@@ -25,7 +25,7 @@ import type {
   NormalizedListing,
   PurgeScope,
 } from "./types";
-import { describeError, writeIsolated } from "./write-errors";
+import { describeError, PageRejectedError, writeIsolated } from "./write-errors";
 
 // The engine against an in-memory store and a fake feed on a fake clock:
 // every page "takes" PAGE_MS, so a 300 s function is simulated instantly.
@@ -125,6 +125,8 @@ class MemoryStore implements SyncStore {
     { skipUnchanged }: { skipUnchanged: boolean },
   ): Promise<PageOutcome> {
     this.skipFlags.push(skipUnchanged);
+    // Restored when the page fails, as the Postgres store's transaction rolls back.
+    const snapshot = structuredClone(this.listings);
     let upserted = 0;
     let unchanged = 0;
     let removed = 0;
@@ -162,9 +164,12 @@ class MemoryStore implements SyncStore {
         return batch;
       },
       (n, error) => this.failures.push(`${n.listingKey}: ${describeError(error)}`),
-    );
+    ).catch((error: unknown) => {
+      this.listings = snapshot;
+      throw error;
+    });
     this.cursor = cursor;
-    return { upserted, unchanged, removed, failed: failed.length, mediaRowsWritten: 0 };
+    return { upserted, unchanged, removed, failed: failed.length, mediaRowsWritten: 0, nulled: 0 };
   }
 
   /** Keys Postgres "rejects" (an out-of-range value), and what was logged for them. */
@@ -508,11 +513,63 @@ describe("runSync: time budget and resume", () => {
     expect(store.live()).toBe(599);
     // Logged with its key and the real Postgres error, not "Failed query: …".
     expect(store.failures).toEqual([
-      `${bad}: value "2182094640" is out of range for type integer (code: 22003)`,
+      `${bad}: value "[redacted]" is out of range for type integer (code: 22003)`,
     ]);
     // Past the bad page: the cursor is the feed's last record, and the run caught up.
     expect(store.cursor).toEqual({ modifiedAt: new Date(modifiedOf(records[599])), key: null });
     expect(store.runs[0]).toMatchObject({ status: "succeeded", error: undefined });
+  });
+
+  it("fails the run on a page whose every row is rejected: nothing of it written, cursor kept", async () => {
+    const { provider, records } = feed(2, 10);
+    for (const r of records.slice(10)) store.rejectKeys.add(keyOf(r));
+    await expect(runSync(store, provider, { now: clock })).rejects.toThrow(PageRejectedError);
+    // The first page went in; the cursor stays on its last record.
+    const lastGood = { modifiedAt: new Date(modifiedOf(records[9])), key: keyOf(records[9]) };
+    expect(store.cursor).toEqual(lastGood);
+    expect(store.live()).toBe(10);
+    expect(store.runs[0]).toMatchObject({ status: "failed", cursor: lastGood.modifiedAt });
+    expect(store.runs[0].counts).toMatchObject({ fetched: 20, upserted: 10 });
+    expect(store.runs[0].error).toBe(
+      "10 of 10 rows rejected on page; not advancing cursor. First error: " +
+        'value "[redacted]" is out of range for type integer (code: 22003)',
+    );
+  });
+
+  it("fails a page of 10 rows with more than half rejected, writing none of it", async () => {
+    const { provider, records } = feed(1, 10);
+    for (const i of [0, 1, 3, 5, 7, 9]) store.rejectKeys.add(keyOf(records[i]));
+    await expect(runSync(store, provider, { now: clock })).rejects.toThrow(
+      /^6 of 10 rows rejected on page; not advancing cursor/,
+    );
+    expect(store.live()).toBe(0);
+    expect(store.cursor).toBeNull();
+    expect(store.runs[0]).toMatchObject({ status: "failed", cursor: null });
+  });
+
+  it("still skips one bad row in 10, and advances past it", async () => {
+    const { provider, records } = feed(1, 10);
+    store.rejectKeys.add(keyOf(records[4]));
+    const result = await runSync(store, provider, { now: clock });
+    expect(result).toMatchObject({ status: "succeeded", upserted: 9 });
+    expect(result.skipped).toEqual({ write_failed: 1 });
+    expect(store.cursor).toEqual({ modifiedAt: new Date(modifiedOf(records[9])), key: null });
+  });
+
+  it("on a page under 10 rows, skips rejected rows unless all are, as before", async () => {
+    const { provider, records } = feed(1, 9);
+    for (const i of [0, 2, 4, 6, 8]) store.rejectKeys.add(keyOf(records[i]));
+    const result = await runSync(store, provider, { now: clock });
+    expect(result).toMatchObject({ status: "succeeded", upserted: 4 });
+    expect(result.skipped).toEqual({ write_failed: 5 });
+    expect(store.cursor).toEqual({ modifiedAt: new Date(modifiedOf(records[8])), key: null });
+  });
+
+  it("adds up the values the sanitizer nulled", async () => {
+    const write = store.writePage.bind(store);
+    store.writePage = async (...args) => ({ ...(await write(...args)), nulled: 2 });
+    const result = await runSync(store, feed(3).provider, { now: clock });
+    expect(result.nulled).toBe(6);
   });
 
   it("records the real Postgres error when a page fails for another reason", async () => {
