@@ -142,6 +142,35 @@ export type ListingFeatures = {
   view?: string[];
   construction?: string[];
   lot?: string[];
+  sewer?: string[];
+  water?: string[];
+  roof?: string[];
+  foundation?: string[];
+  style?: string[];
+  fireplace?: string[];
+  basement?: string[];
+  patioPorch?: string[];
+  fencing?: string[];
+  laundry?: string[];
+  accessibility?: string[];
+  greenEnergy?: string[];
+  otherStructures?: string[];
+  associationFeeIncludes?: string[];
+  associationAmenities?: string[];
+  roadFrontage?: string[];
+  roadSurface?: string[];
+  windows?: string[];
+  security?: string[];
+  waterfront?: string[];
+  electric?: string[];
+  levels?: string[];
+  condition?: string[];
+  specialConditions?: string[];
+  listingTerms?: string[];
+  currentUse?: string[];
+  possibleUse?: string[];
+  horse?: string[];
+  spa?: string[];
 };
 
 export type ListingSchools = {
@@ -187,11 +216,21 @@ export const listings = pgTable(
     yearBuilt: smallint("year_built"),
     stories: smallint("stories"),
     garageSpaces: smallint("garage_spaces"),
+    fireplacesTotal: smallint("fireplaces_total"),
+    parkingTotal: smallint("parking_total"),
+    /** RESO SeniorCommunityYN: a 55+ community. Null when the feed doesn't say. */
+    seniorCommunity: boolean("senior_community"),
+    lotSizeDimensions: text("lot_size_dimensions"),
+    zoning: text("zoning"),
 
+    /** RESO AssociationYN: false is "no HOA", null is unknown. */
+    associationYN: boolean("association_yn"),
     hoaFee: integer("hoa_fee"),
     hoaFrequency: text("hoa_frequency").$type<"monthly" | "quarterly" | "annually">(),
     taxAnnualAmount: integer("tax_annual_amount"),
     taxYear: smallint("tax_year"),
+    /** RESO TaxAssessedValue: the public-record assessment as entered in the MLS, not an estimate. */
+    taxAssessedValue: integer("tax_assessed_value"),
 
     addressLine1: text("address_line1").notNull(),
     unitNumber: text("unit_number"),

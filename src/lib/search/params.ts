@@ -104,8 +104,15 @@ export const FEATURE_FLAGS = [
   "openHouse",
   "virtualTour",
   "ourListings",
+  "fireplace",
 ] as const;
 export type FeatureFlag = (typeof FEATURE_FLAGS)[number];
+
+export const HOA_FILTERS = ["yes", "no"] as const;
+export type HoaFilter = (typeof HOA_FILTERS)[number];
+
+export const AGE55_FILTERS = ["only", "exclude"] as const;
+export type Age55Filter = (typeof AGE55_FILTERS)[number];
 
 export const PAGE_SIZE = 24;
 
@@ -121,10 +128,21 @@ export type SearchCriteria = {
   types?: PropertyTypeValue[];
   minSqft?: number;
   maxSqft?: number;
+  /** Legacy (old saved searches and URLs): the filters dialog writes minAcres instead. */
   minLotSqft?: number;
+  minAcres?: number;
+  maxAcres?: number;
   minYear?: number;
   maxYear?: number;
   maxHoa?: number;
+  /** Has an HOA ("yes") or not ("no"); absent is any, unknowns included. */
+  hoa?: HoaFilter;
+  /** Words in the listing text (search_vector), separate from the location box `q`. */
+  kw?: string;
+  /** Priced below the original list price. Ignored in "sold" mode. */
+  priceReduced?: boolean;
+  /** 55+ communities: absent includes them. */
+  age55?: Age55Filter;
   maxDaysOnMarket?: number;
   /** Include under-contract and pending listings in "buy" mode. */
   pending?: boolean;
@@ -212,6 +230,8 @@ export function parseSearchParams(raw: RawParams): SearchCriteria {
 
   const q = get(raw, "q")?.trim().slice(0, 120);
   if (q) c.q = q;
+  const kw = get(raw, "kw")?.trim().slice(0, 80).trim();
+  if (kw) c.kw = kw;
 
   const assign = <K extends keyof SearchCriteria>(key: K, value: SearchCriteria[K] | undefined) => {
     if (value !== undefined) c[key] = value;
@@ -224,9 +244,14 @@ export function parseSearchParams(raw: RawParams): SearchCriteria {
   assign("minSqft", intish(0, 1_000_000).parse(get(raw, "minSqft")));
   assign("maxSqft", intish(0, 1_000_000).parse(get(raw, "maxSqft")));
   assign("minLotSqft", intish(0, 1_000_000_000).parse(get(raw, "minLotSqft")));
+  assign("minAcres", numish(0, 100_000).parse(get(raw, "minAcres")));
+  assign("maxAcres", numish(0, 100_000).parse(get(raw, "maxAcres")));
   assign("minYear", intish(1700, 2100).parse(get(raw, "minYear")));
   assign("maxYear", intish(1700, 2100).parse(get(raw, "maxYear")));
   assign("maxHoa", intish(0, 100_000).parse(get(raw, "maxHoa")));
+  assign("hoa", z.enum(HOA_FILTERS).optional().catch(undefined).parse(get(raw, "hoa")));
+  assign("age55", z.enum(AGE55_FILTERS).optional().catch(undefined).parse(get(raw, "age55")));
+  assign("priceReduced", flag.parse(get(raw, "priceReduced")));
   assign("maxDaysOnMarket", intish(1, 3650).parse(get(raw, "maxDaysOnMarket")));
   assign("soldWithinDays", intish(1, 3650).parse(get(raw, "soldWithinDays")));
   assign("pending", flag.parse(get(raw, "pending")));
@@ -245,6 +270,9 @@ export function parseSearchParams(raw: RawParams): SearchCriteria {
   if (c.minSqft !== undefined && c.maxSqft !== undefined && c.minSqft > c.maxSqft) {
     [c.minSqft, c.maxSqft] = [c.maxSqft, c.minSqft];
   }
+  if (c.minAcres !== undefined && c.maxAcres !== undefined && c.minAcres > c.maxAcres) {
+    [c.minAcres, c.maxAcres] = [c.maxAcres, c.minAcres];
+  }
   return c;
 }
 
@@ -252,6 +280,7 @@ export function parseSearchParams(raw: RawParams): SearchCriteria {
 export function serializeCriteria(c: Partial<SearchCriteria>): URLSearchParams {
   const p = new URLSearchParams();
   if (c.q) p.set("q", c.q);
+  if (c.kw) p.set("kw", c.kw);
   if (c.mode && c.mode !== "buy") p.set("mode", c.mode);
   const nums = [
     "minPrice",
@@ -261,6 +290,8 @@ export function serializeCriteria(c: Partial<SearchCriteria>): URLSearchParams {
     "minSqft",
     "maxSqft",
     "minLotSqft",
+    "minAcres",
+    "maxAcres",
     "minYear",
     "maxYear",
     "maxHoa",
@@ -273,6 +304,9 @@ export function serializeCriteria(c: Partial<SearchCriteria>): URLSearchParams {
   }
   if (c.types?.length) p.set("types", c.types.join(","));
   if (c.pending) p.set("pending", "1");
+  if (c.hoa) p.set("hoa", c.hoa);
+  if (c.age55) p.set("age55", c.age55);
+  if (c.priceReduced) p.set("priceReduced", "1");
   for (const f of FEATURE_FLAGS) if (c[f]) p.set(f, "1");
   if (c.bounds) p.set("bounds", formatBounds(c.bounds));
   if (c.sort && c.sort !== "recommended") p.set("sort", c.sort);
@@ -312,8 +346,13 @@ export function countActiveFilters(c: SearchCriteria): number {
   if (c.types?.length) n++;
   if (c.minSqft !== undefined || c.maxSqft !== undefined) n++;
   if (c.minLotSqft !== undefined) n++;
+  if (c.minAcres !== undefined || c.maxAcres !== undefined) n++;
   if (c.minYear !== undefined || c.maxYear !== undefined) n++;
   if (c.maxHoa !== undefined) n++;
+  if (c.hoa) n++;
+  if (c.kw) n++;
+  if (c.priceReduced) n++;
+  if (c.age55) n++;
   if (c.maxDaysOnMarket !== undefined) n++;
   if (c.pending) n++;
   for (const f of FEATURE_FLAGS) if (c[f]) n++;
@@ -331,9 +370,15 @@ export function clearedFilters(): Partial<SearchCriteria> {
     minSqft: undefined,
     maxSqft: undefined,
     minLotSqft: undefined,
+    minAcres: undefined,
+    maxAcres: undefined,
     minYear: undefined,
     maxYear: undefined,
     maxHoa: undefined,
+    hoa: undefined,
+    kw: undefined,
+    priceReduced: undefined,
+    age55: undefined,
     maxDaysOnMarket: undefined,
     pending: undefined,
   };

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  clearedFilters,
   countActiveFilters,
   describeCriteria,
   parseBounds,
@@ -82,6 +83,46 @@ describe("parseSearchParams", () => {
   it("swaps inverted ranges", () => {
     const c = parseSearchParams({ minPrice: "900000", maxPrice: "500000" });
     expect([c.minPrice, c.maxPrice]).toEqual([500000, 900000]);
+    const acres = parseSearchParams({ minAcres: "10", maxAcres: "0.5" });
+    expect([acres.minAcres, acres.maxAcres]).toEqual([0.5, 10]);
+  });
+
+  it("parses acreage, HOA, keywords, price reduced, 55+ and fireplace", () => {
+    const c = parseSearchParams({
+      minAcres: "0.25",
+      maxAcres: "25",
+      hoa: "no",
+      kw: "  barn  workshop ",
+      priceReduced: "1",
+      age55: "exclude",
+      fireplace: "1",
+      minLotSqft: "43560",
+    });
+    expect(c).toMatchObject({
+      minAcres: 0.25,
+      maxAcres: 25,
+      hoa: "no",
+      kw: "barn  workshop",
+      priceReduced: true,
+      age55: "exclude",
+      fireplace: true,
+      // Legacy lot size still parses (old saved searches and links).
+      minLotSqft: 43560,
+    });
+    expect(parseSearchParams({ kw: "x".repeat(200) }).kw).toHaveLength(80);
+  });
+
+  it("drops invalid acreage, HOA, keyword, price-reduced and 55+ values", () => {
+    const c = parseSearchParams({
+      minAcres: "-1",
+      maxAcres: "200000",
+      hoa: "maybe",
+      kw: "   ",
+      priceReduced: "yes",
+      age55: "all",
+      fireplace: "0",
+    });
+    expect(c).toEqual({ mode: "buy", sort: "recommended", page: 1 });
   });
 });
 
@@ -108,6 +149,26 @@ describe("serializeCriteria", () => {
       ...original,
       bounds: { west: -97.12346, south: 30.1, east: -97, north: 30.2 },
     });
+  });
+
+  it("round-trips the acreage, HOA, keyword, price-reduced, 55+ and fireplace filters", () => {
+    const original = parseSearchParams({
+      minAcres: "2",
+      maxAcres: "10.5",
+      hoa: "yes",
+      kw: "dock",
+      priceReduced: "1",
+      age55: "only",
+      fireplace: "1",
+    });
+    const p = serializeCriteria(original);
+    expect(p.get("minAcres")).toBe("2");
+    expect(p.get("hoa")).toBe("yes");
+    expect(p.get("kw")).toBe("dock");
+    expect(p.get("priceReduced")).toBe("1");
+    expect(p.get("age55")).toBe("only");
+    expect(p.get("fireplace")).toBe("1");
+    expect(parseSearchParams(p)).toEqual(original);
   });
 
   it("omits defaults so URLs stay short", () => {
@@ -147,6 +208,20 @@ describe("describeCriteria and countActiveFilters", () => {
       page: "4",
     });
     expect(countActiveFilters(c)).toBe(3);
+  });
+
+  it("counts each new filter once (an acreage range is one filter)", () => {
+    const c = parseSearchParams({
+      minAcres: "1",
+      maxAcres: "5",
+      hoa: "no",
+      kw: "barn",
+      priceReduced: "1",
+      age55: "exclude",
+      fireplace: "1",
+    });
+    expect(countActiveFilters(c)).toBe(6);
+    expect(countActiveFilters({ ...c, ...clearedFilters() })).toBe(0);
   });
 });
 

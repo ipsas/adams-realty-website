@@ -63,6 +63,7 @@ import {
   statusLabel,
 } from "@/lib/format";
 import { listingContact } from "@/lib/listings/attribution-contact";
+import { hoaFact, listingDetailGroups } from "@/lib/listings/detail-fields";
 import {
   formatAcres,
   formatPricePerAcre,
@@ -180,6 +181,8 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
   const canEdit = can.editListing(actor, { sourceKind: source.kind, listAgentId: l.listAgentId });
   // IDX: the listing firm, named prominently (the firm's own listings may carry no office name).
   const office = l.listOfficeName ?? (l.isCompanyListing ? site.legalName : null);
+  const hoa = hoaFact(l);
+  const details = listingDetailGroups(l);
 
   return (
     <>
@@ -406,15 +409,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                       value={formatPrice(Math.round(l.listPrice / l.livingAreaSqft))}
                     />
                   ) : null}
-                  <Fact
-                    icon={<DollarSign />}
-                    label="HOA"
-                    value={
-                      l.hoaFee
-                        ? `${formatPrice(l.hoaFee)}/${l.hoaFrequency === "annually" ? "yr" : l.hoaFrequency === "quarterly" ? "qtr" : "mo"}`
-                        : "None"
-                    }
-                  />
+                  {hoa && <Fact icon={<DollarSign />} label="HOA" value={hoa} />}
                   {!bare && (
                     <Fact
                       icon={<Car />}
@@ -439,6 +434,25 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
               </Section>
 
               <FeatureSection features={l.features} flags={l} />
+
+              {details.length > 0 && (
+                <Section title="Property details" id="details">
+                  <div className="grid grid-cols-1 gap-x-10 gap-y-8 sm:grid-cols-2">
+                    {details.map((g) => (
+                      <div key={g.title}>
+                        <h3 className="text-xs font-semibold tracking-widest text-faint uppercase">
+                          {g.title}
+                        </h3>
+                        <dl className="mt-1.5 space-y-1.5 text-sm leading-relaxed">
+                          {g.rows.map((r) => (
+                            <InfoRow key={r.label} label={r.label} value={r.value} />
+                          ))}
+                        </dl>
+                      </div>
+                    ))}
+                  </div>
+                </Section>
+              )}
 
               {!rent && !sold && (
                 <Section title="Monthly cost" id="costs">
@@ -789,19 +803,16 @@ function Section({ title, id, children }: { title: string; id?: string; children
 /** Similar homes' photos wait until the section is this close to the screen (site review #10). */
 const SIMILAR_PHOTOS_NEAR_PX = 300;
 
+// Parking, community, construction and utilities are listed under "Property details".
 const FEATURE_GROUPS: [keyof ListingFeatures, string][] = [
   ["interior", "Interior"],
   ["appliances", "Appliances"],
   ["exterior", "Exterior"],
-  ["parking", "Parking"],
   ["heating", "Heating"],
   ["cooling", "Cooling"],
   ["flooring", "Flooring"],
-  ["community", "Community"],
   ["view", "View"],
-  ["construction", "Construction"],
   ["lot", "Lot"],
-  ["utilities", "Utilities"],
 ];
 
 function FeatureSection({

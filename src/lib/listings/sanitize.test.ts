@@ -63,6 +63,11 @@ describe("sanitizeNumeric", () => {
     expect(out).toEqual({ yearBuilt: null, bedrooms: null, livingAreaSqft: null });
   });
 
+  it("covers new numeric columns without changes here (tax_assessed_value, fireplaces_total)", () => {
+    const { out } = run({ taxAssessedValue: 3_000_000_000, fireplacesTotal: -1, parkingTotal: 4 });
+    expect(out).toEqual({ taxAssessedValue: null, fireplacesTotal: null, parkingTotal: 4 });
+  });
+
   it("nulls a value past real's range, but keeps a large double", () => {
     const { out } = run({ bathrooms: 1e39, latitude: 1e39 });
     expect(out).toEqual({ bathrooms: null, latitude: 1e39 });

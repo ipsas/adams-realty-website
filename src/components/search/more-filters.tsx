@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Checkbox, Field, Select } from "@/components/ui/form";
+import { Checkbox, Field, Input, Select } from "@/components/ui/form";
 import { Dialog } from "@/components/ui/dialog";
 import { FEATURE_FLAGS, type FeatureFlag, type SearchCriteria } from "@/lib/search/params";
 
@@ -17,23 +17,25 @@ const FEATURE_LABELS: Record<FeatureFlag, string> = {
   openHouse: "Open house",
   virtualTour: "3D / virtual tour",
   ourListings: "Adams Realty listings only",
+  fireplace: "Fireplace",
 };
 
 const SQFT = [500, 750, 1000, 1250, 1500, 1750, 2000, 2500, 3000, 3500, 4000, 5000, 7500];
-const LOTS = [
-  [2_000, "2,000 sqft"],
-  [5_000, "5,000 sqft"],
-  [7_500, "7,500 sqft"],
-  [10_890, "¼ acre"],
-  [21_780, "½ acre"],
-  [43_560, "1 acre"],
-  [87_120, "2 acres"],
-  [217_800, "5 acres"],
-  [435_600, "10 acres"],
-  [871_200, "20 acres"],
-  [2_178_000, "50 acres"],
-  [4_356_000, "100 acres"],
-] as const;
+const ACRES: [number, string][] = [
+  [0.25, "¼ acre"],
+  [0.5, "½ acre"],
+  [1, "1 acre"],
+  [2, "2 acres"],
+  [5, "5 acres"],
+  [10, "10 acres"],
+  [25, "25 acres"],
+];
+
+/** ACRES, plus the current value when a URL (or a legacy min lot size) set another. */
+function acreOptions(value: number | undefined): [number, string][] {
+  if (value === undefined || ACRES.some(([v]) => v === value)) return ACRES;
+  return [...ACRES, [value, `${value} acres`] as [number, string]].sort((a, b) => a[0] - b[0]);
+}
 const YEARS = [1900, 1950, 1970, 1980, 1990, 2000, 2010, 2015, 2020, 2024];
 const HOA = [0, 50, 100, 200, 300, 500, 750, 1000];
 const DOM = [
@@ -48,10 +50,15 @@ type Draft = Pick<
   SearchCriteria,
   | "minSqft"
   | "maxSqft"
-  | "minLotSqft"
+  | "minAcres"
+  | "maxAcres"
   | "minYear"
   | "maxYear"
   | "maxHoa"
+  | "hoa"
+  | "kw"
+  | "priceReduced"
+  | "age55"
   | "maxDaysOnMarket"
   | "pending"
   | "soldWithinDays"
@@ -62,10 +69,18 @@ function pickDraft(c: SearchCriteria): Draft {
   const d: Draft = {
     minSqft: c.minSqft,
     maxSqft: c.maxSqft,
-    minLotSqft: c.minLotSqft,
+    // A legacy min lot size (old saved searches and links) opens as min acres.
+    minAcres:
+      c.minAcres ??
+      (c.minLotSqft !== undefined ? Math.round((c.minLotSqft / 43_560) * 100) / 100 : undefined),
+    maxAcres: c.maxAcres,
     minYear: c.minYear,
     maxYear: c.maxYear,
     maxHoa: c.maxHoa,
+    hoa: c.hoa,
+    kw: c.kw,
+    priceReduced: c.priceReduced,
+    age55: c.age55,
     maxDaysOnMarket: c.maxDaysOnMarket,
     pending: c.pending,
     soldWithinDays: c.soldWithinDays,
@@ -115,7 +130,8 @@ export function MoreFilters({
           </Button>
           <Button
             onClick={() => {
-              update(d);
+              // The dialog writes acres; a legacy min lot size is replaced, not kept beside it.
+              update({ ...d, kw: d.kw?.trim() || undefined, minLotSqft: undefined });
               onClose();
             }}
           >
@@ -130,6 +146,13 @@ export function MoreFilters({
             label="Include under contract & pending"
             checked={!!d.pending}
             onChange={(e) => set("pending", e.target.checked || undefined)}
+          />
+        )}
+        {criteria.mode !== "sold" && (
+          <Checkbox
+            label="Price reduced"
+            checked={!!d.priceReduced}
+            onChange={(e) => set("priceReduced", e.target.checked || undefined)}
           />
         )}
         {criteria.mode === "sold" && (
@@ -147,6 +170,17 @@ export function MoreFilters({
             </Select>
           </Field>
         )}
+
+        <Field label="Keywords" htmlFor="kw">
+          <Input
+            id="kw"
+            type="text"
+            maxLength={80}
+            placeholder="e.g. barn, workshop, dock"
+            value={d.kw ?? ""}
+            onChange={(e) => set("kw", e.target.value || undefined)}
+          />
+        </Field>
 
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
           <Field label="Min square feet" htmlFor="minSqft">
@@ -177,18 +211,43 @@ export function MoreFilters({
               ))}
             </Select>
           </Field>
-          <Field label="Min lot size" htmlFor="minLot">
+          <Field label="Min acres" htmlFor="minAcres">
             <Select
-              id="minLot"
-              value={d.minLotSqft ?? ""}
-              onChange={(e) => set("minLotSqft", num(e.target.value))}
+              id="minAcres"
+              value={d.minAcres ?? ""}
+              onChange={(e) => set("minAcres", num(e.target.value))}
             >
               <option value="">Any</option>
-              {LOTS.map(([v, label]) => (
+              {acreOptions(d.minAcres).map(([v, label]) => (
                 <option key={v} value={v}>
                   {label}+
                 </option>
               ))}
+            </Select>
+          </Field>
+          <Field label="Max acres" htmlFor="maxAcres">
+            <Select
+              id="maxAcres"
+              value={d.maxAcres ?? ""}
+              onChange={(e) => set("maxAcres", num(e.target.value))}
+            >
+              <option value="">No max</option>
+              {acreOptions(d.maxAcres).map(([v, label]) => (
+                <option key={v} value={v}>
+                  {label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="HOA" htmlFor="hoa">
+            <Select
+              id="hoa"
+              value={d.hoa ?? ""}
+              onChange={(e) => set("hoa", (e.target.value || undefined) as Draft["hoa"])}
+            >
+              <option value="">Any</option>
+              <option value="yes">Has HOA</option>
+              <option value="no">No HOA</option>
             </Select>
           </Field>
           <Field label="Max HOA" htmlFor="maxHoa">
@@ -231,6 +290,17 @@ export function MoreFilters({
                   {v}
                 </option>
               ))}
+            </Select>
+          </Field>
+          <Field label="55+ communities" htmlFor="age55">
+            <Select
+              id="age55"
+              value={d.age55 ?? ""}
+              onChange={(e) => set("age55", (e.target.value || undefined) as Draft["age55"])}
+            >
+              <option value="">Include</option>
+              <option value="exclude">Exclude</option>
+              <option value="only">Only</option>
             </Select>
           </Field>
           {criteria.mode !== "sold" && (

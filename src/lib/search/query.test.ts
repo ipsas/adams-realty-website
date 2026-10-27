@@ -6,6 +6,7 @@ import {
   buildWhere,
   hasLocation,
   lakeGuide,
+  MAX_PLAUSIBLE_LOT_SQFT,
   normalizeLocationQuery,
   type LocationScope,
 } from "./query";
@@ -111,6 +112,84 @@ describe("buildWhere", () => {
     expect(sql).toContain(`"listings"."has_pool" =`);
     expect(sql).toContain(`exists (select 1 from "open_houses"`);
     expect(sql).toContain(`"listings"."hoa_fee" is null`);
+  });
+});
+
+describe("acreage, HOA, keyword, price-reduced, 55+ and fireplace filters", () => {
+  it("adds nothing by default, so listings with unknown values show", () => {
+    const { sql } = render({});
+    expect(sql).not.toContain("lot_size_sqft");
+    expect(sql).not.toContain("association_yn");
+    expect(sql).not.toContain("senior_community");
+    expect(sql).not.toContain("search_vector");
+    expect(sql).not.toContain("original_list_price");
+    expect(sql).not.toContain("fireplaces_total");
+  });
+
+  it("bounds a known, plausible lot size in square feet", () => {
+    const { sql, params } = render({ minAcres: "0.5", maxAcres: "2" });
+    expect(sql).toContain(`"listings"."lot_size_sqft" > 0`);
+    expect(sql).toContain(`"listings"."lot_size_sqft" >= $`);
+    expect(sql).toContain(`"listings"."lot_size_sqft" <= $`);
+    expect(params).toEqual(
+      expect.arrayContaining([MAX_PLAUSIBLE_LOT_SQFT, 0.5 * 43_560, 2 * 43_560]),
+    );
+    expect(MAX_PLAUSIBLE_LOT_SQFT).toBe(20_000 * 43_560);
+  });
+
+  it("guards a lone acreage bound too, and rounds to whole square feet", () => {
+    const { sql, params } = render({ maxAcres: "0.333" });
+    expect(sql).toContain(`"listings"."lot_size_sqft" > 0`);
+    expect(params).toEqual(expect.arrayContaining([MAX_PLAUSIBLE_LOT_SQFT, 14_505]));
+    expect(sql.match(/"lot_size_sqft" <= \$/g)).toHaveLength(2);
+  });
+
+  it("keeps the legacy min lot size filter as it was", () => {
+    const { sql, params } = render({ minLotSqft: "10890" });
+    expect(sql).toContain(`"listings"."lot_size_sqft" >= $`);
+    expect(sql).not.toContain(`"listings"."lot_size_sqft" > 0`);
+    expect(params).toContain(10890);
+  });
+
+  it("matches HOA yes on AssociationYN or a fee", () => {
+    const { sql } = render({ hoa: "yes" });
+    expect(sql).toContain(`("listings"."association_yn" = true or "listings"."hoa_fee" > 0)`);
+  });
+
+  it("matches HOA no on AssociationYN false, or unknown with a $0 fee (not every unknown)", () => {
+    const { sql } = render({ hoa: "no" });
+    expect(sql).toContain(
+      `("listings"."association_yn" = false or ("listings"."association_yn" is null and "listings"."hoa_fee" = 0))`,
+    );
+  });
+
+  it("matches keywords on search_vector, apart from the location box", () => {
+    const { sql, params } = render({ kw: "barn workshop" });
+    expect(sql).toContain(`"listings"."search_vector" @@ websearch_to_tsquery('english', $`);
+    expect(sql).not.toContain("location_vector");
+    expect(params).toContain("barn workshop");
+    const both = render({ q: "Atlanta", kw: "dock" });
+    expect(both.sql).toContain("location_vector");
+    expect(both.sql).toContain("search_vector");
+    expect(both.params).toEqual(expect.arrayContaining(["Atlanta", "dock"]));
+  });
+
+  it("matches price reduced against the original list price, except in sold mode", () => {
+    const { sql } = render({ priceReduced: "1" });
+    expect(sql).toContain(`"listings"."original_list_price" is not null`);
+    expect(sql).toContain(`"listings"."list_price" < "listings"."original_list_price"`);
+    expect(render({ priceReduced: "1", mode: "sold" }).sql).not.toContain("original_list_price");
+  });
+
+  it("filters 55+ communities: only, or exclude keeping unknowns", () => {
+    expect(render({ age55: "only" }).sql).toContain(`"listings"."senior_community" = $`);
+    expect(render({ age55: "exclude" }).sql).toContain(`"listings"."senior_community" is not true`);
+  });
+
+  it("matches a fireplace on fireplaces_total", () => {
+    const { sql, params } = render({ fireplace: "1" });
+    expect(sql).toContain(`"listings"."fireplaces_total" >= $`);
+    expect(params).toContain(1);
   });
 });
 

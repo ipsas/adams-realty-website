@@ -179,6 +179,102 @@ describe("mapResoProperty", () => {
     });
     expect(mapOk({ ...base, AssociationYN: false, AssociationFee: 300 }).hoaFee).toBeNull();
   });
+
+  it("keeps AssociationYN apart from an unknown HOA", () => {
+    expect(mapOk({ ...base, AssociationYN: true })).toMatchObject({
+      associationYN: true,
+      hoaFee: null,
+    });
+    expect(mapOk({ ...base, AssociationYN: "N", AssociationFee: 300 })).toMatchObject({
+      associationYN: false,
+      hoaFee: null,
+    });
+    expect(mapOk({ ...base, AssociationFee: 300 })).toMatchObject({
+      associationYN: true,
+      hoaFee: 300,
+    });
+    expect(mapOk({ ...base, AssociationFee: 0 }).associationYN).toBeNull();
+    expect(mapOk(base).associationYN).toBeNull();
+  });
+
+  it("maps the detail columns", () => {
+    expect(
+      mapOk({
+        ...base,
+        FireplacesTotal: 2,
+        ParkingTotal: "4",
+        SeniorCommunityYN: "Y",
+        TaxAssessedValue: 182_400,
+        LotSizeDimensions: " 100 x 200 ",
+        Zoning: "R-1",
+      }),
+    ).toMatchObject({
+      fireplacesTotal: 2,
+      parkingTotal: 4,
+      seniorCommunity: true,
+      taxAssessedValue: 182_400,
+      lotSizeDimensions: "100 x 200",
+      zoning: "R-1",
+    });
+    expect(mapOk(base)).toMatchObject({
+      fireplacesTotal: null,
+      parkingTotal: null,
+      seniorCommunity: null,
+      taxAssessedValue: null,
+      lotSizeDimensions: null,
+      zoning: null,
+    });
+    expect(mapOk({ ...base, SeniorCommunityYN: false }).seniorCommunity).toBe(false);
+    expect(mapOk({ ...base, FireplacesTotal: 0 }).fireplacesTotal).toBe(0);
+    expect(mapOk({ ...base, TaxAssessedValue: 0 }).taxAssessedValue).toBeNull();
+    for (const s of ["None", "N/A", "-", ""]) {
+      expect(mapOk({ ...base, LotSizeDimensions: s }).lotSizeDimensions, s).toBeNull();
+    }
+  });
+
+  it("maps the extra feature lists, humanized, and leaves out empty ones", () => {
+    const l = mapOk({
+      ...base,
+      Sewer: ["SepticTank"],
+      WaterSource: "Public,Well",
+      Roof: ["Composition"],
+      ArchitecturalStyle: ["Craftsman", "Ranch"],
+      Basement: ["Finished", "Daylight"],
+      PatioAndPorchFeatures: ["FrontPorch", "Screened"],
+      RoadFrontageType: ["CountyRoad"],
+      HorseAmenities: [],
+      SpaFeatures: "None",
+      Fencing: undefined,
+    });
+    expect(l.features).toMatchObject({
+      sewer: ["Septic Tank"],
+      water: ["Public", "Well"],
+      roof: ["Composition"],
+      style: ["Craftsman", "Ranch"],
+      basement: ["Finished", "Daylight"],
+      patioPorch: ["Front Porch", "Screened"],
+      roadFrontage: ["County Road"],
+    });
+    expect(l.hasBasement).toBe(true);
+    expect(l.features).not.toHaveProperty("horse");
+    expect(l.features).not.toHaveProperty("spa");
+    expect(l.features).not.toHaveProperty("fencing");
+    // Existing keys are still always present.
+    expect(mapOk(base).features).toEqual({
+      interior: [],
+      exterior: [],
+      appliances: [],
+      heating: [],
+      cooling: [],
+      parking: [],
+      flooring: [],
+      community: [],
+      utilities: [],
+      view: [],
+      construction: [],
+      lot: [],
+    });
+  });
 });
 
 describe("Georgia MLS (Bridge gamls2) field shapes", () => {
@@ -346,6 +442,15 @@ describe("Georgia MLS field rules", () => {
     OfficeRemarks: `office only ${SENTINEL}`,
     ShowingRequirements: `Call first ${SENTINEL}`,
     ShowingInstructions: `Call first ${SENTINEL}`,
+    LockBoxType: `Supra ${SENTINEL}`,
+    LockBoxLocation: `Back door ${SENTINEL}`,
+    LockBoxSerialNumber: `SN ${SENTINEL}`,
+    OccupantName: `Occupant ${SENTINEL}`,
+    OccupantPhone: "(706) 555-0177",
+    OccupantType: `Tenant ${SENTINEL}`,
+    OwnerName: `Owner ${SENTINEL}`,
+    OwnerPhone: "(706) 555-0188",
+    AccessCode: `Gate ${SENTINEL}`,
   };
 
   it("never maps an excluded field, not even into another field", () => {
@@ -354,6 +459,8 @@ describe("Georgia MLS field rules", () => {
     const json = JSON.stringify(l);
     expect(json).not.toContain(SENTINEL);
     expect(json).not.toContain("555-0199");
+    expect(json).not.toContain("555-0177");
+    expect(json).not.toContain("555-0188");
     // The contract and on-market dates no longer feed the list date.
     expect(json).not.toContain("2026-01-02");
     expect(json).not.toContain("2026-01-03");
