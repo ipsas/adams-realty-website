@@ -52,6 +52,19 @@ describe("toEmailListing", () => {
     expect(row.priceSuffix).toBeUndefined();
   });
 
+  it("names the listing office: looked-up name, MLS office ID, the firm's legal name", () => {
+    const other = { ...listing, listOfficeName: null, listOfficeMlsId: "RMCR" };
+    expect(toEmailListing({ ...other, officeLookupName: "Re/Max Center" }).attribution).toBe(
+      "Listed by Re/Max Center",
+    );
+    expect(toEmailListing({ ...other, officeLookupName: null }).attribution).toBe(
+      "Listed by MLS Office ID RMCR",
+    );
+    expect(
+      toEmailListing({ ...listing, listOfficeName: null, isCompanyListing: true }).attribution,
+    ).toBe("Listed by Adams Realty, Inc.");
+  });
+
   it("respects suppressed addresses, rentals and sold prices", () => {
     expect(toEmailListing({ ...listing, hideAddress: true }).street).toBe(
       "Address withheld by seller",

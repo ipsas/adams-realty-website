@@ -1,6 +1,6 @@
 import type { DataSourceConfig } from "@/db/schema";
 import { liveStatusFilter } from "../gamls";
-import type { FeedPosition, ListingProvider, PurgeScope, UpdatesPage } from "../types";
+import type { FeedPosition, ListingProvider, MlsOffice, PurgeScope, UpdatesPage } from "../types";
 import { ResoClient, type ResoClientConfig } from "./client";
 import { mapResoProperty, RESO_MAPPER_VERSION, type ResoProperty } from "./mapper";
 
@@ -47,6 +47,7 @@ export function missingCredentials(
 export class ResoWebApiProvider implements ListingProvider {
   readonly mapperVersion = RESO_MAPPER_VERSION;
   private readonly client: ResoClient;
+  private readonly officeClient: ResoClient;
   private readonly resource: string;
   private readonly baseFilter: string | undefined;
   private readonly keyPageSize: number;
@@ -61,13 +62,19 @@ export class ResoWebApiProvider implements ListingProvider {
     const missing = missingCredentials(config, env);
     if (missing) throw new MissingCredentialsError(missing);
     const prefix = config.credentialsEnvPrefix ?? "MLS";
-    this.client = new ResoClient({
+    const clientConfig: ResoClientConfig = {
       baseUrl: config.baseUrl,
       token: env[`${prefix}_TOKEN`],
       clientId: env[`${prefix}_CLIENT_ID`],
       clientSecret: env[`${prefix}_CLIENT_SECRET`],
       tokenUrl: config.tokenUrl,
       ...options,
+    };
+    this.client = new ResoClient(clientConfig);
+    this.officeClient = new ResoClient({
+      ...clientConfig,
+      requestTimeoutMs: OFFICE_REQUEST_TIMEOUT_MS,
+      maxRetries: 0,
     });
     this.resource = config.resource ?? "Property";
     this.baseFilter = config.filter;
@@ -146,7 +153,41 @@ export class ResoWebApiProvider implements ListingProvider {
       after = last;
     }
   }
+
+  /**
+   * The Office resource of the same dataset (Bridge: `<baseUrl>/Office`), one
+   * request for all of `ids` (callers chunk them). `or` chains rather than
+   * `in`, as in purgeScopeFilter.
+   */
+  async fetchOffices(ids: string[]): Promise<MlsOffice[]> {
+    if (!ids.length) return [];
+    const rows = await this.officeClient.getPage<{ OfficeMlsId?: unknown; OfficeName?: unknown }>(
+      "Office",
+      {
+        $filter: ids.map((id) => `OfficeMlsId eq ${odataString(id)}`).join(" or "),
+        $select: "OfficeMlsId,OfficeName",
+        $top: String(ids.length),
+      },
+    );
+    if (!Array.isArray(rows)) throw new UnexpectedResponseError("Office");
+    const text = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+    return rows.flatMap((r) => {
+      const officeMlsId = text(r?.OfficeMlsId);
+      return officeMlsId ? [{ officeMlsId, officeName: text(r.OfficeName) }] : [];
+    });
+  }
 }
+
+/** A feed response without the OData `value` array. */
+export class UnexpectedResponseError extends Error {
+  constructor(resource: string) {
+    super(`RESO ${resource} response has no value array`);
+    this.name = "UnexpectedResponseError";
+  }
+}
+
+/** One Office request, no retries: office names mustn't hold up the sync. */
+const OFFICE_REQUEST_TIMEOUT_MS = 10_000;
 
 type RawPosition = { timestamp: string; key: string | null };
 

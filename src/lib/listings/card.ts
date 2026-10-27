@@ -5,6 +5,19 @@ import { listingContact } from "./attribution-contact";
 import { allowedPhotos } from "./visibility";
 
 /**
+ * The listing office's name from the mls_offices cache (filled after each sync
+ * from the feed's Office resource), for listingOfficeLabel. A primary-key
+ * lookup per row. Explicit "listings" ref: Drizzle renders select-field
+ * columns unqualified.
+ */
+export function officeLookupName() {
+  return sql<string | null>`(
+    select mo.office_name from mls_offices mo
+    where mo.office_mls_id = "listings"."list_office_mls_id"
+  )`;
+}
+
+/**
  * Columns needed to render a listing card. One definition shared by search,
  * featured rows, saved homes and "similar homes", so cards look identical
  * everywhere.
@@ -40,6 +53,7 @@ export const cardColumns = {
   listOfficeName: listings.listOfficeName,
   // IDX: the listing office when the feed sends no name (listingOfficeLabel).
   listOfficeMlsId: listings.listOfficeMlsId,
+  officeLookupName: officeLookupName(),
   // IDX: the listing's own attribution contact, shown after the listing firm.
   attributionPhone: listings.attributionPhone,
   attributionEmail: listings.attributionEmail,

@@ -4,8 +4,7 @@ import { db } from "@/db";
 import { can } from "@/lib/auth/permissions";
 import { getActor } from "@/lib/auth/session";
 import { env } from "@/lib/env";
-import { listingOfficeLabel } from "@/lib/listings/office-label";
-import { getListingViews, parseViewRange } from "@/lib/listings/views";
+import { getListingViews, parseViewRange, trafficOfficeLabel } from "@/lib/listings/views";
 import { audit } from "@/server/audit";
 import { CSV_BOM, csvRow } from "../../leads/export/csv";
 
@@ -54,7 +53,7 @@ export async function GET(request: NextRequest) {
           r.mlsNumber,
           r.address,
           r.city,
-          listingOfficeLabel(r, site),
+          trafficOfficeLabel(r),
           r.fromFeed ? site.mls.name : site.legalName,
           r.views,
           range.from,

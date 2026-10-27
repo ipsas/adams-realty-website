@@ -15,7 +15,7 @@ import { firmAreaCondition } from "@/lib/areas/firm-area";
 import { formatStreet } from "@/lib/format";
 import { defaultTypesCondition, listedWithin, soldWithin } from "@/lib/search/query";
 import { MAX_AREA_SUGGESTIONS, shapeAreaSuggestions, type Suggestion } from "@/lib/search/suggest";
-import { cardColumns, selectCards, withPhotos } from "./card";
+import { cardColumns, officeLookupName, selectCards, withPhotos } from "./card";
 import { publicListingColumns } from "./public-fields";
 import { canShowDetails, primaryPhotoOnly, publicListing } from "./visibility";
 
@@ -30,13 +30,19 @@ const LIVE_STATUSES = ["active", "coming_soon", "active_under_contract", "pendin
  */
 export const getListingBySlug = cache(async (slug: string) => {
   const [row] = await db
-    .select({ listing: publicListingColumns, source: dataSources })
+    .select({
+      listing: publicListingColumns,
+      source: dataSources,
+      officeLookupName: officeLookupName(),
+    })
     .from(listings)
     .innerJoin(dataSources, eq(listings.sourceId, dataSources.id))
     .where(eq(listings.slug, slug))
     .limit(1);
   if (!row) return null;
-  const { listing, source } = row;
+  // For listingOfficeLabel, beside the listing's own columns.
+  const listing = { ...row.listing, officeLookupName: row.officeLookupName };
+  const { source } = row;
   if (!canShowDetails(listing)) return null;
 
   const [media, opens, events, agent] = await Promise.all([

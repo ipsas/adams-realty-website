@@ -43,6 +43,7 @@ export type AlertListing = {
   listOfficeName: string | null;
   /** For listingOfficeLabel when the feed sends no office name. */
   listOfficeMlsId?: string | null;
+  officeLookupName?: string | null;
   isCompanyListing: boolean;
 };
 
@@ -55,7 +56,7 @@ export function toEmailListing(
   extra: { badge?: Badge; notes?: string[] } = {},
 ): EmailListing {
   const sold = l.status === "closed";
-  const office = listingOfficeLabel(l, { legalName: site.name });
+  const office = listingOfficeLabel(l, site);
   return {
     href: absoluteUrl(`/homes/${l.slug}`),
     photoUrl: l.primaryPhotoUrl,

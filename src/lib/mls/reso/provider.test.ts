@@ -6,6 +6,7 @@ import {
   MissingCredentialsError,
   purgeScopeFilter,
   ResoWebApiProvider,
+  UnexpectedResponseError,
   updatesFilter,
 } from "./provider";
 
@@ -194,5 +195,67 @@ describe("ResoWebApiProvider.fetchUpdates", () => {
         "(ModificationTimestamp eq 2026-09-25T09:00:00.1234567Z and ListingKey gt 'K1')",
     );
     expect(() => updatesFilter({ timestamp: "2026-09-25 or 1 eq 1", key: null })).toThrow();
+  });
+});
+
+describe("ResoWebApiProvider.fetchOffices", () => {
+  function officeFeed(respond: () => Response) {
+    const urls: URL[] = [];
+    const fetchImpl = (async (input: string) => {
+      urls.push(new URL(input));
+      return respond();
+    }) as unknown as typeof fetch;
+    const provider = new ResoWebApiProvider(
+      { baseUrl: "https://api.bridgedataoutput.com/api/v2/OData/gamls2" },
+      { MLS_TOKEN: "t" },
+      { fetchImpl, sleep: async () => {} },
+    );
+    return { provider, urls };
+  }
+
+  it("asks the Office resource for the IDs and returns trimmed names", async () => {
+    const { provider, urls } = officeFeed(() =>
+      Response.json({
+        value: [
+          { OfficeMlsId: "RMCR", OfficeName: " Re/Max Center " },
+          { OfficeMlsId: "BLNK", OfficeName: "  " },
+          { OfficeMlsId: "", OfficeName: "No id" },
+        ],
+      }),
+    );
+    expect(await provider.fetchOffices(["RMCR", "O'NE", "BLNK"])).toEqual([
+      { officeMlsId: "RMCR", officeName: "Re/Max Center" },
+      { officeMlsId: "BLNK", officeName: null },
+    ]);
+    const [url] = urls;
+    expect(url.pathname).toMatch(/\/Office$/);
+    expect(url.searchParams.get("$filter")).toBe(
+      "OfficeMlsId eq 'RMCR' or OfficeMlsId eq 'O''NE' or OfficeMlsId eq 'BLNK'",
+    );
+    expect(url.searchParams.get("$select")).toBe("OfficeMlsId,OfficeName");
+    expect(url.searchParams.get("$top")).toBe("3");
+  });
+
+  it("returns the Bridge body's office", async () => {
+    const { provider } = officeFeed(() =>
+      Response.json({ value: [{ OfficeMlsId: "RMCR", OfficeName: "Re/Max Center" }] }),
+    );
+    expect(await provider.fetchOffices(["RMCR"])).toEqual([
+      { officeMlsId: "RMCR", officeName: "Re/Max Center" },
+    ]);
+  });
+
+  it("surfaces an HTTP status without retrying", async () => {
+    for (const status of [401, 503]) {
+      const { provider, urls } = officeFeed(() => new Response("nope", { status }));
+      await expect(provider.fetchOffices(["RMCR"])).rejects.toMatchObject({ status });
+      expect(urls).toHaveLength(1);
+    }
+  });
+
+  it("throws on a body without a value array", async () => {
+    const { provider, urls } = officeFeed(() => Response.json({ error: "bad" }));
+    await expect(provider.fetchOffices(["RMCR"])).rejects.toThrow(UnexpectedResponseError);
+    expect(urls).toHaveLength(1);
   });
 });

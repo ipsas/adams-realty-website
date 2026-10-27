@@ -15,6 +15,7 @@ import {
 } from "drizzle-orm";
 import type { Executor } from "@/db";
 import { dataSources, listingEvents, listings } from "@/db/schema";
+import { officeLookupName } from "@/lib/listings/card";
 import { GAMLS_SLUG } from "@/lib/mls/gamls";
 import { resolveScope } from "@/lib/search/place";
 import { buildWhere } from "@/lib/search/query";
@@ -45,6 +46,7 @@ export const alertListingColumns = {
   primaryPhotoUrl: listings.primaryPhotoUrl,
   listOfficeName: listings.listOfficeName,
   listOfficeMlsId: listings.listOfficeMlsId,
+  officeLookupName: officeLookupName(),
   isCompanyListing: listings.isCompanyListing,
 };
 
