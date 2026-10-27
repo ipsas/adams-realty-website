@@ -150,6 +150,10 @@ const monthlyHoa = sql`(case ${listings.hoaFrequency}
   when 'annually' then ${listings.hoaFee} / 12.0
   else ${listings.hoaFee} end)`;
 
+export const SQFT_PER_ACRE = 43_560;
+/** 20,000 acres. Larger lot sizes are feed errors, so an acreage filter never matches them. */
+export const MAX_PLAUSIBLE_LOT_SQFT = 20_000 * SQFT_PER_ACRE;
+
 /**
  * Translates search criteria into SQL conditions. Pure — exported for tests.
  * `scope` says whether `q` is a town (resolved by the caller from the
@@ -182,10 +186,41 @@ export function buildConditions(
   if (c.minSqft !== undefined) conds.push(gte(listings.livingAreaSqft, c.minSqft));
   if (c.maxSqft !== undefined) conds.push(lte(listings.livingAreaSqft, c.maxSqft));
   if (c.minLotSqft !== undefined) conds.push(gte(listings.lotSizeSqft, c.minLotSqft));
+  // An acreage bound needs a known, plausible lot size; with no bound, unknowns show.
+  if (c.minAcres !== undefined || c.maxAcres !== undefined) {
+    conds.push(
+      sql`${listings.lotSizeSqft} > 0`,
+      lte(listings.lotSizeSqft, MAX_PLAUSIBLE_LOT_SQFT),
+      c.minAcres !== undefined
+        ? gte(listings.lotSizeSqft, Math.round(c.minAcres * SQFT_PER_ACRE))
+        : undefined,
+      c.maxAcres !== undefined
+        ? lte(listings.lotSizeSqft, Math.round(c.maxAcres * SQFT_PER_ACRE))
+        : undefined,
+    );
+  }
   if (c.minYear !== undefined) conds.push(gte(listings.yearBuilt, c.minYear));
   if (c.maxYear !== undefined) conds.push(lte(listings.yearBuilt, c.maxYear));
   if (c.maxHoa !== undefined)
     conds.push(or(isNull(listings.hoaFee), sql`${monthlyHoa} <= ${c.maxHoa}`));
+  if (c.hoa === "yes") {
+    conds.push(sql`(${listings.associationYN} = true or ${listings.hoaFee} > 0)`);
+  } else if (c.hoa === "no") {
+    // An unknown AssociationYN counts as "no" only with a stated $0 fee.
+    conds.push(
+      sql`(${listings.associationYN} = false or (${listings.associationYN} is null and ${listings.hoaFee} = 0))`,
+    );
+  }
+  if (c.age55 === "only") conds.push(eq(listings.seniorCommunity, true));
+  else if (c.age55 === "exclude") conds.push(sql`${listings.seniorCommunity} is not true`);
+  // Keywords search the listing text (headline, description), apart from the location box.
+  if (c.kw) conds.push(sql`${listings.searchVector} @@ websearch_to_tsquery('english', ${c.kw})`);
+  if (c.priceReduced && c.mode !== "sold") {
+    conds.push(
+      isNotNull(listings.originalListPrice),
+      sql`${listings.listPrice} < ${listings.originalListPrice}`,
+    );
+  }
   if (c.maxDaysOnMarket !== undefined) conds.push(listedWithin(c.maxDaysOnMarket, now));
 
   if (c.garage) conds.push(gte(listings.garageSpaces, 1));
@@ -197,6 +232,7 @@ export function buildConditions(
   if (c.singleStory) conds.push(eq(listings.isSingleStory, true));
   if (c.virtualTour) conds.push(isNotNull(listings.virtualTourUrl));
   if (c.ourListings) conds.push(eq(listings.isCompanyListing, true));
+  if (c.fireplace) conds.push(gte(listings.fireplacesTotal, 1));
   if (c.openHouse) {
     conds.push(
       sql`exists (select 1 from ${openHouses} where ${openHouses.listingId} = ${listings.id} and ${openHouses.endsAt} > ${now})`,

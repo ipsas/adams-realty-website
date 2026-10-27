@@ -7,8 +7,9 @@ import type { MapResult, NormalizedListing, NormalizedMedia, NormalizedOpenHouse
  * incremental sync then rewrites every stored row once (sync-engine.ts), since
  * their ModificationTimestamp alone wouldn't make it.
  * 2: GAMLS2_Latitude/Longitude and Coordinates, placeholder subdivisions, 2-digit tax years.
+ * 3: AssociationYN, detail columns (fireplaces, parking, 55+, assessed value, zoning…), more feature lists.
  */
-export const RESO_MAPPER_VERSION = 2;
+export const RESO_MAPPER_VERSION = 3;
 
 /**
  * Maps a RESO Data Dictionary 2.x `Property` record (as returned by any
@@ -141,6 +142,16 @@ export function list(v: unknown): string[] {
     .map((x) => (typeof x === "string" ? x.trim() : ""))
     .filter((x) => !isNullLike(x))
     .map(humanizeLookup);
+}
+
+/** Each field's `list()`, keeping only the non-empty ones. */
+function nonEmptyLists<K extends string>(fields: Record<K, unknown>): Partial<Record<K, string[]>> {
+  const out: Partial<Record<K, string[]>> = {};
+  for (const [key, v] of Object.entries(fields) as [K, unknown][]) {
+    const values = list(v);
+    if (values.length) out[key] = values;
+  }
+  return out;
 }
 
 /** "GraniteCounters" → "Granite Counters"; leaves already-spaced values alone. */
@@ -294,6 +305,16 @@ export const EXCLUDED_FIELDS = [
   "OfficeRemarks",
   "ShowingRequirements",
   "ShowingInstructions",
+  // Showing instructions and property security (IDX Agreement §14; R&R Art. III-2 §12(b)).
+  "LockBoxType",
+  "LockBoxLocation",
+  "LockBoxSerialNumber",
+  "OccupantName",
+  "OccupantPhone",
+  "OccupantType",
+  "OwnerName",
+  "OwnerPhone",
+  "AccessCode",
 ] as const;
 
 /** The first non-empty value among keys ending in `suffix` (vendor prefixes vary: GAMLS_, BR_…). */
@@ -437,6 +458,9 @@ export function mapResoProperty(p: ResoProperty): MapResult {
   const views = list(p.View);
   const coords = coordinates(p);
   const subdivision = str(p.SubdivisionName);
+  const lotDimensions = str(p.LotSizeDimensions);
+  const hoaFee = int(p.AssociationFee);
+  const assessedValue = int(p.TaxAssessedValue);
 
   const listing: NormalizedListing = {
     listingKey,
@@ -463,11 +487,18 @@ export function mapResoProperty(p: ResoProperty): MapResult {
     yearBuilt: int(p.YearBuilt),
     stories,
     garageSpaces: int(p.GarageSpaces),
+    fireplacesTotal: int(p.FireplacesTotal),
+    parkingTotal: int(p.ParkingTotal),
+    seniorCommunity: bool(p.SeniorCommunityYN),
+    lotSizeDimensions: lotDimensions && !isNullLike(lotDimensions) ? lotDimensions : null,
+    zoning: str(p.Zoning),
 
-    hoaFee: bool(p.AssociationYN) === false ? null : int(p.AssociationFee),
+    associationYN: bool(p.AssociationYN) ?? (hoaFee !== null && hoaFee > 0 ? true : null),
+    hoaFee: bool(p.AssociationYN) === false ? null : hoaFee,
     hoaFrequency: hoaFrequency(p.AssociationFeeFrequency),
     taxAnnualAmount: int(p.TaxAnnualAmount),
     taxYear: taxYear(p.TaxYear),
+    taxAssessedValue: assessedValue !== null && assessedValue > 0 ? assessedValue : null,
 
     addressLine1: titleCaseIfShouting(street),
     unitNumber: str(p.UnitNumber),
@@ -497,6 +528,37 @@ export function mapResoProperty(p: ResoProperty): MapResult {
       view: views,
       construction: list(p.ConstructionMaterials),
       lot: list(p.LotFeatures),
+      ...nonEmptyLists({
+        sewer: p.Sewer,
+        water: p.WaterSource,
+        roof: p.Roof,
+        foundation: p.FoundationDetails,
+        style: p.ArchitecturalStyle,
+        fireplace: p.FireplaceFeatures,
+        basement: p.Basement,
+        patioPorch: p.PatioAndPorchFeatures,
+        fencing: p.Fencing,
+        laundry: p.LaundryFeatures,
+        accessibility: p.AccessibilityFeatures,
+        greenEnergy: p.GreenEnergyEfficient,
+        otherStructures: p.OtherStructures,
+        associationFeeIncludes: p.AssociationFeeIncludes,
+        associationAmenities: p.AssociationAmenities,
+        roadFrontage: p.RoadFrontageType,
+        roadSurface: p.RoadSurfaceType,
+        windows: p.WindowFeatures,
+        security: p.SecurityFeatures,
+        waterfront: p.WaterfrontFeatures,
+        electric: p.Electric,
+        levels: p.Levels,
+        condition: p.PropertyCondition,
+        specialConditions: p.SpecialListingConditions,
+        listingTerms: p.ListingTerms,
+        currentUse: p.CurrentUse,
+        possibleUse: p.PossibleUse,
+        horse: p.HorseAmenities,
+        spa: p.SpaFeatures,
+      }),
     },
     schools: {
       district: str(p.HighSchoolDistrict) ?? undefined,
