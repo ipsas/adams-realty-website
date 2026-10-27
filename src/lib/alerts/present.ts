@@ -2,6 +2,7 @@ import { site } from "@/config/site";
 import { absoluteUrl, type BadgeTone, type EmailListing } from "@/lib/email-templates";
 import { formatCityLine, formatPrice, formatStreet, statusLabel } from "@/lib/format";
 import { isBareLand, landFacts } from "@/lib/listings/land";
+import { listingOfficeLabel } from "@/lib/listings/office-label";
 
 /**
  * Turns alert query results into email rows. Pure — unit-tested without a
@@ -40,6 +41,8 @@ export type AlertListing = {
   hideAddress: boolean;
   primaryPhotoUrl: string | null;
   listOfficeName: string | null;
+  /** For listingOfficeLabel when the feed sends no office name. */
+  listOfficeMlsId?: string | null;
   isCompanyListing: boolean;
 };
 
@@ -52,7 +55,7 @@ export function toEmailListing(
   extra: { badge?: Badge; notes?: string[] } = {},
 ): EmailListing {
   const sold = l.status === "closed";
-  const office = l.listOfficeName ?? (l.isCompanyListing ? site.name : null);
+  const office = listingOfficeLabel(l, { legalName: site.name });
   return {
     href: absoluteUrl(`/homes/${l.slug}`),
     photoUrl: l.primaryPhotoUrl,

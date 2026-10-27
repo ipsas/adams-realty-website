@@ -224,12 +224,14 @@ test.describe("attribution and required fields", () => {
     await expect(info).toContainText("Status: For sale");
     await expect(info).toContainText("Contact phone: (404) 555-0166");
     await expect(info).toContainText("Contact email: listings@decatur-homes.example");
-    await expect(info).toContainText("Variable compensation: No");
-    const comp = page.getByTestId("buyer-compensation");
-    await expect(comp).toContainText("Buyer agency compensation: 2.5 %");
-    await expect(comp).toContainText(
-      "Compensation comments: Paid at closing from the seller's proceeds.",
-    );
+    // No buyer-broker compensation (Georgia MLS R&R Art. V), though the fixture stores it:
+    // not on the page, nor anywhere in the HTML (RSC payload, JSON-LD).
+    await expect(page.getByTestId("buyer-compensation")).toHaveCount(0);
+    await expect(info).not.toContainText(/compensation/i);
+    const html = await page.content();
+    expect(html).not.toContain("2.5 %");
+    expect(html).not.toContain("Paid at closing from the seller");
+    expect(html).not.toMatch(/compensation/i);
     // Georgia MLS name/logo and copyright.
     await expectMlsMark(page, info.locator("[data-mls-mark]"));
     await expect(info).toContainText(

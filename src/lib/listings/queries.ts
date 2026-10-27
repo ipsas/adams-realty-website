@@ -16,6 +16,7 @@ import { formatStreet } from "@/lib/format";
 import { defaultTypesCondition, listedWithin, soldWithin } from "@/lib/search/query";
 import { MAX_AREA_SUGGESTIONS, shapeAreaSuggestions, type Suggestion } from "@/lib/search/suggest";
 import { cardColumns, selectCards, withPhotos } from "./card";
+import { publicListingColumns } from "./public-fields";
 import { canShowDetails, primaryPhotoOnly, publicListing } from "./visibility";
 
 const LIVE_STATUSES = ["active", "coming_soon", "active_under_contract", "pending"] as const;
@@ -24,11 +25,12 @@ const LIVE_STATUSES = ["active", "coming_soon", "active_under_contract", "pendin
  * Full property page payload. `cache` dedupes the call between generateMetadata and the page.
  * Null for a feed listing Georgia MLS rules keep off the site (a hidden status,
  * or gone from the feed), and a sold or off-market feed listing carries its
- * primary photo only (src/lib/listings/visibility.ts).
+ * primary photo only (src/lib/listings/visibility.ts). No compensation fields
+ * (./public-fields.ts).
  */
 export const getListingBySlug = cache(async (slug: string) => {
   const [row] = await db
-    .select({ listing: listings, source: dataSources })
+    .select({ listing: publicListingColumns, source: dataSources })
     .from(listings)
     .innerJoin(dataSources, eq(listings.sourceId, dataSources.id))
     .where(eq(listings.slug, slug))
@@ -126,7 +128,13 @@ export async function getNewestListings(limit = 8) {
 }
 
 /** Same area and type, priced within ±25%, closest in price first. */
-export async function getSimilarListings(l: typeof listings.$inferSelect, limit = 4) {
+export async function getSimilarListings(
+  l: Pick<
+    typeof listings.$inferSelect,
+    "id" | "transactionType" | "listPrice" | "city" | "neighborhood"
+  >,
+  limit = 4,
+) {
   const rows = await selectCards(db)
     .where(
       and(

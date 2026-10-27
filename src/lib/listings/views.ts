@@ -40,6 +40,9 @@ export type ListingViewRow = {
   city: string;
   fromFeed: boolean;
   listOfficeName: string | null;
+  /** For listingOfficeLabel when the feed sends no office name. */
+  listOfficeMlsId: string | null;
+  isCompanyListing: boolean;
   views: number;
 };
 
@@ -62,6 +65,8 @@ export async function getListingViews(
       city: listings.city,
       fromFeed: listings.fromFeed,
       listOfficeName: listings.listOfficeName,
+      listOfficeMlsId: listings.listOfficeMlsId,
+      isCompanyListing: listings.isCompanyListing,
       views,
     })
     .from(listingViews)

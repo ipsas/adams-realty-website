@@ -13,6 +13,7 @@ import { LinkButton } from "@/components/ui/button";
 import { Photo } from "@/components/ui/photo";
 import { Container, SectionHeading } from "@/components/ui/section";
 import { areaHref, areaRegions, areas, countyLabel, type Area } from "@/config/areas";
+import { site } from "@/config/site";
 import {
   getAreaAgents,
   getAreaFeaturedListing,
@@ -31,6 +32,7 @@ import { env } from "@/lib/env";
 import { formatPrice, formatStreet } from "@/lib/format";
 import { getCachedAreaGuide } from "@/lib/listings/cached";
 import type { CardRow } from "@/lib/listings/card";
+import { listingOfficeLabel } from "@/lib/listings/office-label";
 import { OG_DEFAULT_IMAGE } from "@/lib/og";
 import { searchHref } from "@/lib/search/params";
 
@@ -386,6 +388,7 @@ function FeaturedHome({
   salesShown: number;
 }) {
   const fallback = listing ? null : leadPhotoFallback(forSale, salesShown);
+  const office = listing && listingOfficeLabel(listing, site);
   return (
     <Link
       href={
@@ -412,11 +415,7 @@ function FeaturedHome({
               {listing.isFeatured ? "Featured home" : "For sale"} in {area.name}
             </p>
             <p className="truncate text-sm font-medium text-ink">{formatStreet(listing)}</p>
-            {listing.listOfficeName && (
-              <p className="text-sm break-words text-ink-soft">
-                Listing by {listing.listOfficeName}
-              </p>
-            )}
+            {office && <p className="text-sm break-words text-ink-soft">Listing by {office}</p>}
             {listing.fromFeed && <MlsCredit className="mt-0.5 text-xs text-muted" />}
           </div>
           <p className="shrink-0 text-lg font-semibold text-ink tabular">

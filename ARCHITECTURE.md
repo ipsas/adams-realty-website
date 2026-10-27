@@ -261,10 +261,17 @@ governs every listing that came from the feed. Adams Realty, Inc. is the license
   for sources with an active (public) listing (`sourcesWithPublicListings` +
   `sourceDisclaimers`).
 - **Fields (Exhibit C):** the listing page's "Listing information" block shows Listing office,
-  Listing ID, Status, and when the feed sends them the attribution contact phone and email,
-  Variable Compensation, and buyer-agency compensation always together with its comments.
-  The RESO mapper reads none of `EXCLUDED_FIELDS` (listing agreement, contract, on-market and
-  expiration dates, private and office remarks, showing contact and requirements); the list
+  Listing ID, Status, and when the feed sends them the attribution contact phone and email.
+  Buyer-agency compensation, compensation comments and Variable Compensation are stored but
+  never public (Georgia MLS R&R Art. V; the May 2025 Exhibit C dropped Variable Compensation):
+  public queries select no compensation column (`publicListingColumns`, `omitCompensation` in
+  `src/lib/listings/public-fields.ts`); columns, mapper and sync are unchanged, and no
+  dashboard view shows them. The listing office is `listingOfficeLabel()`
+  (`src/lib/listings/office-label.ts`): the feed's ListOfficeName (gamls2 sends it empty), else
+  the firm for its own listings, else "MLS Office ID <id>"; resolving names via the feed's
+  Office resource is a planned follow-up. The RESO mapper reads none of `EXCLUDED_FIELDS`
+  (listing agreement, contract, on-market and expiration dates, private and office remarks,
+  showing contact and requirements); the list
   date comes from `OriginalEntryTimestamp`. Tests feed a record carrying all of them through
   the mapper and into the database and look for them.
 - **Corrections (§6):** `/listing-corrections` publishes the phone and email

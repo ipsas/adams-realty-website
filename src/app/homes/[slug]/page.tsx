@@ -73,6 +73,7 @@ import {
   landFacts,
 } from "@/lib/listings/land";
 import { listingIndexingMode, listingRobots } from "@/lib/listings/indexing";
+import { listingOfficeLabel } from "@/lib/listings/office-label";
 import { getListingBySlug, getSimilarListings, type ListingDetail } from "@/lib/listings/queries";
 import { normalizeTaxYear } from "@/lib/listings/tax-year";
 import { formatLastUpdated, mlsDisclaimer, sourceDisclaimer } from "@/lib/mls-copyright";
@@ -179,8 +180,8 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
   // Rows synced before the mapper dropped placeholders can still hold "None".
   const neighborhood = isNullLike(l.neighborhood) ? null : l.neighborhood;
   const canEdit = can.editListing(actor, { sourceKind: source.kind, listAgentId: l.listAgentId });
-  // IDX: the listing firm, named prominently (the firm's own listings may carry no office name).
-  const office = l.listOfficeName ?? (l.isCompanyListing ? site.legalName : null);
+  // IDX: the listing firm, named prominently (gamls2 sends no office name: listingOfficeLabel).
+  const office = listingOfficeLabel(l, site);
   const hoa = hoaFact(l);
   const details = listingDetailGroups(l);
 
@@ -198,7 +199,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
             photo: l.primaryPhotoUrl ?? photos[0]?.url ?? null,
             beds: l.bedrooms,
             baths: l.bathrooms,
-            listOfficeName: l.listOfficeName,
+            listOfficeName: office,
             transactionType: l.transactionType,
             status: l.status,
           }}
@@ -574,24 +575,9 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                   <InfoRow label="Status" value={statusLabel(l.status, l.transactionType)} />
                   {attributionPhone && <InfoRow label="Contact phone" value={attributionPhone} />}
                   {attributionEmail && <InfoRow label="Contact email" value={attributionEmail} />}
-                  {l.variableCompensation !== null && (
-                    <InfoRow
-                      label="Variable compensation"
-                      value={l.variableCompensation ? "Yes" : "No"}
-                    />
-                  )}
+                  {/* No buyer-broker compensation (Georgia MLS R&R Art. V): getListingBySlug
+                      doesn't select it. */}
                 </dl>
-                {/* Its own <dl> (a group div may hold only a dt and a dd), full width under the
-                    grid with the grid's row gap above it. */}
-                {l.buyerAgencyCompensation && (
-                  <dl className="mt-2 space-y-2" data-testid="buyer-compensation">
-                    <InfoRow label="Buyer agency compensation" value={l.buyerAgencyCompensation} />
-                    <InfoRow
-                      label="Compensation comments"
-                      value={l.compensationComments ?? "None"}
-                    />
-                  </dl>
-                )}
                 <p className="mt-4">
                   Source: {source.name}
                   {source.lastSyncedAt

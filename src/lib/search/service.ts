@@ -5,6 +5,7 @@ import { listings } from "@/db/schema";
 import { formatStreet } from "@/lib/format";
 import { listingContact } from "@/lib/listings/attribution-contact";
 import { selectCards, withPhotos, type ListingCardData } from "@/lib/listings/card";
+import { listingOfficeLabel } from "@/lib/listings/office-label";
 import { PAGE_SIZE, type SearchCriteria } from "./params";
 import { resolveScope } from "./place";
 import { buildOrderBy, buildWhere, hasLocation, type LocationScope } from "./query";
@@ -130,6 +131,7 @@ export async function searchMapPins(c: SearchCriteria, scope?: LocationScope): P
       photo: listings.primaryPhotoUrl,
       featured: listings.isFeatured,
       office: listings.listOfficeName,
+      listOfficeMlsId: listings.listOfficeMlsId,
       attributionPhone: listings.attributionPhone,
       attributionEmail: listings.attributionEmail,
       listAgentId: listings.listAgentId,
@@ -188,6 +190,7 @@ type PinRow = {
   photo: string | null;
   featured: boolean;
   office: string | null;
+  listOfficeMlsId?: string | null;
   attributionPhone: string | null;
   attributionEmail: string | null;
   listAgentId: string | null;
@@ -232,6 +235,7 @@ export async function locationPins(
       "listings"."hide_address" as "hideAddress", "listings"."primary_photo_url" as "photo",
       "listings"."is_featured" as "featured",
       "listings"."list_office_name" as "office", "listings"."is_company_listing" as "company",
+      "listings"."list_office_mls_id" as "listOfficeMlsId",
       "listings"."attribution_phone" as "attributionPhone",
       "listings"."attribution_email" as "attributionEmail",
       "listings"."list_agent_id" as "listAgentId",
@@ -265,7 +269,14 @@ export function toPins(rows: PinRow[]): MapPin[] {
         address: r.hideAddress ? r.city : `${formatStreet(r)}, ${r.city}`,
         photo: r.photo,
         featured: r.featured,
-        office: r.office ?? (r.company ? site.legalName : null),
+        office: listingOfficeLabel(
+          {
+            listOfficeName: r.office,
+            listOfficeMlsId: r.listOfficeMlsId,
+            isCompanyListing: r.company,
+          },
+          site,
+        ),
         attributionPhone: contact.phone,
         attributionEmail: contact.email,
         company: r.company,

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { MlsCredit } from "@/components/content/mls-attribution";
 import { Photo } from "@/components/ui/photo";
+import { site } from "@/config/site";
 import {
   formatBaths,
   formatDate,
@@ -12,6 +13,7 @@ import {
 import { formatRatio } from "@/lib/areas/stats";
 import { landSummary } from "@/lib/listings/land";
 import type { CardRow } from "@/lib/listings/card";
+import { listingOfficeLabel } from "@/lib/listings/office-label";
 
 /**
  * Compact rows of recent closed sales: what sold, for how much, and against
@@ -23,6 +25,7 @@ export function RecentSales({ sales }: { sales: CardRow[] }) {
     <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface">
       {sales.map((s) => {
         const ratio = s.closePrice && s.listPrice ? s.closePrice / s.listPrice : null;
+        const office = listingOfficeLabel(s, site);
         return (
           <li key={s.id}>
             <Link
@@ -42,9 +45,7 @@ export function RecentSales({ sales }: { sales: CardRow[] }) {
                 <p className="mt-0.5 text-xs text-muted sm:hidden">
                   Sold {formatDate(s.closeDate)}
                 </p>
-                {s.listOfficeName && (
-                  <p className="mt-0.5 break-words text-ink-soft">Listing by {s.listOfficeName}</p>
-                )}
+                {office && <p className="mt-0.5 break-words text-ink-soft">Listing by {office}</p>}
                 {s.fromFeed && <MlsCredit className="mt-0.5 text-xs text-muted" />}
               </div>
               <div className="shrink-0 text-right">
