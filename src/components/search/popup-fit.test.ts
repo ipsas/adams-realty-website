@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { fitPopupDelta, nextPopupStep, popupArea, scrollCap, type Rect } from "./popup-fit";
+import {
+  fitPopupDelta,
+  nextPopupStep,
+  popupArea,
+  popupRect,
+  scrollCap,
+  type Rect,
+} from "./popup-fit";
 
 const rect = (left: number, top: number, width: number, height: number): Rect => ({
   left,
@@ -48,6 +55,40 @@ describe("fitPopupDelta", () => {
 
   it("aligns a popup larger than the area to its top", () => {
     expect(fitPopupDelta(rect(50, 30, 240, 400), area).dy).toBe(22);
+  });
+});
+
+describe("popupRect", () => {
+  const container = rect(0, 100, 390, 351);
+  const size = { width: 260, height: 290 };
+
+  it("sits below the pin for anchor top", () => {
+    expect(popupRect({ x: 195, y: 76 }, container, size, "top", 16)).toEqual(
+      rect(65, 192, 260, 290),
+    );
+  });
+
+  it("sits above the pin for anchor bottom", () => {
+    expect(popupRect({ x: 195, y: 300 }, container, size, "bottom", 16)).toEqual(
+      rect(65, 94, 260, 290),
+    );
+  });
+
+  it("lands inside the area after panning by fitPopupDelta", () => {
+    const area = popupArea(container);
+    const small = { width: 260, height: 200 };
+    for (const [pin, anchor] of [
+      [{ x: 20, y: 76 }, "top"],
+      [{ x: 370, y: 330 }, "bottom"],
+    ] as const) {
+      const { dx, dy } = fitPopupDelta(popupRect(pin, container, small, anchor, 16), area);
+      // panBy([dx, dy]) moves the pin by (-dx, -dy).
+      const r = popupRect({ x: pin.x - dx, y: pin.y - dy }, container, small, anchor, 16);
+      expect(r.left).toBeGreaterThanOrEqual(area.left);
+      expect(r.right).toBeLessThanOrEqual(area.right);
+      expect(r.top).toBeGreaterThanOrEqual(area.top);
+      expect(r.bottom).toBeLessThanOrEqual(area.bottom);
+    }
   });
 });
 

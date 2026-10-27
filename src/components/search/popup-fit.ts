@@ -31,6 +31,26 @@ function axisDelta(start: number, end: number, areaStart: number, areaEnd: numbe
 }
 
 /**
+ * The popup's rect from its pin (`map.project`, container px) rather than the DOM, which can
+ * lag a frame behind addTo/panBy: centred on the pin, below it for anchor "top", above it for
+ * "bottom", `offset` px away. `size` is the popup's layout size (offsetWidth/offsetHeight).
+ */
+export function popupRect(
+  pin: { x: number; y: number },
+  container: Rect,
+  size: { width: number; height: number },
+  anchor: "top" | "bottom",
+  offset: number,
+): Rect {
+  const left = container.left + pin.x - size.width / 2;
+  const top =
+    anchor === "top"
+      ? container.top + pin.y + offset
+      : container.top + pin.y - offset - size.height;
+  return { top, right: left + size.width, bottom: top + size.height, left };
+}
+
+/**
  * The `map.panBy` offset that moves the popup inside the area (panning by +dx moves the
  * content left). A popup larger than the area is aligned to its top/left edge.
  */

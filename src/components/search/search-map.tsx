@@ -21,7 +21,7 @@ import {
   swapDrawnStyle,
 } from "./map-setup";
 import { mlsLogoSrcSet } from "@/components/content/mls-attribution";
-import { fitPopupDelta, nextPopupStep, popupArea, scrollCap } from "./popup-fit";
+import { fitPopupDelta, nextPopupStep, popupArea, popupRect, scrollCap } from "./popup-fit";
 import { useMapTheme } from "@/components/theme/use-theme";
 import { readResolvedTheme } from "@/lib/theme";
 import { formatBaths, formatNumber, formatPrice, formatPriceShort } from "@/lib/format";
@@ -402,41 +402,47 @@ function popupNode(p: MapPin, small = false): HTMLElement {
   return a;
 }
 
+/** Distance between a pin and its popup, in px. */
+const POPUP_OFFSET = 16;
+
 /**
  * Small screens (QA L18-1): compacts the popup until it fits the map's height (a shorter photo,
  * no photo, then a scrolling price/facts/address part; the firm line and the MLS credit stay
- * whole), then pans so all of it is inside the map, clear of the overlay pill.
+ * whole), then pans so all of it is inside the map, clear of the overlay pill. The popup's
+ * position comes from the pin, not the DOM (MapLibre applies its transform a frame later).
  */
 function fitSmallPopup(
   map: MapLibreMap,
   popup: maplibregl.Popup,
   content: HTMLElement,
   overlay: Element | null | undefined,
+  pin: MapPin,
+  anchor: "top" | "bottom",
 ) {
-  const area = popupArea(
-    map.getContainer().getBoundingClientRect(),
-    overlay?.getBoundingClientRect().bottom,
-  );
+  const container = map.getContainer().getBoundingClientRect();
+  const area = popupArea(container, overlay?.getBoundingClientRect().bottom);
   const available = area.bottom - area.top;
-  const height = () => popup.getElement().getBoundingClientRect().height;
+  const el = popup.getElement();
   const photo = content.querySelector<HTMLImageElement>("[data-popup-photo]");
   const head = content.querySelector<HTMLElement>("[data-popup-head]");
-  for (let step = nextPopupStep("full"); step && height() > available; step = nextPopupStep(step)) {
+  for (
+    let step = nextPopupStep("full");
+    step && el.offsetHeight > available;
+    step = nextPopupStep(step)
+  ) {
     if (step === "short-photo" && photo) photo.classList.replace("h-32", "h-20");
     else if (step === "no-photo" && photo) photo.hidden = true;
     else if (step === "scroll" && head) {
-      const cap = scrollCap(head.getBoundingClientRect().height, height() - available);
+      const cap = scrollCap(head.offsetHeight, el.offsetHeight - available);
       head.style.maxHeight = `${cap}px`;
       head.classList.add("overflow-y-auto");
     }
   }
-  // Pan, re-measure, and correct once more if needed (the anchor is pinned, so it can't flip).
-  for (let i = 0; i < 2; i++) {
-    const { dx, dy } = fitPopupDelta(popup.getElement().getBoundingClientRect(), area);
-    if (!dx && !dy) break;
-    // Programmatic: `movestart` sees no originalEvent, so this won't trigger a bounds search.
-    map.panBy([dx, dy], { animate: false });
-  }
+  const size = { width: el.offsetWidth, height: el.offsetHeight };
+  const rect = popupRect(map.project([pin.lng, pin.lat]), container, size, anchor, POPUP_OFFSET);
+  const { dx, dy } = fitPopupDelta(rect, area);
+  // Programmatic: `movestart` sees no originalEvent, so this won't trigger a bounds search.
+  if (dx || dy) map.panBy([dx, dy], { animate: false });
 }
 
 export default function SearchMap({
@@ -572,17 +578,18 @@ export default function SearchMap({
             : "top";
         const content = popupNode(pin, small);
         popup.current = new maplibregl.Popup({
-          offset: 16,
+          offset: POPUP_OFFSET,
           closeButton: false,
           maxWidth: "260px",
-          ...(small ? { anchor } : {}),
+          // Above the map controls (z-index 2), which would cover the MLS credit.
+          ...(small ? { anchor, className: "z-[3]" } : {}),
         })
           .setLngLat([pin.lng, pin.lat])
           .setDOMContent(content)
           .addTo(map);
         // Keep the popup clear of the overlay over the map ("Search as I move the map").
         const overlay = container.current?.parentElement?.querySelector("[data-map-overlay]");
-        if (small) fitSmallPopup(map, popup.current, content, overlay);
+        if (small) fitSmallPopup(map, popup.current, content, overlay, pin, anchor);
         else if (overlay) {
           const o = overlay.getBoundingClientRect();
           const r = popup.current.getElement().getBoundingClientRect();
