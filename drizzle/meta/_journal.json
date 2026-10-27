@@ -120,6 +120,13 @@
       "when": 1793067732338,
       "tag": "0016_sync_quarantine",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1793068965359,
+      "tag": "0017_own_closed_window",
+      "breakpoints": true
     }
   ]
 }

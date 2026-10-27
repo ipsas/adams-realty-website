@@ -1,13 +1,25 @@
 import type { DataSourceConfig } from "@/db/schema";
 import { liveStatusFilter } from "../gamls";
-import type { FeedPosition, ListingProvider, PurgeScope, UpdatesPage } from "../types";
+import type {
+  FeedPosition,
+  ListingProvider,
+  OwnClosedFeed,
+  PurgeScope,
+  UpdatesPage,
+} from "../types";
 import { ResoClient, type ResoClientConfig } from "./client";
 import { mapResoProperty, RESO_MAPPER_VERSION, type ResoProperty } from "./mapper";
 
 const PAGE_SIZE = 200;
 const KEY_PAGE_SIZE = 1000;
 
-export type ResoProviderOptions = Pick<ResoClientConfig, "deadline" | "fetchImpl" | "now" | "sleep">;
+export type ResoProviderOptions = Pick<
+  ResoClientConfig,
+  "deadline" | "fetchImpl" | "now" | "sleep"
+> & {
+  /** The firm's list office IDs for `ownClosed` (default `config.companyOfficeIds`; see `ownOfficeIds`). */
+  ownOfficeIds?: string[];
+};
 
 /** A feed source whose credential env vars aren't set (see `missingCredentials`). */
 export class MissingCredentialsError extends Error {
@@ -37,7 +49,7 @@ export function missingCredentials(
  * vars named by `config.credentialsEnvPrefix` — e.g. prefix `MLS_ACTRIS`
  * reads `MLS_ACTRIS_TOKEN`, or `MLS_ACTRIS_CLIENT_ID` / `_CLIENT_SECRET`.
  *
- * Both reads page by keyset: each request asks for the records after the
+ * Every read pages by keyset: each request asks for the records after the
  * last one received, in a total order, and a run ends at the first empty
  * page. `@odata.nextLink` is not followed: servers commonly build it from
  * `$skip`, and when a record enters or leaves the result set between two
@@ -51,11 +63,13 @@ export class ResoWebApiProvider implements ListingProvider {
   private readonly baseFilter: string | undefined;
   private readonly keyPageSize: number;
   private readonly expand: string;
+  /** See `ownClosedFeed`: only for a live-only feed with list office IDs. */
+  readonly ownClosed: OwnClosedFeed | null;
 
   constructor(
     config: DataSourceConfig,
     env: Record<string, string | undefined> = process.env,
-    options: ResoProviderOptions = {},
+    { ownOfficeIds = config.companyOfficeIds ?? [], ...options }: ResoProviderOptions = {},
   ) {
     if (!config.baseUrl) throw new Error("RESO data source is missing config.baseUrl");
     const missing = missingCredentials(config, env);
@@ -73,6 +87,49 @@ export class ResoWebApiProvider implements ListingProvider {
     this.baseFilter = config.filter;
     this.keyPageSize = config.keyPageSize ?? KEY_PAGE_SIZE;
     this.expand = config.expand ?? "Media,OpenHouse";
+    this.ownClosed =
+      config.liveOnly === true && ownOfficeIds.length ? this.ownClosedFeed(ownOfficeIds) : null;
+  }
+
+  /**
+   * The rolling sold window of a live-only feed, limited to the firm's own
+   * sales. Its filter (`ownClosedFilter`) is built at query time and sent
+   * alone: never AND'ed with the saved `config.filter` (the live statuses,
+   * which would contradict it) and never written into it (the date moves
+   * daily, so `feedChanged` would reset the cursor). The sync writes these
+   * records without moving the cursor, and the purge keeps their keys.
+   */
+  private ownClosedFeed(officeIds: string[]): OwnClosedFeed {
+    const filterAfter = (closedSince: string) => {
+      const own = ownClosedFilter(officeIds, closedSince);
+      return (after: string | undefined) => (after ? `(${own}) and (${after})` : own);
+    };
+    const keyset = this.keyset.bind(this);
+    const select: Record<string, string> = this.expand ? { $expand: this.expand } : {};
+    const keyPageSize = this.keyPageSize;
+    return {
+      async *fetchUpdates(closedSince) {
+        for await (const rows of keyset<ResoProperty>(
+          select,
+          PAGE_SIZE,
+          filterAfter(closedSince),
+        )) {
+          const last = lastPosition(rows);
+          yield {
+            items: rows.map(mapResoProperty),
+            last: last && { modifiedAt: new Date(last.timestamp), key: last.key },
+          };
+        }
+      },
+      async *fetchKeys(closedSince) {
+        const pages = keyset<{ ListingKey: string }>(
+          { $select: "ListingKey" },
+          keyPageSize,
+          filterAfter(closedSince),
+        );
+        for await (const rows of pages) yield rows.map((row) => row.ListingKey).filter(Boolean);
+      },
+    };
   }
 
   private filter(...extra: (string | undefined)[]): string | undefined {
@@ -80,13 +137,6 @@ export class ResoWebApiProvider implements ListingProvider {
     return parts.length ? parts.join(" and ") : undefined;
   }
 
-  // TODO (design only): an optional rolling sold window for live-only feeds. A
-  // config option such as `soldWindowDays` would add
-  // `(StandardStatus eq 'Closed' and CloseDate ge <today − N days>)` here at
-  // query time, like purgeScopeFilter does for the purge. Never write it into
-  // the saved `config.filter`: the date changes daily, which would look like a
-  // feed change and reset the cursor (feedChanged). The purge scope would then
-  // keep closed rows whose closeDate falls inside the window.
   async *fetchUpdates(from: FeedPosition | null): AsyncIterable<UpdatesPage> {
     // The raw timestamp string, not a Date, marks the position between pages:
     // a feed with sub-millisecond timestamps would otherwise re-read (or, with
@@ -123,23 +173,40 @@ export class ResoWebApiProvider implements ListingProvider {
   }
 
   async *fetchActiveKeys(scope: PurgeScope): AsyncIterable<string[]> {
+    const filter = purgeScopeFilter(scope);
+    const pages = this.keyset<{ ListingKey: string }>(
+      { $select: "ListingKey" },
+      this.keyPageSize,
+      (after) => this.filter(filter, after),
+    );
+    for await (const rows of pages) yield rows.map((row) => row.ListingKey).filter(Boolean);
+  }
+
+  /**
+   * Pages of rows in ListingKey order, by keyset: `filterAfter` builds each
+   * request's $filter from the clause for "after the last key" (none at first).
+   * Ends at the first page with no key.
+   */
+  private async *keyset<T extends { ListingKey?: string | null }>(
+    select: Record<string, string>,
+    top: number,
+    filterAfter: (after: string | undefined) => string | undefined,
+  ): AsyncIterable<T[]> {
     let after: string | null = null;
     for (;;) {
       const query: Record<string, string> = {
-        $select: "ListingKey",
-        $top: String(this.keyPageSize),
+        ...select,
+        $top: String(top),
         $orderby: "ListingKey asc",
       };
-      const filter = this.filter(
-        purgeScopeFilter(scope),
+      const filter = filterAfter(
         after === null ? undefined : `ListingKey gt ${odataString(after)}`,
       );
       if (filter) query.$filter = filter;
-      const rows = await this.client.getPage<{ ListingKey: string }>(this.resource, query);
-      const keys = rows.map((row) => row.ListingKey).filter(Boolean);
-      if (!keys.length) return;
-      yield keys;
-      const last = keys[keys.length - 1];
+      const rows = await this.client.getPage<T>(this.resource, query);
+      const last = rows.findLast((row) => row.ListingKey)?.ListingKey;
+      if (!last) return;
+      yield rows;
       if (last === after) {
         throw new Error(`RESO feed isn't honoring the page filter (stuck after ${last}).`);
       }
@@ -199,4 +266,18 @@ export function purgeScopeFilter(scope: PurgeScope): string {
     throw new Error(`purgeScopeFilter: closedSince must be YYYY-MM-DD, got "${scope.closedSince}"`);
   }
   return `${liveStatusFilter()} or (StandardStatus eq 'Closed' and CloseDate ge ${scope.closedSince})`;
+}
+
+/**
+ * The firm's own sales closed on or after `closedSince` (YYYY-MM-DD): listed
+ * by one of `officeIds` (the list office only, never co-list, buyer or
+ * selling office, so no other office's sale comes in). Exported for tests.
+ */
+export function ownClosedFilter(officeIds: string[], closedSince: string): string {
+  if (!officeIds.length) throw new Error("ownClosedFilter: no office IDs");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(closedSince)) {
+    throw new Error(`ownClosedFilter: closedSince must be YYYY-MM-DD, got "${closedSince}"`);
+  }
+  const offices = officeIds.map((id) => `ListOfficeMlsId eq ${odataString(id)}`).join(" or ");
+  return `(${offices}) and StandardStatus eq 'Closed' and CloseDate ge ${closedSince}`;
 }

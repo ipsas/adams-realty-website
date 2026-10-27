@@ -12,7 +12,13 @@ import type { PurgeScope } from "./types";
  * different: its feed only ever sends live statuses, so a listing that closed
  * simply stops arriving and its row still reads active. Every stored row of
  * the source not yet removed is then in scope, whatever its status, and goes
- * once its key is missing from the feed's live key list.
+ * once its key is missing from the kept keys: the feed's live keys plus the
+ * firm's own sales (list office in `companyOfficeIds`) closed within
+ * PURGE_SOLD_DAYS, fetched by their own query (`ListingProvider.ownClosed`;
+ * the sync also refreshes those rows, OWN_CLOSED_INTERVAL_MS in
+ * sync-engine.ts). Other offices' closed sales are never kept, and an own sale
+ * that ages past the window is purged like any missing key. Both key lists
+ * must download in full, or nothing is removed.
  *
  * The first purge after switching an existing database to the live-only feed
  * will usually exceed the 5% cap: it takes down every stored closed row at

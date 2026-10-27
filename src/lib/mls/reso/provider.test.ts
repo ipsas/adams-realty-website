@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { liveStatusFilter } from "../gamls";
+import type { DataSourceConfig } from "@/db/schema";
+import { gamlsFilter, liveStatusFilter, ownOfficeIds } from "../gamls";
 import { purgeScope } from "../purge";
 import type { UpdatesPage } from "../types";
 import {
   MissingCredentialsError,
+  ownClosedFilter,
   purgeScopeFilter,
   ResoWebApiProvider,
   updatesFilter,
+  type ResoProviderOptions,
 } from "./provider";
 
 // The provider against a fake RESO server that honors the keyset filters it
@@ -17,7 +20,15 @@ type Row = { ListingKey: string; ModificationTimestamp: string; [k: string]: unk
 const unquote = (s: string) => s.replace(/''/g, "'");
 
 /** Serves `rows()` as OData, reading only the parts of $filter the provider writes. */
-function fakeServer(rows: () => Row[], onRequest: (n: number) => void = () => {}) {
+function fakeServer(
+  rows: () => Row[],
+  onRequest: (n: number) => void = () => {},
+  config: DataSourceConfig = {
+    baseUrl: "https://feed.example.com/odata",
+    filter: "OriginatingSystemName eq 'GAMLS'",
+  },
+  options: Omit<ResoProviderOptions, "fetchImpl"> = {},
+) {
   const urls: URL[] = [];
   const fetchImpl = (async (input: string) => {
     const url = new URL(input);
@@ -58,11 +69,7 @@ function fakeServer(rows: () => Row[], onRequest: (n: number) => void = () => {}
     next.searchParams.set("$skip", String(skip + top));
     return Response.json({ value: page, "@odata.nextLink": next.toString() });
   }) as unknown as typeof fetch;
-  const provider = new ResoWebApiProvider(
-    { baseUrl: "https://feed.example.com/odata", filter: "OriginatingSystemName eq 'GAMLS'" },
-    { MLS_TOKEN: "t" },
-    { fetchImpl },
-  );
+  const provider = new ResoWebApiProvider(config, { MLS_TOKEN: "t" }, { ...options, fetchImpl });
   return { provider, urls };
 }
 
@@ -194,5 +201,116 @@ describe("ResoWebApiProvider.fetchUpdates", () => {
         "(ModificationTimestamp eq 2026-09-25T09:00:00.1234567Z and ListingKey gt 'K1')",
     );
     expect(() => updatesFilter({ timestamp: "2026-09-25 or 1 eq 1", key: null })).toThrow();
+  });
+});
+
+describe("ownClosedFilter", () => {
+  it("asks for the list office's closed sales since the date, nothing else", () => {
+    expect(ownClosedFilter(["ADAM01"], "2025-10-26")).toBe(
+      "(ListOfficeMlsId eq 'ADAM01') and StandardStatus eq 'Closed' and CloseDate ge 2025-10-26",
+    );
+    expect(ownClosedFilter(["ADAM01", "ADAM02"], "2025-10-26")).toBe(
+      "(ListOfficeMlsId eq 'ADAM01' or ListOfficeMlsId eq 'ADAM02') and " +
+        "StandardStatus eq 'Closed' and CloseDate ge 2025-10-26",
+    );
+    expect(ownClosedFilter(["O'B"], "2025-10-26")).toMatch(/^\(ListOfficeMlsId eq 'O''B'\)/);
+  });
+
+  it("rejects anything but a YYYY-MM-DD date, and no office IDs", () => {
+    expect(() => ownClosedFilter(["ADAM01"], "2025-10-26 or 1 eq 1")).toThrow(/YYYY-MM-DD/);
+    expect(() => ownClosedFilter(["ADAM01"], "2025-10-26T00:00:00Z")).toThrow(/YYYY-MM-DD/);
+    expect(() => ownClosedFilter(["ADAM01"], "")).toThrow(/YYYY-MM-DD/);
+    expect(() => ownClosedFilter([], "2025-10-26")).toThrow(/no office IDs/);
+  });
+});
+
+describe("ResoWebApiProvider.ownClosed", () => {
+  // The Georgia MLS row as add-gamls-source writes it, statewide with no office ID.
+  const gamlsConfig: DataSourceConfig = {
+    baseUrl: "https://feed.example.com/odata",
+    filter: gamlsFilter({}),
+    liveOnly: true,
+    companyOfficeIds: ["ADAM01"],
+    keyPageSize: 2,
+    expand: "",
+  };
+  const own =
+    "(ListOfficeMlsId eq 'ADAM01') and StandardStatus eq 'Closed' and CloseDate ge 2025-10-26";
+  const rows: Row[] = ["K3", "K1", "K2"].map((k) => ({
+    ListingKey: k,
+    ModificationTimestamp: ts(0),
+  }));
+
+  it("fetchKeys pages by key with the own-closed filter alone, never the saved live filter", async () => {
+    const { provider, urls } = fakeServer(() => rows, undefined, gamlsConfig);
+    const keys = (await collect(provider.ownClosed!.fetchKeys("2025-10-26"))).flat();
+    expect(keys).toEqual(["K1", "K2", "K3"]);
+    expect(urls.map((u) => u.searchParams.get("$filter"))).toEqual([
+      own,
+      `(${own}) and (ListingKey gt 'K2')`,
+      `(${own}) and (ListingKey gt 'K3')`,
+    ]);
+    expect(urls[0].searchParams.get("$select")).toBe("ListingKey");
+    expect(urls[0].searchParams.get("$top")).toBe("2");
+    expect(urls[0].searchParams.get("$orderby")).toBe("ListingKey asc");
+    expect(urls.every((u) => !u.searchParams.has("$skip"))).toBe(true);
+  });
+
+  it("fetchUpdates reads the full records by key, mapped like the main feed", async () => {
+    const { provider, urls } = fakeServer(() => rows, undefined, gamlsConfig);
+    const pages = await collect(provider.ownClosed!.fetchUpdates("2025-10-26"));
+    const keys = pages.flatMap((p) =>
+      p.items.map((r) => (r.ok ? r.listing.listingKey : r.listingKey)),
+    );
+    expect(keys).toEqual(["K1", "K2", "K3"]);
+    expect(urls[0].searchParams.get("$filter")).toBe(own);
+    expect(urls[0].searchParams.get("$orderby")).toBe("ListingKey asc");
+    expect(urls[0].searchParams.has("$select")).toBe(false);
+    expect(urls[0].searchParams.has("$expand")).toBe(false);
+    expect(urls[1].searchParams.get("$filter")).toBe(`(${own}) and (ListingKey gt 'K3')`);
+  });
+
+  it("validates the date before asking the feed", async () => {
+    const { provider, urls } = fakeServer(() => rows, undefined, gamlsConfig);
+    await expect(collect(provider.ownClosed!.fetchKeys("2025-10-26 or 1 eq 1"))).rejects.toThrow(
+      /YYYY-MM-DD/,
+    );
+    expect(urls).toHaveLength(0);
+  });
+
+  it("uses the injected office IDs over the config's", async () => {
+    const { provider, urls } = fakeServer(() => rows, undefined, gamlsConfig, {
+      ownOfficeIds: ["ADAM01", "ADAM02"],
+    });
+    await collect(provider.ownClosed!.fetchKeys("2025-10-26"));
+    expect(urls[0].searchParams.get("$filter")).toBe(
+      ownClosedFilter(["ADAM01", "ADAM02"], "2025-10-26"),
+    );
+  });
+
+  it("is null for a feed that isn't live-only, or without office IDs", () => {
+    expect(
+      fakeServer(() => rows, undefined, { ...gamlsConfig, liveOnly: false }).provider.ownClosed,
+    ).toBeNull();
+    expect(
+      fakeServer(() => rows, undefined, { ...gamlsConfig, companyOfficeIds: [] }).provider
+        .ownClosed,
+    ).toBeNull();
+    expect(
+      fakeServer(() => rows, undefined, { ...gamlsConfig, companyOfficeIds: undefined }).provider
+        .ownClosed,
+    ).toBeNull();
+    expect(
+      fakeServer(() => rows, undefined, gamlsConfig, { ownOfficeIds: [] }).provider.ownClosed,
+    ).toBeNull();
+  });
+});
+
+describe("ownOfficeIds", () => {
+  it("is the stored companyOfficeIds, else the firm's office for the Georgia MLS source only", () => {
+    expect(ownOfficeIds({ slug: "gamls", config: { companyOfficeIds: ["X1"] } })).toEqual(["X1"]);
+    expect(ownOfficeIds({ slug: "gamls", config: {} })).toEqual(["ADAM01"]);
+    expect(ownOfficeIds({ slug: "gamls", config: { companyOfficeIds: [] } })).toEqual(["ADAM01"]);
+    expect(ownOfficeIds({ slug: "actris", config: {} })).toEqual([]);
   });
 });

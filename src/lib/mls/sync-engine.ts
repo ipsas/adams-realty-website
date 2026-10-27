@@ -6,6 +6,7 @@ import type {
   MapResult,
   MapSkipReason,
   NormalizedListing,
+  OwnClosedFeed,
   PurgeScope,
 } from "./types";
 import {
@@ -136,6 +137,10 @@ export interface SyncStore {
    * `at`: one more failure if the streak is at `at`, else a new streak of one.
    */
   recordRejection(at: SyncCursor | null): Promise<RejectionStreak>;
+  /** When the own-closed pass last completed (`data_sources.own_closed_synced_at`); null: never. */
+  ownClosedSyncedAt(): Promise<Date | null>;
+  /** Records that the own-closed pass read all of the firm's closed sales at `at`. */
+  recordOwnClosedSynced(at: Date): Promise<void>;
   /**
    * Writes one page and saves `cursor`, atomically. With `skipUnchanged`, a
    * record whose ModificationTimestamp matches the stored row isn't rewritten.
@@ -246,6 +251,20 @@ export const STALE_RUN_MS = 300_000;
 export const UPDATE_LOOKBACK_MS = 30 * 60_000;
 
 /**
+ * The own-closed pass of a live-only feed (`ListingProvider.ownClosed`): the
+ * firm's own sales closed in the last PURGE_SOLD_DAYS, which the live-status
+ * feed never sends, read on their own (a few dozen records) and written
+ * through `writePage` like any page, rewriting every row (`skipUnchanged`
+ * false) and passing the saved cursor unchanged, so the main feed's position
+ * never moves. It runs in every purge (before the key download) and full run,
+ * and in an incremental run once the last completed pass is this old (or
+ * there was none), after the feed caught up. Its writes count in the run's
+ * counts. A pass that fails (logged) or runs out of time stays due and never
+ * fails the run.
+ */
+export const OWN_CLOSED_INTERVAL_MS = 20 * 3_600_000;
+
+/**
  * A purge that finds another run of its source alive waits for it (skipping
  * would leave off-market listings up), polling this often, for at most
  * PURGE_MAX_WAIT_MS, and never so long that less than PURGE_RESERVE_MS of its
@@ -350,35 +369,84 @@ export async function runSync(
   // saved cursor is this run's (so a later run may resume the remap from it).
   let remapVersion: number | undefined;
   let quarantineNote: string | undefined;
+  const activeRunId = runId;
+  const countFetched = (items: MapResult[]) => {
+    counts.fetched += items.length;
+    for (const item of items) {
+      if (!item.ok) result.skipped[item.reason] = (result.skipped[item.reason] ?? 0) + 1;
+    }
+  };
+  const countWritten = (outcome: PageOutcome) => {
+    counts.upserted += outcome.upserted;
+    counts.unchanged += outcome.unchanged;
+    counts.removed += outcome.removed;
+    if (outcome.failed) {
+      result.skipped.write_failed = (result.skipped.write_failed ?? 0) + outcome.failed;
+    }
+    result.mediaRowsWritten += outcome.mediaRowsWritten;
+    result.nulled += outcome.nulled;
+  };
   try {
     const feed = typeof provider === "function" ? provider() : provider;
     cursor = await store.savedCursor();
+    // The cursor as stored: the own-closed pass writes it back unchanged.
+    let storedCursor = cursor;
+    const ownClosed = opts.liveOnly ? (feed.ownClosed ?? null) : null;
+
+    /** The own-closed pass (OWN_CLOSED_INTERVAL_MS). Never throws: a failure leaves it due. */
+    const syncOwnClosed = async (own: OwnClosedFeed, onlyIfDue: boolean) => {
+      try {
+        if (onlyIfDue) {
+          const last = await store.ownClosedSyncedAt();
+          if (last && clock() - last.getTime() < OWN_CLOSED_INTERVAL_MS) return;
+        }
+        const { closedSince } = purgeScope(new Date(clock()));
+        for await (const page of own.fetchUpdates(closedSince)) {
+          countFetched(page.items);
+          countWritten(await store.writePage(page.items, storedCursor, { skipUnchanged: false }));
+          await store.heartbeat(activeRunId, counts);
+          if (outOfTime()) return;
+        }
+        await store.recordOwnClosedSynced(new Date(clock()));
+      } catch (error) {
+        console.error(`[mls] own closed sales pass failed (still due): ${describeError(error)}`);
+      }
+    };
 
     if (mode === "purge") {
+      // Before the key download, and only with the download's reserve still left.
+      if (
+        ownClosed &&
+        (opts.deadline === undefined || clock() + PURGE_RESERVE_MS <= opts.deadline)
+      ) {
+        await syncOwnClosed(ownClosed, false);
+      }
       const scope = purgeScope(new Date(clock()), { liveOnly: opts.liveOnly });
       const keys = new Set<string>();
-      let complete = true;
-      for await (const page of feed.fetchActiveKeys(scope)) {
-        for (const key of page) keys.add(key);
-        counts.fetched = keys.size;
-        await store.heartbeat(runId, counts);
-        if (outOfTime()) {
-          complete = false;
-          break;
+      const fetchedBefore = counts.fetched;
+      // A partial key list is never used: every page must arrive in time.
+      const collect = async (pages: AsyncIterable<string[]>) => {
+        for await (const page of pages) {
+          for (const key of page) keys.add(key);
+          counts.fetched = fetchedBefore + keys.size;
+          await store.heartbeat(runId, counts);
+          if (outOfTime()) {
+            throw new SyncError(
+              `Purge stopped: the feed's key list (${keys.size} keys so far) didn't finish downloading ` +
+                "within the time budget, so nothing was removed. Run `npm run mls:sync -- --purge` from a workstation.",
+            );
+          }
         }
-      }
-      if (!complete) {
-        throw new SyncError(
-          `Purge stopped: the feed's key list (${keys.size} keys so far) didn't finish downloading ` +
-            "within the time budget, so nothing was removed. Run `npm run mls:sync -- --purge` from a workstation.",
-        );
-      }
+      };
+      await collect(feed.fetchActiveKeys(scope));
       // An empty key list almost certainly means a feed outage, not an empty MLS.
       if (keys.size === 0) {
         throw new SyncError(
           "Purge stopped: the feed returned no listing keys (an outage?), so nothing was removed.",
         );
       }
+      // Live-only: the firm's own sales closed within the window stay too.
+      if (ownClosed) await collect(ownClosed.fetchKeys(scope.closedSince));
       const feedKeys = [...keys];
       const { inScope, missing } = await store.countPurge(feedKeys, scope);
       const cap = purgeCap(inScope);
@@ -418,10 +486,7 @@ export async function runSync(
       // A page that failed runs in a row starts at the cursor they left: this run's first.
       const streak = await store.rejectionStreak();
       for await (const page of feed.fetchUpdates(from)) {
-        counts.fetched += page.items.length;
-        for (const item of page.items) {
-          if (!item.ok) result.skipped[item.reason] = (result.skipped[item.reason] ?? 0) + 1;
-        }
+        countFetched(page.items);
         // Only once the page is written: a failed page's run records the cursor before it.
         const next = page.last ?? cursor;
         const quarantine =
@@ -438,15 +503,9 @@ export async function runSync(
           quarantineNote = describeQuarantine(quarantine, outcome.quarantined);
         }
         cursor = next;
+        storedCursor = next;
         if (remap) remapVersion = version;
-        counts.upserted += outcome.upserted;
-        counts.unchanged += outcome.unchanged;
-        counts.removed += outcome.removed;
-        if (outcome.failed) {
-          result.skipped.write_failed = (result.skipped.write_failed ?? 0) + outcome.failed;
-        }
-        result.mediaRowsWritten += outcome.mediaRowsWritten;
-        result.nulled += outcome.nulled;
+        countWritten(outcome);
         await store.heartbeat(runId, counts);
         if (outOfTime()) {
           status = "partial";
@@ -455,6 +514,8 @@ export async function runSync(
       }
       // An empty feed read from the start has caught up too.
       if (remap && status === "succeeded") remapVersion = version;
+      // Only once the feed caught up in time; a full run always reads them.
+      if (ownClosed && status === "succeeded") await syncOwnClosed(ownClosed, mode !== "full");
     }
 
     // A quarantine is reported (partial, with its note), though the run caught up.

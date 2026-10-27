@@ -96,6 +96,12 @@ export const dataSources = pgTable("data_sources", {
   rejectStreak: integer("reject_streak").notNull().default(0),
   rejectStreakCursor: timestamp("reject_streak_cursor", { withTimezone: true }),
   rejectStreakCursorKey: text("reject_streak_cursor_key"),
+  /**
+   * When the sync last read all of a live-only source's own closed sales
+   * (`ListingProvider.ownClosed`); null: never. Incremental runs read them again
+   * once this is OWN_CLOSED_INTERVAL_MS old (src/lib/mls/sync-engine.ts).
+   */
+  ownClosedSyncedAt: timestamp("own_closed_synced_at", { withTimezone: true }),
   lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

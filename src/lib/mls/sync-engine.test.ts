@@ -1,12 +1,13 @@
 import { DrizzleQueryError } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { purgeCountQuery, purgeScope, purgeWhere } from "./purge";
 import {
   PURGE_CAP_PREFIX,
   PURGE_RESERVE_MS,
   PURGE_SKIPPED_PREFIX,
   PURGE_WAIT_POLL_MS,
+  OWN_CLOSED_INTERVAL_MS,
   PurgeCapError,
   runSync,
   UPDATE_LOOKBACK_MS,
@@ -26,6 +27,7 @@ import type {
   ListingProvider,
   MapResult,
   NormalizedListing,
+  OwnClosedFeed,
   PurgeScope,
 } from "./types";
 import {
@@ -147,12 +149,24 @@ class MemoryStore implements SyncStore {
   /** Lines logged after a page committed: skips, quarantines, alerts. */
   logs: string[] = [];
 
+  ownSyncedAt: Date | null = null;
+  async ownClosedSyncedAt() {
+    return this.ownSyncedAt;
+  }
+  async recordOwnClosedSynced(at: Date) {
+    this.ownSyncedAt = at;
+  }
+
+  /** The cursor as passed to each writePage. */
+  pageCursors: Array<SyncCursor | null> = [];
+
   async writePage(
     page: MapResult[],
     cursor: SyncCursor | null,
     { skipUnchanged, quarantine }: { skipUnchanged: boolean; quarantine?: RejectionStreak },
   ): Promise<PageOutcome> {
     this.skipFlags.push(skipUnchanged);
+    this.pageCursors.push(cursor);
     // Restored when the page fails, as the Postgres store's transaction rolls back.
     const snapshot = structuredClone(this.listings);
     let upserted = 0;
@@ -1181,5 +1195,217 @@ describe("runSync: prune", () => {
     const result = await runSync(store, feed(1).provider, { now: clock });
     expect(result.pruned).toBe(0);
     expect(store.pruneCalls).toEqual([]);
+  });
+});
+
+describe("runSync: own closed sales of a live-only feed", () => {
+  const HOUR = 3_600_000;
+  const closed = (key: string, closeDate: string, i = 9_000) =>
+    record(i, { listingKey: key, status: "closed", closeDate });
+  const stored = (status: StoredListing["status"], closeDate: string | null): StoredListing => ({
+    status,
+    closeDate,
+    modified: 0,
+    removed: false,
+  });
+
+  /** The firm's own closed sales, as `ListingProvider.ownClosed` serves them. */
+  function ownFeed(records: MapResult[], keys: string[] = records.map(keyOf)) {
+    const updates: string[] = [];
+    const keyCalls: string[] = [];
+    const ctl = { fail: null as Error | null, failKeys: null as Error | null, keyPageMs: 1000 };
+    const own: OwnClosedFeed = {
+      async *fetchUpdates(closedSince) {
+        updates.push(closedSince);
+        if (ctl.fail) throw ctl.fail;
+        now += 1000;
+        yield pageOf(records);
+      },
+      async *fetchKeys(closedSince) {
+        keyCalls.push(closedSince);
+        now += ctl.keyPageMs;
+        yield keys.slice(0, 1);
+        if (ctl.failKeys) throw ctl.failKeys;
+        now += ctl.keyPageMs;
+        yield keys.slice(1);
+      },
+    };
+    return { own, updates, keyCalls, ctl };
+  }
+
+  const ownRecords = () => [closed("OWN-1", "2026-06-01"), closed("OWN-2", "2026-03-01", 9_001)];
+
+  it("never done: an incremental run writes them after the feed, rewriting each, cursor unchanged", async () => {
+    const main = feed(1, 10);
+    const { own, updates } = ownFeed(ownRecords());
+    const result = await runSync(
+      store,
+      { ...main.provider, ownClosed: own },
+      { liveOnly: true, now: clock },
+    );
+    // The window is the purge's: PURGE_SOLD_DAYS back.
+    expect(updates).toEqual([purgeScope(new Date(START)).closedSince]);
+    expect(result).toMatchObject({ status: "succeeded", fetched: 12, upserted: 12 });
+    expect(store.skipFlags).toEqual([true, false]);
+    // The main cursor is passed back as it was saved, and the run still caught up.
+    const last = main.records[9];
+    const mainCursor = { modifiedAt: new Date(modifiedOf(last)), key: keyOf(last) };
+    expect(store.pageCursors).toEqual([mainCursor, mainCursor]);
+    expect(store.cursor).toEqual({ ...mainCursor, key: null });
+    expect(store.listings.get("OWN-1")).toMatchObject({ status: "closed", removed: false });
+    expect(store.ownSyncedAt).toEqual(new Date(now));
+  });
+
+  it("runs again in an incremental run only once the last pass is OWN_CLOSED_INTERVAL_MS old", async () => {
+    const main = feed(1, 10);
+    const { own, updates } = ownFeed(ownRecords());
+    const provider = { ...main.provider, ownClosed: own };
+    const last = new Date(START - OWN_CLOSED_INTERVAL_MS + HOUR);
+    store.ownSyncedAt = last;
+    await runSync(store, provider, { liveOnly: true, now: clock });
+    expect(updates).toHaveLength(0);
+    expect(store.ownSyncedAt).toEqual(last);
+
+    now = START + HOUR;
+    await runSync(store, provider, { liveOnly: true, now: clock });
+    expect(updates).toHaveLength(1);
+    expect(store.ownSyncedAt).toEqual(new Date(now));
+  });
+
+  it("a full run always runs it, and passes the cursor as stored", async () => {
+    const main = feed(1, 10);
+    const { own, updates } = ownFeed(ownRecords());
+    store.ownSyncedAt = new Date(START - HOUR);
+    await runSync(
+      store,
+      { ...main.provider, ownClosed: own },
+      { mode: "full", liveOnly: true, now: clock },
+    );
+    expect(updates).toHaveLength(1);
+    expect(store.skipFlags).toEqual([false, false]);
+    expect(store.pageCursors[1]).toEqual(store.pageCursors[0]);
+  });
+
+  it("is skipped when the feed didn't catch up in time, and stays due", async () => {
+    const main = feed(50);
+    const { own, updates } = ownFeed(ownRecords());
+    const result = await runSync(
+      store,
+      { ...main.provider, ownClosed: own },
+      { liveOnly: true, deadline: START + 255_000, now: clock },
+    );
+    expect(result.status).toBe("partial");
+    expect(updates).toHaveLength(0);
+    expect(store.ownSyncedAt).toBeNull();
+  });
+
+  it("a failed pass is logged, stays due, and neither fails the run nor counts as a rejection", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const main = feed(1, 10);
+    const { own, ctl } = ownFeed(ownRecords());
+    const provider = { ...main.provider, ownClosed: own };
+    ctl.fail = new Error("RESO request failed (503)");
+    const result = await runSync(store, provider, { liveOnly: true, now: clock });
+    expect(result).toMatchObject({ status: "succeeded", upserted: 10 });
+    expect(store.runs[0].status).toBe("succeeded");
+    expect(store.ownSyncedAt).toBeNull();
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("RESO request failed (503)"));
+
+    // Its page rejected by Postgres: rolled back; the run still succeeds, no streak.
+    ctl.fail = null;
+    const write = store.writePage.bind(store);
+    store.writePage = async (page, cursor, opts) => {
+      if (page.some((i) => keyOf(i) === "OWN-1")) throw new PageRejectedError(2, 2, "bad");
+      return write(page, cursor, opts);
+    };
+    const again = await runSync(store, provider, { liveOnly: true, now: clock });
+    expect(again.status).toBe("succeeded");
+    expect(store.streak).toBeNull();
+    expect(store.listings.has("OWN-1")).toBe(false);
+    expect(store.ownSyncedAt).toBeNull();
+    error.mockRestore();
+  });
+
+  it("is a no-op for a source that isn't live-only", async () => {
+    const main = feed(1, 10);
+    const { own, updates } = ownFeed(ownRecords());
+    await runSync(store, { ...main.provider, ownClosed: own }, { now: clock });
+    await runSync(store, { ...main.provider, ownClosed: own }, { mode: "full", now: clock });
+    expect(updates).toHaveLength(0);
+    expect(store.ownSyncedAt).toBeNull();
+  });
+
+  it("a live-only purge refreshes them first, keeps in-window own sales and purges aged-out ones", async () => {
+    seedLive(store, 100);
+    const saved = { modifiedAt: new Date(START - 60_000), key: null };
+    store.cursor = saved;
+    // Aged past PURGE_SOLD_DAYS: the own-closed query no longer returns it.
+    store.listings.set("OWN-OLD", stored("closed", "2025-08-01"));
+    // Another office's sale, from before the live-only filter.
+    store.listings.set("OTHER-SALE", stored("closed", "2026-06-01"));
+    const { own, updates, keyCalls } = ownFeed(ownRecords());
+    const result = await runSync(
+      store,
+      { ...keyFeed(keysOf(100)).provider, ownClosed: own },
+      { mode: "purge", liveOnly: true, now: clock },
+    );
+    const { closedSince } = purgeScope(new Date(START));
+    expect(updates).toEqual([closedSince]);
+    expect(keyCalls).toEqual([closedSince]);
+    expect(result).toMatchObject({ status: "succeeded", upserted: 2, removed: 2, fetched: 104 });
+    expect(store.listings.get("OWN-1")!.removed).toBe(false);
+    expect(store.listings.get("OWN-2")!.removed).toBe(false);
+    expect(store.listings.get("OWN-OLD")!.removed).toBe(true);
+    expect(store.listings.get("OTHER-SALE")!.removed).toBe(true);
+    expect(store.live()).toBe(102);
+    // The pass wrote the cursor back as it was.
+    expect(store.pageCursors).toEqual([saved]);
+    expect(store.cursor).toEqual(saved);
+    expect(store.ownSyncedAt).not.toBeNull();
+  });
+
+  it("a purge never uses a partial own-closed key list: it fails and removes nothing", async () => {
+    seedLive(store, 100);
+    store.listings.set("OWN-2", stored("closed", "2026-03-01"));
+    store.listings.set("GONE", stored("active", null));
+    const { own, ctl } = ownFeed(ownRecords());
+    ctl.failKeys = new Error("RESO request failed (503)");
+    await expect(
+      runSync(
+        store,
+        { ...keyFeed(keysOf(100)).provider, ownClosed: own },
+        { mode: "purge", liveOnly: true, now: clock },
+      ),
+    ).rejects.toThrow("503");
+    expect(store.listings.get("OWN-2")!.removed).toBe(false);
+    expect(store.listings.get("GONE")!.removed).toBe(false);
+    expect(store.runs[0].status).toBe("failed");
+  });
+
+  it("a purge that runs out of time on the own-closed keys removes nothing", async () => {
+    seedLive(store, 100);
+    store.listings.set("GONE", stored("active", null));
+    const { own, ctl } = ownFeed(ownRecords());
+    ctl.keyPageMs = 150_000;
+    await expect(
+      runSync(
+        store,
+        { ...keyFeed(keysOf(100)).provider, ownClosed: own },
+        { mode: "purge", liveOnly: true, deadline: START + 200_000, now: clock },
+      ),
+    ).rejects.toThrow(/didn't finish downloading/);
+    expect(store.listings.get("GONE")!.removed).toBe(false);
+  });
+
+  it("a purge of a source that isn't live-only never reads them", async () => {
+    seedLive(store, 10);
+    const { own, updates, keyCalls } = ownFeed(ownRecords());
+    await runSync(
+      store,
+      { ...keyFeed(keysOf(10)).provider, ownClosed: own },
+      { mode: "purge", now: clock },
+    );
+    expect(updates).toEqual([]);
+    expect(keyCalls).toEqual([]);
   });
 });

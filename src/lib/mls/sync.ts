@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { dataSources } from "@/db/schema";
 import { refreshPlaces } from "@/lib/listings/places";
+import { ownOfficeIds } from "./gamls";
 import { missingCredentials, ResoWebApiProvider } from "./reso/provider";
 import { runSync, type RunSyncOptions, type SyncResult } from "./sync-engine";
 import { createSyncStore } from "./sync-store";
@@ -32,6 +33,7 @@ export function createProvider(
     case "reso_web_api":
       return new ResoWebApiProvider(source.config, process.env, {
         deadline: opts.deadline === undefined ? undefined : opts.deadline + FEED_GRACE_MS,
+        ownOfficeIds: ownOfficeIds(source),
       });
     case "manual":
       throw new Error("Manual sources are edited in the dashboard and have nothing to sync.");
@@ -62,6 +64,8 @@ export class SyncFailedError extends SyncError {
  *     (the first load, or repairing rows after a mapper fix; CLI only).
  *   - purge: only removes listings that left the feed (IDX requires
  *     off-market listings to disappear promptly), within a removal cap.
+ * A live-only source also re-reads the firm's own closed sales (purge and
+ * full runs, and incremental ones every 20 hours: OWN_CLOSED_INTERVAL_MS).
  * Afterwards, if anything changed (even in a run that then failed), the
  * autocomplete places are rebuilt. The caller revalidates the page caches (it
  * may not be inside Next): on failure, a SyncFailedError says whether to.

@@ -130,6 +130,21 @@ export function createSyncStore(source: SourceRow): PostgresSyncStore {
       return { at, failures: row?.failures ?? 1 };
     },
 
+    async ownClosedSyncedAt() {
+      const [row] = await db
+        .select({ at: dataSources.ownClosedSyncedAt })
+        .from(dataSources)
+        .where(eq(dataSources.id, source.id));
+      return row?.at ?? null;
+    },
+
+    async recordOwnClosedSynced(at) {
+      await db
+        .update(dataSources)
+        .set({ ownClosedSyncedAt: at })
+        .where(eq(dataSources.id, source.id));
+    },
+
     async writePage(page, cursor, { skipUnchanged, quarantine }) {
       agentIdsByMlsId ??= new Map(
         (

@@ -109,6 +109,19 @@ export function feedChanged(
   );
 }
 
+/**
+ * The list office IDs whose closed sales a live-only source still syncs and
+ * keeps (`ResoWebApiProvider.ownClosed`): the saved `companyOfficeIds`, or
+ * for the Georgia MLS source, when its stored row lacks them, the firm's
+ * (`site.mls.officeId`). MLS_GAMLS_OFFICE_ID is not read: it only shapes the
+ * main feed's filter, and must not add another office here.
+ */
+export function ownOfficeIds(source: { slug: string; config: DataSourceConfig }): string[] {
+  const ids = source.config.companyOfficeIds?.filter(Boolean) ?? [];
+  if (ids.length) return ids;
+  return source.slug === GAMLS_SLUG ? [site.mls.officeId] : [];
+}
+
 export function gamlsSource(
   env: Env = process.env,
 ): typeof dataSources.$inferInsert & { config: DataSourceConfig } {
