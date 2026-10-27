@@ -15,6 +15,18 @@ const h = vi.hoisted(() => ({
   pruneFails: false,
   outboxRuns: 0,
   outboxFails: false,
+  backfills: [] as Array<Record<string, unknown>>,
+  backfillFails: false,
+  order: [] as string[],
+}));
+vi.mock("@/db", () => ({ db: {} }));
+vi.mock("@/lib/search/keyword-backfill", () => ({
+  backfillKeywordTsv: async (_db: unknown, opts: Record<string, unknown>) => {
+    h.backfills.push(opts);
+    h.order.push("backfill");
+    if (h.backfillFails) throw new Error("connection terminated");
+    return 7;
+  },
 }));
 vi.mock("@/lib/leads/outbox", () => ({
   retryLeadEmails: async () => {
@@ -38,6 +50,7 @@ vi.mock("@/lib/cron-auth", () => ({
 vi.mock("@/lib/mls/sync", () => ({
   syncAllSources: async (opts: Record<string, unknown>) => {
     h.calls.push(opts);
+    h.order.push("sync");
     return h.outcomes;
   },
 }));
@@ -89,6 +102,9 @@ beforeEach(() => {
   h.outboxRuns = 0;
   h.outboxFails = false;
   h.configured = false;
+  h.backfills.length = 0;
+  h.backfillFails = false;
+  h.order.length = 0;
   h.outcomes = [{ source: "gamls", ok: true, result: result() }];
 });
 
@@ -186,6 +202,29 @@ describe("GET /api/cron/sync", () => {
     expect(deadline).toBeGreaterThanOrEqual(before + (maxDuration - 15) * 1000);
     expect(deadline).toBeLessThanOrEqual(Date.now() + (maxDuration - 15) * 1000);
     expect(await res.json()).toMatchObject({ digests: { ok: true } });
+  });
+
+  it("fills missing keyword vectors after the sync, within the sync's budget, and logs how many", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const before = Date.now();
+    for (const query of ["", "?purge=1"]) expect((await call(query)).status).toBe(200);
+    expect(h.order).toEqual(["sync", "backfill", "sync", "backfill"]);
+    const deadline = h.backfills[0].deadline as number;
+    expect(deadline).toBeGreaterThanOrEqual(before + (maxDuration - 45) * 1000);
+    expect(deadline).toBeLessThanOrEqual(Date.now() + (maxDuration - 45) * 1000);
+    expect(info.mock.calls).toContainEqual(["[cron] keyword search: filled 7 listings"]);
+    info.mockRestore();
+  });
+
+  it("logs one line when the keyword backfill fails, and still answers for the sync", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    h.backfillFails = true;
+    const res = await call();
+    expect(res.status).toBe(200);
+    expect(errors.mock.calls).toEqual([
+      [expect.stringMatching(/^\[cron\] keyword backfill failed: /)],
+    ]);
+    errors.mockRestore();
   });
 
   it("reports whether email is configured, as a boolean only", async () => {

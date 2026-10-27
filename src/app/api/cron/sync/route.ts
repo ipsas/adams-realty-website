@@ -1,5 +1,6 @@
 import { revalidateTag } from "next/cache";
 import { NextResponse, type NextRequest } from "next/server";
+import { db } from "@/db";
 import { isCronAuthorized } from "@/lib/cron-auth";
 import { emailConfigured } from "@/lib/email";
 import { pruneSendCounters } from "@/lib/email-batch";
@@ -7,6 +8,7 @@ import { runLeadDigests } from "@/lib/leads/digest";
 import { retryLeadEmails } from "@/lib/leads/outbox";
 import { LISTINGS_TAG } from "@/lib/listings/cache-tags";
 import { syncAllSources } from "@/lib/mls/sync";
+import { backfillKeywordTsv } from "@/lib/search/keyword-backfill";
 import { describeError } from "@/lib/mls/write-errors";
 
 export const maxDuration = 300;
@@ -38,7 +40,9 @@ const BUDGET_MS = (maxDuration - 45) * 1000;
  * Eastern: before 7 a.m. it does nothing, and it never sends twice a day.
  * Before it, lead and assignment notices whose send failed are retried from
  * `email_outbox` (src/lib/email-outbox.ts; a few per run, best effort).
- * Neither outcome changes the status. `email.configured` says whether
+ * Neither outcome changes the status. Then listings with no `keyword_tsv`
+ * get one (`backfillKeywordTsv`, a batch per run in the time left; best
+ * effort, not in the status). `email.configured` says whether
  * RESEND_API_KEY is set (false: nothing is being sent).
  */
 export async function GET(request: NextRequest) {
@@ -72,6 +76,11 @@ export async function GET(request: NextRequest) {
       console.error(`[cron] morning summary failed: ${describeError(e)}`);
       return { ok: false as const };
     },
+  );
+  // Last, so it only uses time left over within the sync's budget.
+  await backfillKeywordTsv(db, { deadline: started + BUDGET_MS }).then(
+    (filled) => console.info(`[cron] keyword search: filled ${filled} listings`),
+    (e) => console.error(`[cron] keyword backfill failed: ${describeError(e)}`),
   );
   const failed = results.some((r) => !r.ok);
   return NextResponse.json(

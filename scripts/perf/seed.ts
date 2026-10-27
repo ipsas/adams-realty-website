@@ -31,6 +31,7 @@ import path from "node:path";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Client, Pool } from "pg";
+import { keywordText } from "@/lib/search/keyword-text";
 import { adminUrl, assertPerfUrl, PERF_DB, PERF_URL, SMALL_BOX } from "./perf-db";
 
 const url = assertPerfUrl(PERF_URL);
@@ -379,6 +380,8 @@ const COLS = [
   "is_featured",
   "source_modified_at",
   "removed_at",
+  // Inserted as to_tsvector of the text (insertRows), as upsertListings stores it.
+  "keyword_tsv",
 ] as const;
 
 type Fixture = Partial<{ city: City; lat: number; lng: number; street: string; plan: Plan }>;
@@ -559,6 +562,14 @@ function makeListing(i: number, sourceId: string, plan: Plan, fx: Fixture = {}) 
     company && chance(0.3),
     updated,
     plan.removed ? daysAgo(intBetween(1, 200)) : null,
+    keywordText({
+      addressLine1: street,
+      city: c.city,
+      postalCode: zip,
+      neighborhood,
+      mlsNumber: String(10_100_000 + i),
+      description,
+    }),
   ];
 }
 
@@ -568,7 +579,11 @@ async function insertRows(c: Client, rows: unknown[][]) {
   const tuples = rows.map((r) => {
     const base = values.length;
     values.push(...r);
-    return `(${r.map((_, j) => `$${base + j + 1}`).join(",")})`;
+    return `(${r
+      .map((_, j) =>
+        COLS[j] === "keyword_tsv" ? `to_tsvector('english', $${base + j + 1})` : `$${base + j + 1}`,
+      )
+      .join(",")})`;
   });
   await c.query(`insert into listings (${COLS.join(",")}) values ${tuples.join(",")}`, values);
 }

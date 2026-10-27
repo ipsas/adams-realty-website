@@ -1,10 +1,5 @@
--- Keyword search's index (`keywordVector` in src/db/schema/listings.ts). An expression index,
--- so no listing row is rewritten. Plain CREATE INDEX (migrations run in a transaction, so no
--- CONCURRENTLY): it blocks writes to listings, not reads, while it builds; the MLS sync and
--- dashboard edits wait that long.
-CREATE INDEX "listings_keyword_idx" ON "listings" USING gin ((to_tsvector('english', translate(
-    coalesce("address_line1", '') || ' ' || coalesce("city", '') || ' ' ||
-    coalesce("postal_code", '') || ' ' || coalesce("neighborhood", '') || ' ' ||
-    coalesce("mls_number", '') || ' ' || coalesce("headline", '') || ' ' ||
-    coalesce("property_sub_type", '') || ' ' || coalesce("description", ''), '/', ' ')) ||
-  jsonb_to_tsvector('english', translate(coalesce("features", '{}'::jsonb)::text, '/', ' ')::jsonb, '["string"]')));
+-- Superseded by 0023 (a stored keyword_tsv column). This built "listings_keyword_idx", a slow
+-- expression index over every listing's text, inside the deploy's migration transaction, blocking
+-- listing writes while it ran. Kept as a no-op so the journal stays as applied; 0023 drops the
+-- index where an earlier deploy built it.
+SELECT 1;

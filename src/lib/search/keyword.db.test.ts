@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { eq, sql, type SQL } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { listings } from "@/db/schema";
@@ -13,13 +13,21 @@ import { parseSearchParams } from "./params";
 import { buildWhere } from "./query";
 
 // Keyword search matches the description and features as shown, so it can't confirm a
-// lockbox code.
+// lockbox code: on the stored keyword_tsv, or while that is null, on search_vector and
+// the description masked in Postgres.
 
 const RANCH = "Charming ranch. Gate code 4521. Dining combo, 2-car garage.";
 const FARMHOUSE = "Farmhouse on 1998 acres road, workshop 4521 sq ft.";
 const COTTAGE = "Cozy cottage. Living room/kitchen/dining combo, 2-car garage.";
 const BUNGALOW = "Bright bungalow near the square.";
 const DUPLEX = "Updated duplex, fenced yard.";
+/** keyword_tsv null: not backfilled yet. */
+const CABIN = "Stone cabin by the creek. Gate code 7788.";
+/** keyword_tsv stored without "chalet", which search_vector has. */
+const CHALET = "Lakefront chalet with a boathouse.";
+
+const setKeywordTsv = (key: string, value: SQL | null) =>
+  db.update(listings).set({ keywordTsv: value }).where(eq(listings.listingKey, key));
 
 const search = async (kw: string) =>
   (
@@ -47,7 +55,11 @@ beforeAll(async () => {
       },
     }),
     listing(5, { description: DUPLEX, features: { appliances: ["Washer/Dryer"] } }),
+    listing(6, { description: CABIN }),
+    listing(7, { description: CHALET }),
   ]);
+  await setKeywordTsv(listing(6).listingKey, null);
+  await setKeywordTsv(listing(7).listingKey, sql`to_tsvector('english', 'Lakefront boathouse')`);
 });
 
 afterAll(closeDb);
@@ -58,7 +70,18 @@ describe("keyword search", () => {
     expect(await search("gate code 4521")).toEqual([]);
     expect(await search("4455")).toEqual([]);
     expect(await search("gate code 4455")).toEqual([]);
-    expect(await search("gate code")).toEqual([BUNGALOW, RANCH].sort());
+    expect(await search("gate code")).toEqual([BUNGALOW, CABIN, RANCH].sort());
+  });
+
+  it("finds a row not yet backfilled by its description, never by its code", async () => {
+    expect(await search("stone cabin creek")).toEqual([CABIN]);
+    expect(await search("7788")).toEqual([]);
+    expect(await search("gate code 7788")).toEqual([]);
+  });
+
+  it("matches a filled row on keyword_tsv alone, never falling back to search_vector", async () => {
+    expect(await search("boathouse")).toEqual([CHALET]);
+    expect(await search("chalet")).toEqual([]);
   });
 
   it("reads 'room/kitchen/dining' as three words", async () => {

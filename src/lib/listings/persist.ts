@@ -8,6 +8,7 @@ import {
   type DataSourceConfig,
 } from "@/db/schema";
 import type { NormalizedListing, NormalizedMedia, NormalizedOpenHouse } from "@/lib/mls/types";
+import { KEYWORD_FIELDS, keywordText, keywordTsv } from "@/lib/search/keyword-text";
 import { sanitizeNumeric } from "./sanitize";
 import { listingSlug } from "./slug";
 import { isIdxHidden } from "./visibility";
@@ -112,8 +113,10 @@ export async function upsertListings(
   const previousByKey = new Map(previousRows.map((p) => [p.listingKey, p]));
 
   const results = new Map<string, UpsertResult>();
-  const toWrite: Array<{ n: NormalizedListing; row: Omit<ListingInsert, "sourceId" | "slug"> }> =
-    [];
+  const toWrite: Array<{
+    n: NormalizedListing;
+    row: Omit<ListingInsert, "sourceId" | "slug" | "keywordTsv"> & { keywordTsv: SQL };
+  }> = [];
   for (const n of byKey.values()) {
     const previous = previousByKey.get(n.listingKey);
     const { media, openHouses: opens, listAgentMlsId, ...fields } = n;
@@ -168,6 +171,9 @@ export async function upsertListings(
           fields.statusChangedAt ??
           (previous && previous.status !== fields.status ? now : undefined),
         removedAt: null,
+        // Right for an insert (a field left undefined gets its column default, empty);
+        // an update without every keyword field nulls it instead (`set` below).
+        keywordTsv: keywordTsv(keywordText(fields)),
       },
     });
   }
@@ -183,6 +189,9 @@ export async function upsertListings(
     const saved = new Map<string, string>();
     for (const group of groups.values()) {
       const setKeys = definedKeys(group[0].row);
+      // A keyword field left undefined keeps its stored value, which this write's vector
+      // didn't see: store null, and the sync cron's backfill recomputes it from the row.
+      const keywordsComplete = KEYWORD_FIELDS.every((k) => setKeys.includes(k));
       const perRow = setKeys.length + 2;
       for (const batch of chunk(group, Math.max(1, Math.floor(MAX_PARAMS / perRow)))) {
         const rows = await tx
@@ -198,7 +207,11 @@ export async function upsertListings(
           .onConflictDoUpdate({
             target: [listings.sourceId, listings.listingKey],
             // Slug is deliberately not updated: URLs stay stable even if the address is corrected.
-            set: { ...excludedSet(setKeys), updatedAt: now },
+            set: {
+              ...excludedSet(setKeys),
+              ...(!keywordsComplete && { keywordTsv: null }),
+              updatedAt: now,
+            },
           })
           .returning({ id: listings.id, listingKey: listings.listingKey });
         for (const r of rows) saved.set(r.listingKey, r.id);

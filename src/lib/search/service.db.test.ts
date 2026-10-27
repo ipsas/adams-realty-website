@@ -1,10 +1,17 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { sql } from "drizzle-orm";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { listings } from "@/db/schema";
 import { closeDb, createSource, insertListings, listing, resetDb } from "@/test/db/helpers";
 import { parseSearchParams } from "./params";
 import { buildOrderBy, buildWhere } from "./query";
-import { locationPins, searchMapPins } from "./service";
+import {
+  countListings,
+  locationPins,
+  SEARCH_LIMITS,
+  searchListings,
+  searchMapPins,
+} from "./service";
 
 // A location search's pins are either walked off the order index or collected
 // from all its matches (`locationPins`); both must be the first matches in the
@@ -89,4 +96,31 @@ describe("searchMapPins", () => {
       expect(pins.map((p) => p.id)).toEqual(await walked(qs, 750));
     },
   );
+});
+
+describe("a search past its statement timeout", () => {
+  it("shows no results instead of failing", async () => {
+    const saved = SEARCH_LIMITS.statementTimeout;
+    SEARCH_LIMITS.statementTimeout = "200ms";
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await db.transaction(async (tx) => {
+        // While this lock is held, the searches (other connections) wait on it until their timeout.
+        await tx.execute(sql`lock table ${listings} in access exclusive mode`);
+        expect(await searchListings(crit(""), {})).toEqual({
+          items: [],
+          total: 0,
+          page: 1,
+          pageCount: 1,
+        });
+        expect(await countListings(crit(""), {})).toBe(0);
+        expect(await searchMapPins(crit(""), {})).toEqual([]);
+      });
+      expect(warn).toHaveBeenCalledWith("[search] timeout kind=pins");
+    } finally {
+      SEARCH_LIMITS.statementTimeout = saved;
+      warn.mockRestore();
+    }
+    expect(await countListings(crit(""), {})).toBeGreaterThan(0);
+  });
 });

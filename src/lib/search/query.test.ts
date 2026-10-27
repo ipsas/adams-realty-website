@@ -1,6 +1,5 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
-import { keywordVector, listings } from "@/db/schema";
 import { ACCESS_CODE_PG } from "@/lib/listings/excluded-fields";
 import { DEFAULT_CRITERIA, parseSearchParams, SORTS } from "./params";
 import {
@@ -206,38 +205,27 @@ describe("acreage, HOA, keyword, price-reduced, 55+ and fireplace filters", () =
     );
   });
 
-  it("matches keywords on the indexed keyword vector, apart from the location box", () => {
+  it("matches keywords on the stored keyword_tsv, apart from the location box", () => {
     const { sql, params } = render({ kw: "barn workshop" });
-    // Exactly listings_keyword_idx's expression, so the planner can use the index.
-    const indexed = dialect.sqlToQuery(keywordVector(listings)).sql;
-    expect(sql).toContain(`${indexed} @@ websearch_to_tsquery('english', $`);
-    expect(indexed).toContain(`coalesce("listings"."description", ''), '/', ' ')`);
-    expect(indexed).toContain(
-      `jsonb_to_tsvector('english', translate(coalesce("listings"."features", '{}'::jsonb)::text, '/', ' ')::jsonb, '["string"]')`,
-    );
-    expect(sql).not.toContain("search_vector");
+    expect(sql).toContain(`("listings"."keyword_tsv" @@ websearch_to_tsquery('english', $`);
     expect(sql).not.toContain("location_vector");
     expect(params).toContain("barn workshop");
     const both = render({ q: "Atlanta", kw: "dock" });
     expect(both.sql).toContain("location_vector");
-    expect(both.sql).toContain(indexed);
+    expect(both.sql).toContain("keyword_tsv");
     expect(both.params).toEqual(expect.arrayContaining(["Atlanta", "dock"]));
   });
 
-  it("matches keywords again on the text as shown, codes masked before '/' is split", () => {
+  it("falls back to search_vector and the masked description only while keyword_tsv is null", () => {
     const { sql, params } = render({ kw: "gate code" });
-    expect(sql).toContain(`translate(concat_ws(' ',`);
+    // keyword_tsv is already masked: a filled row is never rechecked, and the cheap tests
+    // come before the regex.
     expect(sql).toMatch(
-      /regexp_replace\("listings"\."description", \$\d+, \$\d+, 'gi'\)\), '\/', ' '\)/,
+      /\("listings"\."keyword_tsv" @@ websearch_to_tsquery\('english', \$\d+\) or \("listings"\."keyword_tsv" is null and "listings"\."search_vector" @@ websearch_to_tsquery\('english', \$\d+\) and to_tsvector\('english', concat_ws\(' ',/,
     );
-    // Each features string is masked on its own, never the JSON text as a whole, then '/' split.
-    expect(sql).toMatch(
-      /string_agg\(translate\(regexp_replace\(v #>> '\{\}', \$\d+, \$\d+, 'gi'\), '\/', ' '\)/,
-    );
-    expect(sql).toContain(`from jsonb_path_query("listings"."features", 'strict $.**') as v`);
-    expect(sql).toContain(`where jsonb_typeof(v) = 'string'`);
-    expect(sql).not.toMatch(/regexp_replace\("listings"\."features"/);
-    expect(params.filter((p) => p === ACCESS_CODE_PG)).toHaveLength(2);
+    expect(sql).toMatch(/regexp_replace\("listings"\."description", \$\d+, \$\d+, 'gi'\)\)\)/);
+    expect(sql).not.toContain("features");
+    expect(params.filter((p) => p === ACCESS_CODE_PG)).toHaveLength(1);
   });
 
   it("reads '/' in keywords as a space, like the indexed text", () => {

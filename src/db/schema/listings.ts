@@ -60,37 +60,6 @@ function normalized(column: AnyColumn): SQL {
   return sql`btrim(regexp_replace(lower(${column}), '[^a-z0-9]+', ' ', 'g'))`;
 }
 
-type KeywordColumns = Record<
-  | "addressLine1"
-  | "city"
-  | "postalCode"
-  | "neighborhood"
-  | "mlsNumber"
-  | "headline"
-  | "propertySubType"
-  | "description"
-  | "features",
-  AnyColumn
->;
-
-/**
- * What keyword search (`kw` in src/lib/search/query.ts) matches, and the expression of
- * `listings_keyword_idx`: one function so the two can't drift (the planner uses the index
- * only for this exact expression). search_vector's text with "/" read as a space (the
- * parser takes "room/kitchen/dining" as one file path), plus every string value in
- * `features` (never its keys), "/" read as a space there too ("Washer/Dryer").
- * Immutable: the two-argument forms only.
- */
-export function keywordVector(t: KeywordColumns): SQL {
-  // jsonb's text output never writes the `\/` escape, so "/" -> " " keeps valid JSON (both casts are immutable).
-  return sql`(to_tsvector('english', translate(
-    coalesce(${t.addressLine1}, '') || ' ' || coalesce(${t.city}, '') || ' ' ||
-    coalesce(${t.postalCode}, '') || ' ' || coalesce(${t.neighborhood}, '') || ' ' ||
-    coalesce(${t.mlsNumber}, '') || ' ' || coalesce(${t.headline}, '') || ' ' ||
-    coalesce(${t.propertySubType}, '') || ' ' || coalesce(${t.description}, ''), '/', ' ')) ||
-  jsonb_to_tsvector('english', translate(coalesce(${t.features}, '{}'::jsonb)::text, '/', ' ')::jsonb, '["string"]'))`;
-}
-
 /**
  * Where a listing came from. Every listing belongs to exactly one source.
  *
@@ -389,7 +358,7 @@ export const listings = pgTable(
      * this, never the description, so "Atlanta" finds homes in Atlanta rather
      * than every listing "minutes from Atlanta". 'simple' (no stemming): these
      * are names. It includes the lake (`water_body`), which real feeds keep
-     * out of `neighborhood`. Keyword search over descriptions uses `keywordVector`.
+     * out of `neighborhood`. Keyword search over descriptions uses `keywordTsv`.
      */
     locationVector: tsvector("location_vector").generatedAlwaysAs(
       (): SQL => sql`
@@ -398,6 +367,14 @@ export const listings = pgTable(
           coalesce(${listings.postalCode}, '') || ' ' || coalesce(${listings.neighborhood}, '') || ' ' ||
           coalesce(${listings.waterBodyName}, '') || ' ' || coalesce(${listings.mlsNumber}, ''))`,
     ),
+    /**
+     * What keyword search (`kw`) matches: the listing's text as shown, access
+     * codes masked (`keywordText`, src/lib/search/keyword-text.ts). Stored rather
+     * than generated because the masker is JS. Written by upsertListings; null
+     * after a write that didn't carry every field, until the sync cron's
+     * `backfillKeywordTsv` fills it.
+     */
+    keywordTsv: tsvector("keyword_tsv"),
   },
   (t) => [
     uniqueIndex("listings_source_key_idx").on(t.sourceId, t.listingKey),
@@ -412,8 +389,10 @@ export const listings = pgTable(
     index("listings_updated_idx").on(t.updatedAt),
     index("listings_mls_number_idx").on(t.mlsNumber),
     index("listings_search_idx").using("gin", t.searchVector),
-    // Keyword search (`kw`): an expression index, so no listing row is rewritten.
-    index("listings_keyword_idx").using("gin", keywordVector(t)),
+    index("listings_keyword_tsv_idx").using("gin", t.keywordTsv),
+    // The backfill's `keyword_tsv is null order by id`: once every row is filled, an
+    // empty index instead of a walk of the whole primary key on each cron run.
+    index("listings_keyword_tsv_missing_idx").on(t.id).where(sql.raw(`"keyword_tsv" is null`)),
     index("listings_location_idx").using("gin", t.locationVector),
     // Trigram indexes (pg_trgm, see migrations): address autocomplete, and the
     // location box's and autocomplete's city/neighborhood prefix matches.

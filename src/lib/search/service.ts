@@ -1,5 +1,5 @@
 import { count, sql, type SQL } from "drizzle-orm";
-import { db } from "@/db";
+import { db, type Executor } from "@/db";
 import { site } from "@/config/site";
 import { listings } from "@/db/schema";
 import { formatStreet } from "@/lib/format";
@@ -22,6 +22,42 @@ import { buildOrderBy, buildWhere, hasLocation, type LocationScope } from "./que
  * rest of the app only depends on these signatures.
  */
 
+/**
+ * The longest a public search statement may run (`statement_timeout`): any visitor's
+ * URL can ask for an expensive search. Generous because Neon runs 2-5x slower than a
+ * local box. Past it the page shows no results instead of hanging or failing. Mutable
+ * only so a db test can shorten it.
+ */
+export const SEARCH_LIMITS = { statementTimeout: "5s" };
+
+/** Postgres's query_canceled: the statement hit `statement_timeout`. */
+const QUERY_CANCELED = "57014";
+
+/**
+ * `run` in a transaction whose statements stop after `SEARCH_LIMITS.statementTimeout`;
+ * on that timeout, one log line (never the search itself) and `fallback`. Nothing here
+ * is cached, so a timed-out result isn't kept. Any other error is thrown.
+ */
+async function bounded<T>(
+  kind: "results" | "count" | "pins",
+  fallback: T,
+  run: (tx: Executor) => Promise<T>,
+): Promise<T> {
+  try {
+    return await db.transaction(async (tx) => {
+      await tx.execute(
+        sql.raw(`set local statement_timeout = '${SEARCH_LIMITS.statementTimeout}'`),
+      );
+      return run(tx);
+    });
+  } catch (e) {
+    const err = e as { code?: string; cause?: { code?: string } };
+    if (err?.code !== QUERY_CANCELED && err?.cause?.code !== QUERY_CANCELED) throw e;
+    console.warn(`[search] timeout kind=${kind}`);
+    return fallback;
+  }
+}
+
 export type SearchResult = {
   items: ListingCardData[];
   total: number;
@@ -38,16 +74,27 @@ export async function searchListings(
   scope?: LocationScope,
 ): Promise<SearchResult> {
   const where = buildWhere(c, undefined, scope ?? (await resolveScope(db, c)));
-  const [rows, [{ total }]] = await Promise.all([
-    selectCards(db)
-      .where(where)
-      .orderBy(...buildOrderBy(c))
-      .limit(PAGE_SIZE)
-      .offset((c.page - 1) * PAGE_SIZE),
-    db.select({ total: count() }).from(listings).where(where),
+  const offset = (c.page - 1) * PAGE_SIZE;
+  const [items, counted] = await Promise.all([
+    bounded("results", [], async (tx) =>
+      withPhotos(
+        tx,
+        await selectCards(tx)
+          .where(where)
+          .orderBy(...buildOrderBy(c))
+          .limit(PAGE_SIZE)
+          .offset(offset),
+      ),
+    ),
+    bounded("count", null, async (tx) => {
+      const [{ total }] = await tx.select({ total: count() }).from(listings).where(where);
+      return total;
+    }),
   ]);
+  // A timed-out count with a page of results: at least what's shown, never "0 homes" beside them.
+  const total = counted ?? (items.length ? offset + items.length : 0);
   return {
-    items: await withPhotos(db, rows),
+    items,
     total,
     page: c.page,
     pageCount: Math.max(1, Math.ceil(total / PAGE_SIZE)),
@@ -57,8 +104,10 @@ export async function searchListings(
 /** How many listings match `c` (no page of results). */
 export async function countListings(c: SearchCriteria, scope?: LocationScope): Promise<number> {
   const where = buildWhere(c, undefined, scope ?? (await resolveScope(db, c)));
-  const [{ total }] = await db.select({ total: count() }).from(listings).where(where);
-  return total;
+  return bounded("count", 0, async (tx) => {
+    const [{ total }] = await tx.select({ total: count() }).from(listings).where(where);
+    return total;
+  });
 }
 
 export type MapPin = {
@@ -107,14 +156,24 @@ export const MAX_PINS = 750;
  */
 export async function searchMapPins(c: SearchCriteria, scope?: LocationScope): Promise<MapPin[]> {
   const resolved = scope ?? (await resolveScope(db, c));
-  if (hasLocation(c)) {
-    const [matches, inScope] = await Promise.all([
-      estimateRows(buildWhere(c, undefined, resolved)),
-      estimateRows(buildWhere({ ...c, q: undefined })),
-    ]);
-    if (!walkPins(matches, inScope)) return locationPins(c, MAX_PINS, resolved);
-  }
-  const rows = await db
+  return bounded("pins", [], async (tx) => {
+    if (hasLocation(c)) {
+      // One after the other: a transaction's statements share its one connection.
+      const matches = await estimateRows(tx, buildWhere(c, undefined, resolved));
+      const inScope = await estimateRows(tx, buildWhere({ ...c, q: undefined }));
+      if (!walkPins(matches, inScope)) return locationPins(c, MAX_PINS, resolved, tx);
+    }
+    return walkedPins(tx, c, resolved);
+  });
+}
+
+/** The first MAX_PINS matches, walked off the order index. */
+async function walkedPins(
+  ex: Executor,
+  c: SearchCriteria,
+  resolved: LocationScope,
+): Promise<MapPin[]> {
+  const rows = await ex
     .select({
       id: listings.id,
       slug: listings.slug,
@@ -168,8 +227,8 @@ export function walkPins(matches: number, inScope: number): boolean {
 }
 
 /** Postgres's estimate of the rows matching `where` (planning only, no execution). */
-async function estimateRows(where: SQL | undefined): Promise<number> {
-  const { rows } = await db.execute<{ "QUERY PLAN": [{ Plan: { "Plan Rows": number } }] }>(
+async function estimateRows(ex: Executor, where: SQL | undefined): Promise<number> {
+  const { rows } = await ex.execute<{ "QUERY PLAN": [{ Plan: { "Plan Rows": number } }] }>(
     sql`explain (format json) select 1 from ${listings} where ${where ?? sql`true`}`,
   );
   return rows[0]["QUERY PLAN"][0].Plan["Plan Rows"];
@@ -210,18 +269,19 @@ type PinRow = {
  * The first `limit` matches in the search's order, collected rather than
  * walked: the matches come from the location indexes (a bitmap), the first
  * `limit` are picked from them, and only those are read in full. Exported for
- * tests; `searchMapPins` decides when to use it.
+ * tests; `searchMapPins` decides when to use it, and passes its bounded transaction.
  */
 export async function locationPins(
   c: SearchCriteria,
   limit: number = MAX_PINS,
   scope?: LocationScope,
+  ex: Executor = db,
 ): Promise<MapPin[]> {
-  const where = buildWhere(c, undefined, scope ?? (await resolveScope(db, c)));
+  const where = buildWhere(c, undefined, scope ?? (await resolveScope(ex, c)));
   const order = sql.join(buildOrderBy(c), sql`, `);
   // buildOrderBy's column refs are qualified with "listings": the CTE rows
   // are aliased to that name so the same ORDER BY applies to them.
-  const { rows } = await db.execute<PinRow>(sql`
+  const { rows } = await ex.execute<PinRow>(sql`
     with matches as materialized (
       select "id", "is_featured", "list_date", "close_date", "photo_count", "list_price", "living_area_sqft", "lot_size_sqft"
       from ${listings}
