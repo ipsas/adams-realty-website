@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { dialogKeysOf, keyboardInset, nearestScrollTop, shouldDismissSwipe } from "./dialog";
+import {
+  DIALOG_BODY_CLASS,
+  dialogKeysOf,
+  keyboardInset,
+  nearestScrollTop,
+  shouldDismissSwipe,
+} from "./dialog";
 
 describe("keyboardInset", () => {
   it("is the part of the layout viewport covered below the visual viewport", () => {
@@ -57,5 +63,13 @@ describe("dialogKeysOf", () => {
     expect(dialogKeysOf({ __NA: true })).toEqual([]);
     expect(dialogKeysOf(null)).toEqual([]);
     expect(dialogKeysOf({ __dialogs: ["a", 3] })).toEqual(["a"]);
+  });
+});
+
+describe("DIALOG_BODY_CLASS", () => {
+  it("sizes the scroll body from its content so WebKit never collapses it to 0", () => {
+    const classes = DIALOG_BODY_CLASS.split(" ");
+    expect(classes).toEqual(expect.arrayContaining(["flex-auto", "min-h-0", "overflow-y-auto"]));
+    expect(classes).not.toContain("flex-1");
   });
 });

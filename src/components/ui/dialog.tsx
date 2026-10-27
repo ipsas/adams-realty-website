@@ -278,6 +278,12 @@ export function useDialogControls(): DialogControls {
 
 /* ───────────────────────── component ───────────────────────── */
 
+/**
+ * The scroll body. `flex-auto min-h-0`, not `flex-1`: the <dialog> only has a max-height, and
+ * WebKit resolves a 0 flex-basis to 0 in that indefinite-height column (header and footer only).
+ */
+export const DIALOG_BODY_CLASS = "min-h-0 flex-auto overflow-y-auto overscroll-contain";
+
 const mobileClasses: Record<DialogMobile, string> = {
   sheet:
     "phone:inset-x-0 phone:top-auto phone:bottom-[var(--kb-inset,0px)] phone:m-0 phone:w-full phone:max-w-none phone:max-h-[calc(100dvh-var(--kb-inset,0px)-var(--sai-top)-8px)] phone:rounded-t-3xl phone:rounded-b-none phone:pr-safe phone:pb-safe phone:pl-safe phone:data-keyboard:pb-0 phone:open:animate-sheet-up",
@@ -501,7 +507,7 @@ export function Dialog({
             </header>
           )}
         </div>
-        <div className="flex-1 overflow-y-auto overscroll-contain">{children}</div>
+        <div className={DIALOG_BODY_CLASS}>{children}</div>
         <div ref={slotRef} data-toast-slot className="relative h-0 shrink-0" />
         {footer && <footer className="shrink-0 border-t border-line px-6 py-4">{footer}</footer>}
       </ControlsContext.Provider>
