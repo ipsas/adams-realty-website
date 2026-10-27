@@ -1,4 +1,6 @@
+import { drizzle } from "drizzle-orm/pg-proxy";
 import { describe, expect, it } from "vitest";
+import type { Executor } from "@/db";
 import { ResoHttpError } from "./reso/client";
 import { UnexpectedResponseError } from "./reso/provider";
 import {
@@ -7,6 +9,7 @@ import {
   OFFICE_CHUNK,
   OFFICE_FRESH_MS,
   OFFICE_RUN_CAP,
+  officeLookupStore,
   refreshOffices,
   type OfficeLookupDeps,
 } from "./office-lookup";
@@ -252,5 +255,47 @@ describe("refreshOffices", () => {
       await expect(refreshOffices(deps)).resolves.toBe(0);
       expect(lines).toEqual([{ level: "warn", line }]);
     }
+  });
+});
+
+describe("officeLookupStore", () => {
+  it("never looks up the firm's own office IDs (isCompanyListing rows), only other offices", async () => {
+    // As upsertListing sets it: a feed listing is the firm's when its list
+    // office is one of the source's companyOfficeIds.
+    const companyOfficeIds = ["ADAM01", "ADAM02"];
+    const rows = ["ADAM01", "RMCR", "ADAM02"].map((listOfficeMlsId) => ({
+      listOfficeMlsId,
+      isCompanyListing: companyOfficeIds.includes(listOfficeMlsId),
+    }));
+    const queries: { sql: string; params: unknown[] }[] = [];
+    const db = drizzle(async (sql, params) => {
+      queries.push({ sql, params });
+      // The query must keep the firm's own rows out: answer it as Postgres would.
+      const flag = /"is_company_listing" = \$(\d+)/.exec(sql);
+      const wantsCompany = flag ? params[Number(flag[1]) - 1] : undefined;
+      if (wantsCompany !== false) return { rows: rows.map((r) => [r.listOfficeMlsId]) };
+      return {
+        rows: rows.filter((r) => !r.isCompanyListing).map((r) => [r.listOfficeMlsId]),
+      };
+    }) as unknown as Executor;
+    const requests: string[][] = [];
+    const deps: OfficeLookupDeps = {
+      ...officeLookupStore(db, "source-1"),
+      fetchOffices: async (chunk) => {
+        requests.push(chunk);
+        return [];
+      },
+      saveOffices: async () => {},
+      log: { info: () => {}, warn: () => {} },
+      now: () => NOW,
+      sleep: async () => {},
+    };
+    await refreshOffices(deps);
+    expect(queries).toHaveLength(1);
+    expect(queries[0].sql).toMatch(/"is_company_listing" = \$\d+/);
+    expect(queries[0].params).toContain("source-1");
+    expect(requests).toEqual([["RMCR"]]);
+    expect(requests.flat()).not.toContain("ADAM01");
+    expect(requests.flat()).not.toContain("ADAM02");
   });
 });
