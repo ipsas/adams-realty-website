@@ -9,17 +9,32 @@ const UPDATE_BATCH = 500;
 
 /**
  * Fills `keyword_tsv` where it is null (rows from before the column, and writes
- * that couldn't compute it), lowest id first, at most `limit` rows. The text is
- * built in JS (`keywordText`: the masker is JS). Only a row unchanged since it
- * was read is written (same `updated_at`, still null), so a sync write in
- * between wins. `updated_at` is left alone: the listing didn't change. Returns
- * how many rows it filled.
+ * that couldn't compute it), in batches of `limit` rows, lowest id first, until
+ * none are left or the deadline is near (a large table fills in a few cron runs,
+ * not a day of them). The text is built in JS (`keywordText`: the masker is JS).
+ * Only a row unchanged since it was read is written (same `updated_at`, still
+ * null), so a sync write in between wins. `updated_at` is left alone: the
+ * listing didn't change. Returns how many rows it filled.
  */
 export async function backfillKeywordTsv(
   db: Executor,
   { limit = 2000, deadline = Infinity }: { limit?: number; deadline?: number } = {},
 ): Promise<number> {
-  if (deadline - Date.now() < MIN_TIME_MS) return 0;
+  let filled = 0;
+  for (;;) {
+    const batch = await fillBatch(db, limit, deadline);
+    filled += batch.filled;
+    // Done, out of time, or every row read was changed meanwhile (reading them again could loop).
+    if (batch.read < limit || batch.stopped || batch.filled === 0) return filled;
+  }
+}
+
+async function fillBatch(
+  db: Executor,
+  limit: number,
+  deadline: number,
+): Promise<{ read: number; filled: number; stopped: boolean }> {
+  if (deadline - Date.now() < MIN_TIME_MS) return { read: 0, filled: 0, stopped: true };
   const rows = await db
     .select({
       id: listings.id,
@@ -42,7 +57,7 @@ export async function backfillKeywordTsv(
 
   let filled = 0;
   for (let i = 0; i < rows.length; i += UPDATE_BATCH) {
-    if (deadline - Date.now() < MIN_TIME_MS) break;
+    if (deadline - Date.now() < MIN_TIME_MS) return { read: rows.length, filled, stopped: true };
     const values = rows
       .slice(i, i + UPDATE_BATCH)
       .map((r) => sql`(${r.id}::uuid, ${r.updatedAt}::timestamptz, ${keywordTsv(keywordText(r))})`);
@@ -53,5 +68,5 @@ export async function backfillKeywordTsv(
         and ${listings.keywordTsv} is null`);
     filled += result.rowCount ?? 0;
   }
-  return filled;
+  return { read: rows.length, filled, stopped: false };
 }

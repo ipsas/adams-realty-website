@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
   outboxFails: false,
   backfills: [] as Array<Record<string, unknown>>,
   backfillFails: false,
+  backfilled: 7,
   order: [] as string[],
 }));
 vi.mock("@/db", () => ({ db: {} }));
@@ -26,7 +27,7 @@ vi.mock("@/lib/search/keyword-backfill", () => ({
     h.backfills.push(opts);
     h.order.push("backfill");
     if (h.backfillFails) throw new Error("connection terminated");
-    return 7;
+    return h.backfilled;
   },
 }));
 vi.mock("@/lib/leads/outbox", () => ({
@@ -107,6 +108,7 @@ beforeEach(() => {
   h.configured = false;
   h.backfills.length = 0;
   h.backfillFails = false;
+  h.backfilled = 7;
   h.order.length = 0;
   h.outcomes = [{ source: "gamls", ok: true, result: result() }];
 });
@@ -225,6 +227,15 @@ describe("GET /api/cron/sync", () => {
     expect(deadline).toBeGreaterThanOrEqual(before + (maxDuration - 45) * 1000);
     expect(deadline).toBeLessThanOrEqual(Date.now() + (maxDuration - 45) * 1000);
     expect(info.mock.calls).toContainEqual(["[cron] keyword search: filled 7 listings"]);
+    info.mockRestore();
+  });
+
+  it("logs nothing for the keyword backfill once there is nothing left to fill", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    h.backfilled = 0;
+    expect((await call()).status).toBe(200);
+    expect(h.backfills).toHaveLength(1);
+    expect(info.mock.calls.filter(([line]) => String(line).includes("keyword"))).toEqual([]);
     info.mockRestore();
   });
 

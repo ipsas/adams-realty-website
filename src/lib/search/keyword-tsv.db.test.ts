@@ -1,5 +1,5 @@
 import { asc, sql, type SQL } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db, type Executor } from "@/db";
 import { listings } from "@/db/schema";
 import { closeDb, createSource, insertListings, listing, resetDb } from "@/test/db/helpers";
@@ -80,27 +80,85 @@ describe("upsertListings", () => {
 describe("backfillKeywordTsv", () => {
   const clearAll = () => db.execute(sql`update listings set keyword_tsv = null`);
 
-  it("fills null rows in id order, up to the limit, and leaves updated_at alone", async () => {
+  /** `db`, counting selects, with `afterExecute` run after each update. */
+  const watched = (afterExecute: () => unknown = () => {}) => {
+    const seen = { selects: 0 };
+    const executor = {
+      select: (fields: Parameters<typeof db.select>[0]) => {
+        seen.selects++;
+        return db.select(fields);
+      },
+      execute: async (query: SQL) => {
+        const result = await db.execute(query);
+        await afterExecute();
+        return result;
+      },
+    } as unknown as Executor;
+    return { executor, seen };
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("fills every null row, batch after batch, and leaves updated_at alone", async () => {
     await insertListings(source, [
       listing(1, { description: RANCH, features: FEATURES }),
       listing(2, { description: "Bright bungalow." }),
       listing(3, { description: "Updated duplex." }),
+      listing(4),
+      listing(5),
     ]);
     await clearAll();
     const before = await rows();
 
-    expect(await backfillKeywordTsv(db, { limit: 2 })).toBe(2);
+    const { executor, seen } = watched();
+    expect(await backfillKeywordTsv(executor, { limit: 2 })).toBe(5);
+    expect(seen.selects).toBe(3);
     const after = await rows();
-    expect(after.map((r) => r.tsv !== null)).toEqual([true, true, false]);
+    expect(after.every((r) => r.tsv !== null)).toBe(true);
     expect(after.map((r) => r.updatedAt)).toEqual(before.map((r) => r.updatedAt));
     const ranch = after.find((r) => r.tsv?.includes("'ranch'"));
     expect(ranch?.tsv).not.toContain("4521");
     expect(ranch?.tsv).not.toContain("4455");
     expect(ranch?.tsv).toContain("'dryer'");
 
-    expect(await backfillKeywordTsv(db, { limit: 2 })).toBe(1);
-    expect((await rows()).every((r) => r.tsv !== null)).toBe(true);
     expect(await backfillKeywordTsv(db)).toBe(0);
+  });
+
+  it("fills lowest id first and starts no batch near the deadline", async () => {
+    await insertListings(source, [listing(1), listing(2), listing(3)]);
+    await clearAll();
+    // The first batch's update uses up the time: the clock jumps to 4 s before the deadline.
+    const now = Date.now;
+    const deadline = now() + 60_000;
+    let skew = 0;
+    vi.spyOn(Date, "now").mockImplementation(() => now() + skew);
+    const { executor, seen } = watched(() => {
+      skew = 56_000;
+    });
+
+    expect(await backfillKeywordTsv(executor, { limit: 2, deadline })).toBe(2);
+    expect(seen.selects).toBe(1);
+    expect((await rows()).map((r) => r.tsv !== null)).toEqual([true, true, false]);
+  });
+
+  it("stops when a batch fills none of the rows it read", async () => {
+    await insertListings(source, [listing(1), listing(2)]);
+    await clearAll();
+    // Every row is written again right after each read, so its guard never matches.
+    const { executor, seen } = watched();
+    const racing = {
+      select: (executor as unknown as typeof db).select,
+      execute: async (query: SQL) => {
+        await db.execute(sql`update listings set updated_at = updated_at + interval '1 second'`);
+        return executor.execute(query);
+      },
+    } as unknown as Executor;
+
+    expect(await backfillKeywordTsv(racing, { limit: 1 })).toBe(0);
+    expect(seen.selects).toBe(1);
+    expect((await rows()).every((r) => r.tsv === null)).toBe(true);
   });
 
   it("skips a row written after it was read", async () => {
@@ -124,10 +182,11 @@ describe("backfillKeywordTsv", () => {
     expect(after.find((r) => r.id === second.id)?.tsv).toBeTruthy();
   });
 
-  it("does nothing with too little time before the deadline", async () => {
+  it("does nothing with too little time before the deadline, or past it", async () => {
     await insertListings(source, [listing(1)]);
     await clearAll();
     expect(await backfillKeywordTsv(db, { deadline: Date.now() + 1000 })).toBe(0);
+    expect(await backfillKeywordTsv(db, { deadline: Date.now() - 1000 })).toBe(0);
     expect((await rows())[0].tsv).toBeNull();
   });
 });

@@ -42,8 +42,8 @@ const BUDGET_MS = (maxDuration - 45) * 1000;
  * `email_outbox` (src/lib/email-outbox.ts; a few per run within the sync's
  * budget, best effort).
  * Neither outcome changes the status. Then listings with no `keyword_tsv`
- * get one (`backfillKeywordTsv`, a batch per run in the time left; best
- * effort, not in the status). `email.configured` says whether
+ * get one (`backfillKeywordTsv`, batch after batch in the time left; best
+ * effort, not in the status, logged when it filled any). `email.configured` says whether
  * RESEND_API_KEY is set (false: nothing is being sent).
  */
 export async function GET(request: NextRequest) {
@@ -80,7 +80,9 @@ export async function GET(request: NextRequest) {
   );
   // Last, so it only uses time left over within the sync's budget.
   await backfillKeywordTsv(db, { deadline: started + BUDGET_MS }).then(
-    (filled) => console.info(`[cron] keyword search: filled ${filled} listings`),
+    (filled) => {
+      if (filled > 0) console.info(`[cron] keyword search: filled ${filled} listings`);
+    },
     (e) => console.error(`[cron] keyword backfill failed: ${describeError(e)}`),
   );
   const failed = results.some((r) => !r.ok);
