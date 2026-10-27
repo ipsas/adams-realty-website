@@ -10,7 +10,9 @@ const h = vi.hoisted(() => ({
   outcomes: [] as SourceSyncOutcome[],
   tags: [] as Array<[string, unknown]>,
   digests: [] as Array<Record<string, unknown>>,
+  configured: false,
 }));
+vi.mock("@/lib/email", () => ({ emailConfigured: () => h.configured }));
 
 vi.mock("@/lib/cron-auth", () => ({
   isCronAuthorized: (r: Request) => r.headers.get("authorization") === "Bearer secret",
@@ -122,6 +124,13 @@ describe("GET /api/cron/sync", () => {
     expect(deadline).toBeGreaterThanOrEqual(before + (maxDuration - 15) * 1000);
     expect(deadline).toBeLessThanOrEqual(Date.now() + (maxDuration - 15) * 1000);
     expect(await res.json()).toMatchObject({ digests: { ok: true } });
+  });
+
+  it("reports whether email is configured, as a boolean only", async () => {
+    h.configured = false;
+    expect((await (await call()).json()).email).toEqual({ configured: false });
+    h.configured = true;
+    expect((await (await call()).json()).email).toEqual({ configured: true });
   });
 
   it("answers 200 for a skipped incremental sync (recorded; the next run carries on)", async () => {

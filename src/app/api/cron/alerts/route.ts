@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/db";
 import { runAlerts } from "@/lib/alerts/run";
 import { isCronAuthorized } from "@/lib/cron-auth";
+import { emailConfigured } from "@/lib/email";
+import { createBatchBudget } from "@/lib/email-batch";
 import { runLeadDigests } from "@/lib/leads/digest";
 import { describeError } from "@/lib/mls/write-errors";
 import { pruneRateLimits } from "@/lib/rate-limit-db";
@@ -17,6 +19,7 @@ export const maxDuration = 300;
  *
  * It also sends the staff's 7 a.m. morning summary (src/lib/leads/digest.ts)
  * if a sync run didn't already. Never twice a day; its outcome is reported but doesn't change the status.
+ * `email.configured` says whether RESEND_API_KEY is set (false: nothing is being sent).
  */
 export async function GET(request: NextRequest) {
   if (!isCronAuthorized(request)) {
@@ -26,10 +29,15 @@ export async function GET(request: NextRequest) {
   await pruneRateLimits(db).catch((e) =>
     console.error(`[cron] rate limit prune failed: ${describeError(e)}`),
   );
-  const digests = await runLeadDigests({ deadline: Date.now() + 30_000 }).catch((e) => {
+  // One batch-mail guard for the whole request: the per-run cap and a 429 stop cover both jobs.
+  const budget = createBatchBudget({ db });
+  const digests = await runLeadDigests({ deadline: Date.now() + 30_000, budget }).catch((e) => {
     console.error(`[cron] morning summary failed: ${describeError(e)}`);
     return { ok: false as const };
   });
-  const result = await runAlerts({ deadline: Date.now() + 240_000 });
-  return NextResponse.json({ ...result, digests }, { status: result.ok ? 200 : 500 });
+  const result = await runAlerts({ deadline: Date.now() + 240_000, budget });
+  return NextResponse.json(
+    { ...result, digests, email: { configured: emailConfigured() } },
+    { status: result.ok ? 200 : 500 },
+  );
 }

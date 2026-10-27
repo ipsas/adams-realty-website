@@ -128,7 +128,7 @@ describe("sendEmail with a key", () => {
     expect(JSON.parse(String(init.body)).reply_to).toBe("office@adams.example");
   });
 
-  it("reports send_failed on an HTTP error and logs only kind, domain and status", async () => {
+  it("reports send_failed on an HTTP error and logs only kind, domain, status and the code", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(
@@ -137,10 +137,32 @@ describe("sendEmail with a key", () => {
       ),
     );
     expect(await sendEmail(email())).toEqual({ ok: false, reason: "send_failed" });
-    expect(output()).toEqual(["[email] kind=password-reset to_domain=example.com status=failed"]);
+    expect(output()).toEqual([
+      "[email] kind=password-reset to_domain=example.com status=failed http=500",
+    ]);
   });
 
-  it("reports send_failed when the request itself fails, without the error", async () => {
+  it("reports rate_limited on a 429, with the code but never Resend's reply", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response('{"message":"Too many requests for jordan.buyer@example.com"}', {
+            status: 429,
+          }),
+      ),
+    );
+    expect(await sendEmail(email({ kind: "search-alert" }))).toEqual({
+      ok: false,
+      reason: "rate_limited",
+    });
+    expect(output()).toEqual([
+      "[email] kind=search-alert to_domain=example.com status=failed http=429",
+    ]);
+    expect(output().join("\n")).not.toMatch(/Too many|jordan\.buyer|tok_SECRET123/);
+  });
+
+  it("reports send_failed when the request itself fails, without the error or a code", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => {

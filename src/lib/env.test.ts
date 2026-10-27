@@ -42,6 +42,26 @@ describe("NEXT_PUBLIC_SITE_URL", () => {
   });
 });
 
+describe("batch-mail limits", () => {
+  const shape = makeSchema(true, {}).shape;
+  it("default to 50 a run and 60 a day", () => {
+    expect(shape.EMAIL_BATCH_RUN_CAP.parse(undefined)).toBe(50);
+    expect(shape.EMAIL_BATCH_RUN_CAP.parse("")).toBe(50);
+    expect(shape.EMAIL_BATCH_DAILY_BUDGET.parse(undefined)).toBe(60);
+  });
+
+  it("take a whole number, 0 included (pauses batch mail)", () => {
+    expect(shape.EMAIL_BATCH_RUN_CAP.parse("20")).toBe(20);
+    expect(shape.EMAIL_BATCH_DAILY_BUDGET.parse("0")).toBe(0);
+  });
+
+  it("fall back to the default on a bad value instead of failing startup", () => {
+    expect(shape.EMAIL_BATCH_RUN_CAP.parse("lots")).toBe(50);
+    expect(shape.EMAIL_BATCH_DAILY_BUDGET.parse("-5")).toBe(60);
+    expect(shape.EMAIL_BATCH_DAILY_BUDGET.parse("2.5")).toBe(60);
+  });
+});
+
 describe("vercelSiteUrl", () => {
   it("is undefined in production, whatever deploy hosts exist", () => {
     expect(

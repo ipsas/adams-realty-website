@@ -172,11 +172,33 @@ describe("alertWindows", () => {
     expect(next.listings.start).toEqual(createdAt);
   });
 
-  it("caps how far back a window reaches", () => {
+  it("caps how far back a window reaches at 24 hours", () => {
+    expect(MAX_WINDOW_MS).toBe(24 * 60 * 60_000);
     const now = at("2026-09-25T12:00:00Z");
     const w = alertWindows({ createdAt: at("2026-01-01T00:00:00Z"), lastRunAt: null, now });
     expect(now.getTime() - w.listings.start.getTime()).toBe(MAX_WINDOW_MS);
     expect(now.getTime() - w.events.start.getTime()).toBe(MAX_WINDOW_MS);
+  });
+
+  it("treats a backlog as seen: a search last alerted 10 days ago covers only the last day", () => {
+    const now = at("2026-09-25T12:00:00Z");
+    const w = alertWindows({
+      createdAt: at("2026-08-01T00:00:00Z"),
+      lastRunAt: at("2026-09-15T12:00:00Z"),
+      now,
+    });
+    const dayAgo = at("2026-09-24T12:00:00Z");
+    expect(w.listings.start).toEqual(dayAgo);
+    expect(w.events.start).toEqual(dayAgo);
+    expect(inWindow(at("2026-09-20T12:00:00Z"), w.listings)).toBe(false);
+    expect(inWindow(at("2026-09-25T09:00:00Z"), w.listings)).toBe(true);
+  });
+
+  it("starts a never-run search created 15 days ago 24 hours back, not at creation", () => {
+    const now = at("2026-09-25T12:00:00Z");
+    const w = alertWindows({ createdAt: at("2026-09-10T12:00:00Z"), lastRunAt: null, now });
+    expect(w.listings.start).toEqual(at("2026-09-24T12:00:00Z"));
+    expect(w.events.start).toEqual(at("2026-09-24T12:00:00Z"));
   });
 
   it("treats windows as half-open", () => {

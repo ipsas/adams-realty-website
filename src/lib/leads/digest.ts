@@ -5,6 +5,7 @@ import { agents, leadDigests, users } from "@/db/schema";
 import { displayAgentEmail } from "@/lib/agents/display-email";
 import { localClock, SEND_HOUR } from "@/lib/alerts/schedule";
 import { emailConfigured, sendEmail, type SendEmail } from "@/lib/email";
+import { createBatchBudget, type BatchBudget } from "@/lib/email-batch";
 import { leadDigestEmail, type DigestLead, type DigestSection } from "@/lib/email-templates";
 import { env } from "@/lib/env";
 import { describeError } from "@/lib/mls/write-errors";
@@ -56,7 +57,7 @@ export type DigestRunResult = {
   /** Already handled today by an earlier run. */
   alreadyDone: number;
   failed: number;
-  /** Not started before the deadline; the next run picks them up. */
+  /** Not started before the deadline or the batch-mail guard's stop; the next run picks them up. */
   deferred: number;
 };
 
@@ -77,6 +78,8 @@ export type RunLeadDigestsOptions = {
   timeZone?: string;
   /** Epoch ms after which no new recipient is started. */
   deadline?: number;
+  /** The batch-mail guard, shared with the cron request's other batch jobs. Default: a new one. */
+  budget?: BatchBudget;
 };
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0] || name;
@@ -179,6 +182,7 @@ export async function runLeadDigests(opts: RunLeadDigestsOptions = {}): Promise<
   const siteUrl = opts.siteUrl ?? env.NEXT_PUBLIC_SITE_URL;
   const timeZone = opts.timeZone ?? site.market.timeZone;
   const deadline = opts.deadline ?? Number.POSITIVE_INFINITY;
+  const budget = opts.budget ?? createBatchBudget({ db, now });
   const clock = localClock(now, timeZone);
   const result: DigestRunResult = {
     ok: true,
@@ -199,7 +203,9 @@ export async function runLeadDigests(opts: RunLeadDigestsOptions = {}): Promise<
   const recipients = await digestRecipients(db);
   result.recipients = recipients.length;
   for (const r of recipients) {
-    if (Date.now() > deadline) {
+    // Out of time or of batch sends (email-batch.ts): the day stays unclaimed for the next run.
+    const slot = Date.now() > deadline ? null : await budget.reserve(send);
+    if (!slot) {
       result.deferred++;
       continue;
     }
@@ -222,7 +228,7 @@ export async function runLeadDigests(opts: RunLeadDigestsOptions = {}): Promise<
           siteUrl,
           timeZone,
         });
-        const sent = await send({
+        const sent = await slot.send({
           kind: "lead-digest",
           to: r.email,
           subject: email.subject,
@@ -247,6 +253,8 @@ export async function runLeadDigests(opts: RunLeadDigestsOptions = {}): Promise<
     } catch (error) {
       result.failed++;
       console.error(`[digest] ${r.key} failed: ${describeError(error)}`);
+    } finally {
+      await slot.release();
     }
   }
   result.ok = result.failed === 0;

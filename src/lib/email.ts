@@ -38,8 +38,12 @@ export type EmailKind =
   | "saved-home-digest"
   | "sync-alert";
 
+/**
+ * `rate_limited`: Resend answered 429 (its send rate or daily quota), so batch
+ * runs stop for the rest of the run. Every other failure is `send_failed`.
+ */
 export type SendResult =
-  { ok: true } | { ok: false; reason: "email_not_configured" | "send_failed" };
+  { ok: true } | { ok: false; reason: "email_not_configured" | "send_failed" | "rate_limited" };
 
 export type SendEmail = (email: Email) => Promise<SendResult>;
 
@@ -65,11 +69,14 @@ function recipientDomains(to: Email["to"]): string {
 }
 
 /**
- * The one log line per send attempt: the template, the recipient domains and
- * the outcome. Never the address, subject, body, links or Resend's reply.
+ * The one log line per send attempt: the template, the recipient domains, the
+ * outcome and, for an HTTP error, its status code. Never the address, subject,
+ * body, links or Resend's reply.
  */
-function logSend(email: Email, status: "sent" | "failed" | "not_configured") {
-  const line = `[email] kind=${email.kind} to_domain=${recipientDomains(email.to)} status=${status}`;
+function logSend(email: Email, status: "sent" | "failed" | "not_configured", http?: number) {
+  const line =
+    `[email] kind=${email.kind} to_domain=${recipientDomains(email.to)} status=${status}` +
+    (http ? ` http=${http}` : "");
   if (status === "sent") console.info(line);
   else if (status === "failed") console.error(line);
   else console.warn(line);
@@ -116,8 +123,8 @@ export async function sendEmail(email: Email): Promise<SendResult> {
     return { ok: false, reason: "send_failed" };
   }
   if (!res.ok) {
-    logSend(email, "failed");
-    return { ok: false, reason: "send_failed" };
+    logSend(email, "failed", res.status);
+    return { ok: false, reason: res.status === 429 ? "rate_limited" : "send_failed" };
   }
   logSend(email, "sent");
   return { ok: true };

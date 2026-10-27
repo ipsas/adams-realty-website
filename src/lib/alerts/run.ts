@@ -3,6 +3,7 @@ import { site } from "@/config/site";
 import { db as defaultDb, type Executor } from "@/db";
 import { savedSearches, users } from "@/db/schema";
 import { emailConfigured, listUnsubscribeHeaders, sendEmail, type SendEmail } from "@/lib/email";
+import { createBatchBudget, type BatchBudget } from "@/lib/email-batch";
 import { absoluteUrl, savedHomesUpdateEmail, savedSearchAlertEmail } from "@/lib/email-templates";
 import { gamlsLastSyncedAt } from "@/lib/mls/last-updated";
 import { describeError } from "@/lib/mls/write-errors";
@@ -31,7 +32,9 @@ import { HOME_ALERTS_SCOPE, unsubscribeUrls } from "./token";
  * Safe to re-run at any time: windows tile exactly, claims are atomic and
  * leased (overlapping runs skip each other's rows), and a failed send
  * releases its claim so the next run retries it. Work not started before the
- * deadline is left for the next run.
+ * deadline, or once the batch-mail guard says stop (per-run cap, daily
+ * budget, a 429 from Resend: src/lib/email-batch.ts), is left unclaimed for
+ * the next run.
  */
 
 export type AlertRunResult = {
@@ -45,7 +48,7 @@ export type AlertRunResult = {
     /** Claimed by an overlapping run. */
     skipped: number;
     failed: number;
-    /** Not started before the deadline; the next run picks them up. */
+    /** Not started before the deadline or the batch-mail guard's stop; the next run picks them up. */
     deferred: number;
   };
   homes: { users: number; emailed: number; skipped: number; failed: number; deferred: number };
@@ -61,6 +64,8 @@ export type RunAlertsOptions = {
   /** Epoch ms after which no new work starts. */
   deadline?: number;
   timeZone?: string;
+  /** The batch-mail guard, shared with the cron request's other batch jobs. Default: a new one. */
+  budget?: BatchBudget;
 };
 
 type SearchRow = {
@@ -81,6 +86,7 @@ export async function runAlerts(opts: RunAlertsOptions = {}): Promise<AlertRunRe
   const send = opts.send ?? sendEmail;
   const deadline = opts.deadline ?? Number.POSITIVE_INFINITY;
   const timeZone = opts.timeZone ?? site.market.timeZone;
+  const budget = opts.budget ?? createBatchBudget({ db, now });
 
   const result: AlertRunResult = {
     ok: true,
@@ -115,18 +121,22 @@ export async function runAlerts(opts: RunAlertsOptions = {}): Promise<AlertRunRe
   result.searches.due = due.length;
 
   for (const search of due) {
-    if (Date.now() > deadline) {
+    // Out of time or of batch sends (email-batch.ts): left unclaimed, still due next run.
+    const slot = Date.now() > deadline ? null : await budget.reserve(send);
+    if (!slot) {
       result.searches.deferred++;
       continue;
     }
     try {
-      const outcome = await processSearch(db, search, now, send);
+      const outcome = await processSearch(db, search, now, slot.send);
       if (outcome === "skipped") result.searches.skipped++;
       else result.searches.evaluated++;
       if (outcome === "emailed") result.searches.emailed++;
     } catch (error) {
       result.searches.failed++;
       console.error(`[alerts] saved search ${search.id} failed: ${describeError(error)}`);
+    } finally {
+      await slot.release();
     }
   }
 
@@ -141,12 +151,13 @@ export async function runAlerts(opts: RunAlertsOptions = {}): Promise<AlertRunRe
   result.homes.users = byUser.size;
 
   for (const [userId, { email, listingIds }] of byUser) {
-    if (Date.now() > deadline) {
+    const slot = Date.now() > deadline ? null : await budget.reserve(send);
+    if (!slot) {
       result.homes.deferred++;
       continue;
     }
     try {
-      const outcome = await processHomes(db, { userId, email, listingIds }, now, send);
+      const outcome = await processHomes(db, { userId, email, listingIds }, now, slot.send);
       if (outcome === "skipped") result.homes.skipped++;
       if (outcome === "emailed") result.homes.emailed++;
     } catch (error) {
@@ -154,6 +165,8 @@ export async function runAlerts(opts: RunAlertsOptions = {}): Promise<AlertRunRe
       console.error(
         `[alerts] saved-home digest for user ${userId} failed: ${describeError(error)}`,
       );
+    } finally {
+      await slot.release();
     }
   }
 

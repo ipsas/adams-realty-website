@@ -14,6 +14,13 @@ const optional = z
   .optional()
   .transform((v) => (v ? v : undefined));
 
+/** A whole number ≥ 0; unset or invalid, `fallback` (a typo mustn't stop the app booting). */
+const count = (fallback: number) =>
+  optional.transform((v) => {
+    const n = Number(v);
+    return v !== undefined && Number.isInteger(n) && n >= 0 ? n : fallback;
+  });
+
 /**
  * On Vercel, fall back to the deployment's own URL so preview deployments work
  * without configuring NEXT_PUBLIC_SITE_URL. Never in production: a deploy host
@@ -66,6 +73,16 @@ export const makeSchema = (strict: boolean, e: Record<string, string | undefined
      */
     RESEND_API_KEY: optional,
     EMAIL_FROM: z.string().default("Adams Realty <hello@example.com>"),
+    /**
+     * Batch mail (search alerts, saved-home digests, the staff's morning summary) per cron
+     * request; the rest waits for the next run. Default 50. See src/lib/email-batch.ts.
+     */
+    EMAIL_BATCH_RUN_CAP: count(50),
+    /**
+     * Batch mail per UTC day across every instance, kept below Resend's 100/day free quota so
+     * password resets and lead notices always have room. Default 60.
+     */
+    EMAIL_BATCH_DAILY_BUDGET: count(60),
     /** Reply-To for emails that don't set their own (e.g. the office inbox). Unset: none. */
     EMAIL_REPLY_TO: z
       .string()

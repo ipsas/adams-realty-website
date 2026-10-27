@@ -30,8 +30,13 @@ export const SEND_HOUR = 7;
 const MINUTE = 60_000;
 const DAY = 86_400_000;
 
-/** A window never reaches back further than this — e.g. after alerts were off or the cron was down. */
-export const MAX_WINDOW_MS = 8 * DAY;
+/**
+ * A window never reaches back further than this — e.g. after alerts were off,
+ * email wasn't configured or the cron was down. Anything older is treated as
+ * already seen, so turning email on (or back on) can't send a week's backlog
+ * at once: each subscription gets at most the last day's changes.
+ */
+export const MAX_WINDOW_MS = DAY;
 
 /**
  * Listing events (price cuts, status changes) are stamped with the MLS's own
@@ -129,7 +134,8 @@ export type Window = { start: Date; end: Date };
  * Consecutive runs tile exactly: each run stores `now` as its last-run time,
  * and the next run starts where this one ended (both shifted back by the same
  * settle period), so nothing is sent twice or skipped. Neither window starts
- * before the subscription existed or reaches back more than MAX_WINDOW_MS.
+ * before the subscription existed or reaches back more than MAX_WINDOW_MS
+ * (24 hours), however long ago the last run was.
  */
 export function alertWindows(input: { createdAt: Date; lastRunAt: Date | null; now: Date }): {
   listings: Window;

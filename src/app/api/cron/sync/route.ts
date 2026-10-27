@@ -1,6 +1,7 @@
 import { revalidateTag } from "next/cache";
 import { NextResponse, type NextRequest } from "next/server";
 import { isCronAuthorized } from "@/lib/cron-auth";
+import { emailConfigured } from "@/lib/email";
 import { runLeadDigests } from "@/lib/leads/digest";
 import { LISTINGS_TAG } from "@/lib/listings/cache-tags";
 import { syncAllSources } from "@/lib/mls/sync";
@@ -32,7 +33,8 @@ const BUDGET_MS = (maxDuration - 45) * 1000;
  * Every run (every 15 minutes on Vercel Pro) also tries the staff's 7 a.m.
  * morning summary (src/lib/leads/digest.ts), so it goes out by about 7:15
  * Eastern: before 7 a.m. it does nothing, and it never sends twice a day.
- * Its outcome doesn't change the status.
+ * Its outcome doesn't change the status. `email.configured` says whether
+ * RESEND_API_KEY is set (false: nothing is being sent).
  */
 export async function GET(request: NextRequest) {
   if (!isCronAuthorized(request)) {
@@ -55,5 +57,8 @@ export async function GET(request: NextRequest) {
     },
   );
   const failed = results.some((r) => !r.ok);
-  return NextResponse.json({ results, digests }, { status: failed ? 500 : 200 });
+  return NextResponse.json(
+    { results, digests, email: { configured: emailConfigured() } },
+    { status: failed ? 500 : 200 },
+  );
 }

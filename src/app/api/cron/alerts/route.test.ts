@@ -9,15 +9,20 @@ const h = vi.hoisted(() => ({
   digests: [] as Array<Record<string, unknown>>,
   digestFails: false,
   alerts: 0,
+  alertOpts: [] as Array<Record<string, unknown>>,
+  configured: false,
 }));
+vi.mock("@/lib/email", () => ({ emailConfigured: () => h.configured }));
+vi.mock("@/lib/email-batch", () => ({ createBatchBudget: () => ({ budget: "shared" }) }));
 vi.mock("@/lib/cron-auth", () => ({
   isCronAuthorized: (r: Request) => r.headers.get("authorization") === "Bearer secret",
 }));
 vi.mock("@/lib/rate-limit-db", () => ({ pruneRateLimits: async () => {} }));
 vi.mock("@/db", () => ({ db: {} }));
 vi.mock("@/lib/alerts/run", () => ({
-  runAlerts: async () => {
+  runAlerts: async (opts: Record<string, unknown>) => {
     h.alerts++;
+    h.alertOpts.push(opts);
     return { ok: true, searches: {}, homes: {}, durationMs: 1 };
   },
 }));
@@ -37,6 +42,8 @@ beforeEach(() => {
   h.digests = [];
   h.digestFails = false;
   h.alerts = 0;
+  h.alertOpts = [];
+  h.configured = false;
 });
 
 describe("GET /api/cron/alerts", () => {
@@ -54,6 +61,18 @@ describe("GET /api/cron/alerts", () => {
     expect(h.digests[0].deadline as number).toBeLessThanOrEqual(Date.now() + 30_000);
     expect(h.alerts).toBe(1);
     expect(await res.json()).toMatchObject({ ok: true, digests: { ok: true, emailed: 2 } });
+  });
+
+  it("gives the summary and the alerts one shared batch-mail guard", async () => {
+    await call();
+    expect(h.digests[0].budget).toEqual({ budget: "shared" });
+    expect(h.alertOpts[0].budget).toBe(h.digests[0].budget);
+  });
+
+  it("reports whether email is configured, as a boolean only", async () => {
+    expect((await (await call()).json()).email).toEqual({ configured: false });
+    h.configured = true;
+    expect((await (await call()).json()).email).toEqual({ configured: true });
   });
 
   it("still runs the alerts when the summary fails", async () => {
