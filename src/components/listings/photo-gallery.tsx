@@ -37,8 +37,10 @@ export function PhotoGallery({ photos, alt }: { photos: GalleryPhoto[]; alt: str
   useEffect(() => {
     if (open === null) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowRight") step(1);
-      if (e.key === "ArrowLeft") step(-1);
+      if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+      // Otherwise a focused thumbnail also nudges the strip, cancelling its scroll to the new photo.
+      e.preventDefault();
+      step(e.key === "ArrowRight" ? 1 : -1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
