@@ -104,6 +104,17 @@ describe("mapResoProperty", () => {
     });
     expect(mapResoProperty({ ...base, ListPrice: 0 })).toMatchObject({ reason: "missing_price" });
     expect(mapResoProperty({ ...base, City: "" })).toMatchObject({ reason: "missing_address" });
+    expect(mapResoProperty({ ...base, StateOrProvince: "" })).toMatchObject({
+      reason: "missing_address",
+    });
+  });
+
+  it("stores Georgia as GA, however the feed spells it", () => {
+    for (const s of ["Georgia", "GEORGIA", " ga ", "GA"]) {
+      expect(mapOk({ ...base, StateOrProvince: s }).state, s).toBe("GA");
+    }
+    expect(mapOk({ ...base, StateOrProvince: "AL" }).state).toBe("AL");
+    expect(mapOk({ ...base, StateOrProvince: "tx" }).state).toBe("TX");
   });
 
   it("rejects unsupported statuses and property types", () => {

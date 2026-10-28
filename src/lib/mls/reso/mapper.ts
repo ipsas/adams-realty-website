@@ -1,6 +1,7 @@
 import { isNullLike } from "@/lib/format";
 import { EXCLUDED_FIELDS, withoutExcludedFields } from "@/lib/listings/excluded-fields";
 import { normalizeTaxYear } from "@/lib/listings/tax-year";
+import { normalizeState } from "@/lib/market-state";
 import type { MapResult, NormalizedListing, NormalizedMedia, NormalizedOpenHouse } from "../types";
 
 /**
@@ -541,7 +542,7 @@ export function mapResoProperty(p: ResoProperty): MapResult {
     addressLine1: titleCaseIfShouting(street),
     unitNumber: str(p.UnitNumber),
     city: titleCaseIfShouting(city),
-    state: state.toUpperCase(),
+    state: normalizeState(state),
     postalCode,
     county: str(p.CountyOrParish),
     // Georgia MLS sends "None" (or "none") for no subdivision.

@@ -187,4 +187,9 @@ describe("sanitizeListing", () => {
     expect(sanitizeListing(listing()).nulled).toBe(0);
     warn.mockRestore();
   });
+
+  it("stores the state canonically", () => {
+    expect(sanitizeListing(listing({ state: " Georgia " })).listing.state).toBe("GA");
+    expect(sanitizeListing(listing({ state: "al" })).listing.state).toBe("AL");
+  });
 });

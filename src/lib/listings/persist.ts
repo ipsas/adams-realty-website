@@ -7,6 +7,7 @@ import {
   openHouses,
   type DataSourceConfig,
 } from "@/db/schema";
+import { normalizeState } from "@/lib/market-state";
 import type { NormalizedListing, NormalizedMedia, NormalizedOpenHouse } from "@/lib/mls/types";
 import {
   KEYWORD_FIELDS,
@@ -318,7 +319,7 @@ export function listingLabel(n: Pick<NormalizedListing, "listingKey" | "mlsNumbe
 /**
  * The listing with values its numeric columns (and its media's) can't hold
  * nulled, so one bad feed value can't fail the batch (./sanitize.ts), and how
- * many values that was.
+ * many values that was. Its state is stored canonically (`normalizeState`).
  */
 export function sanitizeListing(n: NormalizedListing): {
   listing: NormalizedListing;
@@ -333,6 +334,8 @@ export function sanitizeListing(n: NormalizedListing): {
   };
   const listing = {
     ...sanitizeNumeric(listings, n, label, warn),
+    // Canonical even for writes that bypass the mapper (seed, dashboard): "Georgia" → "GA".
+    state: normalizeState(n.state),
     media: n.media.map((m) => sanitizeNumeric(listingMedia, m, label, warn)),
   };
   return { listing, nulled };
