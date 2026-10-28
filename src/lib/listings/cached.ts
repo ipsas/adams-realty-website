@@ -2,9 +2,10 @@ import { unstable_cache } from "next/cache";
 import { cache } from "react";
 import { areas as allAreas } from "@/config/areas";
 import { getAreaStats } from "@/lib/areas/queries";
-import { emptyStats, type AreaStats, type AreaSummary } from "@/lib/areas/stats";
+import { emptyStats, marketToday, type AreaStats, type AreaSummary } from "@/lib/areas/stats";
+import { RESO_MAPPER_VERSION } from "@/lib/mls/reso/mapper";
 import { LISTINGS_CACHE_SECONDS, LISTINGS_TAG } from "./cache-tags";
-import type { ListingCardData } from "./card";
+import { CARD_SHAPE_VERSION, type ListingCardData } from "./card";
 import {
   getFeaturedListings,
   getMarketStats,
@@ -28,9 +29,21 @@ import {
  * every path and its Date fields revived. Outside production the cache is
  * skipped (still with the JSON round trip): `npm run db:reset` under a running
  * dev server would otherwise serve the old database's rows for 15 minutes.
+ *
+ * Every key names the code that wrote the entry (CACHE_VERSION), so a
+ * deployment or rollback never reads entries of another shape, and every call
+ * passes the market's date, so an entry written before midnight in the
+ * market's time zone (the "New" badge, this week's counts) is never served
+ * after it, even stale-while-revalidate after a quiet night.
  */
 
 const CACHE_ENABLED = process.env.NODE_ENV === "production";
+
+export const CACHE_VERSION = [
+  `card-v${CARD_SHAPE_VERSION}`,
+  `mapper-v${RESO_MAPPER_VERSION}`,
+  process.env.VERCEL_GIT_COMMIT_SHA || "local",
+];
 
 function listingsCache<A extends Array<string | number>, R>(
   key: string,
@@ -38,11 +51,14 @@ function listingsCache<A extends Array<string | number>, R>(
   revive: (json: R) => R = (json) => json,
 ): (...args: A) => Promise<R> {
   const load = async (...args: A): Promise<R> => JSON.parse(JSON.stringify(await query(...args)));
-  const cached = unstable_cache(load, [key], {
-    tags: [LISTINGS_TAG],
-    revalidate: LISTINGS_CACHE_SECONDS,
-  });
-  return async (...args: A) => revive(await (CACHE_ENABLED ? cached : load)(...args));
+  // The market date is only part of the entry's key; the query reads its own clock.
+  const cached = unstable_cache(
+    (_marketDate: string, ...args: A) => load(...args),
+    [key, ...CACHE_VERSION],
+    { tags: [LISTINGS_TAG], revalidate: LISTINGS_CACHE_SECONDS },
+  );
+  return async (...args: A) =>
+    revive(await (CACHE_ENABLED ? cached(marketToday(), ...args) : load(...args)));
 }
 
 // Every Date-typed field, so JSON's strings become Dates again. The Record

@@ -445,7 +445,11 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                     <Fact
                       icon={<Clock />}
                       label="On market"
-                      value={`${formatNumber(l.daysOnMarket)} day${l.daysOnMarket === 1 ? "" : "s"}`}
+                      value={
+                        l.daysOnMarket === 0
+                          ? daysOnMarketLabel(0)!
+                          : `${formatNumber(l.daysOnMarket)} day${l.daysOnMarket === 1 ? "" : "s"}`
+                      }
                     />
                   )}
                   {l.mlsNumber && <Fact icon={<Hash />} label="MLS #" value={l.mlsNumber} />}
