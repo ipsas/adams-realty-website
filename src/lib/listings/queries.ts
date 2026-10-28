@@ -438,18 +438,27 @@ export type PlacesIndexCounty = {
  */
 export async function getPlacesIndex(): Promise<PlacesIndexCounty[]> {
   // An out-of-state listing's county ("Clay", AL) is not the state's county of
-  // that name: its town goes in the no-county block.
-  const county = sql<string | null>`(case when ${inMarketState()} then ${listings.county} else null end)`;
-  const rows = await db
+  // that name: its town goes in the no-county block. Computed in a subquery so
+  // the outer group/order by see one column, not separately bound parameters.
+  const forSale = db
     .select({
-      county,
+      county: sql<string | null>`(case when ${inMarketState()} then ${listings.county} else null end)`.as(
+        "county",
+      ),
       city: listings.city,
-      count: sql<number>`count(*)::int`,
     })
     .from(listings)
     .where(forSaleNow())
-    .groupBy(county, listings.city)
-    .orderBy(sql`${county} asc nulls last`, listings.city);
+    .as("for_sale");
+  const rows = await db
+    .select({
+      county: forSale.county,
+      city: forSale.city,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(forSale)
+    .groupBy(forSale.county, forSale.city)
+    .orderBy(sql`${forSale.county} asc nulls last`, forSale.city);
   const out: PlacesIndexCounty[] = [];
   for (const r of rows) {
     const last = out.at(-1);
