@@ -460,6 +460,22 @@ export function countyLabel(area: Pick<Area, "counties">): string {
   return `${c.slice(0, -1).join(", ")} and ${c[c.length - 1]} counties`;
 }
 
+/** Area guides linked from the home page's "Popular:" chips under the hero search, in display order. */
+export const HOME_TOWN_GUIDE_SLUGS = [
+  "gainesville",
+  "lake-lanier",
+  "flowery-branch",
+  "oakwood",
+  "buford",
+  "braselton",
+  "commerce",
+  "royston",
+  "lavonia",
+  "hartwell",
+  "lake-hartwell",
+  "toccoa",
+] as const;
+
 export function areaHref(area: Pick<Area, "slug">): string {
   return `/areas/${area.slug}`;
 }
