@@ -52,6 +52,7 @@ describe("getFeaturedListings", () => {
     const rows = await db
       .select({
         id: listings.id,
+        state: listings.state,
         city: listings.city,
         county: listings.county,
         neighborhood: listings.neighborhood,

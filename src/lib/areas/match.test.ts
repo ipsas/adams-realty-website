@@ -63,10 +63,10 @@ describe("areaCondition", () => {
       `btrim(regexp_replace(lower("listings"."${col}"), '[^a-z0-9]+', ' ', 'g')) = any(array[$${n + 2}, $${n + 3}]::text[]))`;
     expect(sql).toBe(
       `((${match("neighborhood", 1)} or ${match("water_body", 5)}) and ` +
-        `("listings"."county" is null or regexp_replace(btrim(regexp_replace(lower("listings"."county"), '[^a-z0-9]+', ' ', 'g')), ' county$', '') = any(array[$9, $10, $11]::text[])))`,
+        `(upper(btrim("listings"."state")) in ($9, $10) and ("listings"."county" is null or regexp_replace(btrim(regexp_replace(lower("listings"."county"), '[^a-z0-9]+', ' ', 'g')), ' county$', '') = any(array[$11, $12, $13]::text[]))))`,
     );
     const keys = ["%lake%", "%hartwell%", "lake hartwell", "hartwell lake"];
-    expect(params).toEqual([...keys, ...keys, "hart", "franklin", "stephens"]);
+    expect(params).toEqual([...keys, ...keys, "GA", "GEORGIA", "hart", "franklin", "stephens"]);
   });
 
   it("adds the city clause only for town-level areas", () => {
@@ -133,10 +133,12 @@ describe("county scoping", () => {
     expect(params).toEqual(Object.keys(COUNTY_NAME_EXCEPTIONS));
   });
 
-  it("keeps listings with no county, or in one of the area's counties", () => {
+  it("keeps Georgia listings with no county, or in one of the area's counties", () => {
     const { sql, params } = dialect.sqlToQuery(inAreaCounties(area("Jefferson")));
-    expect(sql.startsWith(`("listings"."county" is null or `)).toBe(true);
-    expect(params).toEqual(["jackson"]);
+    expect(
+      sql.startsWith(`(upper(btrim("listings"."state")) in ($1, $2) and ("listings"."county" is null or `),
+    ).toBe(true);
+    expect(params).toEqual(["GA", "GEORGIA", "jackson"]);
   });
 });
 

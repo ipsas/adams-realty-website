@@ -1,6 +1,7 @@
 import { sql, type AnyColumn, type SQL } from "drizzle-orm";
 import { findArea, normalizeAreaName, type Area } from "@/config/areas";
 import { listings } from "@/db/schema";
+import { inMarketState } from "@/lib/market-state";
 
 /**
  * How listings are assigned to a neighborhood guide. Pure (no database
@@ -18,7 +19,8 @@ import { listings } from "@/db/schema";
  *   Hoschton in Braselton) also match `listings.city`, county-scoped the same way.
  * - A listing with a county must be in one of the area's `counties`. Names
  *   repeat across a statewide feed: a subdivision called "Jefferson" in
- *   Chatham County is not Jefferson, Jackson County.
+ *   Chatham County is not Jefferson, Jackson County. Every listing must be
+ *   in Georgia (`inMarketState`), with or without a county.
  * - Comparisons ignore case and punctuation on both sides (`normalizeAreaName`
  *   and its SQL twin below), so "Hartwell-Lake" in a feed still matches.
  */
@@ -132,11 +134,15 @@ export function canonicalCountySql(value: AnyColumn | SQL): SQL {
   )}) then replace(${key}, ' ', '') else ${key} end)`;
 }
 
-/** The listing has no county, or it is one of the area's. */
+/**
+ * The listing is in Georgia, and has no county or one of the area's. An
+ * out-of-state listing never counts, even without a county: a Gainesville, FL
+ * home is not in the Gainesville guide.
+ */
 export function inAreaCounties(area: Pick<Area, "counties">): SQL {
-  return sql`(${listings.county} is null or ${normalizedCountySql(listings.county)} = any(${textArray(
+  return sql`(${inMarketState()} and (${listings.county} is null or ${normalizedCountySql(listings.county)} = any(${textArray(
     area.counties.map(normalizeCounty),
-  )}))`;
+  )})))`;
 }
 
 /** A `text[]` literal built from bound parameters. */

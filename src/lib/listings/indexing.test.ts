@@ -39,6 +39,7 @@ describe("listingIndexingMode", () => {
 
 describe("listingRobots", () => {
   const listing = (over: Partial<IndexableListing> = {}): IndexableListing => ({
+    state: "GA",
     city: "Royston",
     county: "Franklin",
     neighborhood: null,
@@ -64,6 +65,10 @@ describe("listingRobots", () => {
     expect(listingRobots(listing(outOfArea), "area")).toEqual(noindex);
     // No county: it can't be placed, so it's outside.
     expect(listingRobots(listing({ county: null }), "area")).toEqual(noindex);
+    // A same-name county in another state: Jackson County, NC is not the firm's.
+    expect(
+      listingRobots(listing({ city: "Sylva", county: "Jackson", state: "NC" }), "area"),
+    ).toEqual(noindex);
   });
 
   it("noindexes sold listings, even the firm's own in its area", () => {

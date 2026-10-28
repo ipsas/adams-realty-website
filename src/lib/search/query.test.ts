@@ -354,7 +354,7 @@ describe("a county search", () => {
       const { sql, params } = dialect.sqlToQuery(countyCondition(county));
       expect(sql).toContain(`lower("listings"."county") like any(array[$1, $2]::text[])`);
       expect(sql).toContain(`' county$', '') = any(array[$3, $4]::text[])`);
-      expect(params).toEqual(["dekalb%", "de%", "dekalb", "de kalb", "GA"]);
+      expect(params).toEqual(["dekalb%", "de%", "dekalb", "de kalb", "GA", "GEORGIA"]);
     }
     expect(dialect.sqlToQuery(countyCondition("Mc'Duffie")).params).toEqual([
       "mcduffie%",
@@ -362,6 +362,7 @@ describe("a county search", () => {
       "mcduffie",
       "mc duffie",
       "GA",
+      "GEORGIA",
     ]);
   });
 
@@ -369,8 +370,8 @@ describe("a county search", () => {
     for (const county of ["Clay County", "DeKalb"]) {
       const { sql, params } = dialect.sqlToQuery(countyCondition(county));
       expect(sql).toMatch(/^\(lower\("listings"\."county"\) like /);
-      expect(sql).toContain(`"listings"."state" = $`);
-      expect(params.at(-1)).toBe("GA");
+      expect(sql).toContain(`upper(btrim("listings"."state")) in ($`);
+      expect(params.slice(-2)).toEqual(["GA", "GEORGIA"]);
     }
   });
 

@@ -5,6 +5,7 @@ import { agents, listings } from "@/db/schema";
 import { selectCards, withPhotos } from "@/lib/listings/card";
 import { SQFT_PER_ACRE } from "@/lib/listings/land";
 import { publicListing } from "@/lib/listings/visibility";
+import { inMarketState } from "@/lib/market-state";
 import {
   areaCondition,
   areaKeyRows,
@@ -54,7 +55,7 @@ type StatsRow = {
  * Live market stats for any number of areas in one query. Each listing's
  * neighborhood, lake (water_body), city and county are normalized once (only
  * for rows that pass the LIKE prefilter), then hash-joined to one row per
- * (area, key), keeping listings in the area's counties (or with no county);
+ * (area, key), keeping Georgia listings in the area's counties (or with no county);
  * `union` dedupes a listing that matches an area more than one way. A listing counts once per area it
  * belongs to, and medians are true medians. Dates are the market's calendar
  * dates, not the server's. (~0.2s for 50k listings × 20 areas on a laptop;
@@ -106,7 +107,7 @@ export async function getAreaStats(
         ${normalizedSql(L.city)} as city,
         ${normalizedCountySql(L.county)} as county
       from ${L}
-      where ${L.removedAt} is null and not ${L.idxHidden}
+      where ${L.removedAt} is null and not ${L.idxHidden} and ${inMarketState()}
         and (lower(${L.neighborhood}) like any(${textArray(prefilterPatterns(neighborhoodKeys))})
           or lower(${L.waterBodyName}) like any(${textArray(prefilterPatterns(neighborhoodKeys))})
           or lower(${L.city}) like any(${textArray(prefilterPatterns(cityKeys))}))

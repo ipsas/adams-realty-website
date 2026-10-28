@@ -19,10 +19,10 @@ import {
   textArray,
 } from "@/lib/areas/match";
 import { formatStreet } from "@/lib/format";
+import { inMarketState } from "@/lib/market-state";
 import {
   defaultBuyConditions,
   defaultTypesCondition,
-  inMarketState,
   listedWithin,
   soldWithin,
 } from "@/lib/search/query";

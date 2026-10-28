@@ -2,6 +2,7 @@ import { sql, type SQL } from "drizzle-orm";
 import { areas } from "@/config/areas";
 import { site } from "@/config/site";
 import { listings } from "@/db/schema";
+import { inMarketState, isMarketState } from "@/lib/market-state";
 import {
   areaCondition,
   guideForLocation,
@@ -22,9 +23,11 @@ import {
  * Braselton homes in Barrow). Names alone never count: a subdivision called
  * "Jefferson" in Chatham County is not Jefferson, Jackson County. A listing
  * with no county can't be placed, so it is outside (it still gets the
- * question form, which is always safe).
+ * question form, which is always safe). Georgia only: county names repeat
+ * across states, and Jackson County, NC is not Jackson County, GA.
  */
 export type FirmAreaListing = {
+  state: string | null;
   county: string | null;
   city: string | null;
   neighborhood?: string | null;
@@ -34,7 +37,7 @@ export type FirmAreaListing = {
 const FIRM_COUNTIES = site.market.counties.map(normalizeCounty);
 
 export function isFirmArea(l: FirmAreaListing): boolean {
-  if (!l.county) return false;
+  if (!l.county || !isMarketState(l.state)) return false;
   if (FIRM_COUNTIES.includes(normalizeCounty(l.county))) return true;
   return !!guideForLocation(l.neighborhood, l.city, l.county, l.waterBodyName);
 }
@@ -50,7 +53,7 @@ export function offersTours(l: FirmAreaListing & { isCompanyListing: boolean }):
 /** SQL twin of `isFirmArea`, for listing queries. */
 export function firmAreaCondition(): SQL {
   const guides = areas.map((a) => areaCondition(a));
-  return sql`(${listings.county} is not null and (${normalizedCountySql(listings.county)} = any(${textArray(
+  return sql`(${listings.county} is not null and ${inMarketState()} and (${normalizedCountySql(listings.county)} = any(${textArray(
     FIRM_COUNTIES,
   )}) or ${sql.join(guides, sql` or `)}))`;
 }

@@ -4,6 +4,7 @@ import { site } from "@/config/site";
 import { firmAreaCondition, isFirmArea, offersTours } from "./firm-area";
 
 const at = (city: string, county: string | null, over: Record<string, string | null> = {}) => ({
+  state: "GA",
   city,
   county,
   neighborhood: null,
@@ -58,6 +59,20 @@ describe("isFirmArea", () => {
     expect(isFirmArea(at("Savannah", null))).toBe(false);
     expect(isFirmArea(at("Royston", null))).toBe(false);
   });
+
+  it("is Georgia only: same-name counties in other states are outside", () => {
+    expect(isFirmArea(at("Sylva", "Jackson", { state: "NC" }))).toBe(false);
+    expect(isFirmArea(at("Huntsville", "Madison", { state: "AL" }))).toBe(false);
+    expect(isFirmArea(at("Grand Island", "Hall", { state: "NE" }))).toBe(false);
+    expect(isFirmArea(at("Gainesville", "Hall", { state: "" }))).toBe(false);
+    expect(isFirmArea(at("Gainesville", "Hall", { state: null }))).toBe(false);
+  });
+
+  it("accepts Georgia however the state is spelled", () => {
+    for (const state of ["Georgia", "GEORGIA", " ga "]) {
+      expect(isFirmArea(at("Gainesville", "Hall", { state })), state).toBe(true);
+    }
+  });
 });
 
 describe("offersTours", () => {
@@ -65,6 +80,13 @@ describe("offersTours", () => {
     expect(offersTours({ ...at("Savannah", "Chatham"), isCompanyListing: true })).toBe(true);
     expect(offersTours({ ...at("Royston", "Franklin"), isCompanyListing: false })).toBe(true);
     expect(offersTours({ ...at("Savannah", "Chatham"), isCompanyListing: false })).toBe(false);
+    // The firm's own listing out of state still offers tours.
+    expect(
+      offersTours({ ...at("Sylva", "Jackson", { state: "NC" }), isCompanyListing: true }),
+    ).toBe(true);
+    expect(
+      offersTours({ ...at("Sylva", "Jackson", { state: "NC" }), isCompanyListing: false }),
+    ).toBe(false);
   });
 });
 
@@ -74,6 +96,12 @@ describe("firmAreaCondition", () => {
   it("requires a county and checks the firm's counties", () => {
     expect(sql).toMatch(/^\("listings"\."county" is not null and/);
     for (const c of site.market.counties) expect(params).toContain(c.toLowerCase());
+  });
+
+  it("requires Georgia, in any spelling", () => {
+    expect(sql).toContain('upper(btrim("listings"."state")) in (');
+    expect(params).toContain("GA");
+    expect(params).toContain("GEORGIA");
   });
 
   it("also admits each area guide, county-scoped", () => {

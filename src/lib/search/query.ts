@@ -27,6 +27,7 @@ import {
 } from "@/lib/areas/match";
 import { ACCESS_CODE_PG, ACCESS_CODE_PG_REPLACEMENT } from "@/lib/listings/excluded-fields";
 import { publicConditions } from "@/lib/listings/visibility";
+import { inMarketState } from "@/lib/market-state";
 import { marketDateDaysAgo } from "@/lib/time";
 import { allowsPriceReduced, DEFAULT_CRITERIA, type SearchCriteria } from "./params";
 
@@ -113,15 +114,6 @@ export function countyKey(q: string | undefined): string | undefined {
   const text = normalizeLocationQuery(stripPartialState(q));
   if (!text || /^\d{5}$/.test(text) || lakeGuide(q)) return undefined;
   return normalizeCounty(normalizeAreaName(text).replace(PARTIAL_COUNTY_WORD, "")) || undefined;
-}
-
-/**
- * Listings in the market's state (`listings.state` is the feed's
- * StateOrProvince). County names repeat across states ("Clay", "Lee"), so a
- * county is only ever one of the state's.
- */
-export function inMarketState(): SQL {
-  return sql`${listings.state} = ${site.market.state}`;
 }
 
 /**
