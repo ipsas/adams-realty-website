@@ -158,6 +158,12 @@ function weighted<T extends string>(weights: Partial<Record<T, number>>): T {
 
 const NOW = new Date();
 const daysAgo = (d: number) => new Date(NOW.getTime() - d * 86_400_000);
+/**
+ * A feed listing's "listed" event is dated when the sync first saw it (diffEvents), so one
+ * seeded with a price drop days ago was first synced no later than the drop: its history
+ * never shows a change before the listing.
+ */
+const firstSynced = (droppedAt: Date | null) => (droppedAt ? { now: droppedAt } : {});
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
 const ACRE = 43_560;
 
@@ -944,6 +950,7 @@ async function main() {
       listing.listAgentPhone = agent?.phone ?? null;
       listing.listAgentMlsId = agent?.mlsAgentId ?? null;
     }
+    const droppedAt = priceDropFrom ? daysAgo(intBetween(3, 15)) : null;
     const { id } = await db.transaction((tx) =>
       upsertListing(
         tx,
@@ -954,16 +961,20 @@ async function main() {
               listAgentId: agent?.id ?? null,
               isFeatured: listing.status === "active" && i % 3 === 0,
             }
-          : { agentIdsByMlsId, isFeatured: ours && listing.status === "active" && i % 4 === 1 },
+          : {
+              agentIdsByMlsId,
+              isFeatured: ours && listing.status === "active" && i % 4 === 1,
+              ...firstSynced(droppedAt),
+            },
       ),
     );
     listingIds.push(id);
     if (agent) ourListings.push({ id, agentId: agent.id, price: listing.listPrice });
-    if (priceDropFrom) {
+    if (priceDropFrom && droppedAt) {
       await db.insert(listingEvents).values({
         listingId: id,
         type: "price_change",
-        occurredAt: daysAgo(intBetween(3, 15)),
+        occurredAt: droppedAt,
         price: listing.listPrice,
         previousPrice: priceDropFrom,
       });
@@ -1062,15 +1073,20 @@ async function main() {
       activeIf,
     });
     perArea.set(area.slug, (perArea.get(area.slug) ?? 0) + 1);
+    const droppedAt = priceDropFrom ? daysAgo(intBetween(3, 15)) : null;
     // Other brokerages only: Adams Realty's own listings stay in Northeast Georgia.
     const { id } = await db.transaction((tx) =>
-      upsertListing(tx, toSource(demoSource), listing, { agentIdsByMlsId, isFeatured: false }),
+      upsertListing(tx, toSource(demoSource), listing, {
+        agentIdsByMlsId,
+        isFeatured: false,
+        ...firstSynced(droppedAt),
+      }),
     );
-    if (priceDropFrom) {
+    if (priceDropFrom && droppedAt) {
       await db.insert(listingEvents).values({
         listingId: id,
         type: "price_change",
-        occurredAt: daysAgo(intBetween(3, 15)),
+        occurredAt: droppedAt,
         price: listing.listPrice,
         previousPrice: priceDropFrom,
       });

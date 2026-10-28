@@ -117,6 +117,8 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
   const data = await getListingBySlug(slug);
   if (!data) notFound();
   const { listing: l, media, openHouses, events, agent, source } = data;
+  // A feed listing's history carries no dates (src/lib/listings/public-history.ts).
+  const datedHistory = events.every((e) => e.occurredAt);
   const [similar, session, actor, lastSynced] = await Promise.all([
     getSimilarListings(l),
     getSession(),
@@ -475,7 +477,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                     <table className="w-full text-sm">
                       <thead className="bg-sunken text-left text-xs tracking-wide text-muted uppercase">
                         <tr>
-                          <th className="px-4 py-3 font-medium">Date</th>
+                          {datedHistory && <th className="px-4 py-3 font-medium">Date</th>}
                           <th className="px-4 py-3 font-medium">Event</th>
                           <th className="px-4 py-3 text-right font-medium">Price</th>
                         </tr>
@@ -483,7 +485,11 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                       <tbody className="divide-y divide-line bg-surface">
                         {events.map((e) => (
                           <tr key={e.id}>
-                            <td className="px-4 py-3 text-ink-soft">{formatDate(e.occurredAt)}</td>
+                            {datedHistory && (
+                              <td className="px-4 py-3 text-ink-soft">
+                                {e.occurredAt && formatDate(e.occurredAt)}
+                              </td>
+                            )}
                             <td className="px-4 py-3 text-ink">{eventLabel(e)}</td>
                             <td className="px-4 py-3 text-right text-ink tabular">
                               {formatPrice(e.price)}
