@@ -47,7 +47,7 @@ import { can } from "@/lib/auth/permissions";
 import { cn } from "@/lib/cn";
 import { env } from "@/lib/env";
 import {
-  daysSince,
+  daysOnMarketLabel,
   formatBaths,
   formatCityLine,
   formatDate,
@@ -181,7 +181,8 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
   });
   // Tours only where our agents work (or on our own listings); elsewhere, a question to the office.
   const tours = offersTours(l);
-  const dom = daysSince(l.listDate);
+  // Computed on the server from the internal list date (getListingBySlug); null when unknown.
+  const dom = daysOnMarketLabel(l.daysOnMarket);
   const street = formatStreet(l);
   // Rows synced before the mapper dropped placeholders can still hold "None".
   const neighborhood = isNullLike(l.neighborhood) ? null : l.neighborhood;
@@ -280,13 +281,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
               {/* Summary */}
               <div className="flex flex-wrap items-center gap-2">
                 <StatusPill status={l.status} transactionType={l.transactionType} />
-                {dom !== null && dom >= 0 && !sold && (
-                  <span className="text-sm text-muted">
-                    {dom === 0
-                      ? "Listed today"
-                      : `${dom} day${dom === 1 ? "" : "s"} on ${site.name}`}
-                  </span>
-                )}
+                {dom && <span className="text-sm text-muted">{dom}</span>}
                 {l.isCompanyListing && (
                   <span className="rounded-full bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-800">
                     Adams Realty listing
@@ -444,7 +439,13 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                       value={`${formatPrice(l.taxAnnualAmount)}/yr`}
                     />
                   ) : null}
-                  <Fact icon={<Clock />} label="Listed" value={formatDate(l.listDate)} />
+                  {l.daysOnMarket !== null && (
+                    <Fact
+                      icon={<Clock />}
+                      label="On market"
+                      value={`${formatNumber(l.daysOnMarket)} day${l.daysOnMarket === 1 ? "" : "s"}`}
+                    />
+                  )}
                   {l.mlsNumber && <Fact icon={<Hash />} label="MLS #" value={l.mlsNumber} />}
                 </dl>
               </Section>
@@ -905,7 +906,6 @@ function JsonLd({ data }: { data: ListingDetail }) {
     "@type": "RealEstateListing",
     name: formatFullAddress(l),
     url: `${env.NEXT_PUBLIC_SITE_URL.replace(/\/+$/, "")}/homes/${l.slug}`,
-    datePosted: l.listDate ?? undefined,
     description: l.description ? redactAccessCodes(l.description) : undefined,
     image: data.media
       .filter((m) => m.kind === "photo")
