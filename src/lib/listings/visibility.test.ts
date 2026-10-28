@@ -28,14 +28,33 @@ describe("Georgia MLS display rules", () => {
       const l = { fromFeed: false, status, removedAt: null };
       expect(isIdxHidden(l), status).toBe(hidden);
       expect(canShowDetails(l), status).toBe(!hidden);
-      expect(allowedPhotos(l, PHOTOS), status).toEqual(hidden ? [] : PHOTOS);
+      const sold = status === "closed";
+      expect(allowedPhotos(l, PHOTOS), status).toEqual(
+        hidden ? [] : sold ? ["primary.jpg"] : PHOTOS,
+      );
     }
   });
 
-  it("keep every photo of the firm's own visible listings, sold ones included", () => {
-    for (const status of ["active", "active_under_contract", "pending", "closed"]) {
+  it("keep every photo of the firm's own live listings", () => {
+    for (const status of ["active", "active_under_contract", "pending"]) {
       expect(primaryPhotoOnly({ fromFeed: false, status }), status).toBe(false);
       expect(allowedPhotos({ fromFeed: false, status }, PHOTOS), status).toEqual(PHOTOS);
+    }
+  });
+
+  it("show the firm's own sold listings with their primary photo only, like any other firm's", () => {
+    const sold = { fromFeed: false, status: "closed", removedAt: null };
+    expect(canShowDetails(sold)).toBe(true);
+    expect(primaryPhotoOnly(sold)).toBe(true);
+    expect(allowedPhotos(sold, PHOTOS)).toEqual(["primary.jpg"]);
+    expect(allowedPhotos(sold, [])).toEqual([]);
+  });
+
+  it("limit every off-market status to the primary photo, from the feed or not", () => {
+    for (const status of PRIMARY_PHOTO_ONLY_STATUSES) {
+      for (const fromFeed of [true, false]) {
+        expect(primaryPhotoOnly({ fromFeed, status }), `${status} fromFeed=${fromFeed}`).toBe(true);
+      }
     }
   });
 

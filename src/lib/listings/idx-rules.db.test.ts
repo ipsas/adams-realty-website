@@ -28,7 +28,7 @@ import { IDX_HIDDEN_STATUSES, isIdxHidden } from "./visibility";
 // Georgia MLS IDX display rules on real queries, with feed rows ("fixtures")
 // in every status next to the firm's own manual listings in the same statuses:
 // hidden statuses stay off every public surface for both (the firm hides its
-// own the same way), sold feed listings carry one photo, and the dashboard
+// own the same way), sold listings carry one photo (the firm's own too), and the dashboard
 // still shows staff every one of the firm's listings.
 
 const STATUSES = listings.status.enumValues;
@@ -304,16 +304,17 @@ describe("hidden listings stay off every public surface, the firm's own included
 });
 
 describe("photos", () => {
-  it("a sold feed listing's page has its primary photo only; live ones have all", async () => {
+  it("a sold listing's page has its primary photo only, the firm's own too; live ones have all", async () => {
     const sold = await getListingBySlug(await slugOf("feed:closed"));
     expect(sold!.media.map((m) => m.url)).toEqual(["https://photos.example.com/5/0.jpg"]);
     const pending = await getListingBySlug(await slugOf("feed:pending"));
     expect(pending!.media).toHaveLength(3);
     const manualSold = await getListingBySlug(await slugOf("manual:closed"));
-    expect(manualSold!.media).toHaveLength(3);
+    expect(manualSold!.media).toHaveLength(1);
+    expect(manualSold!.media[0].url).toMatch(/\/0\.jpg$/);
   });
 
-  it("cards: one photo for sold feed homes, none for hidden ones (a saved home), all otherwise", async () => {
+  it("cards: one photo for sold homes, none for hidden ones (a saved home), all otherwise", async () => {
     const rows = await selectCards(db).where(inArray(listings.id, [...labels.keys()]));
     const cards = await withPhotos(db, rows);
     const count = new Map(cards.map((c) => [labels.get(c.id)!, c.photos.length]));
@@ -324,7 +325,7 @@ describe("photos", () => {
       expect(count.get(`feed:${status}`), status).toBe(0);
       expect(count.get(`manual:${status}`), status).toBe(0);
     }
-    expect(count.get("manual:closed")).toBe(3);
+    expect(count.get("manual:closed")).toBe(1);
   });
 });
 
