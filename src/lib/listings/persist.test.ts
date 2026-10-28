@@ -24,11 +24,19 @@ function listing(overrides: Partial<NormalizedListing> = {}): NormalizedListing 
 }
 
 describe("diffEvents", () => {
-  it("records a new listing as listed", () => {
-    const events = diffEvents("id", null, listing(), now);
+  it("records a new manual listing as listed on its staff-entered list date", () => {
+    const events = diffEvents("id", null, listing(), now, false);
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ type: "listed", price: 500000, toStatus: "active" });
     expect(events[0].occurredAt).toEqual(new Date("2026-09-01T12:00:00Z"));
+  });
+
+  it("dates a new feed listing by the sync, never by its (DaysOnMarket-derived) list date", () => {
+    const modified = new Date("2026-09-24T15:30:00Z");
+    const [listed] = diffEvents("id", null, listing({ sourceModifiedAt: modified }), now, true);
+    expect(listed).toMatchObject({ type: "listed", occurredAt: modified });
+    // Without a modification or status time, the sync's own time.
+    expect(diffEvents("id", null, listing(), now, true)[0].occurredAt).toEqual(now);
   });
 
   it("records listed + sold for a listing first seen as closed", () => {
@@ -37,6 +45,7 @@ describe("diffEvents", () => {
       null,
       listing({ status: "closed", closePrice: 490000, closeDate: "2026-09-20" }),
       now,
+      true,
     );
     expect(events.map((e) => e.type)).toEqual(["listed", "sold"]);
     expect(events[1].price).toBe(490000);
@@ -48,6 +57,7 @@ describe("diffEvents", () => {
       { listPrice: 525000, status: "active", removedAt: null },
       listing(),
       now,
+      true,
     );
     expect(events).toEqual([
       expect.objectContaining({ type: "price_change", price: 500000, previousPrice: 525000 }),
@@ -60,6 +70,7 @@ describe("diffEvents", () => {
       { listPrice: 500000, status: "active", removedAt: null },
       listing({ status: "pending" }),
       now,
+      true,
     );
     expect(pending).toEqual([
       expect.objectContaining({ type: "status_change", fromStatus: "active", toStatus: "pending" }),
@@ -70,13 +81,20 @@ describe("diffEvents", () => {
       { listPrice: 500000, status: "pending", removedAt: null },
       listing({ status: "closed", closePrice: 510000, listPrice: 500000 }),
       now,
+      true,
     );
     expect(sold).toEqual([expect.objectContaining({ type: "sold", price: 510000 })]);
   });
 
   it("records nothing when nothing changed", () => {
     expect(
-      diffEvents("id", { listPrice: 500000, status: "active", removedAt: null }, listing(), now),
+      diffEvents(
+        "id",
+        { listPrice: 500000, status: "active", removedAt: null },
+        listing(),
+        now,
+        true,
+      ),
     ).toEqual([]);
   });
 
@@ -86,6 +104,7 @@ describe("diffEvents", () => {
       { listPrice: 500000, status: "active", removedAt: new Date() },
       listing(),
       now,
+      true,
     );
     expect(events.map((e) => e.type)).toEqual(["relisted"]);
   });

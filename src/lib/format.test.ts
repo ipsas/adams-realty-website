@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cutAtWord,
+  daysOnMarket,
+  daysOnMarketLabel,
   daysSince,
   formatBaths,
   formatChangeChip,
@@ -87,13 +89,40 @@ describe("format", () => {
     expect(daysSince("2026-09-30", new Date("2026-09-25T15:00:00Z"))).toBeLessThan(0);
   });
 
+  describe("daysOnMarket", () => {
+    it("counts whole calendar days from the market date", () => {
+      expect(daysOnMarket("2026-12-20", "2026-12-20")).toBe(0);
+      expect(daysOnMarket("2026-12-19", "2026-12-20")).toBe(1);
+      expect(daysOnMarket("2026-10-25", "2026-10-28")).toBe(3);
+      // Across the DST change (2026-11-01 in New York) and a year end.
+      expect(daysOnMarket("2026-10-31", "2026-11-02")).toBe(2);
+      expect(daysOnMarket("2026-12-30", "2027-01-02")).toBe(3);
+    });
+
+    it("is null when unknown or not on market yet", () => {
+      expect(daysOnMarket("2026-12-21", "2026-12-20")).toBeNull();
+      expect(daysOnMarket(null, "2026-12-20")).toBeNull();
+      expect(daysOnMarket(undefined, "2026-12-20")).toBeNull();
+      expect(daysOnMarket("", "2026-12-20")).toBeNull();
+      expect(daysOnMarket("not a date", "2026-12-20")).toBeNull();
+    });
+
+    it("labels it", () => {
+      expect(daysOnMarketLabel(0)).toBe("Listed today");
+      expect(daysOnMarketLabel(1)).toBe("1 day on market");
+      expect(daysOnMarketLabel(12)).toBe("12 days on market");
+      expect(daysOnMarketLabel(null)).toBeNull();
+    });
+  });
+
   describe("isNewListing", () => {
     afterEach(() => vi.useRealTimers());
 
     const cases = () => {
+      expect(isNewListing("2026-12-20", "2026-12-20")).toBe(true); // today
       expect(isNewListing("2026-12-13", "2026-12-20")).toBe(true); // 7 days
       expect(isNewListing("2026-12-12", "2026-12-20")).toBe(false); // 8 days
-      expect(isNewListing("2026-12-25", "2026-12-20")).toBe(true); // future: the existing rule
+      expect(isNewListing("2026-12-25", "2026-12-20")).toBe(false); // future: not on market yet
       expect(isNewListing(null, "2026-12-20")).toBe(false);
     };
 
@@ -285,7 +314,13 @@ describe("cutAtWord and listingMetaDescription", () => {
 
 describe("formatDisplayPhone", () => {
   it("formats US numbers as xxx-xxx-xxxx", () => {
-    for (const raw of ["8505723287", "850-572-3287", "(850) 572-3287", "+1 850 572 3287", "18505723287"]) {
+    for (const raw of [
+      "8505723287",
+      "850-572-3287",
+      "(850) 572-3287",
+      "+1 850 572 3287",
+      "18505723287",
+    ]) {
       expect(formatDisplayPhone(raw)).toBe("850-572-3287");
     }
   });

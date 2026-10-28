@@ -281,7 +281,12 @@ governs every listing that came from the feed. Adams Realty, Inc. is the license
   showing contact and requirements). gamls2 doesn't permit `OriginalEntryTimestamp`, so an
   active listing's list date is its `ModificationTimestamp`'s New York date minus `DaysOnMarket`
   (`listDateFromDaysOnMarket`); coming soon has none, and other statuses (DOM frozen at the
-  contract) keep the stored date. Tests feed a record carrying all of them through
+  contract) keep the stored date. That date equals the OnMarketDate for most listings, so it is
+  internal: it filters, sorts and counts in SQL, but no page, payload, JSON-LD, sitemap or email
+  carries it. Cards get a server-computed `isNew` (`cardColumns`), the property page a day count
+  (`daysOnMarket` in `src/lib/format.ts`, via `getListingBySlug`), and a feed listing's first
+  "listed" history event is dated by the sync (`diffEvents`); `list-date-private.db.test.ts`
+  checks the payloads. Tests feed a record carrying all of them through
   the mapper and into the database and look for them.
 - **Corrections (§6):** `/listing-corrections` publishes the phone and email
   (`site.mls.corrections`) and a form (inquiry `source = 'report'`, emailed to the corrections

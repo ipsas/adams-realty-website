@@ -228,7 +228,9 @@ export async function upsertListings(
     const events: EventInsert[] = [];
     for (const { n } of toWrite) {
       const previous = previousByKey.get(n.listingKey);
-      events.push(...diffEvents(saved.get(n.listingKey)!, previous ?? null, n, now));
+      events.push(
+        ...diffEvents(saved.get(n.listingKey)!, previous ?? null, n, now, source.kind !== "manual"),
+      );
     }
     for (const batch of chunk(events, 3_000)) await tx.insert(listingEvents).values(batch);
 
@@ -443,12 +445,18 @@ type PreviousState = {
   removedAt: Date | null;
 };
 
-/** History events implied by the change from `previous` to `next`. Exported for tests. */
+/**
+ * History events implied by the change from `previous` to `next`. The history is public, so
+ * a feed listing's "listed" event is dated by the sync, never by its list date (derived from
+ * DaysOnMarket, it's the OnMarketDate Georgia MLS Exhibit C keeps off the site); a manual
+ * listing's staff-entered list date isn't MLS data. Exported for tests.
+ */
 export function diffEvents(
   listingId: string,
   previous: PreviousState | null,
   next: NormalizedListing,
   now: Date,
+  fromFeed: boolean,
 ): EventInsert[] {
   const at = next.statusChangedAt ?? next.sourceModifiedAt ?? now;
   if (!previous) {
@@ -456,7 +464,7 @@ export function diffEvents(
       {
         listingId,
         type: "listed",
-        occurredAt: next.listDate ? new Date(`${next.listDate}T12:00:00Z`) : at,
+        occurredAt: !fromFeed && next.listDate ? new Date(`${next.listDate}T12:00:00Z`) : at,
         price: next.originalListPrice ?? next.listPrice,
         toStatus: next.status === "closed" ? "active" : next.status,
       },
