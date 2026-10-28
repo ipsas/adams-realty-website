@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { agents, listings } from "@/db/schema";
 import { selectCards, withPhotos } from "@/lib/listings/card";
 import { SQFT_PER_ACRE } from "@/lib/listings/land";
-import { publicListing } from "@/lib/listings/visibility";
+import { hidesListDate, publicListing } from "@/lib/listings/visibility";
 import { inMarketState } from "@/lib/market-state";
 import {
   areaCondition,
@@ -84,9 +84,11 @@ export async function getAreaStats(
   // $/acre is how land is compared (site review #8): bare land and farms with a lot size.
   const hasAcres = sql`${forSale} and ${L.propertyType} in ('land', 'farm_ranch') and coalesce(${L.livingAreaSqft}, 0) = 0 and coalesce(${L.bedrooms}, 0) = 0 and ${L.lotSizeSqft} > 0`;
   // Days on market and new listings are drawn from the same for-sale rows as
-  // forSale, so every tile describes the homes it counts.
-  const onMarket = sql`${forSale} and ${L.listDate} <= ${today}::date`;
-  const hasListDate = sql`${forSale} and ${L.listDate} is not null`;
+  // forSale, so every tile describes the homes it counts. A hidden list date
+  // (hidesListDate, e.g. a feed coming_soon listing) never counts in either,
+  // nor makes the new-listings tile show.
+  const onMarket = sql`${forSale} and ${L.listDate} <= ${today}::date and not ${hidesListDate()}`;
+  const hasListDate = sql`${forSale} and ${L.listDate} is not null and not ${hidesListDate()}`;
   const median = (expr: SQL, where: SQL) =>
     sql`percentile_cont(0.5) within group (order by ${expr}) filter (where ${where})`;
   const count = (where: SQL) => sql`count(*) filter (where ${where})::int`;
@@ -144,7 +146,7 @@ export async function getAreaStats(
       ${count(hasAcres)} as "pricePerAcreSample",
       ${median(sql`${today}::date - ${L.listDate}`, onMarket)}::int as "medianDaysOnMarket",
       ${count(onMarket)} as "daysOnMarketSample",
-      ${count(sql`${forSale} and ${L.listDate} between ${newSince}::date and ${today}::date`)} as "newListings",
+      ${count(sql`${hasListDate} and ${L.listDate} between ${newSince}::date and ${today}::date`)} as "newListings",
       ${count(hasListDate)} as "listDateSample",
       ${count(sold)} as "recentSales",
       ${median(sql`${L.closePrice}`, sql`${sold} and ${L.closePrice} > 0`)}::int as "medianSoldPrice",
