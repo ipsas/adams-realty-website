@@ -93,8 +93,8 @@ const CARD_PHOTOS = 5;
 /**
  * Attaches the first few photo URLs to each card (for the swipeable card
  * carousel): none for a listing in a hidden status (a saved home that since
- * went off market), the primary one only for sold and off-market feed
- * listings (`allowedPhotos`).
+ * went off market), the primary one only for sold and off-market
+ * listings, the firm's own included (`allowedPhotos`).
  */
 export async function withPhotos(db: Executor, rows: CardRow[]): Promise<ListingCardData[]> {
   if (!rows.length) return [];
