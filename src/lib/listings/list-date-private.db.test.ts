@@ -39,6 +39,9 @@ const allDates = [listDate, ...Object.values(boundary)];
 
 const ids = new Map<string, string>();
 let slug: string;
+// A staff-entered listing: its list date isn't MLS data, and its history keeps its dates.
+const manualListDate = "2026-01-15";
+let manualSlug: string;
 
 const royston = { city: "Royston", county: "Franklin", postalCode: "30662" };
 
@@ -47,7 +50,7 @@ beforeAll(async () => {
   const mls = await createSource();
   const now = new Date();
   const rows = [
-    // Its "listed" event is dated by the sync (`sourceModifiedAt`), not the list date.
+    // Its "listed" event is dated by the sync, not the list date; the page gets no event dates.
     [
       "main",
       listing(1, {
@@ -83,6 +86,12 @@ beforeAll(async () => {
     .select({ slug: listings.slug })
     .from(listings)
     .where(inArray(listings.id, [ids.get("main")!]));
+  const adams = await createSource({ slug: "adams", kind: "manual", config: {} });
+  const [manualId] = await insertListings(adams, [listing(6, { listDate: manualListDate })]);
+  [{ slug: manualSlug }] = await db
+    .select({ slug: listings.slug })
+    .from(listings)
+    .where(inArray(listings.id, [manualId]));
 });
 afterAll(closeDb);
 
@@ -103,6 +112,23 @@ describe("the property page's data", () => {
     // The history's "listed" event too (diffEvents).
     expect(detail!.events.map((e) => e.type)).toContain("listed");
     expectNoListDate(detail, "getListingBySlug");
+  });
+
+  it("carries a feed listing's history without dates (publicHistory)", async () => {
+    const detail = await getListingBySlug(slug);
+    expect(detail!.events.length).toBeGreaterThan(0);
+    const json = JSON.stringify(detail!.events);
+    expect(json).not.toContain("occurredAt");
+    expect(json).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+    expectNoListDate(detail, "getListingBySlug");
+  });
+
+  it("keeps a manual listing's history dated", async () => {
+    const detail = await getListingBySlug(manualSlug);
+    expect(detail!.listing.fromFeed).toBe(false);
+    const [listed] = detail!.events;
+    expect(listed.type).toBe("listed");
+    expect(listed.occurredAt).toEqual(new Date(`${manualListDate}T12:00:00Z`));
   });
 });
 

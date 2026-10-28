@@ -35,6 +35,7 @@ import {
 } from "@/lib/search/suggest";
 import { cardColumns, officeLookupName, selectCards, withPhotos } from "./card";
 import { publicListingColumns } from "./public-fields";
+import { publicHistory } from "./public-history";
 import { canShowDetails, primaryPhotoOnly, publicListing } from "./visibility";
 
 const LIVE_STATUSES = ["active", "coming_soon", "active_under_contract", "pending"] as const;
@@ -114,7 +115,8 @@ export const getListingBySlug = cache(async (slug: string) => {
       lastSyncedAt: source.lastSyncedAt,
     },
     openHouses: opens,
-    events,
+    // A feed listing's history carries no dates (./public-history.ts).
+    events: publicHistory(events, listing.fromFeed),
     agent,
   };
 });
