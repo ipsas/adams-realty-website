@@ -159,80 +159,6 @@ export async function buildDbVerdict(connectionString, log = console.log) {
   }
 }
 
-/** The `listings.schools` jsonb keys; the only names interpolated into SQL below. */
-const SCHOOL_KEYS = ["elementary", "middle", "high", "district"];
-
-const allUpper = (v) => /[A-Z]/.test(v) && v === v.toUpperCase();
-
-/**
- * All-uppercase, a word-start Mc/Mac/De/O' followed by a capital (McEver, DeKalb,
- * O'Neal) or Mc/Mac followed by a lowercase letter (Mcever, Macarthur), or an
- * all-capitals word of 2+ letters.
- */
-const oddCasing = (v) =>
-  allUpper(v) || /\b(?:Mc|Mac|De|O')[A-Z]|\b(?:Mc|Mac)[a-z]/.test(v) || /\b[A-Z]{2,}\b/.test(v);
-
-/**
- * Read-only school/county coverage of the active Georgia sale listings, to size
- * a school filter. SELECTs only; values are trimmed before counting.
- */
-async function schoolCoverage(client) {
-  // Mirrors publicConditions + BUY_STATUSES + inMarketState (MARKET_STATE_SPELLINGS
-  // in src/lib/state-name.ts).
-  const market = `select l.source_id, l.schools, l.county from listings l
-    where l.removed_at is null and not l.idx_hidden and l.transaction_type = 'sale'
-      and l.status in ('active', 'coming_soon') and upper(btrim(l.state)) in ('GA', 'GEORGIA')`;
-  const filled = (k) => `nullif(btrim(m.schools->>'${k}'), '') is not null`;
-  const counts = await client.query(`with m as (${market})
-    select grouping(ds.kind)::int as is_total, ds.kind, count(*)::int as total,
-      count(*) filter (where ${SCHOOL_KEYS.slice(0, 3).map(filled).join(" or ")})::int as "anySchool",
-      count(*) filter (where ${filled("high")})::int as high,
-      count(*) filter (where ${filled("district")})::int as district,
-      count(*) filter (where nullif(btrim(m.county), '') is not null)::int as county,
-      count(distinct lower(nullif(btrim(m.county), '')))::int as "distinctCounties"
-    from m left join data_sources ds on ds.id = m.source_id
-    group by grouping sets ((ds.kind), ()) order by 1, 2`);
-  const values = await client.query(
-    `with m as (${market})
-    select k.field, btrim(m.schools->>k.field) as raw,
-      lower(regexp_replace(btrim(m.schools->>k.field), '\\s+', ' ', 'g')) as norm, count(*)::int as n
-    from m cross join unnest($1::text[]) as k(field)
-    where nullif(btrim(m.schools->>k.field), '') is not null
-    group by 1, 2, 3 order by 1, 2`,
-    [SCHOOL_KEYS],
-  );
-  const all = counts.rows.find((r) => r.is_total === 1);
-  const result = {
-    total: all.total,
-    anySchool: all.anySchool,
-    county: all.county,
-    distinctCounties: all.distinctCounties,
-  };
-  for (const key of SCHOOL_KEYS) {
-    const rows = values.rows.filter((r) => r.field === key);
-    /** @type {Map<string, string[]>} */
-    const spellings = new Map();
-    for (const r of rows) spellings.set(r.norm, [...(spellings.get(r.norm) ?? []), r.raw]);
-    result[key] = {
-      filled: rows.reduce((sum, r) => sum + r.n, 0),
-      distinctRaw: rows.length,
-      distinctNormalized: spellings.size,
-      top: [...rows].sort((a, b) => b.n - a.n).slice(0, 8).map((r) => [r.raw, r.n]),
-      // All-uppercase values first; sort is stable, so the rest keep their order.
-      casing: rows
-        .map((r) => r.raw)
-        .filter(oddCasing)
-        .sort((a, b) => Number(allUpper(b)) - Number(allUpper(a)))
-        .slice(0, 12),
-      caseVariants: [...spellings].filter(([, s]) => s.length > 1).slice(0, 5),
-    };
-  }
-  result.bySource = counts.rows
-    .filter((r) => r.is_total === 0)
-    .map(({ kind, total, anySchool, high, district }) => ({ kind, total, anySchool, high, district }));
-  return result;
-}
-
 /**
  * Read-only report of the preview database's listings by data source, so the
  * build log shows whether any seed/demo listings are left. SELECTs only, and
@@ -274,11 +200,6 @@ export async function previewListingCounts(connectionString, log = console.log) 
         ...totals.rows[0],
       })}`,
     );
-    try {
-      log(`Preview school coverage: ${JSON.stringify(await schoolCoverage(client))}`);
-    } catch (e) {
-      log(`Preview school coverage failed: ${e instanceof Error ? e.message : e}`);
-    }
   } finally {
     await client.end();
   }
