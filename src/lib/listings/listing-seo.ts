@@ -3,13 +3,14 @@
  * Pure: built only from the listing's own facts and the existing formatters, so every
  * "missing fact" case is unit-tested (listing-seo.test.ts).
  */
-import { areaHref, townGuide } from "@/config/areas";
 import { site } from "@/config/site";
+import { placeHref } from "@/lib/areas/links";
 import {
   formatBaths,
   formatNumber,
   formatPrice,
   formatStreet,
+  isNullLike,
   listingMetaDescription,
   PROPERTY_TYPE_LABELS,
 } from "@/lib/format";
@@ -74,25 +75,45 @@ export function listingDescription(l: ListingSeoInput): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+export type ListingBreadcrumbInput = Pick<
+  ListingSeoInput,
+  "addressLine1" | "unitNumber" | "hideAddress" | "city" | "state"
+> & { slug: string; county: string | null; neighborhood: string | null };
+
+export type Breadcrumb = { name: string; href: string };
+
+/**
+ * The listing page's visible breadcrumb: Homes → the town (Georgia listings) → the
+ * neighborhood (when it has one other than the town). The BreadcrumbList JSON-LD is
+ * built from the same crumbs.
+ */
+export function listingBreadcrumbs(l: ListingBreadcrumbInput): Breadcrumb[] {
+  const crumbs: Breadcrumb[] = [{ name: "Homes", href: "/homes" }];
+  if (!isMarketState(l.state)) return crumbs;
+  crumbs.push({ name: l.city, href: placeHref(l.city, l.county) });
+  // Rows synced before the mapper dropped placeholders can still hold "None".
+  const neighborhood = isNullLike(l.neighborhood) ? null : l.neighborhood;
+  if (neighborhood && neighborhood !== l.city) {
+    crumbs.push({ name: neighborhood, href: placeHref(neighborhood, l.county) });
+  }
+  return crumbs;
+}
+
 export type BreadcrumbListJsonLd = {
   "@context": "https://schema.org";
   "@type": "BreadcrumbList";
-  itemListElement: { "@type": "ListItem"; position: number; name: string; item?: string }[];
+  itemListElement: { "@type": "ListItem"; position: number; name: string; item: string }[];
 };
 
-/**
- * Homes for sale → the town's area guide (Georgia listings in a town with one) → the address.
- * The last crumb is the page itself, so it has no `item`.
- */
-export function listingBreadcrumbJsonLd(l: ListingSeoInput, baseUrl: string): BreadcrumbListJsonLd {
+/** The visible breadcrumb (`listingBreadcrumbs`) with absolute URLs, then the listing itself. */
+export function listingBreadcrumbJsonLd(
+  l: ListingBreadcrumbInput,
+  baseUrl: string,
+): BreadcrumbListJsonLd {
   const base = baseUrl.replace(/\/+$/, "");
-  const guide = isMarketState(l.state) ? townGuide(l.city) : undefined;
-  const crumbs: { name: string; item?: string }[] = [
-    { name: "Homes for sale", item: `${base}/homes` },
-    ...(guide
-      ? [{ name: `${l.city}, ${normalizeState(l.state)}`, item: `${base}${areaHref(guide)}` }]
-      : []),
-    { name: formatStreet(l) },
+  const crumbs = [
+    ...listingBreadcrumbs(l).map((c) => ({ name: c.name, item: `${base}${c.href}` })),
+    { name: formatStreet(l), item: `${base}/homes/${l.slug}` },
   ];
   return {
     "@context": "https://schema.org",
