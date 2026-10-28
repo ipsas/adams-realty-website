@@ -40,7 +40,7 @@ vi.mock("./queries", () => ({
     return Array.from({ length: limit }, (_, i) => ({
       id: `id-${i}`,
       slug: `home-${i}`,
-      listDate: "2026-09-01",
+      isNew: i === 1,
       nextOpenHouse: i === 0 ? OPEN_HOUSE : null,
       removedAt: null,
       photos: [],

@@ -1,6 +1,8 @@
 import { inArray, lt, sql } from "drizzle-orm";
+import { site } from "@/config/site";
 import type { Executor } from "@/db";
 import { listingMedia, listings, openHouses } from "@/db/schema";
+import { NEW_LISTING_DAYS } from "@/lib/format";
 import { listingContact } from "./attribution-contact";
 import { allowedPhotos } from "./visibility";
 
@@ -32,7 +34,12 @@ export const cardColumns = {
   originalListPrice: listings.originalListPrice,
   closePrice: listings.closePrice,
   closeDate: listings.closeDate,
-  listDate: listings.listDate,
+  // The "New" badge (isNewListing), decided here on the market's date: only the
+  // boolean leaves the server, never the list date (Georgia MLS Exhibit C, and
+  // React #418: nothing in the card depends on the browser's clock).
+  isNew: sql<boolean>`coalesce(
+    (now() at time zone ${site.market.timeZone})::date - "listings"."list_date"
+      between 0 and ${NEW_LISTING_DAYS}, false)`,
   bedrooms: listings.bedrooms,
   bathrooms: listings.bathrooms,
   livingAreaSqft: listings.livingAreaSqft,
