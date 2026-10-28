@@ -1,7 +1,11 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { closeDb, createSource, insertListings, listing, resetDb } from "@/test/db/helpers";
-import { bedroomOnMainDataUpdatingQuery } from "./bedroom-on-main-updating";
+import { RESO_MAPPER_VERSION } from "@/lib/mls/reso/mapper";
+import {
+  BEDROOM_ON_MAIN_MAPPER_VERSION,
+  bedroomOnMainDataUpdatingQuery,
+} from "./bedroom-on-main-updating";
 
 vi.mock("next/cache", () => ({ unstable_cache: (fn: () => unknown) => fn }));
 
@@ -27,6 +31,14 @@ describe("bedroomOnMainDataUpdatingQuery", () => {
   it("is false once the feed is on mapper version 4", async () => {
     const source = await createSource({ config: { ...BASE, mapperVersion: 4 } });
     await insertListings(source, [listing(1)]);
+    expect(await updating()).toBe(false);
+  });
+
+  it("stays false during a later remap (mapper version 4 on the way to 5)", async () => {
+    const source = await createSource({ config: { ...BASE, mapperVersion: 4 } });
+    await insertListings(source, [listing(1)]);
+    expect(BEDROOM_ON_MAIN_MAPPER_VERSION).toBe(4);
+    expect(RESO_MAPPER_VERSION).toBeGreaterThan(4);
     expect(await updating()).toBe(false);
   });
 

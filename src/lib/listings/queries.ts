@@ -290,7 +290,12 @@ export async function getLocationSuggestions(term: string): Promise<Suggestion[]
             ),
           )
           .groupBy(canonicalCountySql(listings.county))
-          .orderBy(sql`count(*) desc`)
+          // The county named exactly as typed first, so busier ones sharing the
+          // prefix ("Clayton" for "Clay") can't push it past the limit.
+          .orderBy(
+            sql`bool_or(${countyKey} = any(${textArray(countySpellings)})) desc`,
+            sql`count(*) desc`,
+          )
           .limit(3)
       : Promise.resolve([]),
     /^\d*\s*[a-z]/i.test(t) && t.length >= 3

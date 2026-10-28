@@ -3,11 +3,18 @@ import { unstable_cache } from "next/cache";
 import { db, type Executor } from "@/db";
 import { dataSources, listings } from "@/db/schema";
 import { LISTINGS_TAG } from "@/lib/listings/cache-tags";
-import { RESO_MAPPER_VERSION } from "@/lib/mls/reso/mapper";
+
+/**
+ * The RESO_MAPPER_VERSION that introduced main_level_bedrooms and
+ * primary_bedroom_on_main. Pinned, not RESO_MAPPER_VERSION itself: a later bump
+ * (v5's list date) remaps every row again, but those columns are already filled,
+ * so the notice mustn't come back during it.
+ */
+export const BEDROOM_ON_MAIN_MAPPER_VERSION = 4;
 
 /**
  * Whether the bedroom-on-main filters may still miss homes: an active RESO feed with
- * listings hasn't caught up to RESO_MAPPER_VERSION (its `config.mapperVersion` is
+ * listings hasn't caught up to BEDROOM_ON_MAIN_MAPPER_VERSION (its `config.mapperVersion` is
  * missing or older), so the remap that fills main_level_bedrooms and
  * primary_bedroom_on_main is still underway. The EXISTS uses listings_source_key_idx.
  * Exported for tests; pages use the cached `bedroomOnMainDataUpdating`.
@@ -20,7 +27,7 @@ export async function bedroomOnMainDataUpdatingQuery(db: Executor): Promise<bool
       and(
         eq(dataSources.isActive, true),
         eq(dataSources.kind, "reso_web_api"),
-        sql`coalesce((${dataSources.config}->>'mapperVersion')::int, 0) < ${RESO_MAPPER_VERSION}`,
+        sql`coalesce((${dataSources.config}->>'mapperVersion')::int, 0) < ${BEDROOM_ON_MAIN_MAPPER_VERSION}`,
         sql`exists (select 1 from ${listings} where ${listings.sourceId} = ${dataSources.id})`,
       ),
     )
