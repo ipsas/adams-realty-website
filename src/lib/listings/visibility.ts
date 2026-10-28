@@ -1,4 +1,5 @@
 import { and, isNull, sql, type SQL } from "drizzle-orm";
+import { site } from "@/config/site";
 import { listings } from "@/db/schema";
 import { HIDDEN_STATUSES } from "./hidden-statuses";
 
@@ -77,4 +78,21 @@ export function publicListing(): SQL {
 export function publicConditions(): SQL[] {
   // A literal `not`, not `= $1`: no bind parameter, and the planner sees a constant.
   return [isNull(listings.removedAt), sql`not ${listings.idxHidden}`];
+}
+
+/**
+ * A feed listing that shows no days on market (any status but active; getListingBySlug):
+ * its list date is the OnMarketDate Georgia MLS keeps off the site (Exhibit C), so no
+ * public filter, sort or count may depend on it. A manual listing's list date isn't MLS data.
+ */
+export function hidesListDate(): SQL {
+  return sql`(${listings.fromFeed} and ${listings.status} <> 'active')`;
+}
+
+/**
+ * The list date as public orders may use it: for a listing that `hidesListDate`, the
+ * market date it became public instead (`publicSince`, set when the sync first shows it).
+ */
+export function publicListDate(): SQL {
+  return sql`(case when ${hidesListDate()} then (${listings.publicSince} at time zone ${site.market.timeZone})::date else ${listings.listDate} end)`;
 }

@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { agents, listings } from "@/db/schema";
 import { selectCards, withPhotos } from "@/lib/listings/card";
 import { SQFT_PER_ACRE } from "@/lib/listings/land";
-import { publicListing } from "@/lib/listings/visibility";
+import { hidesListDate, publicListing } from "@/lib/listings/visibility";
 import { inMarketState } from "@/lib/market-state";
 import {
   areaCondition,
@@ -139,7 +139,7 @@ export async function getAreaStats(
       ${count(hasAcres)} as "pricePerAcreSample",
       ${median(sql`${today}::date - ${L.listDate}`, onMarket)}::int as "medianDaysOnMarket",
       ${count(onMarket)} as "daysOnMarketSample",
-      ${count(sql`${sale} and ${L.listDate} between ${newSince}::date and ${today}::date`)} as "newListings",
+      ${count(sql`${sale} and ${L.listDate} between ${newSince}::date and ${today}::date and not ${hidesListDate()}`)} as "newListings",
       ${count(sold)} as "recentSales",
       ${median(sql`${L.closePrice}`, sql`${sold} and ${L.closePrice} > 0`)}::int as "medianSoldPrice",
       ${median(

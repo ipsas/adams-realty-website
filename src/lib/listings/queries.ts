@@ -36,7 +36,7 @@ import {
 import { cardColumns, officeLookupName, selectCards, withPhotos } from "./card";
 import { publicListingColumns } from "./public-fields";
 import { publicHistory } from "./public-history";
-import { canShowDetails, primaryPhotoOnly, publicListing } from "./visibility";
+import { canShowDetails, primaryPhotoOnly, publicListDate, publicListing } from "./visibility";
 
 const LIVE_STATUSES = ["active", "coming_soon", "active_under_contract", "pending"] as const;
 
@@ -214,7 +214,8 @@ export async function getAgentListings(
     )
     .orderBy(
       sql`${listings.status} = 'closed'`,
-      sql`${listings.listDate} desc nulls last`,
+      // Pending and sold feed listings hide their list date (`publicListDate`).
+      sql`${publicListDate()} desc nulls last`,
       listings.id,
     )
     .limit(limit);

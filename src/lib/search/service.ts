@@ -331,7 +331,8 @@ export async function locationPins(
   // are aliased to that name so the same ORDER BY applies to them.
   const { rows } = await ex.execute<PinRow>(sql`
     with matches as materialized (
-      select "id", "is_featured", "list_date", "close_date", "photo_count", "list_price", "living_area_sqft", "lot_size_sqft"
+      select "id", "is_featured", "list_date", "close_date", "photo_count", "list_price", "living_area_sqft", "lot_size_sqft",
+        "from_feed", "status", "public_since"
       from ${listings}
       where ${where}
     ),
