@@ -5,6 +5,7 @@ import {
   emptyStats,
   formatAsOf,
   formatRatio,
+  gridWithoutLead,
   groupByRegion,
   leadPhotoFallback,
   marketToday,
@@ -264,5 +265,31 @@ describe("leadPhotoFallback", () => {
     const none = leadPhotoFallback(0, 0);
     expect(none.target).toBe("map");
     expect(none.text).not.toMatch(/sales are below/);
+  });
+});
+
+describe("gridWithoutLead", () => {
+  // The page fetches one past the grid size (9 for a grid of 8).
+  const newest = Array.from({ length: 9 }, (_, i) => ({ id: `h${i + 1}` }));
+  const ids = (rows: { id: string }[]) => rows.map((r) => r.id);
+
+  it("drops the lead home wherever it falls and backfills to a full grid", () => {
+    for (const lead of newest) {
+      const grid = gridWithoutLead(newest, lead, 8);
+      expect(ids(grid)).not.toContain(lead.id);
+      expect(grid).toHaveLength(8);
+    }
+    expect(ids(gridWithoutLead(newest, { id: "h1" }, 8))).toEqual(ids(newest.slice(1)));
+  });
+
+  it("keeps the newest eight when the lead isn't among them, or there is no lead", () => {
+    expect(gridWithoutLead(newest, { id: "elsewhere" }, 8)).toEqual(newest.slice(0, 8));
+    expect(gridWithoutLead(newest, null, 8)).toEqual(newest.slice(0, 8));
+  });
+
+  it("shows every other home when there are too few to fill the grid", () => {
+    const few = newest.slice(0, 3);
+    expect(ids(gridWithoutLead(few, { id: "h2" }, 8))).toEqual(["h1", "h3"]);
+    expect(gridWithoutLead([{ id: "h1" }], { id: "h1" }, 8)).toEqual([]);
   });
 });

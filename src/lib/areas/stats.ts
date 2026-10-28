@@ -220,6 +220,18 @@ export function leadPhotoFallback(
   return { text: "Nothing for sale right now. Save a search to hear first.", target: "map" };
 }
 
+/**
+ * The guide's for-sale grid without the home already up top as its lead photo.
+ * `homes` is fetched one past `limit`, so dropping the lead still leaves a full grid.
+ */
+export function gridWithoutLead<T extends { id: string }>(
+  homes: T[],
+  lead: { id: string } | null,
+  limit: number,
+): T[] {
+  return homes.filter((h) => h.id !== lead?.id).slice(0, limit);
+}
+
 export type AreaSummary = { area: Area; stats: AreaStats };
 
 export const AREA_SORTS = ["region", "homes", "price-high", "price-low", "name"] as const;

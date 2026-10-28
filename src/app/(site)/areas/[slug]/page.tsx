@@ -22,6 +22,7 @@ import {
 } from "@/lib/areas/queries";
 import {
   formatAsOf,
+  gridWithoutLead,
   metaDescription,
   placeName,
   leadPhotoFallback,
@@ -60,12 +61,13 @@ export default async function AreaGuidePage(props: PageProps<"/areas/[slug]">) {
   const guide = await getCachedAreaGuide((await props.params).slug);
   if (!guide) notFound();
   const { area, stats } = guide;
-  const [homes, featured, sales, agents] = await Promise.all([
-    getAreaListings(area, 8),
+  const [newest, featured, sales, agents] = await Promise.all([
+    getAreaListings(area, 9),
     getAreaFeaturedListing(area),
     getAreaRecentSales(area, 4),
     getAreaAgents(area),
   ]);
+  const homes = gridWithoutLead(newest, featured, 8);
   const asOf = new Date();
   const mapHref = searchHref({ q: area.name });
   const soldHref = searchHref({ q: area.name, mode: "sold", soldWithinDays: SOLD_WINDOW_DAYS });
@@ -239,7 +241,7 @@ export default async function AreaGuidePage(props: PageProps<"/areas/[slug]">) {
             title={`Homes for sale in ${area.name}`}
             description={
               homes.length
-                ? homes.length < stats.forSale
+                ? homes.length + (featured ? 1 : 0) < stats.forSale
                   ? `Newest first · showing ${homes.length} of ${stats.forSale}`
                   : "Newest first"
                 : undefined
