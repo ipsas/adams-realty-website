@@ -26,7 +26,7 @@ import {
   textArray,
 } from "@/lib/areas/match";
 import { ACCESS_CODE_PG, ACCESS_CODE_PG_REPLACEMENT } from "@/lib/listings/excluded-fields";
-import { publicConditions } from "@/lib/listings/visibility";
+import { hidesListDate, publicConditions, publicListDate } from "@/lib/listings/visibility";
 import { inMarketState } from "@/lib/market-state";
 import { marketDateDaysAgo } from "@/lib/time";
 import { allowsPriceReduced, DEFAULT_CRITERIA, type SearchCriteria } from "./params";
@@ -221,10 +221,11 @@ export function defaultBuyConditions(): SQL[] {
  * Listed in the last `days` days: the "Days on market" filter, and the home
  * page's "New this week" count, which must match what its link lists.
  * Counted in America/New_York local days (`marketDateDaysAgo`), like `soldWithin`.
+ * Only listings that show days on market match: never one that `hidesListDate`.
  */
 export function listedWithin(days: number, now: Date = new Date()): SQL {
   const since = marketDateDaysAgo(days, now);
-  return gte(listings.listDate, since);
+  return sql`(${gte(listings.listDate, since)} and not ${hidesListDate()})`;
 }
 
 /**
@@ -390,11 +391,17 @@ export function buildWhere(c: SearchCriteria, now?: Date, scope?: LocationScope)
 
 export function buildOrderBy(c: SearchCriteria): SQL[] {
   const tiebreak = asc(listings.id);
+  // Pending and under-contract feed listings hide their list date (`publicListDate`).
+  // Without them every public row is active (Coming Soon is hidden): the plain column,
+  // which the partial indexes serve.
+  const listed = c.pending
+    ? sql`${publicListDate()} desc nulls last`
+    : sql`${listings.listDate} desc nulls last`;
   switch (c.sort) {
     case "newest":
       return c.mode === "sold"
         ? [sql`${listings.closeDate} desc nulls last`, tiebreak]
-        : [sql`${listings.listDate} desc nulls last`, tiebreak];
+        : [listed, tiebreak];
     case "price_asc":
       return [asc(listings.listPrice), tiebreak];
     case "price_desc":
@@ -419,9 +426,7 @@ export function buildOrderBy(c: SearchCriteria): SQL[] {
       // Featured first, then fresh listings, then photo-rich ones.
       return [
         desc(listings.isFeatured),
-        c.mode === "sold"
-          ? sql`${listings.closeDate} desc nulls last`
-          : sql`${listings.listDate} desc nulls last`,
+        c.mode === "sold" ? sql`${listings.closeDate} desc nulls last` : listed,
         desc(listings.photoCount),
         tiebreak,
       ];
