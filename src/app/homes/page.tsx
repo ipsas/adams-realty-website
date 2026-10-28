@@ -20,6 +20,7 @@ import {
 } from "@/lib/search/params";
 import { centerOf, nearbyTowns, placeBounds, resolveScope } from "@/lib/search/place";
 import { hasLocation, type LocationScope } from "@/lib/search/query";
+import { searchPageIndexing } from "@/lib/search/search-indexing";
 import {
   countListings,
   MAX_PINS,
@@ -48,16 +49,16 @@ export async function generateMetadata(props: PageProps<"/homes">): Promise<Meta
           : unfiltered
             ? `Homes for sale: ${city} & all of ${site.coverage.name}`
             : `Homes for sale in ${site.coverage.name}`;
-  // Only the location/mode version of a search is canonical; filter permutations aren't indexed separately.
-  const canonical = serializeCriteria({ mode: c.mode, q: c.q });
+  // Only bare /homes is indexed; any search is noindex,follow with its own normalised URL as canonical.
+  const { canonical, robots } = searchPageIndexing(c);
   return {
     title,
     // Only the first letter is lowercased, so place names keep their capitals.
     description: unfiltered
       ? `Search homes for sale around ${city} or anywhere in ${site.coverage.name}, from ${site.mls.name}, with the true cost of owning each home and no ads.`
       : `Browse ${title.charAt(0).toLowerCase()}${title.slice(1)} from ${site.mls.name}, with the true cost of owning each home and no ads.`,
-    alternates: { canonical: canonical.size ? `/homes?${canonical}` : "/homes" },
-    robots: c.bounds || c.page > 1 ? { index: false, follow: true } : undefined,
+    alternates: { canonical },
+    robots,
   };
 }
 
