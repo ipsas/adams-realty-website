@@ -143,23 +143,32 @@ export function daysSince(
 }
 
 /**
- * Whether a listing gets the "New" badge: listed at most 7 days ago. With
- * `today` (the market date from the server, YYYY-MM-DD) the age is whole
- * calendar days from that date, so it doesn't depend on the clock it runs on;
- * without it, the age on this clock.
+ * Whole days on market as of `today` (the server's market date, YYYY-MM-DD):
+ * calendar days since `listDate`. Null without a list date, or for one after
+ * `today`. Server-only: an MLS list date is derived from DaysOnMarket, so
+ * `today − listDate` is the current DaysOnMarket, and the date itself must
+ * never reach a page (Georgia MLS Exhibit C), only this number.
  */
-export function isNewListing(listDate: string | null | undefined, today: string | null): boolean {
-  const age = today ? daysSince(listDate, new Date(`${today}T12:00:00Z`)) : daysSince(listDate);
-  return age !== null && age <= 7;
+export function daysOnMarket(listDate: string | null | undefined, today: string): number | null {
+  const d = daysSince(listDate, new Date(`${today}T12:00:00Z`));
+  return d === null || !Number.isFinite(d) || d < 0 ? null : d;
 }
 
-export function daysOnMarketLabel(isoDate: string | null | undefined): string | null {
-  const d = daysSince(isoDate);
-  if (d === null) return null;
-  if (d < 0) return "Coming soon";
-  if (d === 0) return "Listed today";
-  if (d === 1) return "1 day on market";
-  return `${d} days on market`;
+/** A listing at most this many days on market gets the "New" badge (cards' `isNew`). */
+export const NEW_LISTING_DAYS = 7;
+
+/** The "New" badge rule, on `daysOnMarket`; cards compute the same in SQL (card.ts `isNew`). */
+export function isNewListing(listDate: string | null | undefined, today: string): boolean {
+  const d = daysOnMarket(listDate, today);
+  return d !== null && d <= NEW_LISTING_DAYS;
+}
+
+/** "Listed today", "1 day on market", "12 days on market"; null when unknown. */
+export function daysOnMarketLabel(days: number | null): string | null {
+  if (days === null) return null;
+  if (days === 0) return "Listed today";
+  if (days === 1) return "1 day on market";
+  return `${days} days on market`;
 }
 
 const tz = site.market.timeZone;

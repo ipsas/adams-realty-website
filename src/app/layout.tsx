@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Fraunces, Inter } from "next/font/google";
 import { CopyrightYearProvider } from "@/components/content/copyright-year";
-import { MarketTodayProvider } from "@/components/listings/market-today";
 import { SavedHomesProvider } from "@/components/listings/saved-homes-provider";
 import { SiteChrome } from "@/components/layout/site-chrome";
 import { SiteHeader, type HeaderUser } from "@/components/layout/site-header";
@@ -11,7 +10,6 @@ import { ThemeSync } from "@/components/theme/theme-sync";
 import { PwaRuntime } from "@/components/pwa/pwa-runtime";
 import { Toaster } from "@/components/ui/toast";
 import { site } from "@/config/site";
-import { marketToday } from "@/lib/areas/stats";
 import { getSession } from "@/lib/auth/session";
 import { env } from "@/lib/env";
 import { getSavedListingIds } from "@/lib/listings/queries";
@@ -94,25 +92,22 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
         </a>
         {/* The MLS copyright year, from the server's clock so hydration agrees at New Year's. */}
         <CopyrightYearProvider year={new Date().getFullYear()}>
-          {/* Today's market date, likewise, for the cards' "New" badge. */}
-          <MarketTodayProvider today={marketToday()}>
-            <SavedHomesProvider initialIds={savedIds} signedIn={!!session}>
-              {/* Not on the coming-soon page (/preview), nor while gated on the alert emails' pages
+          <SavedHomesProvider initialIds={savedIds} signedIn={!!session}>
+            {/* Not on the coming-soon page (/preview), nor while gated on the alert emails' pages
                 (src/app/(alerts)). The sample-listings notice rides with the header. */}
-              <SiteChrome gated={gated}>
-                <SiteHeader user={user} />
-              </SiteChrome>
-              <div id="main" className="flex flex-1 flex-col">
-                {children}
-              </div>
-              {/* Wherever the header is; visibility is CSS-only (phone:/wide: and chrome markers). */}
-              <SiteChrome gated={gated}>
-                <TabBar user={user} />
-              </SiteChrome>
-              <Toaster />
-              <PwaRuntime userId={user?.id ?? null} />
-            </SavedHomesProvider>
-          </MarketTodayProvider>
+            <SiteChrome gated={gated}>
+              <SiteHeader user={user} />
+            </SiteChrome>
+            <div id="main" className="flex flex-1 flex-col">
+              {children}
+            </div>
+            {/* Wherever the header is; visibility is CSS-only (phone:/wide: and chrome markers). */}
+            <SiteChrome gated={gated}>
+              <TabBar user={user} />
+            </SiteChrome>
+            <Toaster />
+            <PwaRuntime userId={user?.id ?? null} />
+          </SavedHomesProvider>
         </CopyrightYearProvider>
       </body>
     </html>

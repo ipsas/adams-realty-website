@@ -18,7 +18,8 @@ import {
   normalizedCountySql,
   textArray,
 } from "@/lib/areas/match";
-import { formatStreet } from "@/lib/format";
+import { marketToday } from "@/lib/areas/stats";
+import { daysOnMarket, formatStreet } from "@/lib/format";
 import { inMarketState } from "@/lib/market-state";
 import {
   defaultBuyConditions,
@@ -38,6 +39,11 @@ import { canShowDetails, primaryPhotoOnly, publicListing } from "./visibility";
 
 const LIVE_STATUSES = ["active", "coming_soon", "active_under_contract", "pending"] as const;
 
+// The property page's columns: no list date. An MLS list date is derived from DaysOnMarket
+// and equals the OnMarketDate Georgia MLS forbids displaying (Exhibit C), so it stays internal.
+const { listDate, ...detailColumns } = publicListingColumns;
+void listDate;
+
 /**
  * Full property page payload. `cache` dedupes the call between generateMetadata and the page.
  * Null for a feed listing Georgia MLS rules keep off the site (a hidden status,
@@ -48,7 +54,8 @@ const LIVE_STATUSES = ["active", "coming_soon", "active_under_contract", "pendin
 export const getListingBySlug = cache(async (slug: string) => {
   const [row] = await db
     .select({
-      listing: publicListingColumns,
+      listing: detailColumns,
+      listDate: listings.listDate,
       source: dataSources,
       officeLookupName: officeLookupName(),
     })
@@ -57,8 +64,15 @@ export const getListingBySlug = cache(async (slug: string) => {
     .where(eq(listings.slug, slug))
     .limit(1);
   if (!row) return null;
-  // For listingOfficeLabel, beside the listing's own columns.
-  const listing = { ...row.listing, officeLookupName: row.officeLookupName };
+  const listing = {
+    ...row.listing,
+    // For listingOfficeLabel, beside the listing's own columns.
+    officeLookupName: row.officeLookupName,
+    // The list date stays here: the page gets days on market (`daysOnMarket`), never the
+    // date. Active listings only: the feed refreshes DaysOnMarket (the list date) only then.
+    daysOnMarket:
+      row.listing.status === "active" ? daysOnMarket(row.listDate, marketToday()) : null,
+  };
   const { source } = row;
   if (!canShowDetails(listing)) return null;
 
@@ -447,9 +461,9 @@ export async function getPlacesIndex(): Promise<PlacesIndexCounty[]> {
   // the outer group/order by see one column, not separately bound parameters.
   const forSale = db
     .select({
-      county: sql<string | null>`(case when ${inMarketState()} then ${listings.county} else null end)`.as(
-        "county",
-      ),
+      county: sql<
+        string | null
+      >`(case when ${inMarketState()} then ${listings.county} else null end)`.as("county"),
       city: listings.city,
     })
     .from(listings)
