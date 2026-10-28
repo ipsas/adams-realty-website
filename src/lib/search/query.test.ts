@@ -354,14 +354,24 @@ describe("a county search", () => {
       const { sql, params } = dialect.sqlToQuery(countyCondition(county));
       expect(sql).toContain(`lower("listings"."county") like any(array[$1, $2]::text[])`);
       expect(sql).toContain(`' county$', '') = any(array[$3, $4]::text[])`);
-      expect(params).toEqual(["dekalb%", "de%", "dekalb", "de kalb"]);
+      expect(params).toEqual(["dekalb%", "de%", "dekalb", "de kalb", "GA"]);
     }
     expect(dialect.sqlToQuery(countyCondition("Mc'Duffie")).params).toEqual([
       "mcduffie%",
       "mc%",
       "mcduffie",
       "mc duffie",
+      "GA",
     ]);
+  });
+
+  it("matches the market's state only (Clay County, AL is not Georgia's)", () => {
+    for (const county of ["Clay County", "DeKalb"]) {
+      const { sql, params } = dialect.sqlToQuery(countyCondition(county));
+      expect(sql).toMatch(/^\(lower\("listings"\."county"\) like /);
+      expect(sql).toContain(`"listings"."state" = $`);
+      expect(params.at(-1)).toBe("GA");
+    }
   });
 
   it("a ZIP stays a ZIP", () => {

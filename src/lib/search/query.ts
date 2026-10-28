@@ -116,18 +116,27 @@ export function countyKey(q: string | undefined): string | undefined {
 }
 
 /**
+ * Listings in the market's state (`listings.state` is the feed's
+ * StateOrProvince). County names repeat across states ("Clay", "Lee"), so a
+ * county is only ever one of the state's.
+ */
+export function inMarketState(): SQL {
+  return sql`${listings.state} = ${site.market.state}`;
+}
+
+/**
  * Listings in the county (any spelling: "Hall", "HALL", "Hall County", and an
- * exception's "De Kalb"), cheap LIKE first.
+ * exception's "De Kalb"), in the market's state, cheap LIKE first.
  */
 export function countyCondition(county: string): SQL {
   const keys = countyKeySpellings(normalizeCounty(county));
   const col = normalizedCountySql(listings.county);
   if (keys.length === 1) {
     const [key] = keys;
-    return sql`(lower(${listings.county}) like ${`${key.split(" ")[0]}%`} and ${col} = ${key})`;
+    return sql`(lower(${listings.county}) like ${`${key.split(" ")[0]}%`} and ${col} = ${key} and ${inMarketState()})`;
   }
   const patterns = Array.from(new Set(keys.map((k) => `${k.split(" ")[0]}%`)));
-  return sql`(lower(${listings.county}) like any(${textArray(patterns)}) and ${col} = any(${textArray(keys)}))`;
+  return sql`(lower(${listings.county}) like any(${textArray(patterns)}) and ${col} = any(${textArray(keys)}) and ${inMarketState()})`;
 }
 
 /**

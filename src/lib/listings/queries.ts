@@ -22,6 +22,7 @@ import { formatStreet } from "@/lib/format";
 import {
   defaultBuyConditions,
   defaultTypesCondition,
+  inMarketState,
   listedWithin,
   soldWithin,
 } from "@/lib/search/query";
@@ -285,6 +286,7 @@ export async function getLocationSuggestions(term: string): Promise<Suggestion[]
               countySpellings.length === 1
                 ? sql`${countyKey} like ${`${county}%`}`
                 : sql`${countyKey} like any(${textArray(countySpellings.map((k) => `${k}%`))})`,
+              inMarketState(),
             ),
           )
           .groupBy(canonicalCountySql(listings.county))
@@ -435,16 +437,19 @@ export type PlacesIndexCounty = {
  * spans counties appears under each, with that county's count.
  */
 export async function getPlacesIndex(): Promise<PlacesIndexCounty[]> {
+  // An out-of-state listing's county ("Clay", AL) is not the state's county of
+  // that name: its town goes in the no-county block.
+  const county = sql<string | null>`(case when ${inMarketState()} then ${listings.county} else null end)`;
   const rows = await db
     .select({
-      county: listings.county,
+      county,
       city: listings.city,
       count: sql<number>`count(*)::int`,
     })
     .from(listings)
     .where(forSaleNow())
-    .groupBy(listings.county, listings.city)
-    .orderBy(sql`${listings.county} asc nulls last`, listings.city);
+    .groupBy(county, listings.city)
+    .orderBy(sql`${county} asc nulls last`, listings.city);
   const out: PlacesIndexCounty[] = [];
   for (const r of rows) {
     const last = out.at(-1);
