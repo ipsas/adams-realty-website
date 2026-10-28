@@ -75,6 +75,8 @@ describe("areaCondition", () => {
     expect(sql).toContain(" or ");
     expect(params).toEqual([
       ...["%toccoa%", "toccoa", "%toccoa%", "toccoa", "%toccoa%", "toccoa"],
+      "GA",
+      "GEORGIA",
       "stephens",
     ]);
     expect(dialect.sqlToQuery(areaCondition(area("Lake Lanier"))).sql).not.toContain("city");

@@ -455,6 +455,18 @@ function fitSmallPopup(
       }
     }
   };
+  // Undoes compactTo, so the popup can be compacted again for other areas.
+  const reset = () => {
+    if (photo) {
+      photo.classList.replace("h-20", "h-32");
+      photo.hidden = false;
+    }
+    if (head) {
+      head.style.maxHeight = "";
+      head.classList.remove("overflow-y-auto");
+    }
+    step = nextPopupStep("full");
+  };
   let areas = areasNow();
   compactTo(areas);
   let area = popupAreaFor(areas, el.offsetHeight);
@@ -462,6 +474,7 @@ function fitSmallPopup(
   // on drag (tapping the "i" expands it again), and fit to that.
   if (!area && attribution?.classList.contains("maplibregl-compact-show")) {
     attribution.classList.remove("maplibregl-compact-show");
+    reset();
     areas = areasNow();
     compactTo(areas);
     area = popupAreaFor(areas, el.offsetHeight);

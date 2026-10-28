@@ -335,7 +335,8 @@ export function sanitizeListing(n: NormalizedListing): {
   const listing = {
     ...sanitizeNumeric(listings, n, label, warn),
     // Canonical even for writes that bypass the mapper (seed, dashboard): "Georgia" → "GA".
-    state: normalizeState(n.state),
+    // A missing state passes through, so the NOT NULL column still rejects it.
+    state: typeof n.state === "string" ? normalizeState(n.state) : n.state,
     media: n.media.map((m) => sanitizeNumeric(listingMedia, m, label, warn)),
   };
   return { listing, nulled };

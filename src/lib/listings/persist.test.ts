@@ -192,4 +192,9 @@ describe("sanitizeListing", () => {
     expect(sanitizeListing(listing({ state: " Georgia " })).listing.state).toBe("GA");
     expect(sanitizeListing(listing({ state: "al" })).listing.state).toBe("AL");
   });
+
+  it("passes a missing state through, for the NOT NULL column to reject", () => {
+    const missing = listing({ state: null as unknown as string });
+    expect(sanitizeListing(missing).listing.state).toBeNull();
+  });
 });
