@@ -1,11 +1,15 @@
+import { and } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import { ACCESS_CODE_PG } from "@/lib/listings/excluded-fields";
 import { DEFAULT_CRITERIA, parseSearchParams, SORTS } from "./params";
 import {
   buildOrderBy,
+  buildConditions,
   buildWhere,
+  countyCondition,
   countyKey,
+  defaultBuyConditions,
   hasLocation,
   lakeGuide,
   listedWithin,
@@ -345,6 +349,21 @@ describe("a county search", () => {
     expect(sql).not.toContain(`"listings"."county"`);
   });
 
+  it("matches DeKalb spelled joined or split, still LIKE-prefiltered", () => {
+    for (const county of ["DeKalb County", "De Kalb", "DEKALB"]) {
+      const { sql, params } = dialect.sqlToQuery(countyCondition(county));
+      expect(sql).toContain(`lower("listings"."county") like any(array[$1, $2]::text[])`);
+      expect(sql).toContain(`' county$', '') = any(array[$3, $4]::text[])`);
+      expect(params).toEqual(["dekalb%", "de%", "dekalb", "de kalb"]);
+    }
+    expect(dialect.sqlToQuery(countyCondition("Mc'Duffie")).params).toEqual([
+      "mcduffie%",
+      "mc%",
+      "mcduffie",
+      "mc duffie",
+    ]);
+  });
+
   it("a ZIP stays a ZIP", () => {
     const { sql } = render({ q: "30501" }, { county: "Hall County" });
     expect(sql).toContain(`"listings"."postal_code" = $`);
@@ -359,6 +378,51 @@ describe("countyKey", () => {
     expect(countyKey("HALL COUNTY, Georgia")).toBe("hall");
     expect(countyKey("Hall")).toBe("hall");
     expect(countyKey("  gwinnett ")).toBe("gwinnett");
+  });
+
+  it("reads a half-typed County word or state (QA L21-1, L21-2)", () => {
+    for (const q of [
+      "Hall Co",
+      "hall co",
+      "Hall cou",
+      "Hall Coun",
+      "Hall Count",
+      "Hall, County",
+      "Hall County, G",
+      "Hall County, Ga",
+      "Hall County, Geo",
+      "Hall, GA",
+      "Hall, g",
+      "Hall Co, Georgia",
+      "Hall Co GA",
+    ]) {
+      expect(countyKey(q), q).toBe("hall");
+    }
+    // Not a County word or a state: kept, so no county matches and the text is searched.
+    expect(countyKey("Coco")).toBe("coco");
+    expect(countyKey("Hall Cove")).toBe("hall cove");
+    expect(countyKey("Hall G")).toBe("hall g");
+    expect(countyKey("Hall C")).toBe("hall c");
+  });
+
+  it("keys DeKalb, McDuffie and McIntosh however they are spelled", () => {
+    for (const q of [
+      "De Kalb",
+      "de kalb county",
+      "Dekalb",
+      "DEKALB County",
+      "De'Kalb",
+      "DeKalb Co",
+    ]) {
+      expect(countyKey(q), q).toBe("dekalb");
+    }
+    for (const q of ["Mc Duffie", "McDuffie", "mc duffie county", "Mc'Duffie", "McDuffie, GA"]) {
+      expect(countyKey(q), q).toBe("mcduffie");
+    }
+    for (const q of ["McIntosh", "Mc Intosh", "mcintosh county, ga"]) {
+      expect(countyKey(q), q).toBe("mcintosh");
+    }
+    expect(countyKey("Ben Hill County")).toBe("ben hill");
   });
 
   it("is nothing for a ZIP, a lake guide, the state alone or no text", () => {
@@ -463,4 +527,16 @@ describe("unbiased sort", () => {
       }
     },
   );
+});
+
+describe("defaultBuyConditions", () => {
+  it("is the default buy search's conditions, as buildConditions makes them", () => {
+    const where = (conds: ReturnType<typeof defaultBuyConditions>) =>
+      dialect.sqlToQuery(and(...conds)!);
+    expect(where(defaultBuyConditions())).toEqual(
+      where(buildConditions(parseSearchParams({}), now)),
+    );
+    const { params } = where(defaultBuyConditions());
+    expect(params).toEqual(["sale", "active", "coming_soon", "commercial"]);
+  });
 });

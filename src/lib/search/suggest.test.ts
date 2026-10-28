@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { countyDisplay } from "@/lib/areas/match";
+import { GEORGIA_COUNTIES } from "@/test/georgia-counties";
 import {
   countyPrefix,
   lakeGuidesMatching,
@@ -98,7 +99,16 @@ describe("location suggestions (site review #5)", () => {
   });
 
   it("offers a county first when the text names it, and drops a neighborhood of its name", () => {
-    for (const term of ["Hall", "Hall Co", "Hall County", "hall county, GA"]) {
+    for (const term of [
+      "Hall",
+      "Hall Co",
+      "Hall cou",
+      "Hall County",
+      "hall county, GA",
+      "Hall County, G",
+      "Hall Co, Georgia",
+      "Hall, GA",
+    ]) {
       const out = shapeAreaSuggestions(
         term,
         [
@@ -110,12 +120,12 @@ describe("location suggestions (site review #5)", () => {
       );
       expect(out[0]).toEqual({
         kind: "county",
-        label: "Hall County",
+        label: "Hall",
         sublabel: "County",
         value: "Hall County",
         count: 412,
       });
-      expect(out.map((s) => s.label)).toEqual(["Hall County", "Hall Farm"]);
+      expect(out.map((s) => s.value)).toEqual(["Hall County", "Hall Farm"]);
     }
   });
 
@@ -128,8 +138,50 @@ describe("location suggestions (site review #5)", () => {
     );
     expect(out.map((s) => [s.kind, s.label])).toEqual([
       ["city", "Halcyon"],
-      ["county", "Hall County"],
+      ["county", "Hall"],
     ]);
+  });
+
+  it("names a county once, tagged County, for every Georgia county however the feed spells it", () => {
+    for (const name of GEORGIA_COUNTIES) {
+      for (const county of [name, name.toUpperCase(), name.toLowerCase()].flatMap((v) => [
+        v,
+        `${v} County`,
+      ])) {
+        const [s] = shapeAreaSuggestions(name, [], [], [{ county, n: 1 }]);
+        expect(s).toEqual({
+          kind: "county",
+          label: name,
+          sublabel: "County",
+          value: `${name} County`,
+          count: 1,
+        });
+        expect(`${s.label} ${s.sublabel}`).toBe(`${name} County`);
+        expect(`${s.label} ${s.sublabel}`).not.toMatch(/county county/i);
+      }
+    }
+  });
+
+  it("puts DeKalb first however its name is typed", () => {
+    for (const term of ["De Kalb", "dekalb", "De'Kalb county", "De Ka"]) {
+      const out = shapeAreaSuggestions(
+        term,
+        [row("city", "Dekalb Park", "GA", 3)],
+        [],
+        [{ county: "DEKALB", n: 9 }],
+      );
+      expect(out.map((s) => [s.label, s.sublabel])).toEqual(
+        term === "De Ka"
+          ? [
+              ["Dekalb Park", "GA"],
+              ["DeKalb", "County"],
+            ]
+          : [
+              ["DeKalb", "County"],
+              ["Dekalb Park", "GA"],
+            ],
+      );
+    }
   });
 
   it("reads the county name typed so far", () => {
@@ -138,6 +190,40 @@ describe("location suggestions (site review #5)", () => {
     expect(countyPrefix("gwinnett")).toBe("gwinnett");
     expect(countyPrefix("Gwin")).toBe("gwin");
     expect(countyPrefix("30501")).toBe("");
+  });
+
+  it("reads a half-typed County word or state", () => {
+    for (const term of [
+      "Hall Co",
+      "Hall cou",
+      "hall COUN",
+      "Hall County, G",
+      "Hall County, Ga",
+      "Hall County, Geor",
+      "Hall, GA",
+      "Hall, g",
+      "Hall Co, Georgia",
+      "Hall Co Ge",
+      "Hall county ga",
+    ]) {
+      expect(countyPrefix(term), term).toBe("hall");
+    }
+    // A lone letter not after a comma or County word is part of the name.
+    expect(countyPrefix("Hall G")).toBe("hall g");
+    expect(countyPrefix("Hall Cove")).toBe("hall cove");
+    expect(countyPrefix("Coco")).toBe("coco");
+  });
+
+  it("reads DeKalb, McDuffie and McIntosh spelled or spaced any way, partly typed too", () => {
+    expect(countyPrefix("De Kalb")).toBe("dekalb");
+    expect(countyPrefix("de kalb county")).toBe("dekalb");
+    expect(countyPrefix("De'Kalb")).toBe("dekalb");
+    expect(countyPrefix("De Ka")).toBe("deka");
+    expect(countyPrefix("Mc Duf")).toBe("mcduf");
+    expect(countyPrefix("mcdu")).toBe("mcdu");
+    expect(countyPrefix("Mc'Duffie Co")).toBe("mcduffie");
+    expect(countyPrefix("Mc Intosh")).toBe("mcintosh");
+    expect(countyPrefix("Ben Hi")).toBe("ben hi");
   });
 
   it("shows a county as the feed spells it, title-cased when in capitals", () => {

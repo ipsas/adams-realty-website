@@ -106,7 +106,7 @@ describe("county suggestions", () => {
       const out = await getLocationSuggestions(term);
       expect(out[0]).toEqual({
         kind: "county",
-        label: "Hall County",
+        label: "Hall",
         sublabel: "County",
         value: "Hall County",
         count: 3,

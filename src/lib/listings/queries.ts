@@ -12,9 +12,19 @@ import {
   savedListings,
 } from "@/db/schema";
 import { firmAreaCondition } from "@/lib/areas/firm-area";
-import { normalizedCountySql } from "@/lib/areas/match";
+import {
+  canonicalCountySql,
+  countyKeySpellings,
+  normalizedCountySql,
+  textArray,
+} from "@/lib/areas/match";
 import { formatStreet } from "@/lib/format";
-import { defaultTypesCondition, listedWithin, soldWithin } from "@/lib/search/query";
+import {
+  defaultBuyConditions,
+  defaultTypesCondition,
+  listedWithin,
+  soldWithin,
+} from "@/lib/search/query";
 import {
   countyPrefix,
   MAX_AREA_SUGGESTIONS,
@@ -229,6 +239,9 @@ export async function getLocationSuggestions(term: string): Promise<Suggestion[]
   const escaped = t.replace(/[%_\\]/g, "\\$&");
   const live = and(publicListing(), inArray(listings.status, [...LIVE_STATUSES]));
   const county = countyPrefix(t);
+  // A split spelling of DeKalb, McDuffie or McIntosh ("De Kalb") is matched and grouped too.
+  const countySpellings = countyKeySpellings(county);
+  const countyPrefilter = Array.from(new Set(countySpellings.map((k) => `${k.split(" ")[0]}%`)));
   const countyKey = normalizedCountySql(listings.county);
 
   const [areas, pastOnly, counties, addresses] = await Promise.all([
@@ -256,19 +269,25 @@ export async function getLocationSuggestions(term: string): Promise<Suggestion[]
       .orderBy(sql`count(*) desc`, listings.city)
       .limit(MAX_AREA_SUGGESTIONS),
     // Counties by name, the cheap LIKE before the normalized one; max() prefers
-    // a mixed-case spelling ("Hall") over a feed's capitals ("HALL").
+    // a mixed-case spelling ("Hall") over a feed's capitals ("HALL"). Counted
+    // like the results page's default buy search (`defaultBuyConditions`), so
+    // the number matches the search it leads to.
     county.length >= 2
       ? db
           .select({ county: sql<string>`max(${listings.county})`, n: sql<number>`count(*)::int` })
           .from(listings)
           .where(
             and(
-              live,
-              sql`lower(${listings.county}) like ${`${county.split(" ")[0]}%`}`,
-              sql`${countyKey} like ${`${county}%`}`,
+              ...defaultBuyConditions(),
+              countyPrefilter.length === 1
+                ? sql`lower(${listings.county}) like ${countyPrefilter[0]}`
+                : sql`lower(${listings.county}) like any(${textArray(countyPrefilter)})`,
+              countySpellings.length === 1
+                ? sql`${countyKey} like ${`${county}%`}`
+                : sql`${countyKey} like any(${textArray(countySpellings.map((k) => `${k}%`))})`,
             ),
           )
-          .groupBy(countyKey)
+          .groupBy(canonicalCountySql(listings.county))
           .orderBy(sql`count(*) desc`)
           .limit(3)
       : Promise.resolve([]),

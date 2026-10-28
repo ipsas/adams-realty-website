@@ -19,14 +19,16 @@ import { site } from "@/config/site";
 import { listings, openHouses } from "@/db/schema";
 import {
   areaCondition,
+  countyKeySpellings,
   normalizeCounty,
   normalizedCountySql,
   normalizedMatch,
+  textArray,
 } from "@/lib/areas/match";
 import { ACCESS_CODE_PG, ACCESS_CODE_PG_REPLACEMENT } from "@/lib/listings/excluded-fields";
 import { publicConditions } from "@/lib/listings/visibility";
 import { marketDateDaysAgo } from "@/lib/time";
-import { allowsPriceReduced, type SearchCriteria } from "./params";
+import { allowsPriceReduced, DEFAULT_CRITERIA, type SearchCriteria } from "./params";
 
 type Status = (typeof listings.status.enumValues)[number];
 
@@ -76,23 +78,56 @@ export type LocationScope = {
   county?: string;
 };
 
+/** "c", "co", … "county": the County word, perhaps half typed. */
+const COUNTY_WORD = "c(?:o(?:u(?:n(?:t(?:y)?)?)?)?)?";
+/** The state, perhaps half typed: its code, or any start of its name ("G", "Ge", … "Georgia"). */
+const PARTIAL_STATE = `(?:${site.market.state}|${Array.from(site.market.stateName, (_, i) =>
+  site.market.stateName.slice(0, i + 1),
+).join("|")})`;
+/** That state at the end, after a comma or a County word: "Hall, G", "Hall County Ga". */
+const PARTIAL_STATE_SUFFIX = new RegExp(
+  `(?:\\s*,\\s*|(?<=\\s${COUNTY_WORD})\\s+)${PARTIAL_STATE}\\.?\\s*$`,
+  "i",
+);
+
+/**
+ * The location box's text without a trailing state, even a half-typed one,
+ * after a comma or a County word: "Hall County, G" → "Hall County",
+ * "Hall, GA" → "Hall". A lone letter otherwise stays ("Hall G").
+ */
+export function stripPartialState(q: string): string {
+  return q.replace(PARTIAL_STATE_SUFFIX, "");
+}
+
+/** A trailing County word of at least "co", in normalized text: "hall co" → "hall". */
+const PARTIAL_COUNTY_WORD = / co(?:u(?:n(?:t(?:y)?)?)?)?$/;
+
 /**
  * The county key the location box may name ("Hall County", "hall county, GA",
- * "Hall" → "hall"), or undefined for a ZIP or a lake guide. Whether such a
- * county exists, and whether a town of the name comes first, is up to
- * `resolveScope`.
+ * "Hall Co", "Hall County, G", "Hall" → "hall"; "De Kalb" → "dekalb"), or
+ * undefined for a ZIP or a lake guide. Whether such a county exists, and
+ * whether a town of the name comes first, is up to `resolveScope`.
  */
 export function countyKey(q: string | undefined): string | undefined {
   if (!q) return undefined;
-  const text = normalizeLocationQuery(q);
+  const text = normalizeLocationQuery(stripPartialState(q));
   if (!text || /^\d{5}$/.test(text) || lakeGuide(q)) return undefined;
-  return normalizeCounty(text) || undefined;
+  return normalizeCounty(normalizeAreaName(text).replace(PARTIAL_COUNTY_WORD, "")) || undefined;
 }
 
-/** Listings in the county (any spelling: "Hall", "HALL", "Hall County"), cheap LIKE first. */
+/**
+ * Listings in the county (any spelling: "Hall", "HALL", "Hall County", and an
+ * exception's "De Kalb"), cheap LIKE first.
+ */
 export function countyCondition(county: string): SQL {
-  const key = normalizeCounty(county);
-  return sql`(lower(${listings.county}) like ${`${key.split(" ")[0]}%`} and ${normalizedCountySql(listings.county)} = ${key})`;
+  const keys = countyKeySpellings(normalizeCounty(county));
+  const col = normalizedCountySql(listings.county);
+  if (keys.length === 1) {
+    const [key] = keys;
+    return sql`(lower(${listings.county}) like ${`${key.split(" ")[0]}%`} and ${col} = ${key})`;
+  }
+  const patterns = Array.from(new Set(keys.map((k) => `${k.split(" ")[0]}%`)));
+  return sql`(lower(${listings.county}) like any(${textArray(patterns)}) and ${col} = any(${textArray(keys)}))`;
 }
 
 /**
@@ -155,6 +190,15 @@ export const DEFAULT_EXCLUDED_TYPES = ["commercial"] as const;
 /** The default search's property types: everything but `DEFAULT_EXCLUDED_TYPES`. */
 export function defaultTypesCondition(): SQL {
   return ne(listings.propertyType, DEFAULT_EXCLUDED_TYPES[0]);
+}
+
+/**
+ * The default buy search's conditions, with no location or filters: public,
+ * for sale, active or coming soon, default property types. What the results
+ * page counts for a place, so the county suggestion's count matches it.
+ */
+export function defaultBuyConditions(): SQL[] {
+  return buildConditions({ ...DEFAULT_CRITERIA, mode: "buy" });
 }
 
 /**

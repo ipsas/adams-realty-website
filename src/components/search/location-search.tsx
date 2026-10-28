@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import type { Suggestion } from "@/lib/listings/queries";
+import { enterTarget } from "./location-enter";
 
 const ICONS = {
   city: Building2,
@@ -40,6 +41,8 @@ export function LocationSearch({
   const router = useRouter();
   const [value, setValue] = useState(defaultValue);
   const [items, setItems] = useState<Suggestion[]>([]);
+  // The text `items` were fetched for, so Enter never follows a stale list.
+  const [itemsTerm, setItemsTerm] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const [loading, setLoading] = useState(false);
@@ -67,6 +70,7 @@ export function LocationSearch({
         });
         const json = (await res.json()) as { suggestions: Suggestion[] };
         setItems(json.suggestions);
+        setItemsTerm(term);
         setActive(-1);
       } catch {
         // Aborted or offline — keep the last suggestions.
@@ -94,8 +98,9 @@ export function LocationSearch({
       router.push(`/homes/${s.value}`);
       return;
     }
-    // A lake's label says "(lake area)"; the box keeps just its name, like the URL.
-    setValue(s.kind === "lake" ? s.value : s.label);
+    // A lake's label says "(lake area)" and a county's is its bare name; the
+    // box keeps the searched name ("Lake Hartwell", "Hall County"), like the URL.
+    setValue(s.kind === "lake" || s.kind === "county" ? s.value : s.label);
     onSearch(s.value);
   };
 
@@ -151,6 +156,13 @@ export function LocationSearch({
               setActive((a) => (a <= 0 ? items.length - 1 : a - 1));
             } else if (e.key === "Escape") {
               setOpen(false);
+            } else if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+              // The open list's first suggestion (or the arrow-selected one), as if clicked.
+              const s = enterTarget(items, itemsTerm, term, active, showList);
+              if (s) {
+                e.preventDefault();
+                choose(s);
+              }
             }
           }}
           className={cn(
@@ -200,6 +212,8 @@ export function LocationSearch({
                 </span>
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium text-ink">{s.label}</span>
+                  {/* The space keeps the accessible name "Hall County", not "HallCounty". */}
+                  {s.sublabel && " "}
                   {s.sublabel && (
                     <span className="block truncate text-xs text-muted">{s.sublabel}</span>
                   )}

@@ -2,10 +2,15 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import { areas, findArea, normalizeAreaName } from "@/config/areas";
 import { listings } from "@/db/schema";
+import { GEORGIA_COUNTIES } from "@/test/georgia-counties";
 import {
   areaCondition,
   areaKeyRows,
   areaMatchKeys,
+  canonicalCountySql,
+  COUNTY_NAME_EXCEPTIONS,
+  countyDisplay,
+  countyKeySpellings,
   guideForLocation,
   inAreaCounties,
   normalizeCounty,
@@ -95,6 +100,37 @@ describe("county scoping", () => {
     expect(normalizeCounty("HART COUNTY")).toBe("hart");
     expect(normalizeCounty(" McIntosh  County ")).toBe("mcintosh");
     expect(normalizeCounty("Jeff Davis")).toBe("jeff davis");
+  });
+
+  it("keys DeKalb, McDuffie and McIntosh however they are spaced, cased or punctuated", () => {
+    for (const v of ["De Kalb", "de kalb county", "Dekalb", "DEKALB County", "De'Kalb", "DeKalb"]) {
+      expect(normalizeCounty(v)).toBe("dekalb");
+    }
+    for (const v of ["Mc Duffie", "McDuffie", "mc duffie county", "Mc'Duffie", "MCDUFFIE"]) {
+      expect(normalizeCounty(v)).toBe("mcduffie");
+    }
+    for (const v of ["McIntosh", "Mc Intosh", "mc'intosh county"]) {
+      expect(normalizeCounty(v)).toBe("mcintosh");
+    }
+    // Other two-word counties keep their space.
+    expect(normalizeCounty("Ben Hill County")).toBe("ben hill");
+    expect(normalizeCounty("JEFF DAVIS")).toBe("jeff davis");
+  });
+
+  it("lists the spellings a feed may use for a county key or its start", () => {
+    expect(countyKeySpellings("dekalb")).toEqual(["dekalb", "de kalb"]);
+    expect(countyKeySpellings("deka")).toEqual(["deka", "de ka"]);
+    expect(countyKeySpellings("mcdu")).toEqual(["mcdu", "mc du"]);
+    expect(countyKeySpellings("mc")).toEqual(["mc"]);
+    expect(countyKeySpellings("de")).toEqual(["de"]);
+    expect(countyKeySpellings("hall")).toEqual(["hall"]);
+    expect(countyKeySpellings("ben hill")).toEqual(["ben hill"]);
+  });
+
+  it("groups an exception's split spelling with the joined one", () => {
+    const { sql, params } = dialect.sqlToQuery(canonicalCountySql(listings.county));
+    expect(sql).toContain(`replace(regexp_replace(`);
+    expect(params).toEqual(Object.keys(COUNTY_NAME_EXCEPTIONS));
   });
 
   it("keeps listings with no county, or in one of the area's counties", () => {
@@ -247,5 +283,35 @@ describe("serviceAreaKeys / guideForLocation", () => {
     expect(guideForLocation("Oak Hill", "Lakeland", "Lanier", "Lanier")).toBeUndefined();
     // No county on the listing: the name alone decides, as before.
     expect(guideForLocation("Jefferson", "Savannah", null)?.slug).toBe("jefferson");
+  });
+});
+
+describe("countyDisplay", () => {
+  it("spells DeKalb, McDuffie and McIntosh their way, however the feed cases them", () => {
+    expect(countyDisplay("DEKALB")).toBe("DeKalb County");
+    expect(countyDisplay("Dekalb")).toBe("DeKalb County");
+    expect(countyDisplay("De Kalb County")).toBe("DeKalb County");
+    expect(countyDisplay("MCDUFFIE")).toBe("McDuffie County");
+    expect(countyDisplay("mcduffie county")).toBe("McDuffie County");
+    expect(countyDisplay("MCINTOSH COUNTY")).toBe("McIntosh County");
+    expect(countyDisplay("BEN HILL")).toBe("Ben Hill County");
+    expect(countyDisplay("jeff davis county")).toBe("Jeff Davis County");
+  });
+
+  it("shows every Georgia county correctly from capitals, lower case or as spelled", () => {
+    expect(GEORGIA_COUNTIES).toHaveLength(159);
+    for (const name of GEORGIA_COUNTIES) {
+      for (const v of [name, name.toUpperCase(), name.toLowerCase()]) {
+        expect(countyDisplay(v)).toBe(`${name} County`);
+        expect(countyDisplay(`${v} County`)).toBe(`${name} County`);
+      }
+    }
+  });
+
+  it("needs an exception exactly for the counties Title Case gets wrong", () => {
+    const title = (s: string) =>
+      s.toLowerCase().replace(/(^|\s)([a-z])/g, (_, p, c) => p + c.toUpperCase());
+    const odd = GEORGIA_COUNTIES.filter((n) => title(n) !== n);
+    expect(Object.values(COUNTY_NAME_EXCEPTIONS)).toEqual(odd);
   });
 });

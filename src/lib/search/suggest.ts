@@ -1,6 +1,6 @@
 import { areas, countyLabel, normalizeAreaName } from "@/config/areas";
-import { countyDisplay, normalizeCounty } from "@/lib/areas/match";
-import { lakeGuide } from "./query";
+import { countyDisplay, joinCountyKey, normalizeCounty } from "@/lib/areas/match";
+import { lakeGuide, stripPartialState } from "./query";
 
 /**
  * Shapes location autocomplete (site review #5). Pure, so the rules are
@@ -14,9 +14,10 @@ import { lakeGuide } from "./query";
  * - Towns with no homes listed right now (only past sales) still appear, after
  *   the rest, so a search for one reaches the no-results helpers instead of
  *   looking unknown.
- * - A county ("Hall County", from the listings' county) comes first when the
- *   text names it ("Hall", "Hall Co"), else after the places; a neighborhood a
- *   feed named after it ("Hall County" in Clermont) is dropped.
+ * - A county ("Hall" tagged "County", value "Hall County", from the listings'
+ *   county) comes first when the text names it ("Hall", "Hall Co"), else after
+ *   the places; a neighborhood a feed named after it ("Hall County" in
+ *   Clermont) is dropped.
  */
 
 export type Suggestion = {
@@ -35,13 +36,14 @@ export type PlaceRow = { kind: string; label: string; sublabel: string | null; n
 export type CountyRow = { county: string; n: number };
 
 /**
- * The county name typed so far, for the county lookup: "Hall Co", "hall county, GA"
- * → "hall"; "Gwin" → "gwin". Empty when there's nothing to look up.
+ * The county name typed so far, for the county lookup: "Hall Co", "hall county, GA",
+ * "Hall County, G" → "hall"; "Gwin" → "gwin"; "De Ka" → "deka". Empty when
+ * there's nothing to look up.
  */
 export function countyPrefix(term: string): string {
-  const t = normalizeAreaName(term).replace(/ (ga|georgia)$/, "");
+  const t = normalizeAreaName(stripPartialState(term)).replace(/ (ga|georgia)$/, "");
   if (/^\d/.test(t)) return "";
-  return t.replace(/ c(o(u(n(t(y)?)?)?)?)?$/, "");
+  return joinCountyKey(t.replace(/ c(o(u(n(t(y)?)?)?)?)?$/, ""));
 }
 
 /** Area suggestions shown at most (addresses come after). */
@@ -87,17 +89,16 @@ export function shapeAreaSuggestions(
 ): Suggestion[] {
   const out: Suggestion[] = [];
   const lakes = new Map<string, Suggestion>();
-  const typed = normalizeAreaName(term);
+  const typed = countyPrefix(term);
+  // The name once, tagged "County"; choosing it searches "Hall County".
   const counties = countyRows.map((r): Suggestion => {
-    const label = countyDisplay(r.county);
-    return { kind: "county", label, sublabel: "County", value: label, count: r.n };
+    const value = countyDisplay(r.county);
+    const label = value.replace(/ County$/, "");
+    return { kind: "county", label, sublabel: "County", value, count: r.n };
   });
-  const countyLabels = new Set(counties.map((s) => normalizeAreaName(s.label)));
+  const countyLabels = new Set(counties.map((s) => normalizeAreaName(s.value)));
   // Typed as the county's name ("Hall") or "<name> c…" ("Hall Co"): the county comes first.
-  const exact = (s: Suggestion) => {
-    const key = normalizeCounty(s.label);
-    return normalizeCounty(typed) === key || typed.startsWith(`${key} c`);
-  };
+  const exact = (s: Suggestion) => typed === normalizeCounty(s.value);
   for (const r of rows) {
     // The county itself, not a subdivision a feed named "Hall County".
     if (r.kind === "neighborhood" && countyLabels.has(normalizeAreaName(r.label))) continue;
