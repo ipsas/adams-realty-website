@@ -12,9 +12,9 @@ import { HIDDEN_STATUSES } from "./hidden-statuses";
  *   enum has no on-hold value); Canceled is hidden too (a withdrawal by another
  *   name, and hiding more is safe). The firm hides its own manually entered
  *   listings in these statuses the same way, so this rule applies to every row.
- * - Exhibit A §16 and Exhibit C: Sold, On Hold, Withdrawn and Expired feed
- *   listings show the primary photo only, never a secondary one. The firm's
- *   own sold listings keep all their photos.
+ * - Exhibit A §16 and Exhibit C: Sold, On Hold, Withdrawn and Expired
+ *   listings show the primary photo only, never a secondary one. The agreement
+ *   makes no exception for the firm's own listings, so this applies to every row.
  * - A feed listing that left the feed (`removedAt`) is taken down, as the
  *   privacy page promises: no page, and saved homes show only that it's gone.
  *
@@ -26,7 +26,7 @@ type Status = (typeof listings.status.enumValues)[number];
 /** Statuses the public never sees, for any listing. Mirrors the `idx_hidden` generated column. */
 export const IDX_HIDDEN_STATUSES = HIDDEN_STATUSES satisfies readonly Status[];
 
-/** Feed statuses shown with their primary photo only. */
+/** Statuses shown with their primary photo only, for any listing. */
 export const PRIMARY_PHOTO_ONLY_STATUSES = [
   "closed",
   "withdrawn",
@@ -50,11 +50,14 @@ export function canShowDetails(l: Subject): boolean {
   return !isIdxHidden(l) && !(l.fromFeed && l.removedAt);
 }
 
-/** Whether only the primary photo may be shown (sold or off-market feed listings). */
+/**
+ * Whether only the primary photo may be shown: any sold or off-market listing,
+ * the firm's own included, and a feed listing that left the feed.
+ */
 export function primaryPhotoOnly(l: Subject): boolean {
   return (
-    l.fromFeed &&
-    (!!l.removedAt || (PRIMARY_PHOTO_ONLY_STATUSES as readonly string[]).includes(l.status))
+    (l.fromFeed && !!l.removedAt) ||
+    (PRIMARY_PHOTO_ONLY_STATUSES as readonly string[]).includes(l.status)
   );
 }
 

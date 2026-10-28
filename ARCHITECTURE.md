@@ -238,9 +238,9 @@ governs every listing that came from the feed. Adams Realty, Inc. is the license
   a link to the page, and the listing form says when a status keeps a listing off the site.
   `public_since` stays null until a hidden row first turns visible, so alerts announce a
   Coming Soon listing, feed or manual, when it goes active.
-- **Primary photo only (§16, Exhibit C):** sold and off-market feed rows show one photo on the
-  page (gallery, lightbox, JSON-LD) and on cards (`allowedPhotos` in `withPhotos`). OG images
-  and map popups only ever use the primary photo. The firm's own sold listings keep every photo.
+- **Primary photo only (§16, Exhibit C):** sold and off-market rows, the firm's own included,
+  show one photo on the page (gallery, lightbox, JSON-LD) and on cards (`allowedPhotos` in
+  `withPhotos`). OG images and map popups only ever use the primary photo.
 - **Attribution (§7, §10):** every card, map popup, area-guide tile and listing page names the
   listing firm in `text-sm`, the size of the other listing text (`e2e/gamls.spec.ts` measures
   it against the median). `MlsAttribution` (`src/components/content/mls-attribution.tsx`)
