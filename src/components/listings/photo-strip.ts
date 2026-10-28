@@ -33,6 +33,27 @@ export function centerTarget(
   return clamp(thumbOffsetLeft + thumbWidth / 2 - clientWidth / 2, clientWidth, scrollWidth);
 }
 
+/** Whether the pager scrolling in `dir` has nowhere left to go. */
+export const pagerDisabled = (dir: 1 | -1, edges: ReturnType<typeof stripEdges>) =>
+  dir < 0 ? edges.atStart : edges.atEnd;
+
+/**
+ * Where focus goes when the focused pager for `dir` becomes disabled, so it doesn't drop to
+ * <body>: the opposite pager, or the current thumb if that one is disabled too.
+ */
+export function pagerFallback(dir: 1 | -1, edges: ReturnType<typeof stripEdges>) {
+  const other = dir < 0 ? 1 : -1;
+  return pagerDisabled(other, edges) ? "thumb" : other;
+}
+
+/** The photo step for a lightbox keydown: bare ←/→ only, so modified arrows keep their meaning. */
+export function arrowStep(
+  e: Pick<KeyboardEvent, "key" | "altKey" | "ctrlKey" | "metaKey" | "shiftKey">,
+): 1 | -1 | null {
+  if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return null;
+  return e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : null;
+}
+
 /** Horizontal pixels for a mostly-vertical wheel event, or null to leave the event alone. */
 export function wheelDelta(deltaX: number, deltaY: number, deltaMode: number, clientWidth: number) {
   if (Math.abs(deltaY) <= Math.abs(deltaX)) return null;
