@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cutAtWord,
   daysSince,
   formatBaths,
   formatChangeChip,
+  formatCityLine,
   formatDisplayPhone,
   formatLot,
   formatMonthly,
@@ -13,6 +14,7 @@ import {
   formatStreet,
   formatUnit,
   freshness,
+  isNewListing,
   isNullLike,
   listingMetaDescription,
   STALE_FEED_MS,
@@ -83,6 +85,33 @@ describe("format", () => {
   it("counts days on market", () => {
     expect(daysSince("2026-09-20", new Date("2026-09-25T15:00:00Z"))).toBe(5);
     expect(daysSince("2026-09-30", new Date("2026-09-25T15:00:00Z"))).toBeLessThan(0);
+  });
+
+  describe("isNewListing", () => {
+    afterEach(() => vi.useRealTimers());
+
+    const cases = () => {
+      expect(isNewListing("2026-12-13", "2026-12-20")).toBe(true); // 7 days
+      expect(isNewListing("2026-12-12", "2026-12-20")).toBe(false); // 8 days
+      expect(isNewListing("2026-12-25", "2026-12-20")).toBe(true); // future: the existing rule
+      expect(isNewListing(null, "2026-12-20")).toBe(false);
+    };
+
+    it("counts whole days from the market date", cases);
+
+    it("doesn't depend on the clock it runs on", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-12-31T12:00:00Z"));
+      cases();
+      vi.setSystemTime(new Date("2026-12-15T00:00:00Z"));
+      cases();
+    });
+  });
+
+  it("shows the state as stored canonically", () => {
+    const a = { addressLine1: "1 Main St", city: "Royston", postalCode: "30662" };
+    expect(formatCityLine({ ...a, state: " georgia " })).toBe("Royston, GA 30662");
+    expect(formatCityLine({ ...a, state: "al" })).toBe("Royston, AL 30662");
   });
 
   it("tells staff which off-market status a listing is in; the public sees one label", () => {

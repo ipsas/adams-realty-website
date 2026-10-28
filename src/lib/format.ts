@@ -1,4 +1,5 @@
 import { site } from "@/config/site";
+import { normalizeState } from "@/lib/state-name";
 
 /** Display formatting shared by server and client components. */
 
@@ -87,7 +88,7 @@ export function formatStreet(
 }
 
 export function formatCityLine(a: AddressLike): string {
-  return `${a.city}, ${a.state} ${a.postalCode}`;
+  return `${a.city}, ${typeof a.state === "string" && a.state ? normalizeState(a.state) : a.state} ${a.postalCode}`;
 }
 
 export function formatFullAddress(a: AddressLike): string {
@@ -139,6 +140,17 @@ export function daysSince(
   if (!isoDate) return null;
   const then = Date.parse(`${isoDate}T12:00:00Z`);
   return Math.floor((now.getTime() - then) / 86_400_000);
+}
+
+/**
+ * Whether a listing gets the "New" badge: listed at most 7 days ago. With
+ * `today` (the market date from the server, YYYY-MM-DD) the age is whole
+ * calendar days from that date, so it doesn't depend on the clock it runs on;
+ * without it, the age on this clock.
+ */
+export function isNewListing(listDate: string | null | undefined, today: string | null): boolean {
+  const age = today ? daysSince(listDate, new Date(`${today}T12:00:00Z`)) : daysSince(listDate);
+  return age !== null && age <= 7;
 }
 
 export function daysOnMarketLabel(isoDate: string | null | undefined): string | null {

@@ -8,7 +8,6 @@ import { LogoMark } from "@/components/layout/logo";
 import { Photo } from "@/components/ui/photo";
 import { cn } from "@/lib/cn";
 import {
-  daysSince,
   formatBaths,
   formatCityLine,
   formatDate,
@@ -17,6 +16,7 @@ import {
   formatPriceShort,
   formatShortOpenHouse,
   formatStreet,
+  isNewListing,
   PROPERTY_TYPE_LABELS,
 } from "@/lib/format";
 import { site } from "@/config/site";
@@ -25,6 +25,7 @@ import type { ListingCardData } from "@/lib/listings/card";
 import { landSummary } from "@/lib/listings/land";
 import { listingOfficeLabel } from "@/lib/listings/office-label";
 import { canShowDetails, primaryPhotoOnly } from "@/lib/listings/visibility";
+import { useMarketToday } from "./market-today";
 import { SaveButton } from "./save-button";
 
 export function ListingCard({
@@ -56,6 +57,8 @@ export function ListingCard({
   const rent = l.transactionType === "rent";
   // Bare land: "Land · 12.5 acres · $8,400/acre" instead of "— bd · — ba" (site review #8).
   const land = landSummary({ ...l, price: rent ? null : price });
+  // The server's market date, so the "New" badge hydrates as rendered (React #418).
+  const today = useMarketToday();
 
   return (
     <article
@@ -83,7 +86,7 @@ export function ListingCard({
             nearPx={photoNearPx}
           />
           <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start gap-1.5 p-3">
-            {cardBadges(l).slice(0, 2)}
+            {cardBadges(l, today).slice(0, 2)}
           </div>
           {l.isCompanyListing && !unavailable && (
             <span className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-1.5 rounded-full bg-surface/95 py-1 pr-2.5 pl-1 text-[11px] font-semibold text-ink shadow-sm">
@@ -185,7 +188,7 @@ function Badge({
   );
 }
 
-function cardBadges(l: ListingCardData): ReactNode[] {
+function cardBadges(l: ListingCardData, today: string | null): ReactNode[] {
   const out: ReactNode[] = [];
   if (l.removedAt || !canShowDetails(l))
     return [
@@ -218,8 +221,7 @@ function cardBadges(l: ListingCardData): ReactNode[] {
       </Badge>,
     );
   if (l.status === "active") {
-    const age = daysSince(l.listDate);
-    if (age !== null && age <= 7)
+    if (isNewListing(l.listDate, today))
       out.push(
         <Badge key="new" tone="brand">
           New

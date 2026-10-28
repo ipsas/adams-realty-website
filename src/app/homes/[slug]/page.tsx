@@ -81,6 +81,7 @@ import { normalizeTaxYear } from "@/lib/listings/tax-year";
 import { formatLastUpdated, mlsDisclaimer, sourceDisclaimer } from "@/lib/mls-copyright";
 import { gamlsLastSyncedAt } from "@/lib/mls/last-updated";
 import { financeFor, listingMonthlyCost, monthlyHoaAmount } from "@/lib/mortgage";
+import { isMarketState, normalizeState } from "@/lib/market-state";
 import { OG_DEFAULT_IMAGE } from "@/lib/og";
 
 export async function generateMetadata(props: PageProps<"/homes/[slug]">): Promise<Metadata> {
@@ -102,7 +103,7 @@ export async function generateMetadata(props: PageProps<"/homes/[slug]">): Promi
   const title = `${formatFullAddress(l)} | ${facts ? `${facts} | ` : ""}${formatPrice(l.listPrice)}`;
   const description = l.description?.trim()
     ? listingMetaDescription(redactAccessCodes(l.description))
-    : `${statusLabel(l.status, l.transactionType)} in ${l.city}, ${l.state}.`;
+    : `${statusLabel(l.status, l.transactionType)} in ${l.city}, ${normalizeState(l.state)}.`;
   return {
     title: { absolute: `${title} | ${site.name}` },
     description,
@@ -165,6 +166,8 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
     !rent && isLandType(l.propertyType)
       ? formatPricePerAcre(sold && l.closePrice ? l.closePrice : l.listPrice, l.lotSizeSqft)
       : null;
+  // Georgia county rates and area guides only fit a Georgia listing; elsewhere, neither shows.
+  const inMarket = isMarketState(l.state);
   // Insurance and the tax fallback follow the county (coastal and metro rates differ).
   const finance = financeFor(l.county);
   // The same estimate the calculator (#costs) starts from.
@@ -209,14 +212,19 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
         <Container className="pt-5">
           {l.removedAt && (
             <p className="mb-4 rounded-2xl bg-clay-50 px-4 py-3 text-sm text-clay-600">
-              This home is no longer on the market.{" "}
-              <Link
-                href={placeHref(neighborhood ?? l.city, l.county)}
-                className="font-semibold underline"
-              >
-                See similar homes nearby
-              </Link>
-              .
+              This home is no longer on the market.
+              {inMarket && (
+                <>
+                  {" "}
+                  <Link
+                    href={placeHref(neighborhood ?? l.city, l.county)}
+                    className="font-semibold underline"
+                  >
+                    See similar homes nearby
+                  </Link>
+                  .
+                </>
+              )}
             </p>
           )}
           <div className="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
@@ -232,16 +240,20 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                 <Link href="/homes" className="hover:text-ink">
                   Homes
                 </Link>
-                <ChevronRight className="size-3.5" />
-                <Link href={placeHref(l.city, l.county)} className="hover:text-ink">
-                  {l.city}
-                </Link>
-                {neighborhood && neighborhood !== l.city && (
+                {inMarket && (
                   <>
                     <ChevronRight className="size-3.5" />
-                    <Link href={placeHref(neighborhood, l.county)} className="hover:text-ink">
-                      {neighborhood}
+                    <Link href={placeHref(l.city, l.county)} className="hover:text-ink">
+                      {l.city}
                     </Link>
+                    {neighborhood && neighborhood !== l.city && (
+                      <>
+                        <ChevronRight className="size-3.5" />
+                        <Link href={placeHref(neighborhood, l.county)} className="hover:text-ink">
+                          {neighborhood}
+                        </Link>
+                      </>
+                    )}
                   </>
                 )}
               </nav>
@@ -297,7 +309,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                     </p>
                   )}
                 </div>
-                {!rent && !sold && (
+                {!rent && !sold && inMarket && (
                   // ml-auto: when the price and this wrap onto two lines (a phone, a long land
                   // note), it still sits at the right edge instead of floating mid-screen.
                   <a
@@ -457,7 +469,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                 </Section>
               )}
 
-              {!rent && !sold && (
+              {!rent && !sold && inMarket && (
                 <Section title="Monthly cost" id="costs">
                   <PaymentCalculator
                     price={l.listPrice}
@@ -550,7 +562,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                   <div className="h-80 overflow-hidden rounded-2xl border border-line">
                     <LocationMapLazy lat={l.latitude} lng={l.longitude} label={street} />
                   </div>
-                  {neighborhood && (
+                  {neighborhood && inMarket && (
                     <Link
                       href={placeHref(neighborhood, l.county)}
                       className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-brand-700 hover:underline"
@@ -911,14 +923,14 @@ function JsonLd({ data }: { data: ListingDetail }) {
         ? {
             "@type": "PostalAddress",
             addressLocality: l.city,
-            addressRegion: l.state,
+            addressRegion: normalizeState(l.state),
             postalCode: l.postalCode,
           }
         : {
             "@type": "PostalAddress",
             streetAddress: formatStreet(l),
             addressLocality: l.city,
-            addressRegion: l.state,
+            addressRegion: normalizeState(l.state),
             postalCode: l.postalCode,
           },
       numberOfRooms: l.bedrooms ?? undefined,

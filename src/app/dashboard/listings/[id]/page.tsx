@@ -17,6 +17,7 @@ import { requirePermission } from "@/lib/auth/session";
 import { getAgentOptions } from "@/lib/dashboard/queries";
 import { formatOpenHouse, formatShortOpenHouse, staffStatusLabel } from "@/lib/format";
 import { isIdxHidden } from "@/lib/listings/visibility";
+import { normalizeState } from "@/lib/market-state";
 import { upcomingDays } from "@/lib/time";
 
 export const metadata = { title: "Edit listing" };
@@ -72,7 +73,7 @@ export default async function EditListingPage(props: PageProps<"/dashboard/listi
         title={l.addressLine1}
         description={
           <>
-            {staffStatusLabel(l.status, l.transactionType)} · {l.city}, {l.state} {l.postalCode} ·{" "}
+            {staffStatusLabel(l.status, l.transactionType)} · {l.city}, {normalizeState(l.state)} {l.postalCode} ·{" "}
             {isIdxHidden(l) ? (
               <span data-testid="not-public">Not on the public site in this status</span>
             ) : (
