@@ -53,6 +53,21 @@ type StatsRow = {
   lastUpdated: Date | string | null;
 };
 
+const LIVE_FOR_SALE = ["active", "coming_soon"] as const;
+
+/**
+ * What the guide counts and lists as for sale: live sale listings that may
+ * front it (`showcaseListing`). getAreaStats and the grid share it, so the
+ * hero, the tiles and the grid agree.
+ */
+function areaForSale(): SQL {
+  return and(
+    eq(listings.transactionType, "sale"),
+    inArray(listings.status, [...LIVE_FOR_SALE]),
+    showcaseListing(),
+  )!;
+}
+
 /**
  * Live market stats for any number of areas in one query. Each listing's
  * neighborhood, lake (water_body), city and county are normalized once (only
@@ -76,7 +91,7 @@ export async function getAreaStats(
 
   const L = listings;
   const sale = sql`${L.transactionType} = 'sale'`;
-  const forSale = sql`${sale} and ${L.status} in ('active', 'coming_soon')`;
+  const forSale = areaForSale();
   const sold = sql`${sale} and ${L.status} = 'closed' and ${L.closeDate} >= ${soldSince}::date`;
   // $/sqft only means something for homes: a farm's price is mostly land, a
   // storefront's is priced as commercial space.
@@ -191,17 +206,9 @@ export async function getAreaStats(
   return out;
 }
 
-const LIVE_FOR_SALE = ["active", "coming_soon"] as const;
-
 /** The homes the guide's for-sale grid draws from. */
 function areaGridPool(area: Area) {
-  return and(
-    publicListing(),
-    eq(listings.transactionType, "sale"),
-    inArray(listings.status, [...LIVE_FOR_SALE]),
-    areaCondition(area),
-    showcaseListing(),
-  );
+  return and(publicListing(), areaForSale(), areaCondition(area));
 }
 
 /** Newest homes for sale in the area, as listing cards. */

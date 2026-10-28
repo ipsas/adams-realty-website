@@ -29,7 +29,7 @@ export function isShowcaseJunk(l: ShowcaseFields): boolean {
   );
 }
 
-/** SQL twin of `!isShowcaseJunk`, shared by getAreaListings and getAreaFeaturedListing. */
+/** SQL twin of `!isShowcaseJunk`, part of the guide's for-sale condition (stats and grid). */
 export function showcaseListing() {
   const L = listings;
   return sql`not (

@@ -5,7 +5,12 @@ import { db } from "@/db";
 import { listings } from "@/db/schema";
 import { closeDb, createSource, insertListings, listing, resetDb } from "@/test/db/helpers";
 import { areaCondition } from "./match";
-import { getAreaStats } from "./queries";
+import {
+  getAreaFeaturedListing,
+  getAreaListingCount,
+  getAreaListings,
+  getAreaStats,
+} from "./queries";
 
 // getAreaStats' hash join against Postgres. Names repeat across a statewide
 // feed, so each of its three ways in (neighborhood, lake, city) must keep a
@@ -44,6 +49,19 @@ const subdivision = area({
   name: "Reunion",
   city: "Hoschton",
   counties: ["Hall"],
+});
+
+const royston = area({
+  slug: "royston",
+  name: "Royston",
+  city: "Royston",
+  counties: ["Franklin"],
+});
+const comer = area({
+  slug: "comer",
+  name: "Comer",
+  city: "Comer",
+  counties: ["Madison"],
 });
 
 let i = 0;
@@ -108,6 +126,22 @@ beforeAll(async () => {
       closePrice: 10_000,
       lotSizeSqft: 43_560,
     }),
+    // Royston (QA R35 C-L1): three real homes, plus listings the guide leaves
+    // out (showcaseListing): street number 0, and no living area over the cap.
+    ...[200_000, 300_000, 400_000].map((listPrice) =>
+      home({ city: "Royston", county: "Franklin", listPrice, livingAreaSqft: 1_800 }),
+    ),
+    home({
+      city: "Royston",
+      county: "Franklin",
+      addressLine1: "0 Franklin Springs St",
+      listPrice: 6_000_000,
+      livingAreaSqft: 2_000,
+    }),
+    home({ city: "Royston", county: "Franklin", listPrice: 5_000_000, livingAreaSqft: null }),
+    // Comer: only such listings.
+    home({ city: "Comer", county: "Madison", addressLine1: "0 Main St", livingAreaSqft: 1_500 }),
+    home({ city: "Comer", county: "Madison", listPrice: 2_500_000, livingAreaSqft: null }),
   ]);
 });
 afterAll(closeDb);
@@ -142,5 +176,25 @@ describe("getAreaStats", () => {
     for (const a of [jefferson, hartwellLake, subdivision]) {
       expect(stats.get(a.slug)!.forSale, a.slug).toBe(await direct(a));
     }
+  });
+
+  it("counts for sale only the homes the guide's grid draws from (QA R35 C-L1)", async () => {
+    const stats = (await getAreaStats([royston])).get("royston")!;
+    expect(stats.forSale).toBe(3);
+    expect(await getAreaListingCount(royston)).toBe(3);
+    expect(stats.medianListPrice).toBe(300_000);
+    expect(stats.maxListPrice).toBe(400_000);
+    const homes = await getAreaListings(royston);
+    expect(homes.map((h) => h.listPrice).sort((a, b) => a - b)).toEqual([200_000, 300_000, 400_000]);
+    expect((await getAreaFeaturedListing(royston))?.listPrice).toBe(400_000);
+  });
+
+  it("reports nothing for sale where every listing is left off the guide (QA R35 C-L2)", async () => {
+    const stats = (await getAreaStats([comer])).get("comer")!;
+    expect(stats.forSale).toBe(0);
+    expect(stats.medianListPrice).toBeNull();
+    expect(await getAreaListingCount(comer)).toBe(0);
+    expect(await getAreaListings(comer)).toEqual([]);
+    expect(await getAreaFeaturedListing(comer)).toBeNull();
   });
 });
