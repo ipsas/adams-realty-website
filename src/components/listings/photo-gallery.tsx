@@ -1,11 +1,19 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, Grid2x2, X } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { type Ref, useCallback, useEffect, useId, useRef, useState } from "react";
 import { useDialogHistory } from "@/components/ui/dialog";
 import { Photo } from "@/components/ui/photo";
 import { cn } from "@/lib/cn";
-import { centerTarget, pageTarget, stripEdges, wheelDelta } from "./photo-strip";
+import {
+  arrowStep,
+  centerTarget,
+  pageTarget,
+  pagerDisabled,
+  pagerFallback,
+  stripEdges,
+  wheelDelta,
+} from "./photo-strip";
 
 type GalleryPhoto = { url: string; caption: string | null };
 
@@ -37,10 +45,11 @@ export function PhotoGallery({ photos, alt }: { photos: GalleryPhoto[]; alt: str
   useEffect(() => {
     if (open === null) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+      const dir = arrowStep(e);
+      if (dir === null) return;
       // Otherwise a focused thumbnail also nudges the strip, cancelling its scroll to the new photo.
       e.preventDefault();
-      step(e.key === "ArrowRight" ? 1 : -1);
+      step(dir);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -51,11 +60,23 @@ export function PhotoGallery({ photos, alt }: { photos: GalleryPhoto[]; alt: str
   const stripId = useId();
   const [edges, setEdges] = useState({ atStart: true, atEnd: true });
   const isOpen = open !== null;
+  const prevPager = useRef<HTMLButtonElement>(null);
+  const nextPager = useRef<HTMLButtonElement>(null);
+  // The focused pager about to be disabled. Noted before the render that disables it: once it
+  // is, the browser has already moved focus to <body>.
+  const refocus = useRef<1 | -1 | null>(null);
 
   useEffect(() => {
     const el = strip.current;
     if (!isOpen || !el) return;
-    const update = () => setEdges(stripEdges(el.scrollLeft, el.clientWidth, el.scrollWidth));
+    const update = () => {
+      const next = stripEdges(el.scrollLeft, el.clientWidth, el.scrollWidth);
+      for (const dir of [-1, 1] as const) {
+        const b = dir < 0 ? prevPager.current : nextPager.current;
+        if (b && b === document.activeElement && pagerDisabled(dir, next)) refocus.current = dir;
+      }
+      setEdges(next);
+    };
     // Native and non-passive: React's onWheel can't preventDefault. A mouse wheel scrolls the
     // strip sideways until it reaches an end, then falls through to the page as usual.
     const onWheel = (e: WheelEvent) => {
@@ -77,6 +98,21 @@ export function PhotoGallery({ photos, alt }: { photos: GalleryPhoto[]; alt: str
       el.removeEventListener("wheel", onWheel);
     };
   }, [isOpen]);
+
+  // Hand focus on from a pager that just disabled itself (WCAG 2.4.3).
+  useEffect(() => {
+    const dir = refocus.current;
+    if (dir === null) return;
+    refocus.current = null;
+    const to = pagerFallback(dir, edges);
+    const target =
+      to === "thumb"
+        ? strip.current?.querySelector<HTMLElement>('[aria-current="true"]')
+        : to < 0
+          ? prevPager.current
+          : nextPager.current;
+    target?.focus();
+  }, [edges]);
 
   // Keep the active thumb centred. scrollTo, not scrollIntoView, which also scrolls the dialog.
   const positioned = useRef(false);
@@ -222,7 +258,13 @@ export function PhotoGallery({ photos, alt }: { photos: GalleryPhoto[]; alt: str
               )}
             </div>
             <div className="flex items-center gap-2 px-2 pb-4 sm:px-4">
-              <StripPager dir={-1} controls={stripId} disabled={edges.atStart} onPage={page} />
+              <StripPager
+                ref={prevPager}
+                dir={-1}
+                controls={stripId}
+                disabled={edges.atStart}
+                onPage={page}
+              />
               {/* Not justify-center: that pushes the first thumbs of a long strip out of reach.
                   The w-max inner row centres a short strip and starts a long one at the left. */}
               <div
@@ -250,7 +292,13 @@ export function PhotoGallery({ photos, alt }: { photos: GalleryPhoto[]; alt: str
                   ))}
                 </div>
               </div>
-              <StripPager dir={1} controls={stripId} disabled={edges.atEnd} onPage={page} />
+              <StripPager
+                ref={nextPager}
+                dir={1}
+                controls={stripId}
+                disabled={edges.atEnd}
+                onPage={page}
+              />
             </div>
           </div>
         )}
@@ -278,11 +326,13 @@ function LightboxArrow({ side, onClick }: { side: "left" | "right"; onClick: () 
 
 /** Pages the thumbnail strip; hidden (but still taking its space) at either end. */
 function StripPager({
+  ref,
   dir,
   controls,
   disabled,
   onPage,
 }: {
+  ref: Ref<HTMLButtonElement>;
   dir: 1 | -1;
   controls: string;
   disabled: boolean;
@@ -291,6 +341,7 @@ function StripPager({
   const Icon = dir < 0 ? ChevronLeft : ChevronRight;
   return (
     <button
+      ref={ref}
       type="button"
       onClick={() => onPage(dir)}
       disabled={disabled}
