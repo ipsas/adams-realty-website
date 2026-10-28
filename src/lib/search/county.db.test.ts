@@ -45,6 +45,9 @@ beforeAll(async () => {
     listing(5, { city: "Forsyth", county: "Monroe", latitude: 33.03, longitude: -83.94 }),
     listing(6, { city: "Cumming", county: "Forsyth", latitude: 34.21, longitude: -84.14 }),
     listing(7, { city: "Lawrenceville", county: "Gwinnett", latitude: 33.96, longitude: -83.99 }),
+    listing(8, { city: "Commerce", county: "Jackson", latitude: 34.2, longitude: -83.46 }),
+    // Hall County, Nebraska: not Georgia's.
+    listing(9, { city: "Grand Island", state: "NE", county: "Hall", postalCode: "68801" }),
   ]);
   await refreshPlaces(db);
 });
@@ -97,6 +100,13 @@ describe("a county search is that county only", () => {
       "Flowery Branch",
       "Gainesville",
     ]);
+  });
+
+  it("the county filter lists Georgia's homes in those counties only", async () => {
+    const both = ["Clermont", "Commerce", "Flowery Branch", "Gainesville"];
+    expect(await cities("counties=Hall,Jackson")).toEqual(both);
+    // The location box's county joins the filter's.
+    expect(await cities("q=Hall County&counties=Jackson")).toEqual(both);
   });
 });
 

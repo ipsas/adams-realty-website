@@ -1,4 +1,12 @@
 import { z } from "zod";
+import { GEORGIA_COUNTIES } from "@/config/georgia-counties";
+import { countyDisplay, normalizeCounty } from "@/lib/areas/county-name";
+import {
+  formatSchoolName,
+  isPlaceholderSchool,
+  SCHOOL_LEVELS,
+  type SchoolLevel,
+} from "./school-name";
 
 /**
  * The search page is URL-driven: the query string is the single source of
@@ -123,6 +131,8 @@ export type Bounds = { west: number; south: number; east: number; north: number 
 export type SearchCriteria = {
   mode: SearchMode;
   q?: string;
+  /** Georgia counties, as officially spelled ("Hall", "DeKalb"), sorted by key (`parseCounties`). */
+  counties?: string[];
   minPrice?: number;
   maxPrice?: number;
   beds?: number;
@@ -142,6 +152,10 @@ export type SearchCriteria = {
   hoa?: HoaFilter;
   /** Words in the listing text (search_vector), separate from the location box `q`. */
   kw?: string;
+  /** Assigned schools by name (any case or spacing), Georgia only; placeholders ("Other") dropped. */
+  elementary?: string;
+  middle?: string;
+  high?: string;
   /** Priced below the original list price. Buy mode only: not parsed, applied, counted or serialized in "rent" or "sold". */
   priceReduced?: boolean;
   /** 55+ communities: absent includes them. */
@@ -220,6 +234,46 @@ function parseList<T extends string>(
   return items.length ? Array.from(new Set(items)) : undefined;
 }
 
+/** County key → official name, for the 159 Georgia counties. */
+const GEORGIA_COUNTY_NAMES = new Map<string, string>(
+  GEORGIA_COUNTIES.map((name) => [normalizeCounty(name), name]),
+);
+
+/**
+ * The county filter: Georgia counties in any spelling ("hall", "De Kalb",
+ * "Jackson County"), as official names, deduped and sorted by key, so equal
+ * selections serialize alike. Unknown names are dropped; none is undefined.
+ */
+export function parseCounties(value: string | readonly string[] | undefined): string[] | undefined {
+  const items = typeof value === "string" ? value.split(",") : (value ?? []);
+  const keys = new Set(items.map(normalizeCounty).filter((k) => GEORGIA_COUNTY_NAMES.has(k)));
+  return keys.size ? [...keys].sort().map((k) => GEORGIA_COUNTY_NAMES.get(k)!) : undefined;
+}
+
+/**
+ * The Georgia county the location box names in its county suggestion's form,
+ * with the County word: "Hall County", "de kalb county, GA" → "Hall", "DeKalb".
+ * Undefined for a bare "Hall" (which may be a town) and anything else.
+ */
+export function explicitCountyQuery(q: string | undefined): string | undefined {
+  if (!q || !/\bcounty\b/i.test(q)) return undefined;
+  const text = q.replace(/(?:,\s*|\s+)(?:GA|Georgia)\.?(?:,?\s*(?:USA|US))?\s*$/i, "");
+  return text.includes(",") ? undefined : GEORGIA_COUNTY_NAMES.get(normalizeCounty(text));
+}
+
+/** "Hall County, Jackson County" for one or two counties, "3 counties" for more. */
+export function countiesLabel(counties: readonly string[]): string {
+  return counties.length > 2
+    ? `${counties.length} counties`
+    : counties.map((c) => countyDisplay(c)).join(", ");
+}
+
+/** A school filter value: single-spaced, at most 100 characters; a placeholder is none. */
+function parseSchool(value: string | undefined): string | undefined {
+  const text = value?.trim().replace(/\s+/g, " ").slice(0, 100).trim();
+  return text && !isPlaceholderSchool(text) ? text : undefined;
+}
+
 export function parseBounds(value: string | undefined): Bounds | undefined {
   if (!value) return undefined;
   const text = value.split(",").map((s) => s.trim());
@@ -261,8 +315,14 @@ export function parseSearchParams(raw: RawParams): SearchCriteria {
 
   const q = get(raw, "q")?.trim().slice(0, 120);
   if (q) c.q = q;
+  const counties = parseCounties(get(raw, "counties"));
+  if (counties) c.counties = counties;
   const kw = get(raw, "kw")?.trim().slice(0, 80).trim();
   if (kw) c.kw = kw;
+  for (const level of SCHOOL_LEVELS) {
+    const school = parseSchool(get(raw, level));
+    if (school) c[level] = school;
+  }
 
   const assign = <K extends keyof SearchCriteria>(key: K, value: SearchCriteria[K] | undefined) => {
     if (value !== undefined) c[key] = value;
@@ -311,7 +371,14 @@ export function parseSearchParams(raw: RawParams): SearchCriteria {
 export function serializeCriteria(c: Partial<SearchCriteria>): URLSearchParams {
   const p = new URLSearchParams();
   if (c.q) p.set("q", c.q);
+  // Canonical names in key order, however the criteria were built.
+  const counties = parseCounties(c.counties);
+  if (counties) p.set("counties", counties.join(","));
   if (c.kw) p.set("kw", c.kw);
+  for (const level of SCHOOL_LEVELS) {
+    const school = c[level];
+    if (school) p.set(level, school);
+  }
   if (c.mode && c.mode !== "buy") p.set("mode", c.mode);
   const nums = [
     "minPrice",
@@ -371,6 +438,7 @@ export function withPageHref(raw: RawParams, page: number): string {
 /** Count of active filters, for the "Filters (3)" badge. Excludes location, sort, page, bounds. */
 export function countActiveFilters(c: SearchCriteria): number {
   let n = 0;
+  if (c.counties?.length) n++;
   if (c.minPrice !== undefined || c.maxPrice !== undefined) n++;
   if (c.beds !== undefined) n++;
   if (c.baths !== undefined) n++;
@@ -382,6 +450,7 @@ export function countActiveFilters(c: SearchCriteria): number {
   if (c.maxHoa !== undefined) n++;
   if (c.hoa) n++;
   if (c.kw) n++;
+  for (const level of SCHOOL_LEVELS) if (c[level]) n++;
   if (c.priceReduced && allowsPriceReduced(c.mode)) n++;
   if (c.age55) n++;
   if (c.maxDaysOnMarket !== undefined) n++;
@@ -393,6 +462,7 @@ export function countActiveFilters(c: SearchCriteria): number {
 /** A patch that turns off every filter `countActiveFilters` counts (place, mode and sort stay). */
 export function clearedFilters(): Partial<SearchCriteria> {
   const patch: Partial<SearchCriteria> = {
+    counties: undefined,
     minPrice: undefined,
     maxPrice: undefined,
     beds: undefined,
@@ -408,6 +478,9 @@ export function clearedFilters(): Partial<SearchCriteria> {
     maxHoa: undefined,
     hoa: undefined,
     kw: undefined,
+    elementary: undefined,
+    middle: undefined,
+    high: undefined,
     priceReduced: undefined,
     age55: undefined,
     maxDaysOnMarket: undefined,
@@ -529,6 +602,12 @@ export function parseFromParam(raw: RawParams): string | undefined {
   return v || undefined;
 }
 
+/** "North Hart elementary", or a name that already says its kind as is ("Hart County High School"). */
+function schoolLabel(level: SchoolLevel, name: string): string {
+  const shown = formatSchoolName(name);
+  return /\b(?:elementary|middle|high|school|academy)$/i.test(shown) ? shown : `${shown} ${level}`;
+}
+
 /** Human summary, used as the default saved-search name and page title. */
 export function describeCriteria(c: SearchCriteria): string {
   const parts: string[] = [];
@@ -537,7 +616,12 @@ export function describeCriteria(c: SearchCriteria): string {
   const noun = typed ? typed.toLowerCase() : c.mode === "rent" ? "rentals" : "homes";
   parts.push(c.mode === "sold" ? `sold ${noun}` : noun);
   if (c.q) parts.push(`in ${c.q}`);
-  else if (c.bounds) parts.push("in map area");
+  if (c.counties?.length) parts.push(`in ${countiesLabel(c.counties)}`);
+  else if (!c.q && c.bounds) parts.push("in map area");
+  for (const level of SCHOOL_LEVELS) {
+    const school = c[level];
+    if (school) parts.push(schoolLabel(level, school));
+  }
   if (c.minPrice && c.maxPrice) parts.push(`${shortMoney(c.minPrice)}–${shortMoney(c.maxPrice)}`);
   else if (c.maxPrice) parts.push(`under ${shortMoney(c.maxPrice)}`);
   else if (c.minPrice) parts.push(`over ${shortMoney(c.minPrice)}`);

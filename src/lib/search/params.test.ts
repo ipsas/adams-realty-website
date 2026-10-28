@@ -5,6 +5,7 @@ import {
   countActiveFilters,
   DEFAULT_CRITERIA,
   describeCriteria,
+  explicitCountyQuery,
   parseBounds,
   parseSearchParams,
   parseViewParam,
@@ -18,6 +19,48 @@ import {
   sortLabel,
   withPageHref,
 } from "./params";
+
+describe("the school filters", () => {
+  it("parse elementary, middle and high, single-spaced, dropping placeholders", () => {
+    const c = parseSearchParams({ elementary: "  North   Hart ", middle: "Other", high: "HART" });
+    expect(c.elementary).toBe("North Hart");
+    expect(c.middle).toBeUndefined();
+    expect(c.high).toBe("HART");
+    expect(parseSearchParams({ high: " n/a " }).high).toBeUndefined();
+    expect(parseSearchParams({ high: "   " }).high).toBeUndefined();
+    expect(parseSearchParams({ high: "x".repeat(150) }).high).toHaveLength(100);
+  });
+
+  it("serialize as stored and round-trip", () => {
+    const c = parseSearchParams({ elementary: "North Hart", high: "HART" });
+    const p = serializeCriteria(c);
+    expect(p.get("elementary")).toBe("North Hart");
+    expect(p.get("high")).toBe("HART");
+    expect(p.has("middle")).toBe(false);
+    expect(parseSearchParams(p)).toEqual(c);
+  });
+
+  it("count one each and are cleared", () => {
+    const c = parseSearchParams({ elementary: "North Hart", middle: "Hart", high: "Hart" });
+    expect(countActiveFilters(c)).toBe(3);
+    const cleared = { ...c, ...clearedFilters() };
+    expect(countActiveFilters(cleared)).toBe(0);
+    expect(serializeCriteria(cleared).toString()).toBe("");
+  });
+
+  it("describe the schools by level, formatted", () => {
+    expect(describeCriteria(parseSearchParams({ elementary: "NORTH HART" }))).toBe(
+      "Homes North Hart elementary",
+    );
+    expect(describeCriteria(parseSearchParams({ high: "hart" }))).toBe("Homes Hart high");
+    expect(describeCriteria(parseSearchParams({ high: "HART COUNTY HIGH SCHOOL" }))).toBe(
+      "Homes Hart County High School",
+    );
+    expect(describeCriteria(parseSearchParams({ middle: "Hart County Middle" }))).toBe(
+      "Homes Hart County Middle",
+    );
+  });
+});
 
 describe("withPageHref", () => {
   it("sets the page and keeps every other parameter", () => {
@@ -350,6 +393,62 @@ describe("describeCriteria and countActiveFilters", () => {
     expect(countActiveFilters(cleared)).toBe(0);
     expect(serializeCriteria(cleared).has("primaryOnMain")).toBe(false);
     expect(serializeCriteria(cleared).has("bedOnMain")).toBe(false);
+  });
+});
+
+describe("the county filter", () => {
+  it("parses any spelling of Georgia counties, deduped and sorted, dropping the rest", () => {
+    expect(parseSearchParams({ counties: "jackson, Hall County,HALL" }).counties).toEqual([
+      "Hall",
+      "Jackson",
+    ]);
+    expect(parseSearchParams({ counties: "dekalb" }).counties).toEqual(["DeKalb"]);
+    expect(parseSearchParams({ counties: "De Kalb,ben hill,Decatur" }).counties).toEqual([
+      "Ben Hill",
+      "Decatur",
+      "DeKalb",
+    ]);
+    expect(parseSearchParams({ counties: "Atlantis,Orange County" }).counties).toBeUndefined();
+    expect(parseSearchParams({ counties: " , " }).counties).toBeUndefined();
+  });
+
+  it("serializes official names in one order, so equal selections are one URL", () => {
+    const a = serializeCriteria(parseSearchParams({ counties: "jackson,de kalb,hall" }));
+    expect(a.get("counties")).toBe("DeKalb,Hall,Jackson");
+    expect(serializeCriteria({ counties: ["Hall", "DeKalb", "Jackson"] }).toString()).toBe(
+      a.toString(),
+    );
+    expect(parseSearchParams(a).counties).toEqual(["DeKalb", "Hall", "Jackson"]);
+    expect(serializeCriteria(parseSearchParams({ counties: "nowhere" })).has("counties")).toBe(
+      false,
+    );
+  });
+
+  it("is one filter however many counties, cleared with the others", () => {
+    const c = parseSearchParams({ counties: "Hall,Jackson,Banks", beds: "3" });
+    expect(countActiveFilters(c)).toBe(2);
+    const cleared = { ...c, ...clearedFilters() };
+    expect(countActiveFilters(cleared)).toBe(0);
+    expect(serializeCriteria(cleared).has("counties")).toBe(false);
+  });
+
+  it("names one or two counties, and counts more", () => {
+    expect(describeCriteria(parseSearchParams({ counties: "Hall,Jackson" }))).toBe(
+      "Homes in Hall County, Jackson County",
+    );
+    expect(describeCriteria(parseSearchParams({ counties: "dekalb" }))).toBe(
+      "Homes in DeKalb County",
+    );
+    expect(describeCriteria(parseSearchParams({ counties: "Hall,Jackson,Banks" }))).toBe(
+      "Homes in 3 counties",
+    );
+  });
+
+  it("knows the location box's county suggestion, with its County word", () => {
+    expect(explicitCountyQuery("Hall County")).toBe("Hall");
+    expect(explicitCountyQuery("de kalb county, GA")).toBe("DeKalb");
+    expect(explicitCountyQuery("Hall")).toBeUndefined();
+    expect(explicitCountyQuery("Orange County")).toBeUndefined();
   });
 });
 

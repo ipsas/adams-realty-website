@@ -1,8 +1,8 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import { areas, findArea, normalizeAreaName } from "@/config/areas";
+import { GEORGIA_COUNTIES } from "@/config/georgia-counties";
 import { listings } from "@/db/schema";
-import { GEORGIA_COUNTIES } from "@/test/georgia-counties";
 import {
   areaCondition,
   areaKeyRows,

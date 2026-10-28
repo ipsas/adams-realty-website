@@ -83,6 +83,7 @@ import { gamlsLastSyncedAt } from "@/lib/mls/last-updated";
 import { financeFor, listingMonthlyCost, monthlyHoaAmount } from "@/lib/mortgage";
 import { isMarketState, normalizeState } from "@/lib/market-state";
 import { OG_DEFAULT_IMAGE } from "@/lib/og";
+import { formatSchoolName } from "@/lib/search/school-name";
 
 export async function generateMetadata(props: PageProps<"/homes/[slug]">): Promise<Metadata> {
   const { slug } = await props.params;
@@ -527,7 +528,9 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
               {(l.schools.elementary || l.schools.middle || l.schools.high) && (
                 <Section title="Schools">
                   {l.schools.district && (
-                    <p className="mb-4 text-sm text-muted">{l.schools.district}</p>
+                    <p className="mb-4 text-sm text-muted">
+                      {formatSchoolName(l.schools.district)}
+                    </p>
                   )}
                   <ul className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     {(
@@ -545,7 +548,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                         >
                           <School className="mt-0.5 size-5 shrink-0 text-brand-600" />
                           <div>
-                            <p className="font-medium text-ink">{name}</p>
+                            <p className="font-medium text-ink">{formatSchoolName(name!)}</p>
                             <p className="text-xs text-muted">{level}</p>
                           </div>
                         </li>

@@ -33,6 +33,18 @@ describe("searchHeading (site review #5)", () => {
     );
   });
 
+  it("names the county filter, with the location box's county", () => {
+    expect(searchHeading(c("counties=Jackson,Hall"))).toBe(
+      "Homes for sale in Hall County, Jackson County",
+    );
+    expect(searchHeading(c("q=Banks County&counties=Hall"), { county: "Banks County" })).toBe(
+      "Homes for sale in Banks County, Hall County",
+    );
+    expect(searchHeading(c("q=Royston&counties=Franklin"), { town: "Royston" })).toBe(
+      "Homes for sale in Royston",
+    );
+  });
+
   it("says 'near' for a lake", () => {
     expect(searchHeading(c("q=Lake Hartwell"))).toBe("Homes near Lake Hartwell");
     expect(searchHeading(c("q=Lanier"))).toBe("Homes near Lake Lanier");

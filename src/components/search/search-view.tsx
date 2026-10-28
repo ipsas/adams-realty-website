@@ -337,9 +337,14 @@ export function SearchView({
               onHover={setHighlighted}
               onUserMove={(bounds) => {
                 if (!searchAsMove) return;
-                // The town gives way to the map: every home in view, with a way back.
-                if (criteria.q) update({ bounds, q: undefined }, { from: place ?? criteria.q });
-                else update({ bounds });
+                // The town (or the counties) gives way to the map: every home in view, with a
+                // way back.
+                if (criteria.q || criteria.counties) {
+                  update(
+                    { bounds, q: undefined, counties: undefined },
+                    { from: place ?? criteria.q },
+                  );
+                } else update({ bounds });
               }}
             />
             <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">

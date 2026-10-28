@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { GEORGIA_COUNTIES } from "@/config/georgia-counties";
 import { countyDisplay } from "@/lib/areas/match";
-import { GEORGIA_COUNTIES } from "@/test/georgia-counties";
 import {
   countyPrefix,
   lakeGuidesMatching,
