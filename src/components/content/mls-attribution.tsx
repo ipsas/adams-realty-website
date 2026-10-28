@@ -1,6 +1,6 @@
 import { site } from "@/config/site";
 import { cn } from "@/lib/cn";
-import { mlsCopyright, mlsCopyrightShort } from "@/lib/mls-copyright";
+import { MlsCopyright, MlsCopyrightShort } from "./copyright-year";
 
 export { mlsCopyright, mlsCopyrightShort } from "@/lib/mls-copyright";
 
@@ -75,7 +75,7 @@ export function MlsAttribution({ className }: { className?: string }) {
     <div className={cn("flex items-center gap-3", className)} data-mls-attribution>
       <MlsMark />
       <p>
-        Listings courtesy of {site.mls.name}. {mlsCopyright()} Each listing names its listing firm.
+        Listings courtesy of {site.mls.name}. <MlsCopyright /> Each listing names its listing firm.
       </p>
     </div>
   );
@@ -90,7 +90,9 @@ export function MlsCredit({ className }: { className?: string }) {
   return (
     <span className={cn("inline-flex max-w-full items-center gap-1.5", className)} data-mls-credit>
       <MlsMark size="sm" />
-      <span className="truncate">{mlsCopyrightShort()}</span>
+      <span className="truncate">
+        <MlsCopyrightShort />
+      </span>
     </span>
   );
 }

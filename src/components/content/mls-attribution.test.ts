@@ -1,9 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { createElement } from "react";
+import { createElement, type FunctionComponent } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { site } from "@/config/site";
+import { CopyrightYearProvider } from "./copyright-year";
 import { MlsAttribution, MlsCredit, MlsMark } from "./mls-attribution";
 
 /**
@@ -95,6 +96,28 @@ describe("MlsCredit", () => {
     expect(img.src).toBe("/brand/gamls_idx_81x32.png");
     expect(img.cls).toContain("h-6");
     expect(html).toContain(`© ${year} ${site.mls.copyrightHolder}`);
+  });
+});
+
+describe("the copyright year", () => {
+  afterEach(() => vi.useRealTimers());
+
+  // The server renders 2026 just before midnight; the client hydrates in 2027 (React #418).
+  it("is the server's year, not the client clock's", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2027, 0, 1, 0, 0, 5));
+    const inProvider = (c: FunctionComponent<{ className?: string }>) =>
+      renderToStaticMarkup(createElement(CopyrightYearProvider, { year: 2026 }, createElement(c)));
+    expect(inProvider(MlsCredit)).toContain(`>© 2026 ${site.mls.copyrightHolder}</span>`);
+    expect(inProvider(MlsAttribution)).toContain(
+      `Listings courtesy of ${site.mls.name}. Listing information © 2026 ${site.mls.copyrightHolder}. All rights reserved. Each listing names its listing firm.`,
+    );
+  });
+
+  it("falls back to the clock without a provider", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2027, 0, 1, 0, 0, 5));
+    expect(renderToStaticMarkup(createElement(MlsCredit))).toContain("© 2027 ");
   });
 });
 

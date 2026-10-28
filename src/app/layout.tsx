@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Fraunces, Inter } from "next/font/google";
+import { CopyrightYearProvider } from "@/components/content/copyright-year";
 import { SavedHomesProvider } from "@/components/listings/saved-homes-provider";
 import { SiteChrome } from "@/components/layout/site-chrome";
 import { SiteHeader, type HeaderUser } from "@/components/layout/site-header";
@@ -89,22 +90,25 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
         >
           Skip to content
         </a>
-        <SavedHomesProvider initialIds={savedIds} signedIn={!!session}>
-          {/* Not on the coming-soon page (/preview), nor while gated on the alert emails' pages
-              (src/app/(alerts)). The sample-listings notice rides with the header. */}
-          <SiteChrome gated={gated}>
-            <SiteHeader user={user} />
-          </SiteChrome>
-          <div id="main" className="flex flex-1 flex-col">
-            {children}
-          </div>
-          {/* Wherever the header is; visibility is CSS-only (phone:/wide: and chrome markers). */}
-          <SiteChrome gated={gated}>
-            <TabBar user={user} />
-          </SiteChrome>
-          <Toaster />
-          <PwaRuntime userId={user?.id ?? null} />
-        </SavedHomesProvider>
+        {/* The MLS copyright year, from the server's clock so hydration agrees at New Year's. */}
+        <CopyrightYearProvider year={new Date().getFullYear()}>
+          <SavedHomesProvider initialIds={savedIds} signedIn={!!session}>
+            {/* Not on the coming-soon page (/preview), nor while gated on the alert emails' pages
+                (src/app/(alerts)). The sample-listings notice rides with the header. */}
+            <SiteChrome gated={gated}>
+              <SiteHeader user={user} />
+            </SiteChrome>
+            <div id="main" className="flex flex-1 flex-col">
+              {children}
+            </div>
+            {/* Wherever the header is; visibility is CSS-only (phone:/wide: and chrome markers). */}
+            <SiteChrome gated={gated}>
+              <TabBar user={user} />
+            </SiteChrome>
+            <Toaster />
+            <PwaRuntime userId={user?.id ?? null} />
+          </SavedHomesProvider>
+        </CopyrightYearProvider>
       </body>
     </html>
   );

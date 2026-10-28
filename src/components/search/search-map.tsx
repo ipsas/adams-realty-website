@@ -20,6 +20,7 @@ import {
   markDrawnStyle,
   swapDrawnStyle,
 } from "./map-setup";
+import { useCopyrightYear } from "@/components/content/copyright-year";
 import { mlsLogoSrcSet } from "@/components/content/mls-attribution";
 import {
   fitPopupDelta,
@@ -342,7 +343,7 @@ const SMALL_SCREEN = "(max-width: 1023.98px)";
  * Popup contents built with DOM APIs (never innerHTML) — listing text comes from third-party feeds.
  * `small`: marks the photo and wraps price, facts and address so fitSmallPopup can compact them.
  */
-function popupNode(p: MapPin, small = false): HTMLElement {
+function popupNode(p: MapPin, year: number, small = false): HTMLElement {
   const a = document.createElement("a");
   a.href = `/homes/${p.slug}`;
   a.className = "block w-60 text-ink no-underline";
@@ -402,7 +403,7 @@ function popupNode(p: MapPin, small = false): HTMLElement {
       img.className = "h-6 w-auto rounded-sm dark:bg-white dark:px-0.5";
       credit.append(img);
     }
-    credit.append(mlsCopyrightShort());
+    credit.append(mlsCopyrightShort(year));
     body.append(credit);
   }
   a.append(body);
@@ -481,6 +482,8 @@ export default function SearchMap({
   const pinsById = useMemo(() => new Map(pins.map((p) => [p.id, p])), [pins]);
   // The page's theme, or light while printing.
   const theme = useMapTheme();
+  // The server's year, as the cards show it (copyright-year.tsx).
+  const year = useCopyrightYear();
 
   // Keep the latest callbacks/data without re-creating the map.
   const latest = useRef({
@@ -492,6 +495,7 @@ export default function SearchMap({
     bounds,
     pins,
     placeBounds,
+    year,
   });
   useEffect(() => {
     latest.current = {
@@ -503,6 +507,7 @@ export default function SearchMap({
       bounds,
       pins,
       placeBounds,
+      year,
     };
   });
   // A fit asked for while the map had no size (hidden behind the list on phones), to run
@@ -592,7 +597,7 @@ export default function SearchMap({
           map.project([pin.lng, pin.lat]).y > map.getContainer().clientHeight / 2
             ? "bottom"
             : "top";
-        const content = popupNode(pin, small);
+        const content = popupNode(pin, latest.current.year, small);
         popup.current = new maplibregl.Popup({
           offset: POPUP_OFFSET,
           closeButton: false,
