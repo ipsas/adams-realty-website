@@ -22,9 +22,11 @@ beforeAll(async () => {
   const at = (county: string, over: Parameters<typeof listing>[1] = {}) =>
     listing(++i, { city: "Gainesville", county, ...over });
   await insertListings(source, [
-    // Hall: two homes for sale (the default buy search), and five it leaves out.
+    // Hall: two homes for sale (the default buy search), and six it leaves out
+    // (coming soon is hidden from the public by the IDX rules).
     at("Hall"),
-    at("HALL", { status: "coming_soon" }),
+    at("HALL"),
+    at("Hall", { status: "coming_soon" }),
     at("Hall", { status: "pending" }),
     at("Hall", { status: "active_under_contract" }),
     at("Hall", { status: "closed", closePrice: 250_000 }),
