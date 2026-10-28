@@ -76,6 +76,12 @@ beforeAll(async () => {
     ["eight", listing(3, { ...royston, listDate: boundary.eight, sourceModifiedAt: now })],
     ["future", listing(4, { ...royston, listDate: boundary.future, sourceModifiedAt: now })],
     ["none", listing(5, { ...royston, listDate: null, sourceModifiedAt: now })],
+    // As new as "main", but no longer for sale as such: never "New".
+    ["pending", listing(7, { ...royston, status: "pending", listDate, sourceModifiedAt: now })],
+    [
+      "underContract",
+      listing(8, { ...royston, status: "active_under_contract", listDate, sourceModifiedAt: now }),
+    ],
   ] as const;
   const inserted = await insertListings(
     mls,
@@ -175,6 +181,16 @@ describe("listing cards", () => {
     }
     expect(cards.filter((c) => c.isNew).length).toBe(2); // main (3 days), seven (7 days)
     expectNoListDate(cards, "cards");
+  });
+
+  it("mark only active listings new, not pending or under contract ones", async () => {
+    const cards = await selectCards(db).where(
+      inArray(listings.id, [ids.get("main")!, ids.get("pending")!, ids.get("underContract")!]),
+    );
+    const isNew = (key: string) => cards.find((c) => c.id === ids.get(key))!.isNew;
+    expect(isNew("main")).toBe(true);
+    expect(isNew("pending")).toBe(false);
+    expect(isNew("underContract")).toBe(false);
   });
 });
 

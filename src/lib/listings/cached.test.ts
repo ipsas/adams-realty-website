@@ -1,12 +1,16 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { areas } from "@/config/areas";
 import { emptyStats } from "@/lib/areas/stats";
+import { RESO_MAPPER_VERSION } from "@/lib/mls/reso/mapper";
+import { CARD_SHAPE_VERSION } from "./card";
 
 // cached.ts against a stand-in for Next's data cache that behaves like the
 // real one: it stores each result as JSON and serves hits by JSON.parse.
 const h = vi.hoisted(() => ({
   registrations: [] as Array<{ keyParts: string[]; options: unknown }>,
   calls: {} as Record<string, number>,
+  // Each cached call's arguments, as the data cache keys the entry by them.
+  entryArgs: [] as unknown[][],
 }));
 
 vi.mock("next/cache", () => ({
@@ -18,6 +22,7 @@ vi.mock("next/cache", () => ({
     h.registrations.push({ keyParts, options });
     const store = new Map<string, string>();
     return async (...args: unknown[]) => {
+      h.entryArgs.push(args);
       const key = JSON.stringify(args);
       const hit = store.get(key);
       if (hit !== undefined) return JSON.parse(hit);
@@ -83,10 +88,15 @@ vi.mock("@/lib/areas/queries", () => ({
 }));
 
 vi.stubEnv("NODE_ENV", "production");
+vi.stubEnv("VERCEL_GIT_COMMIT_SHA", "abc1234");
 const cached = await import("./cached");
 
 beforeEach(() => {
   h.calls = {};
+  h.entryArgs = [];
+});
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("cached listing queries", () => {
@@ -97,6 +107,30 @@ describe("cached listing queries", () => {
     }
     const keys = h.registrations.map((r) => r.keyParts.join());
     expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it("key every entry by the card shape, the mapper and the deployment", () => {
+    expect(cached.CACHE_VERSION).toEqual([
+      `card-v${CARD_SHAPE_VERSION}`,
+      `mapper-v${RESO_MAPPER_VERSION}`,
+      "abc1234",
+    ]);
+    for (const r of h.registrations) {
+      expect(r.keyParts.slice(1)).toEqual(cached.CACHE_VERSION);
+    }
+  });
+
+  it("never serve an entry written before New York midnight after it", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-29T03:59:59Z")); // 11:59:59 pm on the 28th in New York
+    await cached.getCachedFeaturedListings(3);
+    await cached.getCachedFeaturedListings(3);
+    expect(h.calls.featured).toBe(1);
+    vi.setSystemTime(new Date("2026-10-29T04:00:01Z")); // 12:00:01 am on the 29th
+    await cached.getCachedFeaturedListings(3);
+    expect(h.calls.featured).toBe(2);
+    expect(h.entryArgs.map((a) => a[0])).toEqual(["2026-10-28", "2026-10-28", "2026-10-29"]);
+    expect(h.entryArgs[2]).toEqual(["2026-10-29", 3]);
   });
 
   it("serve a second request from the cache, with Dates intact", async () => {

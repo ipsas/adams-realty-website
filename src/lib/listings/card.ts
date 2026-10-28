@@ -20,6 +20,14 @@ export function officeLookupName() {
 }
 
 /**
+ * Bump whenever cardColumns or ListingCardData change shape or meaning: cached
+ * cards (cached.ts) are keyed by it, so a deployment never serves entries
+ * written by code with another card shape.
+ * 1: isNew for active listings only (QA31 F6).
+ */
+export const CARD_SHAPE_VERSION = 1;
+
+/**
  * Columns needed to render a listing card. One definition shared by search,
  * featured rows, saved homes and "similar homes", so cards look identical
  * everywhere.
@@ -36,8 +44,9 @@ export const cardColumns = {
   closeDate: listings.closeDate,
   // The "New" badge (isNewListing), decided here on the market's date: only the
   // boolean leaves the server, never the list date (Georgia MLS Exhibit C, and
-  // React #418: nothing in the card depends on the browser's clock).
-  isNew: sql<boolean>`coalesce(
+  // React #418: nothing in the card depends on the browser's clock). Active
+  // listings only: a pending or under-contract home isn't "New".
+  isNew: sql<boolean>`coalesce("listings"."status" = 'active' and
     (now() at time zone ${site.market.timeZone})::date - "listings"."list_date"
       between 0 and ${NEW_LISTING_DAYS}, false)`,
   bedrooms: listings.bedrooms,

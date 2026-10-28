@@ -14,10 +14,11 @@ import { lakeGuide, stripPartialState } from "./query";
  * - Towns with no homes listed right now (only past sales) still appear, after
  *   the rest, so a search for one reaches the no-results helpers instead of
  *   looking unknown.
- * - A county ("Hall" tagged "County", value "Hall County", from the listings'
- *   county) comes first when the text names it ("Hall", "Hall Co"), else after
- *   the places; a neighborhood a feed named after it ("Hall County" in
- *   Clermont) is dropped.
+ * - Counties ("Hall" tagged "County", value "Hall County", from the listings'
+ *   counties) come before the places: first the one the text names ("Hall",
+ *   "Hall Co"), then the others it starts ("Clay": Clay, then Clayton County,
+ *   then the town of Clayton); a neighborhood a feed named after a county
+ *   ("Hall County" in Clermont) is dropped.
  */
 
 export type Suggestion = {
@@ -97,7 +98,7 @@ export function shapeAreaSuggestions(
     return { kind: "county", label, sublabel: "County", value, count: r.n };
   });
   const countyLabels = new Set(counties.map((s) => normalizeAreaName(s.value)));
-  // Typed as the county's name ("Hall") or "<name> c…" ("Hall Co"): the county comes first.
+  // Typed as the county's name ("Hall") or "<name> c…" ("Hall Co"): that county comes first.
   const exact = (s: Suggestion) => typed === normalizeCounty(s.value);
   for (const r of rows) {
     // The county itself, not a subdivision a feed named "Hall County".
@@ -130,7 +131,7 @@ export function shapeAreaSuggestions(
   const named = lakeGuidesMatching(term)
     .filter((guide) => !lakes.has(guide.name))
     .map((guide) => lakeSuggestion(guide.name));
-  const ranked = [...counties.filter(exact), ...out, ...counties.filter((s) => !exact(s))];
+  const ranked = [...counties.filter(exact), ...counties.filter((s) => !exact(s)), ...out];
   const shown = [...ranked.slice(0, MAX_AREA_SUGGESTIONS - named.length), ...named];
   const cities = new Set(
     shown.filter((s) => s.kind === "city").map((s) => normalizeAreaName(s.label)),

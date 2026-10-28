@@ -129,7 +129,7 @@ describe("location suggestions (site review #5)", () => {
     }
   });
 
-  it("puts a county the text only starts after the places", () => {
+  it("puts a county the text only starts before the places", () => {
     const out = shapeAreaSuggestions(
       "Hal",
       [row("city", "Halcyon", "GA", 14)],
@@ -137,8 +137,26 @@ describe("location suggestions (site review #5)", () => {
       [{ county: "Hall", n: 412 }],
     );
     expect(out.map((s) => [s.kind, s.label])).toEqual([
-      ["city", "Halcyon"],
       ["county", "Hall"],
+      ["city", "Halcyon"],
+    ]);
+  });
+
+  it("orders 'Clay': the county named, the other counties, then the places", () => {
+    const out = shapeAreaSuggestions(
+      "Clay",
+      [row("city", "Clayton", "GA", 20), row("neighborhood", "Clay Hills", "Athens", 2)],
+      [],
+      [
+        { county: "CLAYTON", n: 300 },
+        { county: "CLAY", n: 4 },
+      ],
+    );
+    expect(out.map((s) => [s.kind, s.value])).toEqual([
+      ["county", "Clay County"],
+      ["county", "Clayton County"],
+      ["city", "Clayton"],
+      ["neighborhood", "Clay Hills"],
     ]);
   });
 
@@ -170,17 +188,10 @@ describe("location suggestions (site review #5)", () => {
         [],
         [{ county: "DEKALB", n: 9 }],
       );
-      expect(out.map((s) => [s.label, s.sublabel])).toEqual(
-        term === "De Ka"
-          ? [
-              ["Dekalb Park", "GA"],
-              ["DeKalb", "County"],
-            ]
-          : [
-              ["DeKalb", "County"],
-              ["Dekalb Park", "GA"],
-            ],
-      );
+      expect(out.map((s) => [s.label, s.sublabel])).toEqual([
+        ["DeKalb", "County"],
+        ["Dekalb Park", "GA"],
+      ]);
     }
   });
 
