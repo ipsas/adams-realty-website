@@ -2,6 +2,7 @@ import { isNullLike } from "@/lib/format";
 import { EXCLUDED_FIELDS, withoutExcludedFields } from "@/lib/listings/excluded-fields";
 import { normalizeTaxYear } from "@/lib/listings/tax-year";
 import { normalizeState } from "@/lib/market-state";
+import { marketDateDaysAgo } from "@/lib/time";
 import type { MapResult, NormalizedListing, NormalizedMedia, NormalizedOpenHouse } from "../types";
 
 /**
@@ -11,8 +12,9 @@ import type { MapResult, NormalizedListing, NormalizedMedia, NormalizedOpenHouse
  * 2: GAMLS2_Latitude/Longitude and Coordinates, placeholder subdivisions, 2-digit tax years.
  * 3: AssociationYN, detail columns (fireplaces, parking, 55+, assessed value, zoning…), more feature lists.
  * 4: MainLevelBedrooms and primary bedroom on main.
+ * 5: list date derived from DaysOnMarket for active listings; the feed never sends OriginalEntryTimestamp.
  */
-export const RESO_MAPPER_VERSION = 4;
+export const RESO_MAPPER_VERSION = 5;
 
 /**
  * Maps a RESO Data Dictionary 2.x `Property` record (as returned by any
@@ -452,6 +454,42 @@ export function mainLevelBedroomFacts(p: ResoProperty): {
   return { mainLevelBedrooms, primaryBedroomOnMain };
 }
 
+/**
+ * The on-market date (YYYY-MM-DD) of an active listing: the market's calendar
+ * date (America/New_York) of `modifiedAt` minus `daysOnMarket` calendar days.
+ * Georgia MLS counts DaysOnMarket as of the record's last change, so the two
+ * date the listing without ListingContractDate or OnMarketDate (Exhibit C).
+ * A relisted home whose DOM was reset dates from the relist, which is fine:
+ * it is effectively new. Undefined unless `modifiedAt` is an instant with a
+ * zone (Z or an offset) and `daysOnMarket` a non-negative whole number (a
+ * numeric string counts). Exported for tests.
+ */
+export function listDateFromDaysOnMarket(
+  modifiedAt: unknown,
+  daysOnMarket: unknown,
+): string | undefined {
+  const s = str(modifiedAt);
+  // Without a zone `new Date` would read the runtime's local time.
+  if (!s || !/T\d{2}:\d{2}.*(Z|[+-]\d{2}:?\d{2})$/i.test(s)) return undefined;
+  const at = timestamp(s);
+  const days = num(daysOnMarket);
+  if (!at || days === null || !Number.isSafeInteger(days) || days < 0) return undefined;
+  // Calendar math on the local date, so a DST change can't shift the day.
+  return marketDateDaysAgo(days, at);
+}
+
+/**
+ * Only an active listing's DaysOnMarket dates it: coming soon isn't on the market
+ * yet (null), and pending or under contract freezes DOM at the contract, so for
+ * those and every other status the stored date is kept (undefined; persist.ts
+ * leaves undefined fields alone).
+ */
+function listDateFor(status: Status, p: ResoProperty): string | null | undefined {
+  if (status === "active") return listDateFromDaysOnMarket(p.ModificationTimestamp, p.DaysOnMarket);
+  if (status === "coming_soon") return null;
+  return undefined;
+}
+
 export function mapResoProperty(p: ResoProperty): MapResult {
   const listingKey = str(p.ListingKey);
   if (!listingKey) return { ok: false, listingKey: null, reason: "missing_key" };
@@ -513,7 +551,9 @@ export function mapResoProperty(p: ResoProperty): MapResult {
     closePrice: int(p.ClosePrice),
     // Never ListingContractDate or OnMarketDate: Georgia MLS forbids showing
     // them (Exhibit C), and the list date is shown and dated in the history.
-    listDate: date(p.OriginalEntryTimestamp),
+    // The gamls2 dataset doesn't permit OriginalEntryTimestamp, so it comes from
+    // DaysOnMarket and ModificationTimestamp (listDateFor).
+    listDate: listDateFor(status, p),
     closeDate: date(p.CloseDate),
 
     bedrooms: int(p.BedroomsTotal),

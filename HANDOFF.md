@@ -184,8 +184,13 @@ Use your model table: Opus High for the work packages, and Xhigh if one gets stu
       notice must include, linked from the footer ("Copyright (DMCA)").
 - [ ] **Check the feed's field names.** When feed access arrives, confirm the attribution
       contact phone/email, Variable Compensation and compensation fields match
-      `attribution()` and `compensation()` in `src/lib/mls/reso/mapper.ts`, and that the feed
-      sends `OriginalEntryTimestamp` (the list date).
+      `attribution()` and `compensation()` in `src/lib/mls/reso/mapper.ts`.
+- [x] **List date.** Done: the gamls2 dataset doesn't permit `OriginalEntryTimestamp`
+      (`$select` answers 400, and full records omit it), and ListingContractDate/OnMarketDate are
+      Exhibit C. The mapper derives an active listing's list date from `DaysOnMarket` and
+      `ModificationTimestamp` (`listDateFromDaysOnMarket`; right on 177/200 sampled records, the
+      rest relists whose DOM was reset); coming soon has none, other statuses keep the stored
+      date. Mapper v5's remap fills existing rows on the next incremental sync, no backfill.
 - [ ] **First statewide MLS load.** Run `npm run mls:sync -- --full` from a computer against the
       production database (20–60 minutes; it can't run on Vercel), before the cron takes over.
       See README → "Connecting your MLS".

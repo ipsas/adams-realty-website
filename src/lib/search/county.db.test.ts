@@ -48,6 +48,11 @@ beforeAll(async () => {
     listing(8, { city: "Commerce", county: "Jackson", latitude: 34.2, longitude: -83.46 }),
     // Hall County, Nebraska: not Georgia's.
     listing(9, { city: "Grand Island", state: "NE", county: "Hall", postalCode: "68801" }),
+    // Clay County, one home, and three busier counties whose names start with "Clay".
+    listing(10, { city: "Fort Gaines", county: "Clay", latitude: 31.6, longitude: -85.05 }),
+    ...[11, 12, 13].map((i) => listing(i, { city: "Jonesboro", county: "Clayton" })),
+    ...[14, 15].map((i) => listing(i, { city: "Riverdale", county: "Claymont" })),
+    ...[16, 17].map((i) => listing(i, { city: "Morrow", county: "Clayborne" })),
   ]);
   await refreshPlaces(db);
 });
@@ -128,5 +133,18 @@ describe("county suggestions", () => {
   it("offer a county typed in lower case", async () => {
     const out = await getLocationSuggestions("gwinnett");
     expect(out[0]).toMatchObject({ kind: "county", value: "Gwinnett County", count: 1 });
+  });
+
+  it("offer the county named as typed even when busier ones share its prefix", async () => {
+    for (const term of ["Clay County", "Clay"]) {
+      const out = await getLocationSuggestions(term);
+      expect(out[0], term).toEqual({
+        kind: "county",
+        label: "Clay",
+        sublabel: "County",
+        value: "Clay County",
+        count: 1,
+      });
+    }
   });
 });

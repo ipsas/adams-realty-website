@@ -6,6 +6,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import type { Suggestion } from "@/lib/listings/queries";
 import { enterTarget } from "./location-enter";
+import { shouldSuggest } from "./location-suggest";
 
 const ICONS = {
   city: Building2,
@@ -51,13 +52,16 @@ export function LocationSearch({
 
   // Follow URL-driven changes to the location (e.g. back button) without an effect.
   const [lastDefault, setLastDefault] = useState(defaultValue);
+  // Typed in since the box last followed `defaultValue`.
+  const [edited, setEdited] = useState(false);
   if (lastDefault !== defaultValue) {
     setLastDefault(defaultValue);
     setValue(defaultValue);
+    setEdited(false);
   }
 
   const term = value.trim();
-  const searchable = term.length >= 2 && term !== defaultValue;
+  const searchable = shouldSuggest(term, defaultValue, edited);
 
   useEffect(() => {
     if (!searchable) return;
@@ -143,6 +147,7 @@ export function LocationSearch({
           placeholder={placeholder}
           onChange={(e) => {
             setValue(e.target.value);
+            setEdited(true);
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
