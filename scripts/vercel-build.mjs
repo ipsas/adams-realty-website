@@ -30,7 +30,8 @@
  *
  * Preview listing counts (previews only, after the MLS sync step): a
  * read-only report of listings per data source in the build log
- * (previewListingCounts). A failure there only logs; it never fails the build.
+ * (previewListingCounts). It also logs school/county coverage for active
+ * Georgia listings. A failure there only logs; it never fails the build.
  *
  * Keyword vectors (production and preview, last before `next build`):
  * scripts/keyword-backfill.ts rewrites stale listings.keyword_tsv vectors (null,
