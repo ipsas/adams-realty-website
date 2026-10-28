@@ -1,0 +1,20 @@
+# Adams Realty
+
+> Adams Realty, Inc. is a real estate brokerage in Northeast Georgia (Georgia Real Estate Commission firm license 6079). Office: 69 Mill Street, Royston, GA 30662. Phone (706) 246-0053. Email contracts.adamsrealty@gmail.com. Office hours Mon–Fri, 9 a.m.–5 p.m. Broker: Andrea Anderegg.
+
+Adams Realty helps people buy and sell homes, land, farms, lake and commercial property around Gainesville and across Northeast Georgia, including Hall, Gwinnett, Jackson, Franklin, Hart, Madison and Stephens counties. Listings come directly from Georgia MLS. The site has no ads, and messages go to Adams Realty agents only.
+
+## Main pages
+- [About Adams Realty](https://adamsrealtyga.com/about)
+- [Our agents](https://adamsrealtyga.com/agents)
+- [Homes for sale](https://adamsrealtyga.com/homes)
+- [Sell your home](https://adamsrealtyga.com/sell)
+- [Contact](https://adamsrealtyga.com/contact)
+
+## Town and lake guides
+- [Gainesville](https://adamsrealtyga.com/areas/gainesville)
+- [Lake Lanier](https://adamsrealtyga.com/areas/lake-lanier)
+- [Royston](https://adamsrealtyga.com/areas/royston)
+- [Lavonia](https://adamsrealtyga.com/areas/lavonia)
+- [Lake Hartwell](https://adamsrealtyga.com/areas/lake-hartwell)
+- [All area guides](https://adamsrealtyga.com/areas)
