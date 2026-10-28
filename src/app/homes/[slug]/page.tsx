@@ -18,7 +18,7 @@ import {
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { MlsAttribution } from "@/components/content/mls-attribution";
 import { telHref } from "@/components/content/contact";
 import { ReturnLink } from "@/components/layout/return-link";
@@ -76,6 +76,7 @@ import {
 import { listingIndexingMode, listingRobots } from "@/lib/listings/indexing";
 import {
   listingBreadcrumbJsonLd,
+  listingBreadcrumbs,
   listingDescription,
   listingTitle,
 } from "@/lib/listings/listing-seo";
@@ -228,25 +229,14 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                 aria-label="Breadcrumb"
                 className="hidden items-center gap-1 text-sm text-muted sm:flex"
               >
-                <Link href="/homes" className="hover:text-ink">
-                  Homes
-                </Link>
-                {inMarket && (
-                  <>
-                    <ChevronRight className="size-3.5" />
-                    <Link href={placeHref(l.city, l.county)} className="hover:text-ink">
-                      {l.city}
+                {listingBreadcrumbs(l).map((c, i) => (
+                  <Fragment key={c.href}>
+                    {i > 0 && <ChevronRight className="size-3.5" />}
+                    <Link href={c.href} className="hover:text-ink">
+                      {c.name}
                     </Link>
-                    {neighborhood && neighborhood !== l.city && (
-                      <>
-                        <ChevronRight className="size-3.5" />
-                        <Link href={placeHref(neighborhood, l.county)} className="hover:text-ink">
-                          {neighborhood}
-                        </Link>
-                      </>
-                    )}
-                  </>
-                )}
+                  </Fragment>
+                ))}
               </nav>
             </div>
             <div className="flex items-center gap-2">

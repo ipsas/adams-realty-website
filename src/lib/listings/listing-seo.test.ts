@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { townGuide } from "@/config/areas";
+import { placeHref } from "@/lib/areas/links";
+import { formatStreet } from "@/lib/format";
 import {
   LISTING_TITLE_MAX,
   listingBreadcrumbJsonLd,
+  listingBreadcrumbs,
   listingDescription,
   listingTitle,
+  type ListingBreadcrumbInput,
   type ListingSeoInput,
 } from "./listing-seo";
 
@@ -132,46 +135,72 @@ describe("listingDescription", () => {
   });
 });
 
-describe("listingBreadcrumbJsonLd", () => {
-  it("links the town's area guide when there is one", () => {
-    expect(townGuide("Gainesville")?.slug).toBe("gainesville");
-    expect(listingBreadcrumbJsonLd({ ...home, city: "Gainesville" }, `${base}/`)).toEqual({
-      "@context": "https://schema.org",
-      "@type": "BreadcrumbList",
-      itemListElement: [
-        { "@type": "ListItem", position: 1, name: "Homes for sale", item: `${base}/homes` },
-        {
-          "@type": "ListItem",
-          position: 2,
-          name: "Gainesville, GA",
-          item: `${base}/areas/gainesville`,
-        },
-        { "@type": "ListItem", position: 3, name: "12 Oak St" },
-      ],
-    });
-  });
+describe("listingBreadcrumbs and listingBreadcrumbJsonLd", () => {
+  const crumbHome: ListingBreadcrumbInput = {
+    ...home,
+    slug: "12-oak-st-royston-ga-30662",
+    county: "Franklin",
+    neighborhood: "Oak Hills",
+  };
 
-  it("goes straight to the address when the town has no guide", () => {
-    expect(townGuide("Loganville")).toBeUndefined();
-    const json = listingBreadcrumbJsonLd({ ...home, city: "Loganville" }, base);
+  /** The JSON-LD is the visible crumbs with absolute URLs, then the listing itself. */
+  function expectJsonLdMatchesVisible(l: ListingBreadcrumbInput, baseUrl = base) {
+    const visible = listingBreadcrumbs(l);
+    const json = listingBreadcrumbJsonLd(l, baseUrl);
+    expect(json["@context"]).toBe("https://schema.org");
+    expect(json["@type"]).toBe("BreadcrumbList");
     expect(json.itemListElement).toEqual([
-      { "@type": "ListItem", position: 1, name: "Homes for sale", item: `${base}/homes` },
-      { "@type": "ListItem", position: 2, name: "12 Oak St" },
+      ...visible.map((c, i) => ({
+        "@type": "ListItem",
+        position: i + 1,
+        name: c.name,
+        item: `${base}${c.href}`,
+      })),
+      {
+        "@type": "ListItem",
+        position: visible.length + 1,
+        name: formatStreet(l),
+        item: `${base}/homes/${l.slug}`,
+      },
+    ]);
+    return visible;
+  }
+
+  it("is Homes, the town and the neighborhood in market", () => {
+    const visible = expectJsonLdMatchesVisible(crumbHome);
+    expect(visible).toEqual([
+      { name: "Homes", href: "/homes" },
+      { name: "Royston", href: placeHref("Royston", "Franklin") },
+      { name: "Oak Hills", href: placeHref("Oak Hills", "Franklin") },
     ]);
   });
 
-  it("has no guide crumb outside Georgia", () => {
-    const json = listingBreadcrumbJsonLd({ ...home, city: "Gainesville", state: "FL" }, base);
-    expect(json.itemListElement.map((c) => c.position)).toEqual([1, 2]);
+  it("omits the neighborhood level when there is none", () => {
+    const visible = expectJsonLdMatchesVisible({ ...crumbHome, neighborhood: null });
+    expect(visible.map((c) => c.name)).toEqual(["Homes", "Royston"]);
+  });
+
+  it("omits a neighborhood that is the town", () => {
+    const visible = expectJsonLdMatchesVisible({ ...crumbHome, neighborhood: "Royston" });
+    expect(visible.map((c) => c.name)).toEqual(["Homes", "Royston"]);
+  });
+
+  it("omits a None-like neighborhood", () => {
+    const visible = expectJsonLdMatchesVisible({ ...crumbHome, neighborhood: "None" });
+    expect(visible.map((c) => c.name)).toEqual(["Homes", "Royston"]);
+  });
+
+  it("has only Homes outside Georgia", () => {
+    const visible = expectJsonLdMatchesVisible({ ...crumbHome, state: "FL" });
+    expect(visible).toEqual([{ name: "Homes", href: "/homes" }]);
+  });
+
+  it("strips trailing slashes from the base URL", () => {
+    expectJsonLdMatchesVisible(crumbHome, `${base}//`);
   });
 
   it("names a hidden address as the heading does", () => {
-    const json = listingBreadcrumbJsonLd({ ...home, hideAddress: true }, base);
-    const last = json.itemListElement.at(-1);
-    expect(last).toEqual({
-      "@type": "ListItem",
-      position: json.itemListElement.length,
-      name: "Address withheld by seller",
-    });
+    const json = listingBreadcrumbJsonLd({ ...crumbHome, hideAddress: true }, base);
+    expect(json.itemListElement.at(-1)?.name).toBe("Address withheld by seller");
   });
 });
