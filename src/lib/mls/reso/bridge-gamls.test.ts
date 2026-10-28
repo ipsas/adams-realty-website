@@ -70,6 +70,8 @@ describe("Bridge fixtures through the mapper", () => {
     expect(l.attributionPhone).toBe("(706) 555-0101");
     expect(l.attributionEmail).toBe("listing@example.com");
     expect(l.variableCompensation).toBe(false);
+    // Modified Oct 20 with 19 days on market.
+    expect(l.listDate).toBe("2026-10-01");
   });
 
   it("a commercial lease quoted per year becomes a monthly rent", () => {

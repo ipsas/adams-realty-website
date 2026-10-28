@@ -278,8 +278,10 @@ governs every listing that came from the feed. Adams Realty, Inc. is the license
   the firm for its own listings, else "MLS Office ID <id>"; resolving names via the feed's
   Office resource is a planned follow-up. The RESO mapper reads none of `EXCLUDED_FIELDS`
   (listing agreement, contract, on-market and expiration dates, private and office remarks,
-  showing contact and requirements); the list
-  date comes from `OriginalEntryTimestamp`. Tests feed a record carrying all of them through
+  showing contact and requirements). gamls2 doesn't permit `OriginalEntryTimestamp`, so an
+  active listing's list date is its `ModificationTimestamp`'s New York date minus `DaysOnMarket`
+  (`listDateFromDaysOnMarket`); coming soon has none, and other statuses (DOM frozen at the
+  contract) keep the stored date. Tests feed a record carrying all of them through
   the mapper and into the database and look for them.
 - **Corrections (§6):** `/listing-corrections` publishes the phone and email
   (`site.mls.corrections`) and a form (inquiry `source = 'report'`, emailed to the corrections

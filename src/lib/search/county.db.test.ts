@@ -45,6 +45,11 @@ beforeAll(async () => {
     listing(5, { city: "Forsyth", county: "Monroe", latitude: 33.03, longitude: -83.94 }),
     listing(6, { city: "Cumming", county: "Forsyth", latitude: 34.21, longitude: -84.14 }),
     listing(7, { city: "Lawrenceville", county: "Gwinnett", latitude: 33.96, longitude: -83.99 }),
+    // Clay County, one home, and three busier counties whose names start with "Clay".
+    listing(8, { city: "Fort Gaines", county: "Clay", latitude: 31.6, longitude: -85.05 }),
+    ...[9, 10, 11].map((i) => listing(i, { city: "Jonesboro", county: "Clayton" })),
+    ...[12, 13].map((i) => listing(i, { city: "Riverdale", county: "Claymont" })),
+    ...[14, 15].map((i) => listing(i, { city: "Morrow", county: "Clayborne" })),
   ]);
   await refreshPlaces(db);
 });
@@ -118,5 +123,18 @@ describe("county suggestions", () => {
   it("offer a county typed in lower case", async () => {
     const out = await getLocationSuggestions("gwinnett");
     expect(out[0]).toMatchObject({ kind: "county", value: "Gwinnett County", count: 1 });
+  });
+
+  it("offer the county named as typed even when busier ones share its prefix", async () => {
+    for (const term of ["Clay County", "Clay"]) {
+      const out = await getLocationSuggestions(term);
+      expect(out[0], term).toEqual({
+        kind: "county",
+        label: "Clay",
+        sublabel: "County",
+        value: "Clay County",
+        count: 1,
+      });
+    }
   });
 });

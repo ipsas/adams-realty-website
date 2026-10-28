@@ -8,6 +8,7 @@ import {
   compensation,
   EXCLUDED_FIELDS,
   list,
+  listDateFromDaysOnMarket,
   mainLevelBedroomFacts,
   mapPropertyType,
   mapResoProperty,
@@ -488,7 +489,8 @@ describe("Georgia MLS field rules", () => {
     expect(json).not.toContain("2026-01-02");
     expect(json).not.toContain("2026-01-03");
     expect(json).not.toContain("2026-12-31");
-    expect(l.listDate).toBeNull();
+    // No DaysOnMarket: the stored date is kept.
+    expect(l.listDate).toBeUndefined();
   });
 
   it("never puts an excluded field into the feature lists", () => {
@@ -504,10 +506,60 @@ describe("Georgia MLS field rules", () => {
     expect(JSON.stringify(l.features)).not.toContain(SENTINEL);
   });
 
-  it("dates the listing by OriginalEntryTimestamp", () => {
-    expect(
-      mapOk({ ...withExcluded, OriginalEntryTimestamp: "2026-02-10T14:00:00Z" }).listDate,
-    ).toBe("2026-02-10");
+  describe("list date from DaysOnMarket", () => {
+    const active = (over: ResoProperty = {}) => mapOk({ ...base, ...over }).listDate;
+
+    it("dates an active listing DaysOnMarket days before its New York modification date", () => {
+      expect(active({ ModificationTimestamp: "2026-10-15T14:00:00Z", DaysOnMarket: 3 })).toBe(
+        "2026-10-12",
+      );
+      // 02:00 UTC is still Oct 9 in New York.
+      expect(active({ ModificationTimestamp: "2026-10-10T02:00:00Z", DaysOnMarket: 0 })).toBe(
+        "2026-10-09",
+      );
+      expect(active({ ModificationTimestamp: "2026-10-15T14:00:00Z", DaysOnMarket: "3" })).toBe(
+        "2026-10-12",
+      );
+    });
+
+    it("counts calendar days across daylight saving time", () => {
+      // Spring forward on Mar 8: Mar 9 minus 2 days.
+      expect(listDateFromDaysOnMarket("2026-03-09T12:00:00Z", 2)).toBe("2026-03-07");
+      // Fall back on Nov 1: 03:30 UTC Nov 2 is Nov 1 in New York.
+      expect(listDateFromDaysOnMarket("2026-11-02T03:30:00Z", 1)).toBe("2026-10-31");
+    });
+
+    it("is undefined without a usable DaysOnMarket or timestamp", () => {
+      const at = "2026-10-15T14:00:00Z";
+      for (const dom of [undefined, null, "", -1, "-1", 1.5, "1.5", "abc", Number.NaN]) {
+        expect(listDateFromDaysOnMarket(at, dom), String(dom)).toBeUndefined();
+      }
+      for (const ts of [undefined, "", "not a date", "2026-10-15", "2026-10-15T14:00:00"]) {
+        expect(listDateFromDaysOnMarket(ts, 3), String(ts)).toBeUndefined();
+      }
+      expect(active({ DaysOnMarket: undefined })).toBeUndefined();
+      expect(active({ ModificationTimestamp: "garbage", DaysOnMarket: 3 })).toBeUndefined();
+    });
+
+    it("is null for coming soon and kept (undefined) for other statuses, whatever DOM says", () => {
+      const dom = { ModificationTimestamp: "2026-10-15T14:00:00Z", DaysOnMarket: 3 };
+      expect(active({ ...dom, StandardStatus: "Coming Soon" })).toBeNull();
+      for (const s of ["Pending", "Active Under Contract", "Closed"]) {
+        expect(active({ ...dom, StandardStatus: s }), s).toBeUndefined();
+      }
+    });
+
+    it("ignores ListingContractDate and OnMarketDate", () => {
+      const l = mapOk({
+        ...withExcluded,
+        ModificationTimestamp: "2026-10-15T14:00:00Z",
+        DaysOnMarket: 3,
+      });
+      expect(l.listDate).toBe("2026-10-12");
+      const json = JSON.stringify(l);
+      expect(json).not.toContain("2026-01-02");
+      expect(json).not.toContain("2026-01-03");
+    });
   });
 
   it("maps On Hold like Withdrawn", () => {
