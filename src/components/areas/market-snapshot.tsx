@@ -9,14 +9,29 @@ import {
   mixSegments,
   NEW_WINDOW_DAYS,
   sampleLabel,
+  snapshotTiles,
   SOLD_WINDOW_DAYS,
   type AreaStats,
+  type SnapshotTile,
 } from "@/lib/areas/stats";
 
 type Tile = { label: string; value: string; note: ReactNode };
 
 /**
- * Six live figures (seven with land for sale: its price per acre) plus the property-type mix. Every median says how many
+ * Grid spans for the last tile so a row is never left with an empty cell:
+ * two columns on mobile, three from md.
+ */
+function lastTileSpan(count: number) {
+  const mobile = count % 2 === 1 ? "col-span-2" : null;
+  const rem = count % 3;
+  const md = rem === 1 ? "md:col-span-3" : rem === 2 ? "md:col-span-2" : mobile && "md:col-span-1";
+  return cn(mobile, md);
+}
+
+/**
+ * Up to seven live figures (price per acre only with land for sale) plus the
+ * property-type mix. A figure that can't be calculated is left out (see
+ * snapshotTiles). Every median says how many
  * homes it's drawn from, and thin samples are flagged rather than hidden:
  * an honest "2 sales" beats a confident-looking number with nothing behind it.
  */
@@ -25,8 +40,8 @@ export function MarketSnapshot({ stats, rentalsHref }: { stats: AreaStats; renta
   const small = (n: number) =>
     n > 0 && n < MIN_SAMPLE ? <span className="text-clay-600"> · small sample</span> : null;
 
-  const tiles: Tile[] = [
-    {
+  const all: Record<SnapshotTile, Tile> = {
+    forSale: {
       label: "Homes for sale",
       value: formatNumber(s.forSale),
       note: s.underContract
@@ -35,7 +50,7 @@ export function MarketSnapshot({ stats, rentalsHref }: { stats: AreaStats; renta
           ? "None under contract"
           : "Nothing listed right now",
     },
-    {
+    listPrice: {
       label: "Median list price",
       value: s.medianListPrice ? formatPriceShort(s.medianListPrice) : "—",
       note:
@@ -50,7 +65,7 @@ export function MarketSnapshot({ stats, rentalsHref }: { stats: AreaStats; renta
           "No asking prices to report"
         ),
     },
-    {
+    pricePerSqft: {
       label: "Median price per sq ft",
       value: s.medianPricePerSqft ? `$${formatNumber(s.medianPricePerSqft)}` : "—",
       note: s.pricePerSqftSample ? (
@@ -63,21 +78,17 @@ export function MarketSnapshot({ stats, rentalsHref }: { stats: AreaStats; renta
       ),
     },
     // Land is compared by the acre (site review #8); shown when there's land to compare.
-    ...(s.pricePerAcreSample > 0
-      ? [
-          {
-            label: "Median price per acre",
-            value: s.medianPricePerAcre ? `$${formatNumber(s.medianPricePerAcre)}` : "—",
-            note: (
-              <>
-                From {sampleLabel(s.pricePerAcreSample, ["tract", "tracts"])} of land for sale
-                {small(s.pricePerAcreSample)}
-              </>
-            ),
-          },
-        ]
-      : []),
-    {
+    pricePerAcre: {
+      label: "Median price per acre",
+      value: s.medianPricePerAcre ? `$${formatNumber(s.medianPricePerAcre)}` : "—",
+      note: (
+        <>
+          From {sampleLabel(s.pricePerAcreSample, ["tract", "tracts"])} of land for sale
+          {small(s.pricePerAcreSample)}
+        </>
+      ),
+    },
+    daysOnMarket: {
       label: "Median days on market",
       value: s.medianDaysOnMarket === null ? "—" : formatNumber(s.medianDaysOnMarket),
       note: s.daysOnMarketSample ? (
@@ -89,12 +100,13 @@ export function MarketSnapshot({ stats, rentalsHref }: { stats: AreaStats; renta
         "No active listings"
       ),
     },
-    {
+    // Counted over the homes for sale now, so it no longer includes any under contract or sold.
+    newListings: {
       label: `New listings, last ${NEW_WINDOW_DAYS} days`,
       value: formatNumber(s.newListings),
-      note: "Includes any now under contract or sold",
+      note: null,
     },
-    {
+    sales: {
       label: "Sales, last 6 months",
       value: formatNumber(s.recentSales),
       note:
@@ -108,7 +120,8 @@ export function MarketSnapshot({ stats, rentalsHref }: { stats: AreaStats; renta
           `No closed sales in ${SOLD_WINDOW_DAYS} days`
         ),
     },
-  ];
+  };
+  const tiles = snapshotTiles(s).map((key) => all[key]);
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_22rem]">
@@ -119,15 +132,15 @@ export function MarketSnapshot({ stats, rentalsHref }: { stats: AreaStats; renta
             data-testid="market-tile"
             className={cn(
               "flex flex-col bg-surface px-4 py-5 sm:px-6 sm:py-6",
-              // Seven tiles: the last one spans the row, so the grid has no empty cell.
-              tiles.length === 7 && i === 6 && "col-span-2 md:col-span-3",
+              // The last tile spans the rest of its row, so the grid has no empty cell.
+              i === tiles.length - 1 && lastTileSpan(tiles.length),
             )}
           >
             <dt className="text-xs font-medium text-ink-soft sm:text-sm">{t.label}</dt>
             <dd className="order-first mt-0 text-2xl font-semibold tracking-tight text-ink tabular sm:text-3xl">
               {t.value}
             </dd>
-            <dd className="mt-2 text-xs leading-snug text-muted">{t.note}</dd>
+            {t.note && <dd className="mt-2 text-xs leading-snug text-muted">{t.note}</dd>}
           </div>
         ))}
       </dl>

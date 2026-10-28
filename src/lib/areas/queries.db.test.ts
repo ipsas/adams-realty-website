@@ -16,6 +16,7 @@ const area = (over: Partial<Area> & Pick<Area, "slug" | "name" | "city" | "count
   description: "",
   highlights: [],
   center: { lat: 34, lng: -83 },
+  updated: "2026-01-01",
   ...over,
 });
 

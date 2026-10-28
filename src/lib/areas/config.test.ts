@@ -16,6 +16,13 @@ describe("area config", () => {
     for (const s of slugs) expect(s).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
   });
 
+  it("dates every guide with a real YYYY-MM-DD `updated`, for its sitemap lastmod", () => {
+    for (const a of areas) {
+      expect(a.updated, a.slug).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(new Date(`${a.updated}T00:00:00Z`).toISOString().slice(0, 10), a.slug).toBe(a.updated);
+    }
+  });
+
   it("gives every area complete, well-formed content", () => {
     const regions = new Set(areaRegions.map((r) => r.id));
     for (const a of areas) {
@@ -47,7 +54,11 @@ describe("area config", () => {
     const order = areaRegions.map((r) => r.id);
     const seen = areas.map((a) => order.indexOf(a.region));
     expect(seen).toEqual([...seen].sort((x, y) => x - y));
-    for (const r of areaRegions) expect(areas.some((a) => a.region === r.id), r.id).toBe(true);
+    for (const r of areaRegions)
+      expect(
+        areas.some((a) => a.region === r.id),
+        r.id,
+      ).toBe(true);
   });
 
   it("never lets two areas claim the same name, alias or city", () => {
