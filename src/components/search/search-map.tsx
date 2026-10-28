@@ -21,7 +21,14 @@ import {
   swapDrawnStyle,
 } from "./map-setup";
 import { mlsLogoSrcSet } from "@/components/content/mls-attribution";
-import { fitPopupDelta, nextPopupStep, popupArea, popupRect, scrollCap } from "./popup-fit";
+import {
+  fitPopupDelta,
+  nextPopupStep,
+  popupArea,
+  popupAreaClearOf,
+  popupRect,
+  scrollCap,
+} from "./popup-fit";
 import { useMapTheme } from "@/components/theme/use-theme";
 import { readResolvedTheme } from "@/lib/theme";
 import { formatBaths, formatNumber, formatPrice, formatPriceShort } from "@/lib/format";
@@ -408,8 +415,9 @@ const POPUP_OFFSET = 16;
 /**
  * Small screens (QA L18-1): compacts the popup until it fits the map's height (a shorter photo,
  * no photo, then a scrolling price/facts/address part; the firm line and the MLS credit stay
- * whole), then pans so all of it is inside the map, clear of the overlay pill. The popup's
- * position comes from the pin, not the DOM (MapLibre applies its transform a frame later).
+ * whole), then pans so all of it is inside the map, clear of the overlay pill and of the
+ * map's attribution control (QA L21-4). The popup's position comes from the pin, not the DOM
+ * (MapLibre applies its transform a frame later).
  */
 function fitSmallPopup(
   map: MapLibreMap,
@@ -420,9 +428,17 @@ function fitSmallPopup(
   anchor: "top" | "bottom",
 ) {
   const container = map.getContainer().getBoundingClientRect();
-  const area = popupArea(container, overlay?.getBoundingClientRect().bottom);
-  const available = area.bottom - area.top;
   const el = popup.getElement();
+  const point = map.project([pin.lng, pin.lat]);
+  // Compaction doesn't change the popup's width, so its columns are known now.
+  const columns = popupRect(point, container, { width: el.offsetWidth, height: 0 }, anchor, 0);
+  const attribution = map.getContainer().querySelector(".maplibregl-ctrl-attrib");
+  const area = popupAreaClearOf(
+    popupArea(container, overlay?.getBoundingClientRect().bottom),
+    columns,
+    attribution?.getBoundingClientRect(),
+  );
+  const available = area.bottom - area.top;
   const photo = content.querySelector<HTMLImageElement>("[data-popup-photo]");
   const head = content.querySelector<HTMLElement>("[data-popup-head]");
   for (
@@ -439,7 +455,7 @@ function fitSmallPopup(
     }
   }
   const size = { width: el.offsetWidth, height: el.offsetHeight };
-  const rect = popupRect(map.project([pin.lng, pin.lat]), container, size, anchor, POPUP_OFFSET);
+  const rect = popupRect(point, container, size, anchor, POPUP_OFFSET);
   const { dx, dy } = fitPopupDelta(rect, area);
   // Programmatic: `movestart` sees no originalEvent, so this won't trigger a bounds search.
   if (dx || dy) map.panBy([dx, dy], { animate: false });

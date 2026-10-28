@@ -3,6 +3,7 @@ import {
   fitPopupDelta,
   nextPopupStep,
   popupArea,
+  popupAreaClearOf,
   popupRect,
   scrollCap,
   type Rect,
@@ -30,6 +31,42 @@ describe("popupArea", () => {
     // A pill above the inset changes nothing.
     expect(popupArea(rect(0, 100, 390, 351), 90).top).toBe(108);
     expect(popupArea(rect(0, 100, 390, 351), null).top).toBe(108);
+  });
+});
+
+describe("popupAreaClearOf (QA L21-4)", () => {
+  // A 390 px wide map at y 100–451; MapLibre's compact attribution "i", 24 px, bottom right.
+  const area = popupArea(rect(0, 100, 390, 351));
+  const attrib = rect(356, 417, 24, 24);
+
+  it("raises the bottom above the attribution when the popup is over it", () => {
+    // A 280 px popup centred on a pin at x 300: fitted to 102–382, over the control.
+    const popup = rect(160, 200, 280, 0);
+    expect(popupAreaClearOf(area, popup, attrib)).toEqual({ ...area, bottom: 409 });
+  });
+
+  it("leaves the area alone when the fitted popup is clear of it", () => {
+    // A 200 px popup on the left (8–208), and one ending 8 px short of the control.
+    expect(popupAreaClearOf(area, rect(-50, 200, 200, 0), attrib)).toEqual(area);
+    expect(popupAreaClearOf(area, rect(148, 200, 200, 0), attrib)).toEqual(area);
+    // Within the inset of it counts as over it.
+    expect(popupAreaClearOf(area, rect(149, 200, 200, 0), attrib).bottom).toBe(409);
+  });
+
+  it("ignores a missing or unrendered control, and one below the area", () => {
+    const popup = rect(160, 200, 280, 0);
+    expect(popupAreaClearOf(area, popup, null)).toEqual(area);
+    expect(popupAreaClearOf(area, popup, undefined)).toEqual(area);
+    expect(popupAreaClearOf(area, popup, rect(0, 0, 0, 0))).toEqual(area);
+    expect(popupAreaClearOf(area, popup, rect(356, 460, 24, 24))).toEqual(area);
+  });
+
+  it("keeps the overlay pill's top", () => {
+    const withPill = popupArea(rect(0, 100, 390, 351), 148);
+    expect(popupAreaClearOf(withPill, rect(160, 200, 280, 0), attrib)).toEqual({
+      ...withPill,
+      bottom: 409,
+    });
   });
 });
 

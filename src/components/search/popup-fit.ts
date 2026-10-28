@@ -23,6 +23,29 @@ export function popupArea(map: Rect, overlayBottom?: number | null, inset = POPU
   };
 }
 
+/**
+ * The area with its bottom raised above `obstacle` (the map's attribution control, bottom
+ * right; QA L21-4) when the popup, once fitted sideways, would be over it, so the control
+ * stays visible. Unchanged with no obstacle, an empty one (not rendered), or one clear of
+ * the popup's columns. `popup` is its rect from the pin (`popupRect`); only its width and
+ * horizontal position are used.
+ */
+export function popupAreaClearOf(
+  area: Rect,
+  popup: Rect,
+  obstacle?: Rect | null,
+  inset = POPUP_INSET,
+): Rect {
+  if (!obstacle || obstacle.right <= obstacle.left || obstacle.bottom <= obstacle.top) {
+    return area;
+  }
+  const dx = axisDelta(popup.left, popup.right, area.left, area.right);
+  const left = popup.left - dx;
+  const right = popup.right - dx;
+  if (right + inset <= obstacle.left || left - inset >= obstacle.right) return area;
+  return { ...area, bottom: Math.min(area.bottom, obstacle.top - inset) };
+}
+
 /** The offset along one axis that brings [start, end] inside [areaStart, areaEnd] (start first). */
 function axisDelta(start: number, end: number, areaStart: number, areaEnd: number): number {
   if (start < areaStart || end - start > areaEnd - areaStart) return start - areaStart;
