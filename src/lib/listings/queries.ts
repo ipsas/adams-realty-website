@@ -41,8 +41,8 @@ const LIVE_STATUSES = ["active", "coming_soon", "active_under_contract", "pendin
 /**
  * Full property page payload. `cache` dedupes the call between generateMetadata and the page.
  * Null for a feed listing Georgia MLS rules keep off the site (a hidden status,
- * or gone from the feed), and a sold or off-market feed listing carries its
- * primary photo only (src/lib/listings/visibility.ts). No compensation fields
+ * or gone from the feed), and a sold or off-market listing, the firm's own
+ * included, carries its primary photo only (src/lib/listings/visibility.ts). No compensation fields
  * (./public-fields.ts).
  */
 export const getListingBySlug = cache(async (slug: string) => {
