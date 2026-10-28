@@ -9,7 +9,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { LinkButton } from "@/components/ui/button";
 import { Photo } from "@/components/ui/photo";
 import { Container, SectionHeading } from "@/components/ui/section";
-import { areaHref, townGuide } from "@/config/areas";
+import { HOME_TOWN_GUIDE_SLUGS, areaHref, areas as areaList, townGuide } from "@/config/areas";
 import { site } from "@/config/site";
 import { getAgents } from "@/lib/agents/queries";
 import { formatNumber, formatPriceShort } from "@/lib/format";
@@ -17,7 +17,6 @@ import {
   getCachedFeaturedListings,
   getCachedMarketStats,
   getCachedPopularAreas,
-  getCachedTopCities,
 } from "@/lib/listings/cached";
 import { NO_HOMES_FOR_SALE } from "@/lib/listings/places-index";
 import { FEATURED_MIN, getNewestListings } from "@/lib/listings/queries";
@@ -27,8 +26,10 @@ import heroDusk from "@/../public/images/hero-dusk.jpg";
 // Title and description come from the root layout's defaults.
 export const metadata: Metadata = { alternates: { canonical: "/" } };
 
-/** Town chips under the hero search: the cities with the most homes for sale. */
-const TOP_CITIES = 12;
+/** Town chips under the hero search: fixed area guides, skipping any slug missing from the config. */
+const POPULAR_AREAS = HOME_TOWN_GUIDE_SLUGS.flatMap((slug) =>
+  areaList.filter((a) => a.slug === slug),
+);
 
 const SELL_IMAGE =
   "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1600&q=80";
@@ -40,13 +41,12 @@ function townHref(city: string): string {
 }
 
 export default async function HomePage() {
-  const [featured, newest, areas, stats, agents, topCities] = await Promise.all([
+  const [featured, newest, areas, stats, agents] = await Promise.all([
     getCachedFeaturedListings(8),
     getNewestListings(4),
     getCachedPopularAreas(9),
     getCachedMarketStats(),
     getAgents(),
-    getCachedTopCities(TOP_CITIES),
   ]);
 
   return (
@@ -98,31 +98,29 @@ export default async function HomePage() {
           <div className="mt-9">
             <HeroSearch />
           </div>
-          {topCities.length > 0 && (
-            // One swipeable row on phones; wraps from sm up.
-            <nav
-              aria-label="Popular towns"
-              data-top-cities
-              className="-mx-4 mt-5 scrollbar-none flex items-center gap-2 overflow-x-auto px-4 text-sm sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0"
-            >
-              <span className="shrink-0 text-white/60">Popular:</span>
-              {topCities.map(({ city }) => (
-                <Link
-                  key={city}
-                  href={townHref(city)}
-                  className="flex h-9 shrink-0 items-center rounded-full border border-white/60 px-3 whitespace-nowrap text-white/90 backdrop-blur-sm transition-colors hover:bg-white/15"
-                >
-                  {city}
-                </Link>
-              ))}
+          {/* One swipeable row on phones; wraps from sm up. */}
+          <nav
+            aria-label="Popular towns"
+            data-top-cities
+            className="-mx-4 mt-5 scrollbar-none flex items-center gap-2 overflow-x-auto px-4 text-sm sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0"
+          >
+            <span className="shrink-0 text-white/60">Popular:</span>
+            {POPULAR_AREAS.map((area) => (
               <Link
-                href="/places"
-                className="flex h-9 shrink-0 items-center gap-1 rounded-full px-2 font-medium whitespace-nowrap text-white underline-offset-4 hover:underline"
+                key={area.slug}
+                href={areaHref(area)}
+                className="flex h-9 shrink-0 items-center rounded-full border border-white/60 px-3 whitespace-nowrap text-white/90 backdrop-blur-sm transition-colors hover:bg-white/15"
               >
-                See all towns <ArrowRight className="size-3.5" />
+                {area.name}
               </Link>
-            </nav>
-          )}
+            ))}
+            <Link
+              href="/places"
+              className="flex h-9 shrink-0 items-center gap-1 rounded-full px-2 font-medium whitespace-nowrap text-white underline-offset-4 hover:underline"
+            >
+              See all towns <ArrowRight className="size-3.5" />
+            </Link>
+          </nav>
 
           <dl className="mt-14 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/15 bg-white/15 backdrop-blur-md sm:grid-cols-4">
             {[
