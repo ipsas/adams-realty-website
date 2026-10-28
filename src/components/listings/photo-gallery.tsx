@@ -1,12 +1,16 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, Grid2x2, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useDialogHistory } from "@/components/ui/dialog";
 import { Photo } from "@/components/ui/photo";
 import { cn } from "@/lib/cn";
+import { centerTarget, pageTarget, stripEdges, wheelDelta } from "./photo-strip";
 
 type GalleryPhoto = { url: string; caption: string | null };
+
+const motion = (): ScrollBehavior =>
+  matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
 
 /**
  * Hero mosaic (1 large + 4 small) with a full-screen, keyboard- and swipe-friendly lightbox.
@@ -41,6 +45,61 @@ export function PhotoGallery({ photos, alt }: { photos: GalleryPhoto[]; alt: str
   }, [open, step]);
 
   const touchX = useRef<number | null>(null);
+  const strip = useRef<HTMLDivElement>(null);
+  const stripId = useId();
+  const [edges, setEdges] = useState({ atStart: true, atEnd: true });
+  const isOpen = open !== null;
+
+  useEffect(() => {
+    const el = strip.current;
+    if (!isOpen || !el) return;
+    const update = () => setEdges(stripEdges(el.scrollLeft, el.clientWidth, el.scrollWidth));
+    // Native and non-passive: React's onWheel can't preventDefault. A mouse wheel scrolls the
+    // strip sideways until it reaches an end, then falls through to the page as usual.
+    const onWheel = (e: WheelEvent) => {
+      const dx = wheelDelta(e.deltaX, e.deltaY, e.deltaMode, el.clientWidth);
+      if (dx === null) return;
+      const { atStart, atEnd } = stripEdges(el.scrollLeft, el.clientWidth, el.scrollWidth);
+      if (dx < 0 ? atStart : atEnd) return;
+      e.preventDefault();
+      el.scrollLeft += dx;
+    };
+    const resize = new ResizeObserver(update);
+    resize.observe(el);
+    el.addEventListener("scroll", update, { passive: true });
+    el.addEventListener("wheel", onWheel, { passive: false });
+    update();
+    return () => {
+      resize.disconnect();
+      el.removeEventListener("scroll", update);
+      el.removeEventListener("wheel", onWheel);
+    };
+  }, [isOpen]);
+
+  // Keep the active thumb centred. scrollTo, not scrollIntoView, which also scrolls the dialog.
+  const positioned = useRef(false);
+  useEffect(() => {
+    const el = strip.current;
+    if (open === null || !el) {
+      positioned.current = false;
+      return;
+    }
+    const thumb = el.querySelector<HTMLElement>('[aria-current="true"]');
+    if (!thumb) return;
+    const left = thumb.getBoundingClientRect().left - el.getBoundingClientRect().left;
+    el.scrollTo({
+      left: centerTarget(left + el.scrollLeft, thumb.offsetWidth, el.clientWidth, el.scrollWidth),
+      behavior: positioned.current ? motion() : "auto",
+    });
+    positioned.current = true;
+  }, [open]);
+
+  const page = (dir: 1 | -1) => {
+    const el = strip.current;
+    if (!el) return;
+    const left = pageTarget(el.scrollLeft, el.clientWidth, el.scrollWidth, dir);
+    el.scrollTo({ left, behavior: motion() });
+  };
 
   if (!photos.length) {
     return (
@@ -113,7 +172,11 @@ export function PhotoGallery({ photos, alt }: { photos: GalleryPhoto[]; alt: str
         {open !== null && (
           <div
             className="flex h-full flex-col"
-            onTouchStart={(e) => (touchX.current = e.touches[0].clientX)}
+            onTouchStart={(e) => {
+              // Swiping the thumbnail strip scrolls it rather than changing the photo.
+              const inStrip = strip.current?.contains(e.target as Node);
+              touchX.current = inStrip ? null : e.touches[0].clientX;
+            }}
             onTouchEnd={(e) => {
               if (touchX.current === null) return;
               const dx = e.changedTouches[0].clientX - touchX.current;
@@ -123,7 +186,9 @@ export function PhotoGallery({ photos, alt }: { photos: GalleryPhoto[]; alt: str
           >
             <div className="flex items-center justify-between px-4 py-3 sm:px-6">
               <p className="text-sm text-white/70">
-                {open + 1} / {photos.length}
+                <span aria-live="polite" aria-atomic="true" className="tabular-nums">
+                  {open + 1} / {photos.length}
+                </span>
                 {photos[open].caption && (
                   <span className="ml-3 text-white">{photos[open].caption}</span>
                 )}
@@ -154,21 +219,36 @@ export function PhotoGallery({ photos, alt }: { photos: GalleryPhoto[]; alt: str
                 </>
               )}
             </div>
-            <div className="scrollbar-none flex gap-2 overflow-x-auto px-4 pb-4 sm:justify-center">
-              {photos.map((p, i) => (
-                <button
-                  key={p.url + i}
-                  type="button"
-                  onClick={() => setOpen(i)}
-                  className={cn(
-                    "h-14 w-20 shrink-0 overflow-hidden rounded-md opacity-50 transition-opacity hover:opacity-100",
-                    i === open && "opacity-100 ring-2 ring-white",
-                  )}
-                  aria-label={`Show photo ${i + 1}`}
-                >
-                  <Photo src={p.url} alt="" sizes="80px" className="size-full" />
-                </button>
-              ))}
+            <div className="flex items-center gap-2 px-2 pb-4 sm:px-4">
+              <StripPager dir={-1} controls={stripId} disabled={edges.atStart} onPage={page} />
+              {/* Not justify-center: that pushes the first thumbs of a long strip out of reach.
+                  The w-max inner row centres a short strip and starts a long one at the left. */}
+              <div
+                ref={strip}
+                id={stripId}
+                role="group"
+                aria-label="Photo thumbnails"
+                className="scrollbar-none min-w-0 flex-1 touch-pan-x overflow-x-auto overscroll-x-contain p-1"
+              >
+                <div className="mx-auto flex w-max gap-2">
+                  {photos.map((p, i) => (
+                    <button
+                      key={p.url + i}
+                      type="button"
+                      onClick={() => setOpen(i)}
+                      className={cn(
+                        "h-14 w-20 shrink-0 overflow-hidden rounded-md opacity-50 transition-opacity hover:opacity-100",
+                        i === open && "opacity-100 ring-2 ring-white",
+                      )}
+                      aria-current={i === open ? "true" : undefined}
+                      aria-label={`Show photo ${i + 1} of ${photos.length}`}
+                    >
+                      <Photo src={p.url} alt="" sizes="80px" className="size-full" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <StripPager dir={1} controls={stripId} disabled={edges.atEnd} onPage={page} />
             </div>
           </div>
         )}
@@ -190,6 +270,33 @@ function LightboxArrow({ side, onClick }: { side: "left" | "right"; onClick: () 
       )}
     >
       <Icon className="size-6" />
+    </button>
+  );
+}
+
+/** Pages the thumbnail strip; hidden (but still taking its space) at either end. */
+function StripPager({
+  dir,
+  controls,
+  disabled,
+  onPage,
+}: {
+  dir: 1 | -1;
+  controls: string;
+  disabled: boolean;
+  onPage: (dir: 1 | -1) => void;
+}) {
+  const Icon = dir < 0 ? ChevronLeft : ChevronRight;
+  return (
+    <button
+      type="button"
+      onClick={() => onPage(dir)}
+      disabled={disabled}
+      aria-controls={controls}
+      aria-label={dir < 0 ? "Scroll thumbnails left" : "Scroll thumbnails right"}
+      className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur transition-[background-color,opacity] hover:bg-white/20 disabled:pointer-events-none disabled:opacity-0"
+    >
+      <Icon className="size-5" />
     </button>
   );
 }
