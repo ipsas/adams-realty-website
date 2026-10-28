@@ -231,11 +231,15 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                 className="hidden items-center gap-1 text-sm text-muted sm:flex"
               >
                 {listingBreadcrumbs(l).map((c, i) => (
-                  <Fragment key={c.href}>
+                  <Fragment key={c.name}>
                     {i > 0 && <ChevronRight className="size-3.5" />}
-                    <Link href={c.href} className="hover:text-ink">
-                      {c.name}
-                    </Link>
+                    {c.href ? (
+                      <Link href={c.href} className="hover:text-ink">
+                        {c.name}
+                      </Link>
+                    ) : (
+                      <span>{c.name}</span>
+                    )}
                   </Fragment>
                 ))}
               </nav>

@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { placeHref } from "@/lib/areas/links";
 import { formatStreet } from "@/lib/format";
 import {
   LISTING_TITLE_MAX,
@@ -143,14 +142,18 @@ describe("listingBreadcrumbs and listingBreadcrumbJsonLd", () => {
     neighborhood: "Oak Hills",
   };
 
-  /** The JSON-LD is the visible crumbs with absolute URLs, then the listing itself. */
+  /**
+   * The JSON-LD is the visible crumbs that have links, with absolute URLs, then the listing
+   * itself; no crumb links to (and no item is) a noindex /homes search.
+   */
   function expectJsonLdMatchesVisible(l: ListingBreadcrumbInput, baseUrl = base) {
     const visible = listingBreadcrumbs(l);
+    const linked = visible.filter((c) => c.href);
     const json = listingBreadcrumbJsonLd(l, baseUrl);
     expect(json["@context"]).toBe("https://schema.org");
     expect(json["@type"]).toBe("BreadcrumbList");
     expect(json.itemListElement).toEqual([
-      ...visible.map((c, i) => ({
+      ...linked.map((c, i) => ({
         "@type": "ListItem",
         position: i + 1,
         name: c.name,
@@ -158,11 +161,13 @@ describe("listingBreadcrumbs and listingBreadcrumbJsonLd", () => {
       })),
       {
         "@type": "ListItem",
-        position: visible.length + 1,
+        position: linked.length + 1,
         name: formatStreet(l),
         item: `${base}/homes/${l.slug}`,
       },
     ]);
+    for (const c of visible) expect(c.href ?? "").not.toContain("/homes?q=");
+    for (const item of json.itemListElement) expect(item.item).not.toContain("/homes?q=");
     return visible;
   }
 
@@ -170,8 +175,54 @@ describe("listingBreadcrumbs and listingBreadcrumbJsonLd", () => {
     const visible = expectJsonLdMatchesVisible(crumbHome);
     expect(visible).toEqual([
       { name: "Homes", href: "/homes" },
-      { name: "Royston", href: placeHref("Royston", "Franklin") },
-      { name: "Oak Hills", href: placeHref("Oak Hills", "Franklin") },
+      { name: "Royston", href: "/areas/royston" },
+      { name: "Oak Hills" },
+    ]);
+  });
+
+  it("links a guide town to its area guide, in the JSON-LD too", () => {
+    const visible = expectJsonLdMatchesVisible({ ...crumbHome, neighborhood: null });
+    expect(visible).toEqual([
+      { name: "Homes", href: "/homes" },
+      { name: "Royston", href: "/areas/royston" },
+    ]);
+    expect(listingBreadcrumbJsonLd({ ...crumbHome, neighborhood: null }, base).itemListElement)
+      .toEqual([
+        { "@type": "ListItem", position: 1, name: "Homes", item: `${base}/homes` },
+        { "@type": "ListItem", position: 2, name: "Royston", item: `${base}/areas/royston` },
+        {
+          "@type": "ListItem",
+          position: 3,
+          name: "12 Oak St",
+          item: `${base}/homes/${crumbHome.slug}`,
+        },
+      ]);
+  });
+
+  it("shows a town without a guide as text and leaves it out of the JSON-LD", () => {
+    const l = { ...crumbHome, city: "Bowersville", county: "Hart" };
+    const visible = expectJsonLdMatchesVisible(l);
+    expect(visible).toEqual([
+      { name: "Homes", href: "/homes" },
+      { name: "Bowersville" },
+      { name: "Oak Hills" },
+    ]);
+    expect(listingBreadcrumbJsonLd(l, base).itemListElement).toEqual([
+      { "@type": "ListItem", position: 1, name: "Homes", item: `${base}/homes` },
+      { "@type": "ListItem", position: 2, name: "12 Oak St", item: `${base}/homes/${l.slug}` },
+    ]);
+  });
+
+  it("links a guide neighborhood under a town without a guide", () => {
+    const l = { ...crumbHome, city: "Bowersville", county: "Hart", neighborhood: "Hartwell" };
+    const visible = expectJsonLdMatchesVisible(l);
+    expect(visible).toEqual([
+      { name: "Homes", href: "/homes" },
+      { name: "Bowersville" },
+      { name: "Hartwell", href: "/areas/hartwell" },
+    ]);
+    expect(listingBreadcrumbJsonLd(l, base).itemListElement.map((c) => c.position)).toEqual([
+      1, 2, 3,
     ]);
   });
 

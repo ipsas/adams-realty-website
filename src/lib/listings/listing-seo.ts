@@ -3,8 +3,9 @@
  * Pure: built only from the listing's own facts and the existing formatters, so every
  * "missing fact" case is unit-tested (listing-seo.test.ts).
  */
+import { areaHref } from "@/config/areas";
 import { site } from "@/config/site";
-import { placeHref } from "@/lib/areas/links";
+import { guideForLocation } from "@/lib/areas/match";
 import {
   formatBaths,
   formatNumber,
@@ -80,21 +81,28 @@ export type ListingBreadcrumbInput = Pick<
   "addressLine1" | "unitNumber" | "hideAddress" | "city" | "state"
 > & { slug: string; county: string | null; neighborhood: string | null };
 
-export type Breadcrumb = { name: string; href: string };
+/** A crumb without `href` is plain text: it would link only to a noindex search. */
+export type Breadcrumb = { name: string; href?: string };
+
+/** A town or neighborhood crumb, linked only when we publish an area guide for it. */
+function placeCrumb(place: string, county: string | null): Breadcrumb {
+  const guide = guideForLocation(null, place, county);
+  return guide ? { name: place, href: areaHref(guide) } : { name: place };
+}
 
 /**
  * The listing page's visible breadcrumb: Homes → the town (Georgia listings) → the
  * neighborhood (when it has one other than the town). The BreadcrumbList JSON-LD is
- * built from the same crumbs.
+ * built from the same crumbs, keeping only the linked ones.
  */
 export function listingBreadcrumbs(l: ListingBreadcrumbInput): Breadcrumb[] {
   const crumbs: Breadcrumb[] = [{ name: "Homes", href: "/homes" }];
   if (!isMarketState(l.state)) return crumbs;
-  crumbs.push({ name: l.city, href: placeHref(l.city, l.county) });
+  crumbs.push(placeCrumb(l.city, l.county));
   // Rows synced before the mapper dropped placeholders can still hold "None".
   const neighborhood = isNullLike(l.neighborhood) ? null : l.neighborhood;
   if (neighborhood && neighborhood !== l.city) {
-    crumbs.push({ name: neighborhood, href: placeHref(neighborhood, l.county) });
+    crumbs.push(placeCrumb(neighborhood, l.county));
   }
   return crumbs;
 }
@@ -105,14 +113,19 @@ export type BreadcrumbListJsonLd = {
   itemListElement: { "@type": "ListItem"; position: number; name: string; item: string }[];
 };
 
-/** The visible breadcrumb (`listingBreadcrumbs`) with absolute URLs, then the listing itself. */
+/**
+ * The visible breadcrumb's linked crumbs (`listingBreadcrumbs`) with absolute URLs, then
+ * the listing itself.
+ */
 export function listingBreadcrumbJsonLd(
   l: ListingBreadcrumbInput,
   baseUrl: string,
 ): BreadcrumbListJsonLd {
   const base = baseUrl.replace(/\/+$/, "");
   const crumbs = [
-    ...listingBreadcrumbs(l).map((c) => ({ name: c.name, item: `${base}${c.href}` })),
+    ...listingBreadcrumbs(l).flatMap((c) =>
+      c.href ? [{ name: c.name, item: `${base}${c.href}` }] : [],
+    ),
     { name: formatStreet(l), item: `${base}/homes/${l.slug}` },
   ];
   return {
