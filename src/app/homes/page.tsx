@@ -36,7 +36,9 @@ export async function generateMetadata(props: PageProps<"/homes">): Promise<Meta
     serializeCriteria({ ...c, page: DEFAULT_CRITERIA.page, sort: DEFAULT_CRITERIA.sort }).size ===
     0;
   const { city } = site.market.focus;
-  const title = c.q
+  // A place or a county filter: the search's own summary ("Homes in Hall County").
+  const located = !!(c.q || c.counties);
+  const title = located
     ? describeCriteria(c)
     : c.types?.length || c.bounds
       ? // The heading's words: "Land for sale in Georgia", "Homes in this map area".

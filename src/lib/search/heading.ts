@@ -1,5 +1,5 @@
 import { site } from "@/config/site";
-import { listingNoun, type SearchCriteria } from "./params";
+import { countiesLabel, listingNoun, parseCounties, type SearchCriteria } from "./params";
 import { hasLocation, lakeGuide, normalizeLocationQuery } from "./query";
 
 /**
@@ -18,16 +18,21 @@ export function lakeName(q: string | undefined, town?: string): string | undefin
 /**
  * The results heading (site review #5), which follows the search:
  * - a town: "Homes for sale in Hartwell" (the town as the listings spell it);
- * - a county: "Homes for sale in Hall County" (for a bare "Hall" too);
+ * - a county: "Homes for sale in Hall County" (for a bare "Hall" too); the county
+ *   filter alike, with the location box's county: "… in Hall County, Jackson County";
  * - a lake: "Homes near Lake Hartwell";
  * - a moved map: "Homes in this map area";
  * - otherwise the place as typed, or the state: "Land for sale in Georgia".
  * The noun follows the mode and the property-type filter (`listingNoun`).
  */
 export function searchHeading(
-  c: Pick<SearchCriteria, "mode" | "types" | "q" | "bounds">,
+  c: Pick<SearchCriteria, "mode" | "types" | "q" | "bounds" | "counties">,
   scope: { town?: string; county?: string } = {},
 ): string {
+  if (c.counties?.length && (scope.county || !hasLocation(c))) {
+    const counties = parseCounties([...c.counties, ...(scope.county ? [scope.county] : [])]);
+    if (counties) return `${listingNoun(c)} in ${countiesLabel(counties)}`;
+  }
   if (c.q && hasLocation(c)) {
     if (scope.town) return `${listingNoun(c)} in ${scope.town}`;
     if (scope.county) return `${listingNoun(c)} in ${scope.county}`;

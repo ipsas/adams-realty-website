@@ -1,4 +1,7 @@
-/** Georgia's 159 counties, as officially spelled. For tests. */
+/**
+ * Georgia's 159 counties, as officially spelled: the county filter's choices.
+ * Free of the database, so client components can use it.
+ */
 export const GEORGIA_COUNTIES = [
   "Appling",
   "Atkinson",

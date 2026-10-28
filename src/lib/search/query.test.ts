@@ -382,6 +382,62 @@ describe("a county search", () => {
   });
 });
 
+describe("the county filter", () => {
+  const countyConds = (params: Record<string, string>, scope?: LocationScope) =>
+    buildConditions(parseSearchParams(params), now, scope)
+      .map((c) => dialect.sqlToQuery(c))
+      .filter((q) => q.sql.includes(`"listings"."county"`));
+
+  it("is one OR of the counties, each in the market's state", () => {
+    const conds = countyConds({ counties: "Hall,Jackson" });
+    expect(conds).toHaveLength(1);
+    const [{ sql, params }] = conds;
+    expect(sql).toContain(" or ");
+    expect(sql.match(/upper\(btrim\("listings"\."state"\)\) in/g)).toHaveLength(2);
+    expect(params).toEqual(expect.arrayContaining(["hall", "jackson", "GA", "GEORGIA"]));
+  });
+
+  it("takes in the location box's county instead of a second county condition", () => {
+    const scope = { county: "Banks County" };
+    const conds = countyConds({ q: "Banks County", counties: "Hall" }, scope);
+    expect(conds).toHaveLength(1);
+    expect(conds[0].params).toEqual(expect.arrayContaining(["banks", "hall"]));
+    expect(render({ q: "Banks County", counties: "Hall" }, scope).sql).not.toContain(
+      "location_vector",
+    );
+    // The same county twice is one county.
+    const [hall] = countyConds({ q: "Hall County", counties: "Hall" }, { county: "Hall County" });
+    expect(hall.params).toEqual(["hall%", "hall", "GA", "GEORGIA"]);
+  });
+
+  it("narrows any other place", () => {
+    const { sql } = render({ q: "Royston", counties: "Franklin" }, { town: "Royston" });
+    expect(sql).toContain(`lower("listings"."city")`);
+    expect(sql).toContain(`lower("listings"."county")`);
+  });
+});
+
+describe("the school filters", () => {
+  it("match each level's normalized name, in the market's state", () => {
+    const { sql, params } = render({ elementary: "North  Hart", high: "HART" });
+    expect(sql).toContain(
+      `lower(regexp_replace(btrim("listings"."schools"->>'elementary'), '\\s+', ' ', 'g')) = $`,
+    );
+    expect(sql).toContain(
+      `lower(regexp_replace(btrim("listings"."schools"->>'high'), '\\s+', ' ', 'g')) = $`,
+    );
+    expect(sql).not.toContain(`->>'middle'`);
+    expect(params).toEqual(expect.arrayContaining(["north hart", "hart", "GA", "GEORGIA"]));
+    expect(sql.match(/upper\(btrim\("listings"\."state"\)\) in/g)).toHaveLength(1);
+  });
+
+  it("add nothing without a school", () => {
+    const { sql } = render({});
+    expect(sql).not.toContain(`"listings"."schools"`);
+    expect(sql).not.toContain(`"listings"."state"`);
+  });
+});
+
 describe("countyKey", () => {
   it("reads '<Name> County', with any case, punctuation or state, and a bare name", () => {
     expect(countyKey("Hall County")).toBe("hall");

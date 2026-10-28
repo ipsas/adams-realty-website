@@ -30,6 +30,7 @@ import { publicConditions } from "@/lib/listings/visibility";
 import { inMarketState } from "@/lib/market-state";
 import { marketDateDaysAgo } from "@/lib/time";
 import { allowsPriceReduced, DEFAULT_CRITERIA, type SearchCriteria } from "./params";
+import { SCHOOL_LEVELS, schoolKey, type SchoolLevel } from "./school-name";
 
 type Status = (typeof listings.status.enumValues)[number];
 
@@ -132,6 +133,20 @@ export function countyCondition(county: string): SQL {
 }
 
 /**
+ * The county filter: listings in any of `counties` (each `countyCondition`, so
+ * Georgia only), as one condition. `scopeCounty`, the county the location box
+ * names, joins the union instead of narrowing it.
+ */
+export function countiesCondition(
+  counties: readonly string[],
+  scopeCounty?: string,
+): SQL | undefined {
+  const all = scopeCounty ? [...counties, scopeCounty] : counties;
+  const keys = Array.from(new Set(all.map(normalizeCounty)));
+  return or(...keys.map((k) => countyCondition(k)));
+}
+
+/**
  * The area guide a lake search names ("Lake Hartwell", "Hartwell Lake",
  * "Lanier"): a guide that isn't a town. Such a search covers the lake area,
  * whatever town each home's mail goes to.
@@ -228,6 +243,14 @@ export function soldWithin(days: number = DEFAULT_SOLD_WINDOW_DAYS, now: Date = 
   ];
 }
 
+/**
+ * A listing's school at `level` as its `schoolKey` (trimmed, single-spaced, lower case).
+ * `level` comes from the fixed SCHOOL_LEVELS list, so it is inlined, not bound.
+ */
+export function schoolKeySql(level: SchoolLevel): SQL {
+  return sql`lower(regexp_replace(btrim(${listings.schools}->>${sql.raw(`'${level}'`)}), '\\s+', ' ', 'g'))`;
+}
+
 /** Monthly-equivalent HOA fee, so "max HOA $300/mo" compares like with like. */
 const monthlyHoa = sql`(case ${listings.hoaFrequency}
   when 'quarterly' then ${listings.hoaFee} / 3.0
@@ -261,7 +284,11 @@ export function buildConditions(
     );
   }
 
-  if (c.q) conds.push(locationCondition(c.q, scope));
+  // A county in the location box folds into the county filter (one union, not two
+  // county conditions); any other place narrows the counties.
+  const counties = c.counties?.length ? c.counties : undefined;
+  if (c.q && !(counties && scope.county)) conds.push(locationCondition(c.q, scope));
+  if (counties) conds.push(countiesCondition(counties, scope.county));
   if (c.minPrice !== undefined) conds.push(gte(listings.listPrice, c.minPrice));
   if (c.maxPrice !== undefined) conds.push(lte(listings.listPrice, c.maxPrice));
   if (c.beds !== undefined) conds.push(gte(listings.bedrooms, c.beds));
@@ -319,6 +346,12 @@ export function buildConditions(
     );
   }
   if (c.maxDaysOnMarket !== undefined) conds.push(listedWithin(c.maxDaysOnMarket, now));
+  // Assigned schools by name, any case or spacing; Georgia's only (another state's "Hart").
+  const schoolLevels = SCHOOL_LEVELS.filter((level) => c[level]);
+  for (const level of schoolLevels) {
+    conds.push(sql`${schoolKeySql(level)} = ${schoolKey(c[level]!)}`);
+  }
+  if (schoolLevels.length) conds.push(inMarketState());
 
   if (c.garage) conds.push(gte(listings.garageSpaces, 1));
   if (c.pool) conds.push(eq(listings.hasPool, true));
