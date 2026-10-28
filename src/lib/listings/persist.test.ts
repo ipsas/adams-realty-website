@@ -1,6 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { marketToday } from "@/lib/areas/stats";
+import page1 from "@/lib/mls/reso/fixtures/bridge-gamls-page1.json";
+import { mapResoProperty, type ResoProperty } from "@/lib/mls/reso/mapper";
 import type { NormalizedListing } from "@/lib/mls/types";
 import { diffEvents, mediaSignature, openHouseSignature, sanitizeListing } from "./persist";
+import { publicHistory } from "./public-history";
 import { listingSlug, shortHash } from "./slug";
 
 const now = new Date("2026-09-25T12:00:00Z");
@@ -31,24 +35,51 @@ describe("diffEvents", () => {
     expect(events[0].occurredAt).toEqual(new Date("2026-09-01T12:00:00Z"));
   });
 
-  it("dates a new feed listing by the sync, never by its (DaysOnMarket-derived) list date", () => {
-    const modified = new Date("2026-09-24T15:30:00Z");
-    const [listed] = diffEvents("id", null, listing({ sourceModifiedAt: modified }), now, true);
-    expect(listed).toMatchObject({ type: "listed", occurredAt: modified });
-    // Without a modification or status time, the sync's own time.
-    expect(diffEvents("id", null, listing(), now, true)[0].occurredAt).toEqual(now);
+  it("dates a new feed listing by the sync, never by its list date or a feed timestamp", () => {
+    const [listed] = diffEvents(
+      "id",
+      null,
+      listing({
+        sourceModifiedAt: new Date("2026-09-24T15:30:00Z"),
+        statusChangedAt: new Date("2026-09-02T15:30:00Z"),
+      }),
+      now,
+      true,
+    );
+    expect(listed).toMatchObject({ type: "listed", occurredAt: now });
   });
 
-  it("records listed + sold for a listing first seen as closed", () => {
+  it("records listed + sold for a listing first seen as closed, listed no later than sold", () => {
     const events = diffEvents(
       "id",
       null,
-      listing({ status: "closed", closePrice: 490000, closeDate: "2026-09-20" }),
+      listing({
+        status: "closed",
+        closePrice: 490000,
+        closeDate: "2026-09-20",
+        statusChangedAt: new Date("2026-09-22T12:00:00Z"),
+      }),
       now,
       true,
     );
     expect(events.map((e) => e.type)).toEqual(["listed", "sold"]);
     expect(events[1].price).toBe(490000);
+    expect(events[1].occurredAt).toEqual(new Date("2026-09-20T12:00:00Z"));
+    expect(events[0].occurredAt!.getTime()).toBeLessThanOrEqual(events[1].occurredAt!.getTime());
+  });
+
+  it("keeps a manual listing first seen as closed listed on its staff date", () => {
+    const events = diffEvents(
+      "id",
+      null,
+      listing({ status: "closed", closePrice: 490000, closeDate: "2026-09-20" }),
+      now,
+      false,
+    );
+    expect(events.map((e) => e.occurredAt)).toEqual([
+      new Date("2026-09-01T12:00:00Z"),
+      new Date("2026-09-20T12:00:00Z"),
+    ]);
   });
 
   it("records price drops", () => {
@@ -107,6 +138,64 @@ describe("diffEvents", () => {
       true,
     );
     expect(events.map((e) => e.type)).toEqual(["relisted"]);
+  });
+});
+
+// Georgia MLS Exhibit C: the list date the mapper derives from DaysOnMarket stays internal.
+// Bridge fixtures through the mapper (v5) and diffEvents, in time zones either side of the
+// market's: neither the stored "listed" event nor the public history carries it.
+describe("a feed listing's history from Bridge fixtures", () => {
+  const records = (page1 as { value: unknown[] }).value as ResoProperty[];
+  const mapped = (key: string) => {
+    const r = mapResoProperty(records.find((p) => p.ListingKey === key)!);
+    if (!r.ok) throw new Error(`${key} was skipped: ${r.reason}`);
+    return r.listing;
+  };
+  const syncedAt = new Date("2026-10-28T15:00:00Z");
+  const tz = process.env.TZ;
+  afterEach(() => {
+    if (tz === undefined) delete process.env.TZ;
+    else process.env.TZ = tz;
+  });
+  /** The rows diffEvents would insert, as the database hands them back. */
+  const stored = (n: NormalizedListing) =>
+    diffEvents("listing", null, n, syncedAt, true).map((e, i) => ({
+      id: `event-${i}`,
+      listingId: e.listingId,
+      type: e.type,
+      occurredAt: e.occurredAt as Date,
+      price: e.price ?? null,
+      previousPrice: e.previousPrice ?? null,
+      fromStatus: e.fromStatus ?? null,
+      toStatus: e.toStatus ?? null,
+    }));
+
+  for (const zone of ["UTC", "Pacific/Kiritimati", "America/Los_Angeles"]) {
+    for (const key of ["GA-ADAM-0001", "GA-0002-LAND", "GA-0003-COMM", "GA-0004-FARM"]) {
+      it(`${key} under TZ=${zone}`, () => {
+        process.env.TZ = zone;
+        const n = mapped(key);
+        expect(n.listDate, "the mapper derives a list date").toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        const history = stored(n);
+        expect(history[0].type).toBe("listed");
+        expect(history[0].occurredAt).toEqual(syncedAt);
+        expect(marketToday(history[0].occurredAt)).not.toBe(n.listDate);
+
+        const json = JSON.stringify(publicHistory(history, true));
+        expect(json).not.toContain(n.listDate!);
+        expect(json).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+        for (const field of ["occurredAt", "listDate", "list_date", "datePosted"]) {
+          expect(json).not.toContain(field);
+        }
+      });
+    }
+  }
+
+  it("GA-0005-SOLD, first seen closed, is listed no later than sold", () => {
+    const history = stored(mapped("GA-0005-SOLD"));
+    expect(history.map((e) => e.type)).toEqual(["listed", "sold"]);
+    expect(history[0].occurredAt.getTime()).toBeLessThanOrEqual(history[1].occurredAt.getTime());
+    expect(publicHistory(history, true).map((e) => e.type)).toEqual(["sold", "listed"]);
   });
 });
 

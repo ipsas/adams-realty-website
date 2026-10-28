@@ -446,10 +446,11 @@ type PreviousState = {
 };
 
 /**
- * History events implied by the change from `previous` to `next`. The history is public, so
- * a feed listing's "listed" event is dated by the sync, never by its list date (derived from
- * DaysOnMarket, it's the OnMarketDate Georgia MLS Exhibit C keeps off the site); a manual
- * listing's staff-entered list date isn't MLS data. Exported for tests.
+ * History events implied by the change from `previous` to `next`. A feed listing's "listed"
+ * event is dated `now`, when the sync first saw it, never by its list date (derived from
+ * DaysOnMarket, it's the OnMarketDate Georgia MLS Exhibit C keeps off the site) or a feed
+ * timestamp; first seen already sold, no later than the sale, so it never reads listed after
+ * sold. A manual listing's staff-entered list date isn't MLS data. Exported for tests.
  */
 export function diffEvents(
   listingId: string,
@@ -460,20 +461,33 @@ export function diffEvents(
 ): EventInsert[] {
   const at = next.statusChangedAt ?? next.sourceModifiedAt ?? now;
   if (!previous) {
+    const soldAt =
+      next.status === "closed"
+        ? next.closeDate
+          ? new Date(`${next.closeDate}T12:00:00Z`)
+          : at
+        : null;
+    const listedAt = fromFeed
+      ? soldAt && soldAt < now
+        ? soldAt
+        : now
+      : next.listDate
+        ? new Date(`${next.listDate}T12:00:00Z`)
+        : at;
     const events: EventInsert[] = [
       {
         listingId,
         type: "listed",
-        occurredAt: !fromFeed && next.listDate ? new Date(`${next.listDate}T12:00:00Z`) : at,
+        occurredAt: listedAt,
         price: next.originalListPrice ?? next.listPrice,
         toStatus: next.status === "closed" ? "active" : next.status,
       },
     ];
-    if (next.status === "closed") {
+    if (soldAt) {
       events.push({
         listingId,
         type: "sold",
-        occurredAt: next.closeDate ? new Date(`${next.closeDate}T12:00:00Z`) : at,
+        occurredAt: soldAt,
         price: next.closePrice ?? next.listPrice,
         toStatus: "closed",
       });

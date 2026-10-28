@@ -131,27 +131,22 @@ test.describe("a sold Georgia MLS listing", () => {
     await expect(card.locator("[data-card-photos]")).toHaveCount(0);
   });
 
-  test("sold after it was listed, in its price and status history", async ({ page }) => {
+  test("sold after it was listed, in its undated price and status history", async ({ page }) => {
     const { slug } = await slugOf(SOLD);
     await page.goto(`/homes/${slug}`);
     const history = page.locator("section", {
       has: page.getByRole("heading", { name: "Price & status history" }),
     });
+    // A feed listing's history carries no dates (src/lib/listings/public-history.ts).
+    await expect(history.getByRole("columnheader", { name: "Date" })).toHaveCount(0);
     const rows = await history
       .locator("tbody tr")
       .evaluateAll((trs) =>
         trs.map((tr) => [...tr.querySelectorAll("td")].map((td) => td.textContent!.trim())),
       );
-    const dateOf = (event: string) => {
-      const row = rows.find((r) => r[1] === event);
-      expect(row, event).toBeDefined();
-      return Date.parse(row![0]);
-    };
-    const listed = dateOf("Listed for sale");
-    const sold = dateOf("Sold");
-    expect(sold).toBeGreaterThan(listed);
-    // Newest first: the sale is the top row.
-    expect(rows[0][1]).toBe("Sold");
+    // Newest first: the sale is the top row, the listing the bottom one.
+    expect(rows[0][0]).toBe("Sold");
+    expect(rows.at(-1)![0]).toBe("Listed for sale");
   });
 });
 
