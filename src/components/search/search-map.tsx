@@ -26,9 +26,11 @@ import {
   fitPopupDelta,
   nextPopupStep,
   popupArea,
-  popupAreaClearOf,
+  popupAreaFor,
+  popupAreasClearOf,
   popupRect,
   scrollCap,
+  type Rect,
 } from "./popup-fit";
 import { useMapTheme } from "@/components/theme/use-theme";
 import { readResolvedTheme } from "@/lib/theme";
@@ -417,7 +419,8 @@ const POPUP_OFFSET = 16;
  * Small screens (QA L18-1): compacts the popup until it fits the map's height (a shorter photo,
  * no photo, then a scrolling price/facts/address part; the firm line and the MLS credit stay
  * whole), then pans so all of it is inside the map, clear of the overlay pill and of the
- * map's attribution control (QA L21-4). The popup's position comes from the pin, not the DOM
+ * map's attribution control (QA L21-4): above it, else beside it, collapsing an expanded one
+ * to its "i" when neither fits. The popup's position comes from the pin, not the DOM
  * (MapLibre applies its transform a frame later).
  */
 function fitSmallPopup(
@@ -434,30 +437,38 @@ function fitSmallPopup(
   // Compaction doesn't change the popup's width, so its columns are known now.
   const columns = popupRect(point, container, { width: el.offsetWidth, height: 0 }, anchor, 0);
   const attribution = map.getContainer().querySelector(".maplibregl-ctrl-attrib");
-  const area = popupAreaClearOf(
-    popupArea(container, overlay?.getBoundingClientRect().bottom),
-    columns,
-    attribution?.getBoundingClientRect(),
-  );
-  const available = area.bottom - area.top;
+  const full = popupArea(container, overlay?.getBoundingClientRect().bottom);
+  const areasNow = () => popupAreasClearOf(full, columns, attribution?.getBoundingClientRect());
   const photo = content.querySelector<HTMLImageElement>("[data-popup-photo]");
   const head = content.querySelector<HTMLElement>("[data-popup-head]");
-  for (
-    let step = nextPopupStep("full");
-    step && el.offsetHeight > available;
-    step = nextPopupStep(step)
-  ) {
-    if (step === "short-photo" && photo) photo.classList.replace("h-32", "h-20");
-    else if (step === "no-photo" && photo) photo.hidden = true;
-    else if (step === "scroll" && head) {
-      const cap = scrollCap(head.offsetHeight, el.offsetHeight - available);
-      head.style.maxHeight = `${cap}px`;
-      head.classList.add("overflow-y-auto");
+  // Compacts only as far as the tallest usable area needs (a popup beside the "i" may be taller).
+  let step = nextPopupStep("full");
+  const compactTo = (areas: Rect[]) => {
+    const available = Math.max(...areas.map((a) => a.bottom - a.top));
+    for (; step && el.offsetHeight > available; step = nextPopupStep(step)) {
+      if (step === "short-photo" && photo) photo.classList.replace("h-32", "h-20");
+      else if (step === "no-photo" && photo) photo.hidden = true;
+      else if (step === "scroll" && head) {
+        const cap = scrollCap(head.offsetHeight, el.offsetHeight - available);
+        head.style.maxHeight = `${cap}px`;
+        head.classList.add("overflow-y-auto");
+      }
     }
+  };
+  let areas = areasNow();
+  compactTo(areas);
+  let area = popupAreaFor(areas, el.offsetHeight);
+  // Still too tall beside an expanded attribution: collapse it to its "i", as MapLibre does
+  // on drag (tapping the "i" expands it again), and fit to that.
+  if (!area && attribution?.classList.contains("maplibregl-compact-show")) {
+    attribution.classList.remove("maplibregl-compact-show");
+    areas = areasNow();
+    compactTo(areas);
+    area = popupAreaFor(areas, el.offsetHeight);
   }
   const size = { width: el.offsetWidth, height: el.offsetHeight };
   const rect = popupRect(point, container, size, anchor, POPUP_OFFSET);
-  const { dx, dy } = fitPopupDelta(rect, area);
+  const { dx, dy } = fitPopupDelta(rect, area ?? areas[0]);
   // Programmatic: `movestart` sees no originalEvent, so this won't trigger a bounds search.
   if (dx || dy) map.panBy([dx, dy], { animate: false });
 }

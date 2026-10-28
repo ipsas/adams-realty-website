@@ -46,6 +46,30 @@ export function popupAreaClearOf(
   return { ...area, bottom: Math.min(area.bottom, obstacle.top - inset) };
 }
 
+/**
+ * The areas the popup may use near `obstacle`, preferred first: the area with its bottom
+ * raised above it (`popupAreaClearOf`), then, when the popup is no wider than the space left
+ * of the obstacle, the area ending left of it at full height. On a 360 px phone the raised
+ * area is shorter than the most compact popup, but a popup beside the collapsed "i" fits
+ * (QA L21-4). Just the area when the obstacle is clear of the popup.
+ */
+export function popupAreasClearOf(
+  area: Rect,
+  popup: Rect,
+  obstacle?: Rect | null,
+  inset = POPUP_INSET,
+): Rect[] {
+  const above = popupAreaClearOf(area, popup, obstacle, inset);
+  if (!obstacle || above.bottom === area.bottom) return [area];
+  const beside = { ...area, right: Math.min(area.right, obstacle.left - inset) };
+  return beside.right - beside.left >= popup.right - popup.left ? [above, beside] : [above];
+}
+
+/** The first of `areas` tall enough for a popup `height` px tall, if any. */
+export function popupAreaFor(areas: Rect[], height: number): Rect | undefined {
+  return areas.find((a) => height <= a.bottom - a.top);
+}
+
 /** The offset along one axis that brings [start, end] inside [areaStart, areaEnd] (start first). */
 function axisDelta(start: number, end: number, areaStart: number, areaEnd: number): number {
   if (start < areaStart || end - start > areaEnd - areaStart) return start - areaStart;

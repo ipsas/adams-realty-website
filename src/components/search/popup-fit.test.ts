@@ -4,6 +4,8 @@ import {
   nextPopupStep,
   popupArea,
   popupAreaClearOf,
+  popupAreaFor,
+  popupAreasClearOf,
   popupRect,
   scrollCap,
   type Rect,
@@ -67,6 +69,58 @@ describe("popupAreaClearOf (QA L21-4)", () => {
       ...withPill,
       bottom: 409,
     });
+  });
+});
+
+describe("popupAreasClearOf (QA L21-4, 360 px)", () => {
+  // A 360 × 740 phone: the map at y 178–409, the area's top under the overlay pill (258).
+  const area = { ...popupArea(rect(0, 178, 360, 231)), top: 258 };
+  // The most compact popup (scroll step, cap 24).
+  const compact = 126;
+  const height = (a: Rect) => a.bottom - a.top;
+
+  it("finds no room for the most compact popup beside the expanded attribution", () => {
+    const bar = rect(52, 375, 298, 24);
+    const popup = rect(60, 0, 240, 0);
+    const areas = popupAreasClearOf(area, popup, bar);
+    // Only above the bar (bottom 367, 109 px); there is no room for 240 px left of it.
+    expect(areas).toEqual([{ ...area, bottom: 367 }]);
+    expect(height(areas[0])).toBe(109);
+    expect(popupAreaFor(areas, compact)).toBeUndefined();
+  });
+
+  it("moves a right-side pin's popup left of the collapsed 'i' button", () => {
+    const button = rect(326, 375, 24, 24);
+    const popup = rect(112, 0, 240, 0);
+    const areas = popupAreasClearOf(area, popup, button);
+    expect(areas).toEqual([{ ...area, bottom: 367 }, { ...area, right: 318 }]);
+    const fit = popupAreaFor(areas, compact);
+    expect(fit).toEqual({ ...area, right: 318 });
+    const { dx } = fitPopupDelta(rect(112, 270, 240, compact), fit!);
+    // panBy(+dx) moves the popup left: 112–352 → 78–318, clear of 326 − 8.
+    expect(dx).toBe(34);
+    expect(352 - dx).toBe(326 - 8);
+  });
+
+  it("prefers the area above the obstacle when the popup fits there", () => {
+    const button = rect(326, 375, 24, 24);
+    const areas = popupAreasClearOf(area, rect(112, 0, 240, 0), button);
+    expect(popupAreaFor(areas, 100)).toEqual({ ...area, bottom: 367 });
+  });
+
+  it("is just the area when the popup is clear of the obstacle", () => {
+    const button = rect(326, 375, 24, 24);
+    expect(popupAreasClearOf(area, rect(8, 0, 240, 0), button)).toEqual([area]);
+    expect(popupAreasClearOf(area, rect(112, 0, 240, 0), null)).toEqual([area]);
+  });
+
+  it("leaves the 390 px numbers as they were", () => {
+    const area390 = popupArea(rect(0, 100, 390, 351));
+    const attrib = rect(356, 417, 24, 24);
+    const popup = rect(160, 200, 280, 0);
+    const [first] = popupAreasClearOf(area390, popup, attrib);
+    expect(first).toEqual(popupAreaClearOf(area390, popup, attrib));
+    expect(first).toEqual({ ...area390, bottom: 409 });
   });
 });
 
