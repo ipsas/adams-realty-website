@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input, Select } from "@/components/ui/form";
 import { Dialog } from "@/components/ui/dialog";
@@ -11,6 +11,9 @@ import {
   type SearchCriteria,
 } from "@/lib/search/params";
 import { FEATURE_ARIA_LABELS, FEATURE_LABELS } from "./feature-labels";
+
+/** The checkboxes the "still updating" notice is about. */
+const BED_ON_MAIN_FLAGS: readonly FeatureFlag[] = ["primaryOnMain", "bedOnMain"];
 
 const SQFT = [500, 750, 1000, 1250, 1500, 1750, 2000, 2500, 3000, 3500, 4000, 5000, 7500];
 const ACRES: [number, string][] = [
@@ -98,6 +101,7 @@ export function MoreFilters({
   bedOnMainUpdating: boolean;
 }) {
   const [d, setD] = useState<Draft>(() => pickDraft(criteria));
+  const updatingId = useId();
   // Start each opening from the current URL criteria.
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
@@ -324,13 +328,16 @@ export function MoreFilters({
                 key={f}
                 label={FEATURE_LABELS[f]}
                 aria-label={FEATURE_ARIA_LABELS[f]}
+                aria-describedby={
+                  bedOnMainUpdating && BED_ON_MAIN_FLAGS.includes(f) ? updatingId : undefined
+                }
                 checked={!!d[f]}
                 onChange={(e) => set(f, e.target.checked || undefined)}
               />
             ))}
           </div>
           {bedOnMainUpdating && (
-            <p className="mt-3 text-sm text-muted" role="status">
+            <p id={updatingId} className="mt-3 text-sm text-muted" role="status">
               Bedroom-on-main data is still updating
             </p>
           )}
