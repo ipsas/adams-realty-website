@@ -17,12 +17,13 @@ import { site } from "@/config/site";
 import {
   getAreaAgents,
   getAreaFeaturedListing,
+  getAreaListingCount,
   getAreaListings,
   getAreaRecentSales,
 } from "@/lib/areas/queries";
 import {
+  areaGrid,
   formatAsOf,
-  gridWithoutLead,
   metaDescription,
   placeName,
   leadPhotoFallback,
@@ -61,13 +62,14 @@ export default async function AreaGuidePage(props: PageProps<"/areas/[slug]">) {
   const guide = await getCachedAreaGuide((await props.params).slug);
   if (!guide) notFound();
   const { area, stats } = guide;
-  const [newest, featured, sales, agents] = await Promise.all([
+  const [newest, poolTotal, featured, sales, agents] = await Promise.all([
     getAreaListings(area, 9),
+    getAreaListingCount(area),
     getAreaFeaturedListing(area),
     getAreaRecentSales(area, 4),
     getAreaAgents(area),
   ]);
-  const homes = gridWithoutLead(newest, featured, 8);
+  const { homes, total } = areaGrid(newest, featured, 8, poolTotal);
   const asOf = new Date();
   const mapHref = searchHref({ q: area.name });
   const soldHref = searchHref({ q: area.name, mode: "sold", soldWithinDays: SOLD_WINDOW_DAYS });
@@ -241,8 +243,8 @@ export default async function AreaGuidePage(props: PageProps<"/areas/[slug]">) {
             title={`Homes for sale in ${area.name}`}
             description={
               homes.length
-                ? homes.length + (featured ? 1 : 0) < stats.forSale
-                  ? `Newest first · showing ${homes.length} of ${stats.forSale}`
+                ? homes.length < total
+                  ? `Newest first · showing ${homes.length} of ${total}`
                   : "Newest first"
                 : undefined
             }

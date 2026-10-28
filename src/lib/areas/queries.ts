@@ -193,21 +193,33 @@ export async function getAreaStats(
 
 const LIVE_FOR_SALE = ["active", "coming_soon"] as const;
 
+/** The homes the guide's for-sale grid draws from. */
+function areaGridPool(area: Area) {
+  return and(
+    publicListing(),
+    eq(listings.transactionType, "sale"),
+    inArray(listings.status, [...LIVE_FOR_SALE]),
+    areaCondition(area),
+    showcaseListing(),
+  );
+}
+
 /** Newest homes for sale in the area, as listing cards. */
 export async function getAreaListings(area: Area, limit = 8) {
   const rows = await selectCards(db)
-    .where(
-      and(
-        publicListing(),
-        eq(listings.transactionType, "sale"),
-        inArray(listings.status, [...LIVE_FOR_SALE]),
-        areaCondition(area),
-        showcaseListing(),
-      ),
-    )
+    .where(areaGridPool(area))
     .orderBy(sql`${listings.listDate} desc nulls last`, desc(listings.listPrice))
     .limit(limit);
   return withPhotos(db, rows);
+}
+
+/** How many homes `getAreaListings` draws from. */
+export async function getAreaListingCount(area: Area): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(listings)
+    .where(areaGridPool(area));
+  return row?.n ?? 0;
 }
 
 /**
@@ -217,15 +229,7 @@ export async function getAreaListings(area: Area, limit = 8) {
  */
 export async function getAreaFeaturedListing(area: Area) {
   const [row] = await selectCards(db)
-    .where(
-      and(
-        publicListing(),
-        eq(listings.transactionType, "sale"),
-        inArray(listings.status, [...LIVE_FOR_SALE]),
-        areaCondition(area),
-        showcaseListing(),
-      ),
-    )
+    .where(areaGridPool(area))
     .orderBy(
       sql`${listings.primaryPhotoUrl} is null`,
       desc(listings.isFeatured),

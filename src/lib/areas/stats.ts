@@ -221,15 +221,23 @@ export function leadPhotoFallback(
 }
 
 /**
- * The guide's for-sale grid without the home already up top as its lead photo.
- * `homes` is fetched one past `limit`, so dropping the lead still leaves a full grid.
+ * The guide's for-sale grid without the home already up top as its lead photo,
+ * unless it's the only one (the grid is never emptied by it). `homes` is fetched
+ * one past `limit` so the grid stays full; `total` is the pool (`poolTotal`,
+ * which includes the lead) less the lead when it's left out.
  */
-export function gridWithoutLead<T extends { id: string }>(
+export function areaGrid<T extends { id: string }>(
   homes: T[],
   lead: { id: string } | null,
   limit: number,
-): T[] {
-  return homes.filter((h) => h.id !== lead?.id).slice(0, limit);
+  poolTotal: number,
+): { homes: T[]; total: number } {
+  const others = homes.filter((h) => h.id !== lead?.id);
+  const dropLead = !!lead && others.length > 0;
+  return {
+    homes: (dropLead ? others : homes).slice(0, limit),
+    total: poolTotal - (dropLead ? 1 : 0),
+  };
 }
 
 export type AreaSummary = { area: Area; stats: AreaStats };

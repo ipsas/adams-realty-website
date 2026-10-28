@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { areas } from "@/config/areas";
 import {
   addDays,
+  areaGrid,
   emptyStats,
   formatAsOf,
   formatRatio,
-  gridWithoutLead,
   groupByRegion,
   leadPhotoFallback,
   marketToday,
@@ -268,28 +268,42 @@ describe("leadPhotoFallback", () => {
   });
 });
 
-describe("gridWithoutLead", () => {
+describe("areaGrid", () => {
   // The page fetches one past the grid size (9 for a grid of 8).
   const newest = Array.from({ length: 9 }, (_, i) => ({ id: `h${i + 1}` }));
   const ids = (rows: { id: string }[]) => rows.map((r) => r.id);
 
-  it("drops the lead home wherever it falls and backfills to a full grid", () => {
+  it("drops the lead home wherever it falls, backfills to a full grid and counts the rest", () => {
     for (const lead of newest) {
-      const grid = gridWithoutLead(newest, lead, 8);
-      expect(ids(grid)).not.toContain(lead.id);
-      expect(grid).toHaveLength(8);
+      const grid = areaGrid(newest, lead, 8, 20);
+      expect(ids(grid.homes)).not.toContain(lead.id);
+      expect(grid.homes).toHaveLength(8);
+      expect(grid.total).toBe(19);
     }
-    expect(ids(gridWithoutLead(newest, { id: "h1" }, 8))).toEqual(ids(newest.slice(1)));
+    expect(ids(areaGrid(newest, { id: "h1" }, 8, 9).homes)).toEqual(ids(newest.slice(1)));
   });
 
-  it("keeps the newest eight when the lead isn't among them, or there is no lead", () => {
-    expect(gridWithoutLead(newest, { id: "elsewhere" }, 8)).toEqual(newest.slice(0, 8));
-    expect(gridWithoutLead(newest, null, 8)).toEqual(newest.slice(0, 8));
+  it("keeps the only home for sale in the grid when it's also the lead", () => {
+    const grid = areaGrid([{ id: "h1" }], { id: "h1" }, 8, 1);
+    expect(grid.homes).toEqual([{ id: "h1" }]);
+    expect(grid.total).toBe(1);
+  });
+
+  it("leaves the lead out of the total even when it isn't among the newest", () => {
+    // The lead is in the pool (same conditions) but older than the fetched rows.
+    const grid = areaGrid(newest, { id: "elsewhere" }, 8, 30);
+    expect(grid.homes).toEqual(newest.slice(0, 8));
+    expect(grid.total).toBe(29);
+  });
+
+  it("keeps the newest eight and the whole pool when there is no lead", () => {
+    expect(areaGrid(newest, null, 8, 30)).toEqual({ homes: newest.slice(0, 8), total: 30 });
   });
 
   it("shows every other home when there are too few to fill the grid", () => {
-    const few = newest.slice(0, 3);
-    expect(ids(gridWithoutLead(few, { id: "h2" }, 8))).toEqual(["h1", "h3"]);
-    expect(gridWithoutLead([{ id: "h1" }], { id: "h1" }, 8)).toEqual([]);
+    const grid = areaGrid(newest.slice(0, 3), { id: "h2" }, 8, 3);
+    expect(ids(grid.homes)).toEqual(["h1", "h3"]);
+    expect(grid.total).toBe(2);
+    expect(areaGrid([], null, 8, 0)).toEqual({ homes: [], total: 0 });
   });
 });
