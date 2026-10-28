@@ -54,6 +54,22 @@ export function arrowStep(
   return e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : null;
 }
 
+/**
+ * Enter/Space handling for a strip pager. `held` is the activation key that went down while this
+ * pager had focus (reset to null when it gains focus). A pager that received focus mid-hold, as
+ * the L27-1 fallback does, swallows that hold's auto-repeats and its keyup (Space clicks on keyup),
+ * so holding a key doesn't bounce the strip between its ends.
+ */
+export function pagerKey(
+  held: string | null,
+  e: { type: "keydown" | "keyup"; key: string; repeat: boolean },
+): { block: boolean; held: string | null } {
+  if (e.key !== "Enter" && e.key !== " ") return { block: false, held };
+  if (e.type === "keyup") return { block: held !== e.key, held: null };
+  if (!e.repeat) return { block: false, held: e.key };
+  return { block: held !== e.key, held };
+}
+
 /** Horizontal pixels for a mostly-vertical wheel event, or null to leave the event alone. */
 export function wheelDelta(deltaX: number, deltaY: number, deltaMode: number, clientWidth: number) {
   if (Math.abs(deltaY) <= Math.abs(deltaX)) return null;

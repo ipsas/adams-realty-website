@@ -1,7 +1,15 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, Grid2x2, X } from "lucide-react";
-import { type Ref, useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  type Ref,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { useDialogHistory } from "@/components/ui/dialog";
 import { Photo } from "@/components/ui/photo";
 import { cn } from "@/lib/cn";
@@ -11,6 +19,7 @@ import {
   pageTarget,
   pagerDisabled,
   pagerFallback,
+  pagerKey,
   stripEdges,
   wheelDelta,
 } from "./photo-strip";
@@ -339,10 +348,23 @@ function StripPager({
   onPage: (dir: 1 | -1) => void;
 }) {
   const Icon = dir < 0 ? ChevronLeft : ChevronRight;
+  // The activation key pressed while this pager had focus (see pagerKey).
+  const held = useRef<string | null>(null);
+  const onKey = (e: ReactKeyboardEvent<HTMLButtonElement>) => {
+    const type = e.type === "keyup" ? "keyup" : "keydown";
+    const r = pagerKey(held.current, { type, key: e.key, repeat: e.repeat });
+    held.current = r.held;
+    if (r.block) e.preventDefault();
+  };
   return (
     <button
       ref={ref}
       type="button"
+      onFocus={() => {
+        held.current = null;
+      }}
+      onKeyDown={onKey}
+      onKeyUp={onKey}
       onClick={() => onPage(dir)}
       disabled={disabled}
       aria-controls={controls}

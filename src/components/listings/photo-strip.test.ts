@@ -5,6 +5,7 @@ import {
   pageTarget,
   pagerDisabled,
   pagerFallback,
+  pagerKey,
   stripEdges,
   wheelDelta,
 } from "./photo-strip";
@@ -102,5 +103,76 @@ describe("wheelDelta", () => {
     expect(wheelDelta(0, 100, 0, 800)).toBe(100);
     expect(wheelDelta(2, -3, 1, 800)).toBe(-48);
     expect(wheelDelta(0, 1, 2, 800)).toBe(800);
+  });
+});
+
+describe("pagerKey", () => {
+  const down = (key: string, repeat = false) => ({ type: "keydown" as const, key, repeat });
+  const up = (key: string) => ({ type: "keyup" as const, key, repeat: false });
+
+  /**
+   * Two pagers, each with its own `held` (reset on focus). Starts on the right pager, which
+   * disables after `pagesToEnd` pages; focus then moves to the left one (the L27-1 fallback).
+   */
+  function strip(key: string, pagesToEnd: number) {
+    const held = { left: null as string | null, right: null as string | null };
+    const s = { focused: "right" as "left" | "right", pos: 0 };
+    const press = (e: Parameters<typeof pagerKey>[1]) => {
+      const r = pagerKey(held[s.focused], e);
+      held[s.focused] = r.held;
+      // Enter clicks on every keydown, Space on keyup, unless prevented.
+      const clicks = key === "Enter" ? e.type === "keydown" : e.type === "keyup";
+      if (!r.block && clicks) s.pos += s.focused === "right" ? 1 : -1;
+      if (s.focused === "right" && s.pos === pagesToEnd) {
+        s.focused = "left";
+        held.left = null;
+      }
+    };
+    return { s, press };
+  }
+
+  it("pages to the end on a held Enter, then ignores the hold on the newly focused pager", () => {
+    const { s, press } = strip("Enter", 3);
+    press(down("Enter"));
+    for (let i = 0; i < 10; i++) press(down("Enter", true));
+    press(up("Enter"));
+    expect(s).toEqual({ focused: "left", pos: 3 });
+    press(down("Enter"));
+    expect(s.pos).toBe(2);
+  });
+
+  it("doesn't let a held Space's repeats or keyup activate the newly focused pager", () => {
+    const { s, press } = strip(" ", 1);
+    press(down(" "));
+    for (let i = 0; i < 5; i++) press(down(" ", true));
+    // Focus moves mid-hold (e.g. the strip reached its end on a previous page).
+    s.focused = "left";
+    press(down(" ", true));
+    press(up(" "));
+    expect(s.pos).toBe(0);
+    press(down(" "));
+    press(up(" "));
+    expect(s.pos).toBe(-1);
+  });
+
+  it("blocks repeats and keyups of a hold that began elsewhere", () => {
+    expect(pagerKey(null, down("Enter", true))).toEqual({ block: true, held: null });
+    expect(pagerKey(null, down(" ", true))).toEqual({ block: true, held: null });
+    expect(pagerKey(null, up(" "))).toEqual({ block: true, held: null });
+    expect(pagerKey(" ", down("Enter", true)).block).toBe(true);
+  });
+
+  it("lets a fresh press and its own repeats and keyup through", () => {
+    expect(pagerKey(null, down("Enter"))).toEqual({ block: false, held: "Enter" });
+    expect(pagerKey("Enter", down("Enter", true))).toEqual({ block: false, held: "Enter" });
+    expect(pagerKey(null, down(" "))).toEqual({ block: false, held: " " });
+    expect(pagerKey(" ", up(" "))).toEqual({ block: false, held: null });
+  });
+
+  it("leaves other keys alone", () => {
+    for (const key of ["Tab", "ArrowLeft", "Shift", "a"]) {
+      expect(pagerKey(null, down(key, true))).toEqual({ block: false, held: null });
+      expect(pagerKey("Enter", up(key))).toEqual({ block: false, held: "Enter" });
+    }
   });
 });
