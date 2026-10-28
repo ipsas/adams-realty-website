@@ -10,7 +10,11 @@ vi.mock("pg", () => {
   throw new Error("the pg driver was imported");
 });
 
+/** What notFound() throws: Next's route wrapper turns it into an HTTP 404. */
+const NOT_FOUND = { digest: "NEXT_HTTP_ERROR_FALLBACK;404" };
+
 // (This test lives outside src/app so Next never mistakes it for a route file.)
+const { areas: areaConfig } = await import("@/config/areas");
 const robots = (await import("@/app/robots")).default;
 const homes = await import("@/app/homes/sitemap");
 const root = await import("@/app/sitemap");
@@ -34,19 +38,44 @@ describe("sitemaps and robots load without a database", () => {
     for (const m of [homes, root, areas]) expect(m.dynamic).toBe("force-dynamic");
   });
 
-  it("a chunk id outside the fixed set is an empty sitemap, not a query", async () => {
-    await expect(homes.default({ id: Promise.resolve("12") })).resolves.toEqual([]);
-    await expect(homes.default({ id: Promise.resolve("x") })).resolves.toEqual([]);
+  it("a chunk id outside the fixed set is a 404, not a query", async () => {
+    await expect(homes.default({ id: Promise.resolve("12") })).rejects.toMatchObject(NOT_FOUND);
+    await expect(homes.default({ id: Promise.resolve("x") })).rejects.toMatchObject(NOT_FOUND);
+  });
+});
+
+describe("/areas/sitemap.xml dates guides by their copy, not by listings", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  const base = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+
+  it("uses each area's `updated` as lastmod, and the latest for /areas", async () => {
+    vi.stubEnv("DEMO_DATA_MODE", "off");
+    const entries = await areas.default();
+    const byPath = new Map(entries.map((e) => [new URL(e.url).pathname, e]));
+    const latest = [...areaConfig]
+      .map((a) => a.updated)
+      .sort()
+      .at(-1);
+    expect(byPath.get("/areas")).toMatchObject({ lastModified: latest });
+    expect(entries).toHaveLength(areaConfig.length + 1);
+    for (const a of areaConfig) {
+      expect(byPath.get(`/areas/${a.slug}`), a.slug).toEqual({
+        url: `${base}/areas/${a.slug}`,
+        lastModified: a.updated,
+        changeFrequency: "daily",
+        priority: 0.7,
+      });
+    }
   });
 });
 
 describe("LISTINGS_INDEXING=none offers crawlers no listings (src/lib/listings/indexing.ts)", () => {
   afterEach(() => vi.unstubAllEnvs());
 
-  it("every listing chunk is empty, without touching the database", async () => {
+  it("every listing chunk is a 404, without touching the database", async () => {
     vi.stubEnv("DEMO_DATA_MODE", "off");
     vi.stubEnv("LISTINGS_INDEXING", "none");
-    await expect(homes.default({ id: Promise.resolve("0") })).resolves.toEqual([]);
+    await expect(homes.default({ id: Promise.resolve("0") })).rejects.toMatchObject(NOT_FOUND);
   });
 });
 
@@ -75,7 +104,7 @@ describe("demo-data mode keeps crawlers off the sample data (src/lib/demo-mode.t
   it("the sitemaps leave the sample pages out, without touching the database", async () => {
     vi.stubEnv("DEMO_DATA_MODE", "on");
     // Each of these would query (and so throw here) if demo mode didn't stop it first.
-    await expect(homes.default({ id: Promise.resolve("0") })).resolves.toEqual([]);
+    await expect(homes.default({ id: Promise.resolve("0") })).rejects.toMatchObject(NOT_FOUND);
     await expect(areas.default()).resolves.toEqual([]);
     const paths = (await root.default()).map((e) => new URL(e.url).pathname);
     expect(paths).toContain("/");

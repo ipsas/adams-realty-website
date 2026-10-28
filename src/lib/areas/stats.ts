@@ -51,10 +51,13 @@ export type AreaStats = {
   medianPricePerAcre: number | null;
   /** Tracts behind the $/acre median: land and farms with no house and a lot size. */
   pricePerAcreSample: number;
+  /** Over the for-sale homes (as `forSale`) with a list date on or before today. */
   medianDaysOnMarket: number | null;
   daysOnMarketSample: number;
-  /** Sale listings with a list date in the last NEW_WINDOW_DAYS. */
+  /** For-sale homes (as `forSale`) with a list date in the last NEW_WINDOW_DAYS. */
   newListings: number;
+  /** For-sale homes (as `forSale`) with any list date: 0 means `newListings` can't be told. */
+  listDateSample: number;
   /** Closed sales in the last SOLD_WINDOW_DAYS. */
   recentSales: number;
   medianSoldPrice: number | null;
@@ -82,6 +85,7 @@ export function emptyStats(): AreaStats {
     medianDaysOnMarket: null,
     daysOnMarketSample: 0,
     newListings: 0,
+    listDateSample: 0,
     recentSales: 0,
     medianSoldPrice: null,
     medianSaleToList: null,
@@ -106,6 +110,33 @@ export function addDays(isoDate: string, days: number): string {
   const d = new Date(`${isoDate}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+export type SnapshotTile =
+  | "forSale"
+  | "listPrice"
+  | "pricePerSqft"
+  | "pricePerAcre"
+  | "daysOnMarket"
+  | "newListings"
+  | "sales";
+
+/**
+ * The market-snapshot tiles that can be calculated, in display order. The
+ * homes-for-sale count always shows; any other figure whose inputs are missing
+ * (no list dates, no closed sales…) is left out rather than shown as 0 or "—".
+ */
+export function snapshotTiles(s: AreaStats): SnapshotTile[] {
+  const shown: Record<SnapshotTile, boolean> = {
+    forSale: true,
+    listPrice: s.forSale > 0 && !!s.medianListPrice,
+    pricePerSqft: s.pricePerSqftSample > 0 && !!s.medianPricePerSqft,
+    pricePerAcre: s.pricePerAcreSample > 0 && !!s.medianPricePerAcre,
+    daysOnMarket: s.daysOnMarketSample > 0 && s.medianDaysOnMarket !== null,
+    newListings: s.listDateSample > 0,
+    sales: s.recentSales > 0,
+  };
+  return (Object.keys(shown) as SnapshotTile[]).filter((k) => shown[k]);
 }
 
 export type MixSegment = {

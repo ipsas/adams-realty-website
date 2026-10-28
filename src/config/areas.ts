@@ -36,6 +36,11 @@ export type Area = {
   /** Other MLS cities whose listings belong to this guide (a town covered as a section, e.g. Hoschton → Braselton). Matched on listings.city, county-scoped like the city itself. */
   cities?: string[];
   center: { lat: number; lng: number };
+  /**
+   * When this guide's copy or config last changed (YYYY-MM-DD): its lastmod in
+   * /areas/sitemap.xml. Bump it whenever you change the guide's copy.
+   */
+  updated: string;
 };
 
 export const areaRegions: { id: AreaRegion; label: string; blurb: string }[] = [
@@ -72,6 +77,7 @@ export const areas: Area[] = [
   // ── Hall & Gwinnett ────────────────────────────────────────────────────────
   {
     slug: "gainesville",
+    updated: "2026-10-23",
     name: "Gainesville",
     city: "Gainesville",
     counties: ["Hall"],
@@ -88,6 +94,7 @@ export const areas: Area[] = [
   },
   {
     slug: "oakwood",
+    updated: "2026-10-23",
     name: "Oakwood",
     city: "Oakwood",
     counties: ["Hall"],
@@ -106,6 +113,7 @@ export const areas: Area[] = [
   },
   {
     slug: "flowery-branch",
+    updated: "2026-10-23",
     name: "Flowery Branch",
     city: "Flowery Branch",
     counties: ["Hall"],
@@ -122,6 +130,7 @@ export const areas: Area[] = [
   },
   {
     slug: "lake-lanier",
+    updated: "2026-10-23",
     name: "Lake Lanier",
     city: "Gainesville",
     counties: ["Hall", "Forsyth", "Gwinnett", "Dawson", "Lumpkin"],
@@ -141,6 +150,7 @@ export const areas: Area[] = [
   },
   {
     slug: "buford",
+    updated: "2026-10-23",
     name: "Buford",
     city: "Buford",
     counties: ["Gwinnett", "Hall"],
@@ -157,6 +167,7 @@ export const areas: Area[] = [
   },
   {
     slug: "sugar-hill",
+    updated: "2026-10-23",
     name: "Sugar Hill",
     city: "Sugar Hill",
     counties: ["Gwinnett"],
@@ -176,6 +187,7 @@ export const areas: Area[] = [
   },
   {
     slug: "dacula",
+    updated: "2026-10-23",
     name: "Dacula",
     city: "Dacula",
     counties: ["Gwinnett"],
@@ -193,6 +205,7 @@ export const areas: Area[] = [
   // ── Madison & Jackson Counties ─────────────────────────────────────────────
   {
     slug: "danielsville",
+    updated: "2026-09-25",
     name: "Danielsville",
     city: "Danielsville",
     counties: ["Madison"],
@@ -208,6 +221,7 @@ export const areas: Area[] = [
   },
   {
     slug: "comer",
+    updated: "2026-09-25",
     name: "Comer",
     city: "Comer",
     counties: ["Madison"],
@@ -223,6 +237,7 @@ export const areas: Area[] = [
   },
   {
     slug: "commerce",
+    updated: "2026-09-25",
     name: "Commerce",
     city: "Commerce",
     counties: ["Jackson"],
@@ -238,6 +253,7 @@ export const areas: Area[] = [
   },
   {
     slug: "jefferson",
+    updated: "2026-09-25",
     name: "Jefferson",
     city: "Jefferson",
     counties: ["Jackson"],
@@ -253,6 +269,7 @@ export const areas: Area[] = [
   },
   {
     slug: "braselton",
+    updated: "2026-10-23",
     name: "Braselton",
     city: "Braselton",
     counties: ["Jackson", "Gwinnett", "Hall", "Barrow"],
@@ -277,6 +294,7 @@ export const areas: Area[] = [
   // ── Franklin County ────────────────────────────────────────────────────────
   {
     slug: "royston",
+    updated: "2026-10-23",
     name: "Royston",
     city: "Royston",
     counties: ["Franklin", "Hart", "Madison"],
@@ -293,6 +311,7 @@ export const areas: Area[] = [
   },
   {
     slug: "franklin-springs",
+    updated: "2026-10-23",
     name: "Franklin Springs",
     city: "Franklin Springs",
     counties: ["Franklin"],
@@ -308,6 +327,7 @@ export const areas: Area[] = [
   },
   {
     slug: "canon",
+    updated: "2026-10-23",
     name: "Canon",
     city: "Canon",
     counties: ["Franklin", "Hart"],
@@ -323,6 +343,7 @@ export const areas: Area[] = [
   },
   {
     slug: "lavonia",
+    updated: "2026-10-23",
     name: "Lavonia",
     city: "Lavonia",
     counties: ["Franklin", "Hart"],
@@ -338,6 +359,7 @@ export const areas: Area[] = [
   },
   {
     slug: "carnesville",
+    updated: "2026-10-23",
     name: "Carnesville",
     city: "Carnesville",
     counties: ["Franklin"],
@@ -356,6 +378,7 @@ export const areas: Area[] = [
   // ── Lake Hartwell & Hart County ────────────────────────────────────────────
   {
     slug: "hartwell",
+    updated: "2026-10-23",
     name: "Hartwell",
     city: "Hartwell",
     counties: ["Hart"],
@@ -372,6 +395,7 @@ export const areas: Area[] = [
   },
   {
     slug: "lake-hartwell",
+    updated: "2026-10-23",
     name: "Lake Hartwell",
     city: "Hartwell",
     counties: ["Hart", "Franklin", "Stephens"],
@@ -393,6 +417,7 @@ export const areas: Area[] = [
   // ── Stephens County ────────────────────────────────────────────────────────
   {
     slug: "toccoa",
+    updated: "2026-10-23",
     name: "Toccoa",
     city: "Toccoa",
     counties: ["Stephens"],
@@ -409,6 +434,7 @@ export const areas: Area[] = [
   },
   {
     slug: "martin",
+    updated: "2026-10-23",
     name: "Martin",
     city: "Martin",
     counties: ["Stephens"],

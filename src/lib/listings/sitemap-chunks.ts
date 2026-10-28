@@ -1,3 +1,5 @@
+import type { MetadataRoute } from "next";
+
 /**
  * Listing sitemap layout, fixed in code so neither the build nor robots.txt
  * needs a database to load: CHUNKS files of at most CHUNK_SIZE URLs each (about 2 MB
@@ -24,6 +26,23 @@ export function listingSitemapUrls(base: string, total: number): string[] {
     Math.ceil(Math.max(0, total) / LISTING_SITEMAP_CHUNK_SIZE),
   );
   return Array.from({ length: chunks }, (_, id) => `${base}/homes/sitemap/${id}.xml`);
+}
+
+/**
+ * A chunk's sitemap entries. <lastmod> is the MLS's own modification time
+ * (listings.source_modified_at), not our row's updatedAt, which every sync
+ * touches; a listing without one gets no <lastmod>.
+ */
+export function listingSitemapEntries(
+  base: string,
+  homes: Array<{ slug: string; sourceModifiedAt: Date | null }>,
+): MetadataRoute.Sitemap {
+  return homes.map((h) => ({
+    url: `${base}/homes/${h.slug}`,
+    ...(h.sourceModifiedAt ? { lastModified: h.sourceModifiedAt } : {}),
+    changeFrequency: "daily" as const,
+    priority: 0.8,
+  }));
 }
 
 /** Parses a chunk id from the route ("0".."11"); anything else is null. */

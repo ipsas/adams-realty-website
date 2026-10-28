@@ -96,8 +96,9 @@ describe("getListingSitemapChunk", () => {
     expect(await countSitemapListings()).toBe(liveSlugs.length);
   });
 
-  it("gives each listing its last update, for <lastmod>", async () => {
+  it("gives each listing its MLS modification time (null when unknown), for <lastmod>", async () => {
     const [first] = await getListingSitemapChunk(0);
-    expect(first.updatedAt).toBeInstanceOf(Date);
+    expect(first).toHaveProperty("sourceModifiedAt");
+    expect(first.sourceModifiedAt === null || first.sourceModifiedAt instanceof Date).toBe(true);
   });
 });

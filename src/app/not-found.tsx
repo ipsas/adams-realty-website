@@ -1,4 +1,10 @@
+import type { Metadata } from "next";
 import { LinkButton } from "@/components/ui/button";
+
+export const metadata: Metadata = {
+  title: { absolute: "Page not found | Adams Realty" },
+  robots: { index: false },
+};
 
 export default function NotFound() {
   return (

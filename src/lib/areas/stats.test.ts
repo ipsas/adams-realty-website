@@ -13,9 +13,73 @@ import {
   parseAreaSort,
   placeName,
   sampleLabel,
+  snapshotTiles,
   sortAreas,
+  type AreaStats,
   type AreaSummary,
 } from "./stats";
+
+describe("snapshotTiles", () => {
+  const full: AreaStats = {
+    ...emptyStats(),
+    forSale: 40,
+    medianListPrice: 350_000,
+    minListPrice: 90_000,
+    maxListPrice: 2_000_000,
+    medianPricePerSqft: 180,
+    pricePerSqftSample: 30,
+    medianPricePerAcre: 12_000,
+    pricePerAcreSample: 5,
+    medianDaysOnMarket: 41,
+    daysOnMarketSample: 38,
+    newListings: 0,
+    listDateSample: 38,
+    recentSales: 12,
+    medianSoldPrice: 320_000,
+    medianSaleToList: 0.97,
+  };
+
+  it("shows every tile that can be calculated, in order (a real 0 new listings included)", () => {
+    expect(snapshotTiles(full)).toEqual([
+      "forSale",
+      "listPrice",
+      "pricePerSqft",
+      "pricePerAcre",
+      "daysOnMarket",
+      "newListings",
+      "sales",
+    ]);
+  });
+
+  it("hides figures whose inputs are missing instead of showing 0 or a dash", () => {
+    // Live Gainesville: hundreds for sale, but no list dates and no closed sales in the feed.
+    const noDates = {
+      ...full,
+      medianDaysOnMarket: null,
+      daysOnMarketSample: 0,
+      listDateSample: 0,
+      recentSales: 0,
+      medianSoldPrice: null,
+      medianSaleToList: null,
+    };
+    expect(snapshotTiles(noDates)).toEqual([
+      "forSale",
+      "listPrice",
+      "pricePerSqft",
+      "pricePerAcre",
+    ]);
+    expect(
+      snapshotTiles({ ...full, pricePerSqftSample: 0, medianPricePerSqft: null }),
+    ).not.toContain("pricePerSqft");
+    expect(
+      snapshotTiles({ ...full, pricePerAcreSample: 0, medianPricePerAcre: null }),
+    ).not.toContain("pricePerAcre");
+  });
+
+  it("keeps the homes-for-sale count even when nothing is for sale", () => {
+    expect(snapshotTiles(emptyStats())).toEqual(["forSale"]);
+  });
+});
 
 describe("market dates", () => {
   it("uses the market's calendar date, not UTC", () => {

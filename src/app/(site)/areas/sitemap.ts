@@ -4,35 +4,27 @@ import { demoDataMode } from "@/lib/demo-mode";
 import { env } from "@/lib/env";
 
 // Served at /areas/sitemap.xml (robots.ts lists it). Rendered per request so
-// builds never need a database (and the data layer is imported lazily, so
-// loading this module doesn't either).
+// demo-data mode is read at run time; it never needs a database.
 export const dynamic = "force-dynamic";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Demo data (src/lib/demo-mode.ts): the guides show sample listings and stats.
   if (demoDataMode()) return [];
   const base = env.NEXT_PUBLIC_SITE_URL;
-  // The guides themselves are config, so the sitemap still lists them if the
-  // database is unreachable; only the freshness dates depend on it.
-  const { getCachedAreaSummaries } = await import("@/lib/listings/cached");
-  const summaries = await getCachedAreaSummaries().catch(() =>
-    areas.map((area) => ({ area, stats: { lastUpdated: null as Date | null } })),
-  );
-  const latest = summaries.reduce<Date | null>(
-    (max, s) =>
-      s.stats.lastUpdated && (!max || s.stats.lastUpdated > max) ? s.stats.lastUpdated : max,
-    null,
-  );
+  // Each guide's lastmod is when its copy last changed (Area.updated), not
+  // when a listing in it did; the index changes when any guide does.
+  // YYYY-MM-DD strings compare in date order.
+  const latest = areas.reduce((max, a) => (a.updated > max ? a.updated : max), "");
   return [
     {
       url: `${base}/areas`,
-      lastModified: latest ?? undefined,
+      lastModified: latest || undefined,
       changeFrequency: "daily",
       priority: 0.7,
     },
-    ...summaries.map(({ area, stats }) => ({
+    ...areas.map((area) => ({
       url: `${base}/areas/${area.slug}`,
-      lastModified: stats.lastUpdated ?? undefined,
+      lastModified: area.updated,
       changeFrequency: "daily" as const,
       priority: 0.7,
     })),

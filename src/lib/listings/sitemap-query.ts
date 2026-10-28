@@ -29,7 +29,7 @@ export async function getListingSitemapChunk(
   size: number = LISTING_SITEMAP_CHUNK_SIZE,
 ) {
   return db
-    .select({ slug: listings.slug, updatedAt: listings.updatedAt })
+    .select({ slug: listings.slug, sourceModifiedAt: listings.sourceModifiedAt })
     .from(listings)
     .where(sitemapListings())
     .orderBy(asc(listings.id))
