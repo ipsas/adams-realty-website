@@ -101,6 +101,7 @@ export function SiteHeader({ user }: { user: HeaderUser }) {
             )}
             <Link
               href="/saved"
+              aria-label="Saved"
               className={cn(
                 "hidden h-10 items-center gap-2 rounded-full px-3.5 text-sm font-medium transition-colors sm:flex",
                 transparent
