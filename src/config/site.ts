@@ -45,8 +45,11 @@ export const site = {
     phone: "(850) 572-3287",
     email: "contracts.adamsrealty@gmail.com",
   },
-  /** The firm's broker. Their agent profile (bio, photo, contact) lives in the database. */
-  broker: { name: "Andrea Anderegg" },
+  /**
+   * The firm's broker. Their agent profile (bio, photo, contact) lives in the database;
+   * `slug` is its page, /agents/andrea-anderegg.
+   */
+  broker: { name: "Andrea Anderegg", slug: "andrea-anderegg" },
   /**
    * The MLS the firm belongs to. Its IDX feed supplies the other brokerages'
    * listings, and `officeId` marks the firm's own listings in that feed.

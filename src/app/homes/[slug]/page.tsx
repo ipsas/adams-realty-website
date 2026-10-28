@@ -59,7 +59,6 @@ import {
   formatRelative,
   formatStreet,
   isNullLike,
-  listingMetaDescription,
   PROPERTY_TYPE_LABELS,
   statusLabel,
 } from "@/lib/format";
@@ -75,6 +74,11 @@ import {
   landFacts,
 } from "@/lib/listings/land";
 import { listingIndexingMode, listingRobots } from "@/lib/listings/indexing";
+import {
+  listingBreadcrumbJsonLd,
+  listingDescription,
+  listingTitle,
+} from "@/lib/listings/listing-seo";
 import { listingOfficeLabel } from "@/lib/listings/office-label";
 import { getListingBySlug, getSimilarListings, type ListingDetail } from "@/lib/listings/queries";
 import { normalizeTaxYear } from "@/lib/listings/tax-year";
@@ -89,23 +93,10 @@ export async function generateMetadata(props: PageProps<"/homes/[slug]">): Promi
   const data = await getListingBySlug(slug);
   if (!data) return { title: "Home not found" };
   const l = data.listing;
-  const facts = isBareLand(l)
-    ? l.lotSizeSqft
-      ? landFacts(l).replace(" · ", ", ")
-      : ""
-    : [
-        l.bedrooms !== null && `${l.bedrooms} bd`,
-        l.bathrooms !== null && `${formatBaths(l.bathrooms)} ba`,
-        l.livingAreaSqft && `${formatNumber(l.livingAreaSqft)} sqft`,
-      ]
-        .filter(Boolean)
-        .join(", ");
-  const title = `${formatFullAddress(l)} | ${facts ? `${facts} | ` : ""}${formatPrice(l.listPrice)}`;
-  const description = l.description?.trim()
-    ? listingMetaDescription(redactAccessCodes(l.description))
-    : `${statusLabel(l.status, l.transactionType)} in ${l.city}, ${normalizeState(l.state)}.`;
+  const title = listingTitle(l);
+  const description = listingDescription(l);
   return {
-    title: { absolute: `${title} | ${site.name}` },
+    title: { absolute: title },
     description,
     alternates: { canonical: `/homes/${l.slug}` },
     openGraph: {
@@ -933,7 +924,7 @@ function JsonLd({ data }: { data: ListingDetail }) {
             addressRegion: normalizeState(l.state),
             postalCode: l.postalCode,
           },
-      numberOfRooms: l.bedrooms ?? undefined,
+      numberOfBedrooms: l.bedrooms ?? undefined,
       numberOfBathroomsTotal: l.bathrooms ?? undefined,
       floorSize: l.livingAreaSqft
         ? { "@type": "QuantitativeValue", value: l.livingAreaSqft, unitCode: "FTK" }
@@ -945,11 +936,18 @@ function JsonLd({ data }: { data: ListingDetail }) {
           : undefined,
     },
   };
+  const breadcrumbs = listingBreadcrumbJsonLd(l, env.NEXT_PUBLIC_SITE_URL);
   return (
-    <script
-      type="application/ld+json"
-      // Escaping "<" prevents a listing's text from closing the script tag.
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(json).replace(/</g, "\\u003c") }}
-    />
+    <>
+      <script
+        type="application/ld+json"
+        // Escaping "<" prevents a listing's text from closing the script tag.
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(json).replace(/</g, "\\u003c") }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbs).replace(/</g, "\\u003c") }}
+      />
+    </>
   );
 }

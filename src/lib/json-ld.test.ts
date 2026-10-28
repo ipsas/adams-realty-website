@@ -100,11 +100,44 @@ describe("organizationJsonLd", () => {
     expect("areaServed" in none).toBe(false);
   });
 
-  it("names the broker as an employee", () => {
-    expect(json.employee).toEqual({
-      "@type": "Person",
-      name: "Andrea Anderegg",
-      jobTitle: "Broker",
+  it("references the broker's agent Person as the employee", () => {
+    expect(json.employee).toEqual({ "@id": `${base}/agents/andrea-anderegg#person` });
+    expect(json.employee["@id"]).toBe(agentId(base, site.broker.slug));
+  });
+
+  it("has an absolute logo and image", () => {
+    expect(json.logo).toBe(`${base}/icon.svg`);
+    expect(json.image).toBe(`${base}/images/og-default.jpg`);
+    expect(organizationJsonLd(`${base}/`).logo).toBe(`${base}/icon.svg`);
+  });
+
+  it("matches the production output, in key order", () => {
+    const prod = organizationJsonLd("https://adamsrealtyga.com");
+    expect(Object.keys(prod)).toEqual([
+      "@context",
+      "@type",
+      "@id",
+      "name",
+      "legalName",
+      "url",
+      "logo",
+      "image",
+      "telephone",
+      "email",
+      "address",
+      "openingHoursSpecification",
+      "identifier",
+      "areaServed",
+      "employee",
+    ]);
+    expect(prod).toMatchObject({
+      "@id": "https://adamsrealtyga.com/#organization",
+      url: "https://adamsrealtyga.com/",
+      logo: "https://adamsrealtyga.com/icon.svg",
+      image: "https://adamsrealtyga.com/images/og-default.jpg",
+      telephone: "+17062460053",
+      email: "contracts.adamsrealty@gmail.com",
+      employee: { "@id": "https://adamsrealtyga.com/agents/andrea-anderegg#person" },
     });
   });
 
