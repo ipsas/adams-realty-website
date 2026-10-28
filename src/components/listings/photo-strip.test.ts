@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { centerTarget, pageTarget, stripEdges, wheelDelta } from "./photo-strip";
+import {
+  arrowStep,
+  centerTarget,
+  pageTarget,
+  pagerDisabled,
+  pagerFallback,
+  stripEdges,
+  wheelDelta,
+} from "./photo-strip";
 
 describe("stripEdges", () => {
   it("is at both ends when the strip doesn't overflow", () => {
@@ -36,6 +44,51 @@ describe("centerTarget", () => {
     expect(centerTarget(4, 80, 800, 5000)).toBe(0);
     expect(centerTarget(4900, 80, 800, 5000)).toBe(4200);
     expect(centerTarget(300, 80, 800, 500)).toBe(0);
+  });
+});
+
+describe("pagerDisabled", () => {
+  it("disables each pager at its own end", () => {
+    expect(pagerDisabled(-1, { atStart: true, atEnd: false })).toBe(true);
+    expect(pagerDisabled(1, { atStart: true, atEnd: false })).toBe(false);
+    expect(pagerDisabled(-1, { atStart: false, atEnd: true })).toBe(false);
+    expect(pagerDisabled(1, { atStart: false, atEnd: true })).toBe(true);
+  });
+});
+
+describe("pagerFallback", () => {
+  it("moves focus to the opposite pager", () => {
+    expect(pagerFallback(1, { atStart: false, atEnd: true })).toBe(-1);
+    expect(pagerFallback(-1, { atStart: true, atEnd: false })).toBe(1);
+  });
+  it("falls back to the current thumb when both pagers are disabled", () => {
+    expect(pagerFallback(1, { atStart: true, atEnd: true })).toBe("thumb");
+    expect(pagerFallback(-1, { atStart: true, atEnd: true })).toBe("thumb");
+  });
+});
+
+describe("arrowStep", () => {
+  const MODS = ["altKey", "ctrlKey", "metaKey", "shiftKey"] as const;
+  const key = (k: string, mod?: (typeof MODS)[number]) => ({
+    key: k,
+    altKey: mod === "altKey",
+    ctrlKey: mod === "ctrlKey",
+    metaKey: mod === "metaKey",
+    shiftKey: mod === "shiftKey",
+  });
+  it("steps on bare left and right arrows", () => {
+    expect(arrowStep(key("ArrowRight"))).toBe(1);
+    expect(arrowStep(key("ArrowLeft"))).toBe(-1);
+  });
+  it("ignores other keys", () => {
+    expect(arrowStep(key("ArrowUp"))).toBeNull();
+    expect(arrowStep(key("Enter"))).toBeNull();
+  });
+  it("ignores arrows with any modifier", () => {
+    for (const mod of MODS) {
+      expect(arrowStep(key("ArrowRight", mod))).toBeNull();
+      expect(arrowStep(key("ArrowLeft", mod))).toBeNull();
+    }
   });
 });
 
