@@ -3,11 +3,13 @@
  * Pure: only facts from src/config/site.ts and the agents table, and the base
  * URL is passed in, so tests can cover every "settings lack X" case. Optional
  * properties are left out, never set to `undefined`.
- * The broker is the one employee named; the other agents link back via their own Person's worksFor.
- * Left out (no provided facts, or no data on every page): geo, logo, image, sameAs, priceRange, ratings/reviews.
+ * The broker is the one employee, referenced by her agent page's Person @id; the other agents
+ * link back via their own Person's worksFor.
+ * Left out (no provided facts, or no data on every page): geo, sameAs, priceRange, ratings/reviews.
  */
 import { telHref } from "@/components/content/contact";
 import { site } from "@/config/site";
+import { OG_DEFAULT_IMAGE } from "@/lib/og";
 
 export type OpeningHours = { dayOfWeek: readonly string[]; opens: string; closes: string };
 
@@ -20,7 +22,8 @@ export type FirmSettings = {
   address: { line1: string; city: string; state: string; postalCode: string };
   hours: string | null;
   brokerLicense: string | null;
-  broker: { name: string };
+  /** `slug` is the broker's agent page (/agents/<slug>). */
+  broker: { name: string; slug: string };
   market: { stateName: string; counties: readonly string[] };
 };
 
@@ -60,13 +63,15 @@ export type RealEstateAgentJsonLd = {
   name: string;
   legalName: string;
   url: string;
+  logo: string;
+  image: string;
   telephone: string;
   email: string;
   address: PostalAddress;
   openingHoursSpecification?: OpeningHoursSpecification[];
   identifier?: PropertyValue;
   areaServed?: AdministrativeArea[];
-  employee: { "@type": "Person"; name: string; jobTitle: "Broker" };
+  employee: { "@id": string };
 };
 
 export type PersonJsonLd = {
@@ -162,6 +167,9 @@ export function organizationJsonLd(
     name: settings.name,
     legalName: settings.legalName,
     url: `${trimSlash(baseUrl)}/`,
+    // src/app/icon.svg, served at /icon.svg.
+    logo: absolute(baseUrl, "/icon.svg"),
+    image: absolute(baseUrl, OG_DEFAULT_IMAGE.url),
     telephone: e164(settings.phone),
     email: settings.email,
     address: {
@@ -201,7 +209,7 @@ export function organizationJsonLd(
           })),
         }
       : {}),
-    employee: { "@type": "Person", name: settings.broker.name, jobTitle: "Broker" },
+    employee: { "@id": agentId(baseUrl, settings.broker.slug) },
   };
 }
 
