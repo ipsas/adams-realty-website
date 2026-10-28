@@ -54,6 +54,17 @@ export function upcomingDays(
   );
 }
 
+/**
+ * The `count` calendar days (YYYY-MM-DD) after `today` (a YYYY-MM-DD date). Pure calendar
+ * math at UTC midnight, so the result never depends on the runtime's clock or time zone.
+ */
+export function upcomingDaysFrom(today: string, count: number): string[] {
+  const start = Date.parse(`${today}T00:00:00Z`);
+  return Array.from({ length: count }, (_, i) =>
+    new Date(start + (i + 1) * 86_400_000).toISOString().slice(0, 10),
+  );
+}
+
 /** The calendar date of `now` in `timeZone`, as UTC midnight of that date (ms). */
 function zonedMidnightUtc(now: Date, timeZone: string): number {
   const parts = new Intl.DateTimeFormat("en-US", {

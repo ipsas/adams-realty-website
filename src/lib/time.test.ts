@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { marketDateDaysAgo, upcomingDays, zonedDateTime } from "./time";
+import { marketToday } from "./areas/stats";
+import { marketDateDaysAgo, upcomingDays, upcomingDaysFrom, zonedDateTime } from "./time";
 
 describe("zonedDateTime", () => {
   it("converts Eastern wall-clock time to UTC across DST", () => {
@@ -60,6 +61,53 @@ describe("upcomingDays", () => {
     expect(days.map((d) => label(d).slice(0, 3))).toEqual(
       Array.from({ length: 7 }, (_, i) => weekdays[(start + i) % 7]),
     );
+  });
+});
+
+describe("upcomingDaysFrom", () => {
+  it("lists the days after the given date, across a year end", () => {
+    expect(upcomingDaysFrom("2026-12-31", 7)).toEqual([
+      "2027-01-01",
+      "2027-01-02",
+      "2027-01-03",
+      "2027-01-04",
+      "2027-01-05",
+      "2027-01-06",
+      "2027-01-07",
+    ]);
+  });
+
+  it.each([
+    ["2026-03-07", "2026-03-08", "2026-03-14"],
+    ["2026-10-31", "2026-11-01", "2026-11-07"],
+  ])("neither repeats nor skips a date across DST from %s", (today, first, last) => {
+    const days = upcomingDaysFrom(today, 7);
+    expect(new Set(days).size).toBe(7);
+    expect(days[0]).toBe(first);
+    expect(days[6]).toBe(last);
+    days.forEach((d, i) => {
+      if (i > 0) expect(Date.parse(d) - Date.parse(days[i - 1])).toBe(86_400_000);
+    });
+  });
+
+  it.each([
+    // Noon UTC Dec 31: 7am Dec 31 in New York, already 2am Jan 1 in Kiritimati (UTC+14).
+    ["2026-12-31T12:00:00Z", "America/New_York"],
+    ["2026-12-31T12:00:00Z", "Pacific/Kiritimati"],
+    // 11:30pm EST Nov 1 is already Nov 2 in UTC.
+    ["2026-11-02T04:30:00Z", "America/New_York"],
+  ])("matches upcomingDays from the market date of %s in %s", (iso, timeZone) => {
+    const now = new Date(iso);
+    expect(upcomingDaysFrom(marketToday(now, timeZone), 7)).toEqual(
+      upcomingDays(7, now, timeZone),
+    );
+  });
+
+  it("depends on the market date only, not the instant's date elsewhere", () => {
+    // Already Jan 1 in Kiritimati, still Dec 31 in New York.
+    const now = new Date("2026-12-31T12:00:00Z");
+    expect(marketToday(now, "Pacific/Kiritimati")).toBe("2027-01-01");
+    expect(upcomingDaysFrom(marketToday(now, "America/New_York"), 7)[0]).toBe("2027-01-01");
   });
 });
 

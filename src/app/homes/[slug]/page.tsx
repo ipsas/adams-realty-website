@@ -41,6 +41,7 @@ import { db } from "@/db";
 import type { ListingFeatures } from "@/db/schema";
 import { offersTours } from "@/lib/areas/firm-area";
 import { placeHref } from "@/lib/areas/links";
+import { marketToday } from "@/lib/areas/stats";
 import { getActor, getSession } from "@/lib/auth/session";
 import { can } from "@/lib/auth/permissions";
 import { cn } from "@/lib/cn";
@@ -661,6 +662,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                     source="listing"
                     compact
                     allowTour={!sold && tours}
+                    today={marketToday()}
                     defaultMessage={`I'm interested in ${street}.`}
                     user={
                       session

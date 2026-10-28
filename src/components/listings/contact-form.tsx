@@ -8,7 +8,7 @@ import { Honeypot, useFormTimer } from "@/components/ui/spam-guard";
 import { site } from "@/config/site";
 import { cn } from "@/lib/cn";
 import { catchSendFailure } from "@/lib/leads/send";
-import { upcomingDays } from "@/lib/time";
+import { upcomingDays, upcomingDaysFrom } from "@/lib/time";
 import { createInquiry, type InquiryState } from "@/server/actions/inquiries";
 
 const TIMES = [
@@ -39,6 +39,7 @@ export function ContactForm({
   defaultMessage,
   user,
   compact = false,
+  today,
 }: {
   listingId?: string;
   agentId?: string;
@@ -47,12 +48,14 @@ export function ContactForm({
   defaultMessage?: string;
   user?: { name: string; email: string; phone?: string | null } | null;
   compact?: boolean;
+  /** The market's calendar date (YYYY-MM-DD) from the server, so hydration matches. */
+  today?: string;
 }) {
   const [mode, setMode] = useState<"tour" | "question">(allowTour ? "tour" : "question");
   const [state, action, pending] = useActionState<InquiryState, FormData>(sendInquiry, {
     ok: false,
   });
-  const days = useMemo(() => upcomingDays(7), []);
+  const days = useMemo(() => (today ? upcomingDaysFrom(today, 7) : upcomingDays(7)), [today]);
   const [day, setDay] = useState(days[0]);
   const [tourType, setTourType] = useState<"in_person" | "video">("in_person");
   const stamp = useFormTimer();
