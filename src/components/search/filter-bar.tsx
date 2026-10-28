@@ -212,7 +212,7 @@ function PricePanel({
   const presets = c.mode === "rent" ? RENT_PRICES : SALE_PRICES;
   const opt = (v: number) => (
     <option key={v} value={v}>
-      {c.mode === "rent" ? `$${v.toLocaleString()}` : formatPriceShort(v)}
+      {c.mode === "rent" ? `$${v.toLocaleString("en-US")}` : formatPriceShort(v)}
     </option>
   );
   return (
@@ -294,7 +294,8 @@ function ChipGroup<T extends number | undefined>({
 }
 
 function priceLabel(c: SearchCriteria): string {
-  const f = (n: number) => (c.mode === "rent" ? `$${n.toLocaleString()}` : formatPriceShort(n));
+  const f = (n: number) =>
+    c.mode === "rent" ? `$${n.toLocaleString("en-US")}` : formatPriceShort(n);
   if (c.minPrice !== undefined && c.maxPrice !== undefined)
     return `${f(c.minPrice)}–${f(c.maxPrice)}`;
   if (c.minPrice !== undefined) return `${f(c.minPrice)}+`;

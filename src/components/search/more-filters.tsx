@@ -191,7 +191,7 @@ export function MoreFilters({
               <option value="">No min</option>
               {SQFT.map((v) => (
                 <option key={v} value={v}>
-                  {v.toLocaleString()} sqft
+                  {v.toLocaleString("en-US")} sqft
                 </option>
               ))}
             </Select>
@@ -205,7 +205,7 @@ export function MoreFilters({
               <option value="">No max</option>
               {SQFT.map((v) => (
                 <option key={v} value={v}>
-                  {v.toLocaleString()} sqft
+                  {v.toLocaleString("en-US")} sqft
                 </option>
               ))}
             </Select>
