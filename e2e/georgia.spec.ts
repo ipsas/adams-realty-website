@@ -41,7 +41,7 @@ test.describe("listing coverage copy says Georgia", () => {
     page,
   }) => {
     await page.goto("/");
-    await expect(page.getByText("Straight from Georgia MLS", { exact: true })).toBeVisible();
+    await expect(page.getByText("Adams Realty, Inc. · Royston, GA", { exact: true })).toBeVisible();
     await expect(page.locator("main")).toContainText(
       "Homes, land, farms and lake property around Gainesville, updated directly from Georgia MLS.",
     );

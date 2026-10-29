@@ -5,12 +5,14 @@ import { ContactMethods } from "@/components/content/contact-methods";
 import { ContactForm } from "@/components/listings/contact-form";
 import { OrganizationJsonLd } from "@/components/seo/json-ld";
 import { Container } from "@/components/ui/section";
+import { CONTACT_DESCRIPTION, CONTACT_TITLE } from "@/config/brand-copy";
 import { site } from "@/config/site";
 import { getSession } from "@/lib/auth/session";
 
 export const metadata: Metadata = {
-  title: `Contact us about homes near ${site.market.focus.city}`,
-  description: `Call ${site.phone}, email or send a message. One ${site.name} agent answers your question about buying or selling near ${site.market.focus.city}.`,
+  // `absolute` so the root layout's title template doesn't add a second brand suffix.
+  title: { absolute: CONTACT_TITLE },
+  description: CONTACT_DESCRIPTION,
   alternates: { canonical: "/contact" },
 };
 
