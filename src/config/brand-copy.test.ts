@@ -90,10 +90,13 @@ describe("BR-B1 brand copy", () => {
 
   it("is the home page hero's eyebrow", () => {
     const source = readFileSync(HOME_PAGE, "utf8");
-    expect(source).toContain("{HOME_EYEBROW_PARTS[0]}");
-    expect(source).toContain('{" · "}');
-    expect(source).toContain("{HOME_EYEBROW_PARTS[1]}");
-    expect(source).toContain("hidden min-[24rem]:inline");
+    expect(source).toContain("{HOME_EYEBROW}");
+    expect(source).toContain("data-line1={HOME_EYEBROW_PARTS[0]}");
+    expect(source).toContain("data-line2={HOME_EYEBROW_PARTS[1]}");
+    expect(source).toContain('aria-hidden="true"');
+    expect(source).toContain("@max-[29.75em]:sr-only");
+    expect(source).toContain("@min-[29.75em]:hidden");
     expect(source).not.toContain("Straight from {site.mls.name}");
+    expect(source).not.toContain('{" · "}');
   });
 });

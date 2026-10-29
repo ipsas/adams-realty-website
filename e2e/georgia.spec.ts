@@ -52,27 +52,33 @@ test.describe("listing coverage copy says Georgia", () => {
   });
 
   test("the home page eyebrow breaks cleanly on a narrow phone", async ({ page }) => {
-    for (const width of [320, 360, 1280]) {
+    for (const width of [320, 360, 375, 390, 414, 1280]) {
       await page.setViewportSize({ width, height: 800 });
       await page.goto("/");
-      const eyebrow = page.locator("[data-home-eyebrow]");
-      expect(await eyebrow.textContent()).toBe("Adams Realty, Inc. · Royston, GA");
-      const lines = (await eyebrow.innerText())
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean);
-      for (const line of lines) {
-        expect(line.startsWith("·"), `${width}px: "${line}"`).toBe(false);
-        expect(line.endsWith("·"), `${width}px: "${line}"`).toBe(false);
-      }
-      if (width < 1280) {
-        expect(lines.map((line) => line.toLowerCase())).toEqual([
-          "adams realty, inc.",
-          "royston, ga",
-        ]);
+      const p = page.locator("p:has([data-home-eyebrow])");
+      expect(await p.textContent()).toBe("Adams Realty, Inc. · Royston, GA");
+      await expect(p.locator("[data-home-eyebrow-stacked]")).toHaveAttribute("aria-hidden", "true");
+      const m = await p.evaluate((el) => {
+        const text = el.querySelector<HTMLElement>("[data-home-eyebrow]")!;
+        const stackedEl = el.querySelector<HTMLElement>("[data-home-eyebrow-stacked]")!;
+        return {
+          stacked: getComputedStyle(stackedEl).display !== "none",
+          before: getComputedStyle(stackedEl, "::before").content,
+          after: getComputedStyle(stackedEl, "::after").content,
+          textHeight: text.getBoundingClientRect().height,
+          stackedHeight: stackedEl.getBoundingClientRect().height,
+          lineHeight: parseFloat(getComputedStyle(el).lineHeight),
+        };
+      });
+      if (width <= 375) {
+        expect(m.stacked, `${width}px`).toBe(true);
+        expect(m.before).toBe('"Adams Realty, Inc."');
+        expect(m.after).toBe('"Royston, GA"');
+        expect(m.stackedHeight, `${width}px`).toBe(2 * m.lineHeight);
+        expect(m.textHeight, `${width}px`).toBeLessThanOrEqual(1);
       } else {
-        expect(lines, `${width}px`).toHaveLength(1);
-        expect(lines[0].toUpperCase()).toBe("ADAMS REALTY, INC. · ROYSTON, GA");
+        expect(m.stacked, `${width}px`).toBe(false);
+        expect(m.textHeight, `${width}px`).toBe(m.lineHeight);
       }
     }
   });
