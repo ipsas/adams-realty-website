@@ -50,7 +50,11 @@ import { Pagination, StepPagination } from "./pagination";
 import { SaveSearchButton, useSaveSearch, type SaveSearchState } from "./save-search-button";
 import { buildSearchHref, currentView, useSearchNav } from "./use-search-nav";
 
-/** Cards whose photo loads with the page (the first rows; site review #10). */
+/**
+ * Cards whose photo is in the server HTML (the first rows; site review #10): the first is
+ * preloaded at high priority (the LCP), the rest use native lazy loading so they don't
+ * compete with it. Later cards wait for CARD_PHOTOS_NEAR_PX.
+ */
 const EAGER_CARDS = 4;
 /** How close (px) a later card must come to the screen before its photo loads. */
 const CARD_PHOTOS_NEAR_PX = 400;
@@ -317,7 +321,8 @@ export function SearchView({
                     key={l.id}
                     listing={l}
                     // Only the first card's photo is the page's LCP: preloaded, high priority.
-                    priority={i === 0 ? "preload" : i < EAGER_CARDS && "eager"}
+                    // The rest of the first rows lazy-load natively, so they don't compete with it.
+                    priority={i === 0 ? "preload" : false}
                     // Below the first rows, a photo waits until its card is near the screen:
                     // on a slow signal the browser's own lazy loading reaches ~2,500 px ahead.
                     photoNearPx={i < EAGER_CARDS ? undefined : CARD_PHOTOS_NEAR_PX}
