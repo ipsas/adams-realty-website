@@ -248,6 +248,15 @@ describe("mapResoProperty", () => {
     }
   });
 
+  it("maps the parcel number as sent, trimmed, and null when missing or blank", () => {
+    expect(mapOk({ ...base, ParcelNumber: "  046 023A " }).parcelNumber).toBe("046 023A");
+    expect(mapOk({ ...base, ParcelNumber: "R12-0034-01" }).parcelNumber).toBe("R12-0034-01");
+    expect(mapOk(base).parcelNumber).toBeNull();
+    for (const s of ["", "   ", null]) {
+      expect(mapOk({ ...base, ParcelNumber: s }).parcelNumber, String(s)).toBeNull();
+    }
+  });
+
   it("maps main-level bedrooms and the primary bedroom on main", () => {
     expect(
       mapOk({ ...base, MainLevelBedrooms: 1, InteriorFeatures: ["Master On Main Level"] }),

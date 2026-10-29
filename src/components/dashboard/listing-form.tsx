@@ -33,6 +33,7 @@ export type ListingFormValues = {
   postalCode?: string;
   county?: string | null;
   neighborhood?: string | null;
+  parcelNumber?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   bedrooms?: number | null;
@@ -414,6 +415,15 @@ function ListingFields({
         </Field>
         <Field label="County" htmlFor="county">
           <Input id="county" name="county" defaultValue={v.county ?? ""} className={control} />
+        </Field>
+        <Field label="Parcel #" htmlFor="parcelNumber" error={e.parcelNumber}>
+          <Input
+            id="parcelNumber"
+            name="parcelNumber"
+            defaultValue={v.parcelNumber ?? ""}
+            maxLength={64}
+            className={control}
+          />
         </Field>
         <Field
           label="Latitude"
