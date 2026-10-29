@@ -27,11 +27,13 @@ const royston = {
   longitude: -83.11,
 };
 const ids = new Map<string, string>();
+let feed: Awaited<ReturnType<typeof createSource>>;
+let manual: Awaited<ReturnType<typeof createSource>>;
 
 beforeAll(async () => {
   await resetDb();
-  const feed = await createSource();
-  const manual = await createSource({ slug: "adams", kind: "manual", config: {} });
+  feed = await createSource();
+  manual = await createSource({ slug: "adams", kind: "manual", config: {} });
   // [key, source, listing, public since (days ago)]
   const rows = [
     // The repro: listed 6 days ago, public since today.
@@ -117,10 +119,35 @@ describe("Newest", () => {
 });
 
 describe("area stats", () => {
-  it("count new listings by list date only where days on market show", async () => {
+  // The stats count only public for-sale homes (areaForSale: active, coming soon), so the
+  // pending rows above drop out by status. Coming soon is always hidden (the idx_hidden
+  // generated column), feed or manual, so today only active rows reach getAreaStats'
+  // hidesListDate() exclusions: those are a guard. Rows added only here so the search
+  // tests above keep theirs.
+  beforeAll(async () => {
+    await insertListings(feed, [
+      listing(8, { ...royston, status: "coming_soon", listDate: daysAgo(4) }),
+    ]);
+    await insertListings(manual, [
+      listing(9, { ...royston, status: "coming_soon", listDate: daysAgo(5) }),
+    ]);
+    // A manual active home, public like the rows above: its list date shows, so it counts.
+    const [manualActive] = await insertListings(manual, [
+      listing(10, { ...royston, listDate: daysAgo(5) }),
+    ]);
+    await db
+      .update(listings)
+      .set({ publicSince: publicDaysAgo(5) })
+      .where(eq(listings.id, manualActive));
+  });
+
+  it("count only public active homes: neither coming-soon row, nor any pending one", async () => {
     const area = findArea("royston")!;
     const stats = (await getAreaStats([area])).get(area.slug)!;
-    // active, manualA, manualB, manual6; no pending feed listing.
-    expect(stats.newListings).toBe(4);
+    // The feed active home and the manual one; both coming-soon rows are idx_hidden.
+    expect(stats.forSale).toBe(2);
+    expect(stats.newListings).toBe(2);
+    expect(stats.listDateSample).toBe(2);
+    expect(stats.daysOnMarketSample).toBe(2);
   });
 });

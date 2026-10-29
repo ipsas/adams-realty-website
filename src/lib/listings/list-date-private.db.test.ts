@@ -101,10 +101,14 @@ beforeAll(async () => {
 });
 afterAll(closeDb);
 
-/** No list date in `payload` as JSON: not the key, not the column, not the date itself. */
+/**
+ * No list date in `payload` as JSON: not the key, not the column, not the date itself.
+ * Keys match whole (quoted), so a count named after it (getAreaStats' `listDateSample`)
+ * passes; any key holding a date is still caught by the date values.
+ */
 function expectNoListDate(payload: unknown, label: string) {
   const json = JSON.stringify(payload);
-  for (const needle of ["listDate", "list_date", ...allDates]) {
+  for (const needle of ['"listDate"', '"list_date"', ...allDates]) {
     expect(json, `${label} holds ${needle}`).not.toContain(needle);
   }
 }
@@ -233,7 +237,9 @@ describe("search payloads", () => {
     const stats = await getMarketStats();
     expect(stats.newThisWeek).toBeGreaterThanOrEqual(2);
     expectNoListDate(stats, "getMarketStats");
-    const area = await getAreaStats([findArea("royston")!]);
+    const royston = findArea("royston")!;
+    const area = await getAreaStats([royston]);
+    expect(typeof area.get(royston.slug)!.listDateSample).toBe("number");
     expectNoListDate([...area], "getAreaStats");
   });
 
