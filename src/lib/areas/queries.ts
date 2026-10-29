@@ -84,9 +84,9 @@ export async function getAreaStats(
   // $/acre is how land is compared (site review #8): bare land and farms with a lot size.
   const hasAcres = sql`${forSale} and ${L.propertyType} in ('land', 'farm_ranch') and coalesce(${L.livingAreaSqft}, 0) = 0 and coalesce(${L.bedrooms}, 0) = 0 and ${L.lotSizeSqft} > 0`;
   // Days on market and new listings are drawn from the same for-sale rows as
-  // forSale, so every tile describes the homes it counts. A hidden list date
-  // (hidesListDate, e.g. a feed coming_soon listing) never counts in either,
-  // nor makes the new-listings tile show.
+  // forSale, so every tile describes the homes it counts. The hidesListDate()
+  // exclusion is a guard: coming_soon is idx_hidden, so today only active rows
+  // reach it.
   const onMarket = sql`${forSale} and ${L.listDate} <= ${today}::date and not ${hidesListDate()}`;
   const hasListDate = sql`${forSale} and ${L.listDate} is not null and not ${hidesListDate()}`;
   const median = (expr: SQL, where: SQL) =>
