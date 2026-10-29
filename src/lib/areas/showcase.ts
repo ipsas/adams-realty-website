@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { listings } from "@/db/schema";
 
 /**
@@ -36,4 +36,19 @@ export function showcaseListing() {
     (coalesce(${L.livingAreaSqft}, 0) = 0 and ${L.listPrice} > ${SHOWCASE_MAX_PRICE_WITHOUT_SQFT})
     or btrim(${L.addressLine1}) ~ ${ZERO_STREET_NUMBER}
   )`;
+}
+
+const LIVE_FOR_SALE = ["active", "coming_soon"] as const;
+
+/**
+ * What the guide counts and lists as for sale: live sale listings that may
+ * front it (`showcaseListing`). getAreaStats, the guide's grid and the home
+ * page's town tiles (getPopularAreas) share it, so they agree.
+ */
+export function areaForSale(): SQL {
+  return and(
+    eq(listings.transactionType, "sale"),
+    inArray(listings.status, [...LIVE_FOR_SALE]),
+    showcaseListing(),
+  )!;
 }

@@ -18,6 +18,7 @@ import {
   normalizedCountySql,
   textArray,
 } from "@/lib/areas/match";
+import { areaForSale } from "@/lib/areas/showcase";
 import { formatStreet } from "@/lib/format";
 import { inMarketState } from "@/lib/market-state";
 import {
@@ -332,9 +333,11 @@ export async function getLocationSuggestions(term: string): Promise<Suggestion[]
 }
 
 /**
- * Towns with the most active listings, for the homepage "Towns across…" grid.
+ * Towns with the most homes for sale, for the homepage "Towns across…" grid.
  * Grouped by city: in a small-town and rural market the subdivision field is
- * often blank or "None", so it's no use as an area name.
+ * often blank or "None", so it's no use as an area name. Counts the area
+ * guides' for-sale pool (`areaForSale`), so junk listings never count; a town
+ * with a guide then takes the guide's own numbers (getCachedPopularAreas).
  */
 export async function getPopularAreas(limit = 8) {
   return db
@@ -347,14 +350,7 @@ export async function getPopularAreas(limit = 8) {
       >`(array_agg(${listings.primaryPhotoUrl} order by ${listings.isFeatured} desc, ${listings.listPrice} desc))[1]`,
     })
     .from(listings)
-    .where(
-      and(
-        publicListing(),
-        eq(listings.status, "active"),
-        eq(listings.transactionType, "sale"),
-        defaultTypesCondition(),
-      ),
-    )
+    .where(and(publicListing(), areaForSale()))
     .groupBy(listings.city)
     .orderBy(sql`count(*) desc`, listings.city)
     .limit(limit);

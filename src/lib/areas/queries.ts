@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, sql, type SQL } from "drizzle-orm";
 import type { Area } from "@/config/areas";
 import { db } from "@/db";
 import { agents, listings } from "@/db/schema";
@@ -16,7 +16,7 @@ import {
   textArray,
   type AreaKeyRow,
 } from "./match";
-import { showcaseListing } from "./showcase";
+import { areaForSale } from "./showcase";
 import {
   addDays,
   emptyStats,
@@ -52,21 +52,6 @@ type StatsRow = {
   photo: string | null;
   lastUpdated: Date | string | null;
 };
-
-const LIVE_FOR_SALE = ["active", "coming_soon"] as const;
-
-/**
- * What the guide counts and lists as for sale: live sale listings that may
- * front it (`showcaseListing`). getAreaStats and the grid share it, so the
- * hero, the tiles and the grid agree.
- */
-function areaForSale(): SQL {
-  return and(
-    eq(listings.transactionType, "sale"),
-    inArray(listings.status, [...LIVE_FOR_SALE]),
-    showcaseListing(),
-  )!;
-}
 
 /**
  * Live market stats for any number of areas in one query. Each listing's

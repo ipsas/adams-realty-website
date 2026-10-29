@@ -1,6 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { cache } from "react";
-import { areas as allAreas } from "@/config/areas";
+import { areas as allAreas, townGuide } from "@/config/areas";
 import { getAreaStats } from "@/lib/areas/queries";
 import { emptyStats, type AreaStats, type AreaSummary } from "@/lib/areas/stats";
 import { LISTINGS_CACHE_SECONDS, LISTINGS_TAG } from "./cache-tags";
@@ -71,10 +71,32 @@ const reviveStats = (stats: AreaStats) => reviveDates(stats, STATS_DATES);
 /** Home page headline numbers. */
 export const getCachedMarketStats = listingsCache("market-stats", () => getMarketStats());
 
-/** Home page "Towns across…" grid. */
-export const getCachedPopularAreas = listingsCache("popular-areas", (limit: number) =>
-  getPopularAreas(limit),
+const areaStatsBySlug = listingsCache(
+  "area-summaries",
+  async () => [...(await getAreaStats(allAreas))],
+  (entries) => entries.map(([slug, stats]) => [slug, reviveStats(stats)] as [string, AreaStats]),
 );
+
+const popularAreas = listingsCache("popular-areas", (limit: number) => getPopularAreas(limit));
+
+/**
+ * Home page "Towns across…" grid. A town with a guide (its tile links there)
+ * shows the guide's own count and median, from the cached guide stats; one
+ * the guide counts nothing for sale is left out, as there's no "0 homes" tile.
+ */
+export async function getCachedPopularAreas(limit: number) {
+  const [rows, stats] = await Promise.all([popularAreas(limit), areaStatsBySlug()]);
+  const bySlug = new Map(stats);
+  return rows
+    .flatMap((row) => {
+      const guide = townGuide(row.city);
+      const s = guide && bySlug.get(guide.slug);
+      if (!s) return [row];
+      if (!s.forSale) return [];
+      return [{ ...row, count: s.forSale, medianPrice: s.medianListPrice ?? row.medianPrice }];
+    })
+    .sort((a, b) => b.count - a.count);
+}
 
 /** Home page featured homes. */
 export const getCachedFeaturedListings = listingsCache(
@@ -90,12 +112,6 @@ export const getCachedTopCities = listingsCache("top-cities", (limit: number) =>
 
 /** Every city with homes for sale, by county (GA-A's "See all towns" index). */
 export const getCachedPlacesIndex = listingsCache("places-index", () => getPlacesIndex());
-
-const areaStatsBySlug = listingsCache(
-  "area-summaries",
-  async () => [...(await getAreaStats(allAreas))],
-  (entries) => entries.map(([slug, stats]) => [slug, reviveStats(stats)] as [string, AreaStats]),
-);
 
 /** Every area guide with its live stats, in config order (/areas and its sitemap). */
 export async function getCachedAreaSummaries(): Promise<AreaSummary[]> {

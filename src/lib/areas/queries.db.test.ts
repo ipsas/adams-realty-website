@@ -1,8 +1,10 @@
 import { and, count, eq, isNull } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { Area } from "@/config/areas";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { townGuide, type Area } from "@/config/areas";
 import { db } from "@/db";
 import { listings } from "@/db/schema";
+import { getCachedPopularAreas } from "@/lib/listings/cached";
+import { getPopularAreas } from "@/lib/listings/queries";
 import { closeDb, createSource, insertListings, listing, resetDb } from "@/test/db/helpers";
 import { areaCondition } from "./match";
 import {
@@ -11,6 +13,8 @@ import {
   getAreaListings,
   getAreaStats,
 } from "./queries";
+
+vi.mock("next/cache", () => ({ unstable_cache: (fn: () => unknown) => fn }));
 
 // getAreaStats' hash join against Postgres. Names repeat across a statewide
 // feed, so each of its three ways in (neighborhood, lake, city) must keep a
@@ -196,5 +200,24 @@ describe("getAreaStats", () => {
     expect(await getAreaListingCount(comer)).toBe(0);
     expect(await getAreaListings(comer)).toEqual([]);
     expect(await getAreaFeaturedListing(comer)).toBeNull();
+  });
+});
+
+describe("home page town tiles", () => {
+  it("show a town's guide numbers, junk left out (QA R36 D-L1)", async () => {
+    const guide = townGuide("Royston")!;
+    const stats = (await getAreaStats([guide])).get(guide.slug)!;
+    expect(stats.forSale).toBe(3);
+    expect(stats.medianListPrice).toBe(300_000);
+
+    const tile = (await getCachedPopularAreas(50)).find((a) => a.city === "Royston");
+    expect(tile).toMatchObject({ count: stats.forSale, medianPrice: stats.medianListPrice });
+    // The raw city pool is the guides' too: the two junk listings never count.
+    const row = (await getPopularAreas(50)).find((a) => a.city === "Royston");
+    expect(row).toMatchObject({ count: 3, medianPrice: 300_000 });
+  });
+
+  it("leave out a town whose guide has nothing for sale", async () => {
+    expect((await getCachedPopularAreas(50)).map((a) => a.city)).not.toContain("Comer");
   });
 });

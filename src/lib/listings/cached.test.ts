@@ -52,7 +52,11 @@ vi.mock("./queries", () => ({
   },
   getPopularAreas: async () => {
     count("popular");
-    return [{ city: "Royston", count: 12, medianPrice: 250_000, photo: null }];
+    return [
+      { city: "Royston", count: 12, medianPrice: 250_000, photo: null },
+      { city: "Hoschton", count: 7, medianPrice: 450_000, photo: null },
+      { city: "Oakwood", count: 3, medianPrice: 200_000, photo: null },
+    ];
   },
   getTopCities: async () => {
     count("top");
@@ -68,7 +72,12 @@ vi.mock("@/lib/areas/queries", () => ({
   getAreaStats: async (list: Array<{ slug: string }>) => {
     count(list.length === 1 ? "guide" : "summaries");
     return new Map(
-      list.map((a) => [a.slug, { ...emptyStats(), forSale: 5, lastUpdated: UPDATED }]),
+      list.map((a) => [
+        a.slug,
+        a.slug === "oakwood"
+          ? { ...emptyStats(), lastUpdated: UPDATED }
+          : { ...emptyStats(), forSale: 5, medianListPrice: 310_000, lastUpdated: UPDATED },
+      ]),
     );
   },
 }));
@@ -110,14 +119,22 @@ describe("cached listing queries", () => {
       await cached.getCachedTopCities(12);
       await cached.getCachedPlacesIndex();
     }
-    expect(h.calls).toEqual({ stats: 1, popular: 1, top: 1, places: 1 });
+    expect(h.calls).toEqual({ stats: 1, popular: 1, summaries: 1, top: 1, places: 1 });
     expect(await cached.getCachedTopCities(12)).toEqual([{ city: "Atlanta", count: 30 }]);
+  });
+
+  it("town tiles take their guide's count and median; none for a guide with nothing for sale (QA R36 D-L1)", async () => {
+    expect(await cached.getCachedPopularAreas(9)).toEqual([
+      { city: "Hoschton", count: 7, medianPrice: 450_000, photo: null },
+      { city: "Royston", count: 5, medianPrice: 310_000, photo: null },
+    ]);
   });
 
   it("area summaries: config order, one query, dates revived", async () => {
     await cached.getCachedAreaSummaries();
     const summaries = await cached.getCachedAreaSummaries();
-    expect(h.calls.summaries).toBe(1);
+    // At most one query (the town tiles above may already have loaded it).
+    expect(h.calls.summaries ?? 0).toBeLessThanOrEqual(1);
     expect(summaries.map((s) => s.area.slug)).toEqual(areas.map((a) => a.slug));
     expect(summaries[0].stats.forSale).toBe(5);
     expect(summaries[0].stats.lastUpdated).toEqual(UPDATED);
