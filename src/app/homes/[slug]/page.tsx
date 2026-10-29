@@ -19,7 +19,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Fragment, type ReactNode } from "react";
-import { NOT_FOUND_TITLE } from "@/app/not-found";
 import { MlsAttribution } from "@/components/content/mls-attribution";
 import { telHref } from "@/components/content/contact";
 import { ReturnLink } from "@/components/layout/return-link";
@@ -82,7 +81,6 @@ import {
   listingJsonLd,
   listingTitle,
 } from "@/lib/listings/listing-seo";
-import { missingListing } from "@/lib/listings/missing-listing";
 import { listingOfficeLabel } from "@/lib/listings/office-label";
 import { getListingBySlug, getSimilarListings, type ListingDetail } from "@/lib/listings/queries";
 import { normalizeTaxYear } from "@/lib/listings/tax-year";
@@ -96,7 +94,7 @@ import { formatSchoolName } from "@/lib/search/school-name";
 export async function generateMetadata(props: PageProps<"/homes/[slug]">): Promise<Metadata> {
   const { slug } = await props.params;
   const data = await getListingBySlug(slug);
-  if (!data) return { title: { absolute: NOT_FOUND_TITLE }, robots: { index: false } };
+  if (!data) return { title: "Home not found" };
   const l = data.listing;
   const title = listingTitle(l);
   const description = listingDescription(l);
@@ -117,13 +115,7 @@ export async function generateMetadata(props: PageProps<"/homes/[slug]">): Promi
 
 export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
   const { slug } = await props.params;
-  // ./not-found.tsx waits on this to link the missing listing's town (missing-listing.ts).
-  const missing = missingListing();
-  const data = await getListingBySlug(slug).catch((err: unknown) => {
-    missing.settle(null);
-    throw err;
-  });
-  missing.settle(data ? null : slug);
+  const data = await getListingBySlug(slug);
   if (!data) notFound();
   const { listing: l, media, openHouses, events, agent, source } = data;
   const [similar, session, actor, lastSynced] = await Promise.all([

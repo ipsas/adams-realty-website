@@ -29,6 +29,7 @@ import { safeNext } from "./safe-redirect";
 vi.mock("./rate-limit-db", () => ({
   hitRateLimits: vi.fn(async () => ({ ok: true, retryAfter: 0, exceeded: null })),
 }));
+vi.mock("./listings/missing-listing-db", () => ({ missingListingGuide: vi.fn(async () => null) }));
 
 const SECRET = "test-secret-test-secret-test-secret-0000";
 const PASSWORD = "dogwood-spring";

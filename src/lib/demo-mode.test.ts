@@ -3,6 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { proxy } from "@/proxy";
 import { demoDataMode, isDemoContentPath } from "./demo-mode";
 
+// The listing-page lookup: every listing shown, no database.
+vi.mock("./listings/missing-listing-db", () => ({ missingListingGuide: vi.fn(async () => null) }));
+
 afterEach(() => vi.unstubAllEnvs());
 
 const CHROME = { "user-agent": "Mozilla/5.0 (Windows NT 10.0) Chrome/140.0 Safari/537.36" };

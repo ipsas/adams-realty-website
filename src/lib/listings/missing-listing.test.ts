@@ -1,81 +1,144 @@
-import { describe, expect, it } from "vitest";
-import { guideForListingSlug } from "./missing-listing";
-import { listingSlug } from "./slug";
+import { NextRequest } from "next/server";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { proxy } from "@/proxy";
+import { captureConsole } from "@/test/console";
+import {
+  guideBySlug,
+  guideSlugForMissingListing,
+  listingPagePathSlug,
+  MISSING_LISTING_GUIDE_HEADER,
+} from "./missing-listing";
+import { missingListingGuide } from "./missing-listing-db";
 
-const slug = (l: {
-  addressLine1?: string;
-  city: string;
-  hideAddress?: boolean;
-  postalCode?: string;
-}) =>
-  listingSlug({
-    addressLine1: l.addressLine1 ?? "1204 Dogwood Ln",
-    city: l.city,
-    state: "GA",
-    postalCode: l.postalCode ?? "30662",
-    hideAddress: l.hideAddress,
-    sourceSlug: "gamls",
-    listingKey: `${l.city}-${l.addressLine1}`,
+// The proxy's database work: the limiter (no client IP here, so unused) and the lookup.
+vi.mock("@/lib/rate-limit-db", () => ({
+  hitRateLimits: vi.fn(async () => ({ ok: true, retryAfter: 0, exceeded: null })),
+}));
+vi.mock("./missing-listing-db", () => ({ missingListingGuide: vi.fn() }));
+
+const CHROME = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140.0 Safari/537.36";
+const SLUG = "1204-dogwood-ln-royston-ga-30662-a1b2c3d";
+
+beforeEach(() => {
+  vi.mocked(missingListingGuide).mockReset();
+});
+
+describe("listingPagePathSlug", () => {
+  it("is the decoded slug of /homes/<one segment>, and null for anything else", () => {
+    expect(listingPagePathSlug("/homes/x")).toBe("x");
+    expect(listingPagePathSlug("/homes/a%20b")).toBe("a b");
+    expect(listingPagePathSlug("/homes")).toBeNull();
+    expect(listingPagePathSlug("/homes/")).toBeNull();
+    expect(listingPagePathSlug("/homes/x/y")).toBeNull();
+    expect(listingPagePathSlug("/homes/sitemap/1.xml")).toBeNull();
+    expect(listingPagePathSlug("/homes/a.xml")).toBeNull();
+    expect(listingPagePathSlug("/homes/%E0%A4%A")).toBeNull();
+    expect(listingPagePathSlug("/areas/royston")).toBeNull();
   });
+});
 
-describe("guideForListingSlug", () => {
-  it("uses the row's city when the listing row exists", () => {
-    expect(
-      guideForListingSlug("anything", { city: "Royston", state: "GA", county: "Franklin" })?.slug,
-    ).toBe("royston");
-    expect(
-      guideForListingSlug("anything", { city: "Royston", state: "GA", county: null })?.slug,
-    ).toBe("royston");
-  });
-
-  it("has no guide for a row whose city has none, or in another county or state", () => {
-    expect(guideForListingSlug("anything", { city: "Athens", state: "GA", county: "Clarke" })).toBe(
-      undefined,
+describe("guideSlugForMissingListing", () => {
+  it("reads the town from the slug, shortest ending first, exact guide slugs only", () => {
+    expect(guideSlugForMissingListing(SLUG)).toBe("royston");
+    expect(guideSlugForMissingListing("5-main-st-flowery-branch-ga-30542-a1b2c3d")).toBe(
+      "flowery-branch",
     );
-    expect(
-      guideForListingSlug("anything", { city: "Royston", state: "GA", county: "Chatham" }),
-    ).toBe(undefined);
-    expect(guideForListingSlug("anything", { city: "Royston", state: "SC", county: null })).toBe(
-      undefined,
-    );
-  });
-
-  it("doesn't fall back to the slug when the row's city has no guide", () => {
-    const s = slug({ city: "Royston" });
-    expect(guideForListingSlug(s, { city: "Athens", state: "GA", county: "Clarke" })).toBe(
-      undefined,
-    );
-  });
-
-  it("reads the town from the slug without a row", () => {
-    expect(guideForListingSlug(slug({ city: "Royston" }))?.slug).toBe("royston");
-    expect(guideForListingSlug(slug({ city: "Toccoa", hideAddress: true }))?.slug).toBe("toccoa");
-    expect(guideForListingSlug(slug({ city: "Royston", postalCode: "30662-1234" }))?.slug).toBe(
-      "royston",
-    );
-  });
-
-  it("matches a multiword town, and a town a guide covers as a section", () => {
-    expect(guideForListingSlug(slug({ city: "Flowery Branch" }))?.slug).toBe("flowery-branch");
-    expect(guideForListingSlug(slug({ city: "Sugar Hill", hideAddress: true }))?.slug).toBe(
+    expect(guideSlugForMissingListing("9-peachtree-ind-blvd-sugar-hill-ga-30518-a1b2c3d")).toBe(
       "sugar-hill",
     );
-    expect(guideForListingSlug(slug({ city: "Hoschton" }))?.slug).toBe("braselton");
+    expect(guideSlugForMissingListing("12-lake-dr-hartwell-ga-30643-a1b2c3d")).toBe("hartwell");
+    expect(guideSlugForMissingListing("7-lake-lanier-dr-cumming-ga-30041-a1b2c3d")).toBeUndefined();
+    expect(
+      guideSlugForMissingListing("1006-heathmoor-court-norcross-ga-30093-1yfukwj"),
+    ).toBeUndefined();
+    expect(guideSlugForMissingListing("royston-ga-30662-a1b2c3d")).toBe("royston");
+    expect(guideSlugForMissingListing("royston-ga-30662-1234-a1b2c3d")).toBe("royston");
+    expect(guideSlugForMissingListing("12-main-st-royston-sc-29659-a1b2c3d")).toBeUndefined();
+    expect(guideSlugForMissingListing("not-a-listing")).toBeUndefined();
   });
 
-  it("only reads the segment before the state, never other words", () => {
-    // The street names a guide town; the listing's town has none.
-    expect(guideForListingSlug(slug({ addressLine1: "12 Royston Rd", city: "Athens" }))).toBe(
-      undefined,
+  it("uses the row's city when there is one, in Georgia only", () => {
+    expect(guideSlugForMissingListing("x", { city: "Royston", state: "GA" })).toBe("royston");
+    expect(guideSlugForMissingListing("x", { city: "Royston", state: " georgia " })).toBe(
+      "royston",
+    );
+    expect(guideSlugForMissingListing("x", { city: "Lake Hartwell", state: "GA" })).toBe(
+      "lake-hartwell",
+    );
+    expect(guideSlugForMissingListing("x", { city: "Royston", state: "SC" })).toBeUndefined();
+    expect(guideSlugForMissingListing(SLUG, { city: "Toccoa", state: "GA" })).toBe("toccoa");
+    expect(guideSlugForMissingListing(SLUG, { city: "Athens", state: "GA" })).toBeUndefined();
+  });
+});
+
+describe("guideBySlug", () => {
+  it("finds a guide by its exact slug only", () => {
+    expect(guideBySlug("royston")?.name).toBe("Royston");
+    expect(guideBySlug("lake-hartwell")?.name).toBe("Lake Hartwell");
+    for (const s of ["Royston", "royston ", "lake hartwell", "hoschton", "", null, undefined]) {
+      expect(guideBySlug(s), String(s)).toBeUndefined();
+    }
+  });
+});
+
+describe("the proxy on a listing page", () => {
+  const req = (path: string, init: { method?: string; headers?: Record<string, string> } = {}) =>
+    new NextRequest(`http://localhost${path}`, {
+      method: init.method ?? "GET",
+      headers: { "user-agent": CHROME, ...init.headers },
+    });
+  const rewrite = (res: Response) => res.headers.get("x-middleware-rewrite");
+  const forwarded = (res: Response) =>
+    res.headers.get(`x-middleware-request-${MISSING_LISTING_GUIDE_HEADER}`);
+
+  it("rewrites a missing listing to an unmatched URL, its guide in a request header", async () => {
+    vi.mocked(missingListingGuide).mockResolvedValue("royston");
+    const res = await proxy(req(`/homes/${SLUG}`));
+    expect(missingListingGuide).toHaveBeenCalledWith(expect.anything(), SLUG);
+    expect(rewrite(res)).toBe(`http://localhost/homes/${SLUG}/removed`);
+    expect(forwarded(res)).toBe("royston");
+  });
+
+  it("drops a client-sent guide header when the town has no guide", async () => {
+    vi.mocked(missingListingGuide).mockResolvedValue(undefined);
+    const res = await proxy(
+      req(`/homes/${SLUG}`, { headers: { [MISSING_LISTING_GUIDE_HEADER]: "royston" } }),
+    );
+    expect(rewrite(res)).toBe(`http://localhost/homes/${SLUG}/removed`);
+    expect(forwarded(res)).toBeNull();
+    expect(res.headers.get("x-middleware-override-headers")).not.toContain(
+      MISSING_LISTING_GUIDE_HEADER,
     );
   });
 
-  it("has no guide for an unknown town or a garbage slug", () => {
-    expect(guideForListingSlug(slug({ city: "Athens" }))).toBe(undefined);
-    expect(guideForListingSlug("royston")).toBe(undefined);
-    expect(guideForListingSlug("royston-ga")).toBe(undefined);
-    expect(guideForListingSlug("")).toBe(undefined);
-    expect(guideForListingSlug("1204-dogwood-ln-royston-sc-29662-a1b2c3d")).toBe(undefined);
-    expect(guideForListingSlug("../../etc/passwd")).toBe(undefined);
+  it("passes a shown listing through", async () => {
+    vi.mocked(missingListingGuide).mockResolvedValue(null);
+    const res = await proxy(req(`/homes/${SLUG}`));
+    expect(missingListingGuide).toHaveBeenCalledOnce();
+    expect(rewrite(res)).toBeNull();
+    expect(res.headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("doesn't look up posts, prefetches, search or sitemaps", async () => {
+    for (const r of [
+      req(`/homes/${SLUG}`, { method: "POST", headers: { "next-action": "7f00aa" } }),
+      req(`/homes/${SLUG}`, { headers: { "next-router-prefetch": "1" } }),
+      req("/homes?q=royston"),
+      req("/homes/sitemap/0.xml"),
+    ]) {
+      expect(rewrite(await proxy(r))).toBeNull();
+    }
+    expect(missingListingGuide).not.toHaveBeenCalled();
+  });
+
+  it("passes the request through when the database fails", async () => {
+    const console = captureConsole();
+    vi.mocked(missingListingGuide).mockRejectedValue(new Error("connection refused"));
+    const res = await proxy(req(`/homes/${SLUG}`));
+    const output = console.output();
+    console.restore();
+    expect(rewrite(res)).toBeNull();
+    expect(res.headers.get("x-middleware-next")).toBe("1");
+    expect(output).toEqual([expect.stringContaining("[proxy] missing-listing lookup failed")]);
   });
 });
