@@ -84,10 +84,22 @@ async function route(request: NextRequest, path: string): Promise<NextResponse> 
   if (isListingDataPath(path))
     return (await guardListingData(request, deps)) ?? (await missingListing(request, path));
   const account = ACCOUNT_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
-  if (!account || getSessionCookie(request)) return NextResponse.next();
+  if (!account || getSessionCookie(request)) return next(request);
   const url = new URL("/sign-in", request.url);
   url.searchParams.set("next", request.nextUrl.pathname + request.nextUrl.search);
   return NextResponse.redirect(url);
+}
+
+/**
+ * Lets the request through, minus a client-sent MISSING_LISTING_GUIDE_HEADER:
+ * only missingListing() may set it, or any 404 could be made to show a guide link.
+ * Requests without the header pass through unchanged.
+ */
+function next(request: NextRequest): NextResponse {
+  if (!request.headers.has(MISSING_LISTING_GUIDE_HEADER)) return NextResponse.next();
+  const headers = new Headers(request.headers);
+  headers.delete(MISSING_LISTING_GUIDE_HEADER);
+  return NextResponse.next({ request: { headers } });
 }
 
 /**
@@ -103,16 +115,16 @@ async function missingListing(request: NextRequest, path: string): Promise<NextR
     (request.method !== "GET" && request.method !== "HEAD") ||
     request.headers.has("next-router-prefetch")
   ) {
-    return NextResponse.next();
+    return next(request);
   }
   let guide: string | null | undefined;
   try {
     guide = await missingListingGuide(db, slug);
   } catch (e) {
     console.error("[proxy] missing-listing lookup failed; letting the request through", e);
-    return NextResponse.next();
+    return next(request);
   }
-  if (guide === null) return NextResponse.next();
+  if (guide === null) return next(request);
   const headers = new Headers(request.headers);
   if (guide) headers.set(MISSING_LISTING_GUIDE_HEADER, guide);
   else headers.delete(MISSING_LISTING_GUIDE_HEADER);

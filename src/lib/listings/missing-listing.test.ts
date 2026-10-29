@@ -111,6 +111,22 @@ describe("the proxy on a listing page", () => {
     );
   });
 
+  it("strips a client-sent guide header from every request it lets through", async () => {
+    vi.mocked(missingListingGuide).mockResolvedValue(null);
+    for (const path of ["/no-such-page", `/homes/${SLUG}`]) {
+      const res = await proxy(req(path, { headers: { [MISSING_LISTING_GUIDE_HEADER]: "royston" } }));
+      expect(res.headers.get("x-middleware-next"), path).toBe("1");
+      // Without an override list, Next would forward the client's headers as sent.
+      const overridden = res.headers.get("x-middleware-override-headers");
+      expect(overridden, path).not.toBeNull();
+      expect(overridden, path).not.toContain(MISSING_LISTING_GUIDE_HEADER);
+      expect(forwarded(res), path).toBeNull();
+    }
+    // Without the header, the request passes through untouched.
+    const plain = await proxy(req("/no-such-page"));
+    expect(plain.headers.get("x-middleware-override-headers")).toBeNull();
+  });
+
   it("passes a shown listing through", async () => {
     vi.mocked(missingListingGuide).mockResolvedValue(null);
     const res = await proxy(req(`/homes/${SLUG}`));
