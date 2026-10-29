@@ -78,6 +78,7 @@ import {
   listingBreadcrumbJsonLd,
   listingBreadcrumbs,
   listingDescription,
+  listingJsonLd,
   listingTitle,
 } from "@/lib/listings/listing-seo";
 import { listingOfficeLabel } from "@/lib/listings/office-label";
@@ -86,7 +87,7 @@ import { normalizeTaxYear } from "@/lib/listings/tax-year";
 import { formatLastUpdated, mlsDisclaimer, sourceDisclaimer } from "@/lib/mls-copyright";
 import { gamlsLastSyncedAt } from "@/lib/mls/last-updated";
 import { financeFor, listingMonthlyCost, monthlyHoaAmount } from "@/lib/mortgage";
-import { isMarketState, normalizeState } from "@/lib/market-state";
+import { isMarketState } from "@/lib/market-state";
 import { OG_DEFAULT_IMAGE } from "@/lib/og";
 import { formatSchoolName } from "@/lib/search/school-name";
 
@@ -877,62 +878,8 @@ function eventLabel(e: ListingDetail["events"][number]): string {
 
 function JsonLd({ data }: { data: ListingDetail }) {
   const l = data.listing;
-  // Bare land is a place, not a residence.
-  const residenceType = isBareLand(l)
-    ? "Place"
-    : l.propertyType === "condo"
-      ? "Apartment"
-      : l.propertyType === "single_family"
-        ? "SingleFamilyResidence"
-        : "House";
-  const json = {
-    "@context": "https://schema.org",
-    "@type": "RealEstateListing",
-    name: formatFullAddress(l),
-    url: `${env.NEXT_PUBLIC_SITE_URL.replace(/\/+$/, "")}/homes/${l.slug}`,
-    datePosted: l.listDate ?? undefined,
-    description: l.description ? redactAccessCodes(l.description) : undefined,
-    image: data.media
-      .filter((m) => m.kind === "photo")
-      .slice(0, 8)
-      .map((m) => m.url),
-    offers: {
-      "@type": "Offer",
-      price: l.listPrice,
-      priceCurrency: "USD",
-      availability:
-        l.status === "active" || l.status === "coming_soon"
-          ? "https://schema.org/InStock"
-          : "https://schema.org/SoldOut",
-    },
-    about: {
-      "@type": residenceType,
-      address: l.hideAddress
-        ? {
-            "@type": "PostalAddress",
-            addressLocality: l.city,
-            addressRegion: normalizeState(l.state),
-            postalCode: l.postalCode,
-          }
-        : {
-            "@type": "PostalAddress",
-            streetAddress: formatStreet(l),
-            addressLocality: l.city,
-            addressRegion: normalizeState(l.state),
-            postalCode: l.postalCode,
-          },
-      numberOfBedrooms: l.bedrooms ?? undefined,
-      numberOfBathroomsTotal: l.bathrooms ?? undefined,
-      floorSize: l.livingAreaSqft
-        ? { "@type": "QuantitativeValue", value: l.livingAreaSqft, unitCode: "FTK" }
-        : undefined,
-      yearBuilt: l.yearBuilt ?? undefined,
-      geo:
-        l.latitude && l.longitude && !l.hideAddress
-          ? { "@type": "GeoCoordinates", latitude: l.latitude, longitude: l.longitude }
-          : undefined,
-    },
-  };
+  const photos = data.media.filter((m) => m.kind === "photo").map((m) => m.url);
+  const json = listingJsonLd(l, photos, env.NEXT_PUBLIC_SITE_URL);
   const breadcrumbs = listingBreadcrumbJsonLd(l, env.NEXT_PUBLIC_SITE_URL);
   return (
     <>
