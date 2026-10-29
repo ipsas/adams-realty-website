@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ListingCard } from "@/components/listings/listing-card";
 import { HeroSearch } from "@/components/search/hero-search";
-import { OrganizationJsonLd } from "@/components/seo/json-ld";
+import { OrganizationJsonLd, WebSiteJsonLd } from "@/components/seo/json-ld";
 import { Avatar } from "@/components/ui/avatar";
 import { LinkButton } from "@/components/ui/button";
 import { Photo } from "@/components/ui/photo";
@@ -52,6 +52,7 @@ export default async function HomePage() {
   return (
     <>
       <OrganizationJsonLd />
+      <WebSiteJsonLd />
       {/* Hero */}
       <section className="relative isolate flex min-h-[92svh] items-end overflow-hidden bg-brand-900">
         <Image

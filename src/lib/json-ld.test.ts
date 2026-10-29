@@ -8,6 +8,8 @@ import {
   organizationJsonLd,
   parseOfficeHours,
   serializeJsonLd,
+  websiteId,
+  websiteJsonLd,
 } from "./json-ld";
 
 const base = "https://www.example.com";
@@ -34,7 +36,7 @@ describe("organizationJsonLd", () => {
     expect(json.name).toBe(site.name);
     expect(json.legalName).toBe(site.legalName);
     expect(json.url).toBe(`${base}/`);
-    expect(json.telephone).toBe("+17062460053");
+    expect(json.telephone).toBe("+1-706-246-0053");
     expect(json.email).toBe(site.email);
     expect(json.address).toEqual({
       "@type": "PostalAddress",
@@ -48,9 +50,9 @@ describe("organizationJsonLd", () => {
 
   it("has a stable @id without a double slash", () => {
     expect(json["@id"]).toBe(organizationId(base));
-    expect(json["@id"]).toBe(`${base}/#organization`);
+    expect(json["@id"]).toBe(`${base}/#business`);
     expect(organizationJsonLd(base)["@id"]).toBe(json["@id"]);
-    expect(organizationJsonLd(`${base}/`)["@id"]).toBe(`${base}/#organization`);
+    expect(organizationJsonLd(`${base}/`)["@id"]).toBe(`${base}/#business`);
   });
 
   it("emits office hours parsed from site.hours", () => {
@@ -118,6 +120,7 @@ describe("organizationJsonLd", () => {
       "@type",
       "@id",
       "name",
+      "alternateName",
       "legalName",
       "url",
       "logo",
@@ -131,11 +134,11 @@ describe("organizationJsonLd", () => {
       "employee",
     ]);
     expect(prod).toMatchObject({
-      "@id": "https://adamsrealtyga.com/#organization",
+      "@id": "https://adamsrealtyga.com/#business",
       url: "https://adamsrealtyga.com/",
       logo: "https://adamsrealtyga.com/icon.svg",
       image: "https://adamsrealtyga.com/images/og-default.jpg",
-      telephone: "+17062460053",
+      telephone: "+1-706-246-0053",
       email: "contracts.adamsrealty@gmail.com",
       employee: { "@id": "https://adamsrealtyga.com/agents/andrea-anderegg#person" },
     });
@@ -176,6 +179,54 @@ describe("organizationJsonLd", () => {
     expect(serializeJsonLd(organizationJsonLd(base))).toBe(
       serializeJsonLd(organizationJsonLd(base)),
     );
+  });
+});
+
+describe("business and WebSite nodes (BR-A1)", () => {
+  const prodBase = "https://adamsrealtyga.com";
+  const business = organizationJsonLd(prodBase);
+  const website = websiteJsonLd(prodBase);
+
+  it("gives the business node its brand names, phone and address", () => {
+    expect(business["@id"]).toBe("https://adamsrealtyga.com/#business");
+    expect(business.alternateName).toEqual(["Adams Realty, Inc."]);
+    expect(business.name).toBe("Adams Realty");
+    expect(business.url).toBe("https://adamsrealtyga.com/");
+    expect(business.telephone).toBe("+1-706-246-0053");
+    expect(business.address).toEqual({
+      "@type": "PostalAddress",
+      streetAddress: "69 Mill Street",
+      addressLocality: "Royston",
+      addressRegion: "GA",
+      postalCode: "30662",
+      addressCountry: "US",
+    });
+    expect("sameAs" in business).toBe(false);
+  });
+
+  it("emits the WebSite node published by the business", () => {
+    expect(website).toEqual({
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "@id": "https://adamsrealtyga.com/#website",
+      name: "Adams Realty, Inc.",
+      url: "https://adamsrealtyga.com/",
+      publisher: { "@id": "https://adamsrealtyga.com/#business" },
+    });
+  });
+
+  it("links the two nodes by distinct @ids that survive serialization", () => {
+    expect(website.publisher["@id"]).toBe(business["@id"]);
+    expect(website["@id"]).not.toBe(business["@id"]);
+    expect(JSON.parse(serializeJsonLd(business))).toEqual(business);
+    expect(JSON.parse(serializeJsonLd(website))).toEqual(website);
+  });
+
+  it("gives the same ids for a trailing-slash base", () => {
+    const slashed = `${prodBase}/`;
+    expect(organizationJsonLd(slashed)["@id"]).toBe("https://adamsrealtyga.com/#business");
+    expect(websiteId(slashed)).toBe("https://adamsrealtyga.com/#website");
+    expect(websiteJsonLd(slashed)).toEqual(website);
   });
 });
 

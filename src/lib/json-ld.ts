@@ -4,7 +4,8 @@
  * URL is passed in, so tests can cover every "settings lack X" case. Optional
  * properties are left out, never set to `undefined`.
  * The broker is the one employee, referenced by her agent page's Person @id; the other agents
- * link back via their own Person's worksFor.
+ * link back via their own Person's worksFor. The homepage also emits a WebSite node whose publisher
+ * is the business @id.
  * Left out (no provided facts, or no data on every page): geo, sameAs, priceRange, ratings/reviews.
  */
 import { telHref } from "@/components/content/contact";
@@ -61,6 +62,7 @@ export type RealEstateAgentJsonLd = {
   "@type": "RealEstateAgent";
   "@id": string;
   name: string;
+  alternateName: readonly string[];
   legalName: string;
   url: string;
   logo: string;
@@ -87,6 +89,15 @@ export type PersonJsonLd = {
   worksFor: { "@type": "RealEstateAgent"; "@id": string; name: string };
 };
 
+export type WebSiteJsonLd = {
+  "@context": "https://schema.org";
+  "@type": "WebSite";
+  "@id": string;
+  name: string;
+  url: string;
+  publisher: { "@id": string };
+};
+
 /** JSON for a `<script type="application/ld+json">`; escaping "<" keeps any text from closing the tag. */
 export function serializeJsonLd(data: unknown): string {
   return JSON.stringify(data).replace(/</g, "\\u003c");
@@ -105,6 +116,13 @@ function absolute(baseUrl: string, path: string): string {
 /** "(706) 246-0053" → "+17062460053". */
 function e164(phone: string): string {
   return telHref(phone).replace(/^tel:/, "");
+}
+
+/** "(706) 246-0053" → "+1-706-246-0053"; anything but a +1 ten-digit number keeps its E.164 form. */
+function intlDashed(phone: string): string {
+  const intl = e164(phone);
+  const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(intl);
+  return m ? `+1-${m[1]}-${m[2]}-${m[3]}` : intl;
 }
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
@@ -147,7 +165,11 @@ export function parseOfficeHours(hours: string | null): OpeningHours | null {
 }
 
 export function organizationId(baseUrl: string): string {
-  return `${trimSlash(baseUrl)}/#organization`;
+  return `${trimSlash(baseUrl)}/#business`;
+}
+
+export function websiteId(baseUrl: string): string {
+  return `${trimSlash(baseUrl)}/#website`;
 }
 
 export function agentId(baseUrl: string, slug: string): string {
@@ -165,12 +187,13 @@ export function organizationJsonLd(
     "@type": "RealEstateAgent",
     "@id": organizationId(baseUrl),
     name: settings.name,
+    alternateName: ["Adams Realty, Inc."],
     legalName: settings.legalName,
     url: `${trimSlash(baseUrl)}/`,
     // src/app/icon.svg, served at /icon.svg.
     logo: absolute(baseUrl, "/icon.svg"),
     image: absolute(baseUrl, OG_DEFAULT_IMAGE.url),
-    telephone: e164(settings.phone),
+    telephone: intlDashed(settings.phone),
     email: settings.email,
     address: {
       "@type": "PostalAddress",
@@ -229,5 +252,19 @@ export function agentJsonLd(
     email: agent.email,
     ...(agent.photoUrl ? { image: absolute(baseUrl, agent.photoUrl) } : {}),
     worksFor: { "@type": "RealEstateAgent", "@id": organizationId(baseUrl), name: settings.name },
+  };
+}
+
+export function websiteJsonLd(
+  baseUrl: string,
+  settings: Pick<FirmSettings, "legalName"> = site,
+): WebSiteJsonLd {
+  return {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "@id": websiteId(baseUrl),
+    name: settings.legalName,
+    url: `${trimSlash(baseUrl)}/`,
+    publisher: { "@id": organizationId(baseUrl) },
   };
 }
