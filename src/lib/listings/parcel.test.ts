@@ -12,7 +12,7 @@ describe("displayParcel", () => {
   });
 
   it("hides it when missing or blank", () => {
-    for (const parcelNumber of [null, "", "   "]) {
+    for (const parcelNumber of [null, "", "   ", "\u200b\u2060 \ufeff"]) {
       expect(displayParcel({ ...live, parcelNumber }), String(parcelNumber)).toBeNull();
     }
   });

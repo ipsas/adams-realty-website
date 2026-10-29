@@ -1,5 +1,6 @@
 import { isNullLike } from "@/lib/format";
 import { EXCLUDED_FIELDS, withoutExcludedFields } from "@/lib/listings/excluded-fields";
+import { cleanParcel } from "@/lib/listings/parcel-value";
 import { normalizeTaxYear } from "@/lib/listings/tax-year";
 import { normalizeState } from "@/lib/market-state";
 import type { MapResult, NormalizedListing, NormalizedMedia, NormalizedOpenHouse } from "../types";
@@ -533,7 +534,7 @@ export function mapResoProperty(p: ResoProperty): MapResult {
     lotSizeDimensions: lotDimensions && !isNullLike(lotDimensions) ? lotDimensions : null,
     zoning: str(p.Zoning),
     // As the feed sends it, surrounding whitespace aside.
-    parcelNumber: str(p.ParcelNumber),
+    parcelNumber: cleanParcel(p.ParcelNumber),
 
     associationYN: bool(p.AssociationYN) ?? (hoaFee !== null && hoaFee > 0 ? true : null),
     hoaFee: bool(p.AssociationYN) === false ? null : hoaFee,

@@ -252,7 +252,7 @@ describe("mapResoProperty", () => {
     expect(mapOk({ ...base, ParcelNumber: "  046 023A " }).parcelNumber).toBe("046 023A");
     expect(mapOk({ ...base, ParcelNumber: "R12-0034-01" }).parcelNumber).toBe("R12-0034-01");
     expect(mapOk(base).parcelNumber).toBeNull();
-    for (const s of ["", "   ", null]) {
+    for (const s of ["", "   ", "\u200b\u2060 \ufeff", null]) {
       expect(mapOk({ ...base, ParcelNumber: s }).parcelNumber, String(s)).toBeNull();
     }
   });
