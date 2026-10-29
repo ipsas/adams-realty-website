@@ -1,5 +1,6 @@
 /**
- * A listing page's title, meta description and BreadcrumbList JSON-LD (/homes/[slug]).
+ * A listing page's title, meta description and RealEstateListing/BreadcrumbList JSON-LD
+ * (/homes/[slug]).
  * Pure: built only from the listing's own facts and the existing formatters, so every
  * "missing fact" case is unit-tested (listing-seo.test.ts).
  */
@@ -8,6 +9,8 @@ import { site } from "@/config/site";
 import { guideForLocation } from "@/lib/areas/match";
 import {
   formatBaths,
+  formatFullAddress,
+  formatMonthly,
   formatNumber,
   formatPrice,
   formatStreet,
@@ -16,6 +19,7 @@ import {
   PROPERTY_TYPE_LABELS,
 } from "@/lib/format";
 import { redactAccessCodes } from "@/lib/listings/excluded-fields";
+import { isBareLand } from "@/lib/listings/land";
 import { isMarketState, normalizeState } from "@/lib/state-name";
 
 export type ListingSeoInput = {
@@ -31,6 +35,8 @@ export type ListingSeoInput = {
   livingAreaSqft: number | null;
   propertyType: string;
   description: string | null;
+  /** "rent" prices `listPrice` per month; anything else is a sale. */
+  transactionType?: string | null;
 };
 
 /** Longest title kept whole; longer ones drop " | Adams Realty", then the ZIP. */
@@ -40,14 +46,18 @@ export const LISTING_TITLE_MAX = 65;
 export const MIN_REMARKS_LENGTH = 70;
 
 /**
- * "123 Main St, Royston, GA 30662 – $250,000 | Adams Realty". Over 65 characters it drops
- * the brand, then the ZIP; still over, it is kept whole rather than cut mid-word.
+ * "123 Main St, Royston, GA 30662 – $250,000 | Adams Realty" (a rental: "– For rent
+ * $1,800/mo"). Over 65 characters it drops the brand, then the ZIP; still over, it is kept
+ * whole rather than cut mid-word.
  * A hidden address reads as the page heading does ("Address withheld by seller").
  */
 export function listingTitle(l: ListingSeoInput): string {
   const place = `${formatStreet(l)}, ${l.city}, ${normalizeState(l.state)}`;
   const zip = l.postalCode?.trim();
-  const price = formatPrice(l.listPrice);
+  const price =
+    l.transactionType === "rent"
+      ? `For rent ${formatMonthly(l.listPrice)}`
+      : formatPrice(l.listPrice);
   const brand = ` | ${site.name}`;
   const candidates = [
     `${place}${zip ? ` ${zip}` : ""} – ${price}${brand}`,
@@ -74,6 +84,89 @@ export function listingDescription(l: ListingSeoInput): string {
     `, listed at ${formatPrice(l.listPrice)}.`,
   ].join("");
   return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+export type ListingJsonLdInput = Omit<ListingSeoInput, "postalCode"> & {
+  postalCode: string;
+  slug: string;
+  status: string;
+  listDate: string | null;
+  yearBuilt: number | null;
+  latitude: number | null;
+  longitude: number | null;
+};
+
+/**
+ * The page's RealEstateListing JSON-LD, with up to 8 of its photo URLs. A rental's offer is a
+ * GoodRelations LeaseOut priced per month (UN/CEFACT "MON").
+ */
+export function listingJsonLd(l: ListingJsonLdInput, photos: string[], baseUrl: string) {
+  // Bare land is a place, not a residence.
+  const residenceType = isBareLand(l)
+    ? "Place"
+    : l.propertyType === "condo"
+      ? "Apartment"
+      : l.propertyType === "single_family"
+        ? "SingleFamilyResidence"
+        : "House";
+  const availability =
+    l.status === "active" || l.status === "coming_soon"
+      ? "https://schema.org/InStock"
+      : "https://schema.org/SoldOut";
+  const offers =
+    l.transactionType === "rent"
+      ? {
+          "@type": "Offer",
+          businessFunction: "http://purl.org/goodrelations/v1#LeaseOut",
+          price: l.listPrice,
+          priceCurrency: "USD",
+          priceSpecification: {
+            "@type": "UnitPriceSpecification",
+            price: l.listPrice,
+            priceCurrency: "USD",
+            unitCode: "MON",
+            referenceQuantity: { "@type": "QuantitativeValue", value: 1, unitCode: "MON" },
+          },
+          availability,
+        }
+      : { "@type": "Offer", price: l.listPrice, priceCurrency: "USD", availability };
+  return {
+    "@context": "https://schema.org",
+    "@type": "RealEstateListing",
+    name: formatFullAddress(l),
+    url: `${baseUrl.replace(/\/+$/, "")}/homes/${l.slug}`,
+    datePosted: l.listDate ?? undefined,
+    description: l.description ? redactAccessCodes(l.description) : undefined,
+    image: photos.slice(0, 8),
+    offers,
+    about: {
+      "@type": residenceType,
+      address: l.hideAddress
+        ? {
+            "@type": "PostalAddress",
+            addressLocality: l.city,
+            addressRegion: normalizeState(l.state),
+            postalCode: l.postalCode,
+          }
+        : {
+            "@type": "PostalAddress",
+            streetAddress: formatStreet(l),
+            addressLocality: l.city,
+            addressRegion: normalizeState(l.state),
+            postalCode: l.postalCode,
+          },
+      numberOfBedrooms: l.bedrooms ?? undefined,
+      numberOfBathroomsTotal: l.bathrooms ?? undefined,
+      floorSize: l.livingAreaSqft
+        ? { "@type": "QuantitativeValue", value: l.livingAreaSqft, unitCode: "FTK" }
+        : undefined,
+      yearBuilt: l.yearBuilt ?? undefined,
+      geo:
+        l.latitude && l.longitude && !l.hideAddress
+          ? { "@type": "GeoCoordinates", latitude: l.latitude, longitude: l.longitude }
+          : undefined,
+    },
+  };
 }
 
 export type ListingBreadcrumbInput = Pick<

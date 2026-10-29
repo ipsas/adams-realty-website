@@ -5,6 +5,7 @@ import {
   listingBreadcrumbJsonLd,
   listingBreadcrumbs,
   listingDescription,
+  listingJsonLd,
   listingTitle,
   type ListingBreadcrumbInput,
   type ListingSeoInput,
@@ -85,6 +86,94 @@ describe("listingTitle", () => {
     const t = listingTitle({ ...home, hideAddress: true });
     expect(t).toBe("Address withheld by seller, Royston, GA 30662 – $250,000");
     expect(t).not.toContain("12 Oak St");
+  });
+
+  describe("a rental", () => {
+    const rental: ListingSeoInput = { ...home, listPrice: 1800, transactionType: "rent" };
+
+    it("prices it per month, for rent", () => {
+      expect(listingTitle(rental)).toBe(
+        "12 Oak St, Royston, GA 30662 – For rent $1,800/mo | Adams Realty",
+      );
+    });
+
+    it("drops the brand first when too long", () => {
+      const t = listingTitle({ ...rental, addressLine1: "123 Main Street" });
+      expect(t).toBe("123 Main Street, Royston, GA 30662 – For rent $1,800/mo");
+      expect(t.length).toBeLessThanOrEqual(LISTING_TITLE_MAX);
+    });
+
+    it("then drops the ZIP", () => {
+      const t = listingTitle({
+        ...rental,
+        addressLine1: "1161 Rose Terrace Circle",
+        city: "Loganville",
+        postalCode: "30052",
+      });
+      expect(t).toBe("1161 Rose Terrace Circle, Loganville, GA – For rent $1,800/mo");
+      expect(t.length).toBeLessThanOrEqual(LISTING_TITLE_MAX);
+    });
+
+    it("leaves a sale title as it was", () => {
+      expect(listingTitle({ ...home, transactionType: "sale" })).toBe(listingTitle(home));
+      expect(listingTitle({ ...home, transactionType: null })).toBe(
+        "12 Oak St, Royston, GA 30662 – $250,000 | Adams Realty",
+      );
+    });
+  });
+});
+
+describe("listingJsonLd", () => {
+  const listing = {
+    ...home,
+    postalCode: "30662",
+    slug: "12-oak-st-royston-ga-30662",
+    status: "active",
+    listDate: "2026-10-01",
+    yearBuilt: 1998,
+    latitude: 34.28,
+    longitude: -83.11,
+  };
+
+  it("offers a sale at its price, without a lease or unit price", () => {
+    const json = listingJsonLd(listing, ["https://img/1.jpg"], `${base}/`);
+    expect(json.offers).toEqual({
+      "@type": "Offer",
+      price: 250000,
+      priceCurrency: "USD",
+      availability: "https://schema.org/InStock",
+    });
+    expect(json).toMatchObject({
+      "@type": "RealEstateListing",
+      name: "12 Oak St, Royston, GA 30662",
+      url: `${base}/homes/12-oak-st-royston-ga-30662`,
+      datePosted: "2026-10-01",
+      image: ["https://img/1.jpg"],
+      about: { "@type": "SingleFamilyResidence", yearBuilt: 1998 },
+    });
+  });
+
+  it("offers a rental as a lease priced per month", () => {
+    const json = listingJsonLd({ ...listing, listPrice: 1800, transactionType: "rent" }, [], base);
+    expect(json.offers).toEqual({
+      "@type": "Offer",
+      businessFunction: "http://purl.org/goodrelations/v1#LeaseOut",
+      price: 1800,
+      priceCurrency: "USD",
+      priceSpecification: {
+        "@type": "UnitPriceSpecification",
+        price: 1800,
+        priceCurrency: "USD",
+        unitCode: "MON",
+        referenceQuantity: { "@type": "QuantitativeValue", value: 1, unitCode: "MON" },
+      },
+      availability: "https://schema.org/InStock",
+    });
+  });
+
+  it("keeps up to 8 photos", () => {
+    const photos = Array.from({ length: 10 }, (_, i) => `https://img/${i}.jpg`);
+    expect(listingJsonLd(listing, photos, base).image).toEqual(photos.slice(0, 8));
   });
 });
 
