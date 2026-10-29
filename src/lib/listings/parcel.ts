@@ -1,3 +1,4 @@
+import { cleanParcel } from "./parcel-value";
 import { canShowDetails } from "./visibility";
 
 type ParcelSubject = Parameters<typeof canShowDetails>[0] & { parcelNumber: string | null };
@@ -9,5 +10,5 @@ type ParcelSubject = Parameters<typeof canShowDetails>[0] & { parcelNumber: stri
  */
 export function displayParcel(l: ParcelSubject): string | null {
   if (!canShowDetails(l)) return null;
-  return l.parcelNumber?.trim() || null;
+  return cleanParcel(l.parcelNumber);
 }

@@ -781,11 +781,13 @@ function BigFact({ icon, label, value }: { icon: ReactNode; label: string; value
 function Fact({ icon, label, value }: { icon: ReactNode; label: string; value: ReactNode }) {
   return (
     <div className="flex items-center gap-3 border-b border-line pb-3 [&_svg]:size-[18px] [&_svg]:text-faint">
-      <dt className="flex items-center gap-3 text-sm text-muted">
+      <dt className="flex shrink-0 items-center gap-3 text-sm text-muted">
         <span aria-hidden="true">{icon}</span>
         {label}
       </dt>
-      <dd className="ml-auto text-sm font-medium text-ink">{value}</dd>
+      <dd className="ml-auto min-w-0 text-right text-sm font-medium text-ink [overflow-wrap:anywhere]">
+        {value}
+      </dd>
     </div>
   );
 }

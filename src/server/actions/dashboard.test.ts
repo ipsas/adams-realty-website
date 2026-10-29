@@ -311,6 +311,7 @@ describe("saveListing", () => {
     ["  046 023A ", "046 023A"],
     ["", null],
     ["   ", null],
+    ["\u200b\u2060 \ufeff", null],
   ])("stores a parcel number of %j as %j", async (parcelNumber, stored) => {
     queueUpdate();
     const res = await saveListing({ ok: false }, form({ parcelNumber }));

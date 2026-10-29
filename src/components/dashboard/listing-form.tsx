@@ -422,6 +422,7 @@ function ListingFields({
             name="parcelNumber"
             defaultValue={v.parcelNumber ?? ""}
             maxLength={64}
+            aria-invalid={invalid("parcelNumber")}
             className={control}
           />
         </Field>

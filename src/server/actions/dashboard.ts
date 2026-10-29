@@ -26,6 +26,7 @@ import { sendLeadAssignedEmail } from "@/lib/leads/notify";
 import { LISTINGS_TAG } from "@/lib/listings/cache-tags";
 import { editorAssociationYN } from "@/lib/listings/detail-fields";
 import { lotSizeToSqft } from "@/lib/listings/land";
+import { cleanParcel } from "@/lib/listings/parcel-value";
 import { upsertListing } from "@/lib/listings/persist";
 import { refreshPlaces } from "@/lib/listings/places";
 import { SyncFailedError, syncSource } from "@/lib/mls/sync";
@@ -223,7 +224,7 @@ const listingSchema = z.object({
     .regex(/^\d{5}$/, "Enter a 5-digit ZIP"),
   county: text(100),
   neighborhood: text(100),
-  parcelNumber: text(64),
+  parcelNumber: text(64).transform(cleanParcel),
   latitude: num(-90, 90),
   longitude: num(-180, 180),
   bedrooms: int(0, 50),
