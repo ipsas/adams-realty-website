@@ -1,51 +1,53 @@
-import { cache } from "react";
-import type { Area } from "@/config/areas";
-import { areas } from "@/config/areas";
-import { areaMatchKeys, guideForLocation } from "@/lib/areas/match";
-import { isMarketState, MARKET_STATE_SPELLINGS } from "@/lib/state-name";
+import { areas, type Area } from "@/config/areas";
+import { isMarketState } from "@/lib/state-name";
 import { slugify } from "./slug";
 
 /**
- * Hands a missing listing's slug from /homes/[slug] to its not-found.tsx, which gets no params.
- * Next renders a segment's not-found element in the same request as its page, but alongside
- * it, not after it, so the boundary awaits `slug`. The page always settles it: the slug
- * before `notFound()`, null once it knows the listing is shown (or its lookup threw).
+ * A missing listing's 404 links to its town's area guide. In Next 16.3 a
+ * page-level `notFound()` on a matched route server-renders an empty error
+ * shell (the not-found UI is only in the RSC payload; vercel/next.js #99793),
+ * so the proxy looks the listing up first and, when it isn't shown, rewrites
+ * to a URL no route matches: Next then server-renders the root not-found with
+ * a 404. The guide travels in this request header. Pure (no database, no
+ * React), so src/proxy.ts can import it.
  */
-export const missingListing = cache(() => {
-  let settle!: (slug: string | null) => void;
-  const slug = new Promise<string | null>((resolve) => (settle = resolve));
-  return { slug, settle };
-});
+export const MISSING_LISTING_GUIDE_HEADER = "x-missing-listing-guide";
 
-/** The towns the guides match on `listings.city`, as slug segments, longest first. */
-const GUIDE_CITY_SEGMENTS = [
-  ...new Set(areas.flatMap((a: Area) => areaMatchKeys(a).cities.map(slugify))),
-].sort((a, b) => b.length - a.length);
+/** The slug in a listing page path (`/homes/<slug>`), decoded; null for any other path. */
+export function listingPagePathSlug(path: string): string | null {
+  const m = /^\/homes\/([^/]+)$/.exec(path);
+  if (!m || m[1].endsWith(".xml")) return null;
+  try {
+    return decodeURIComponent(m[1]) || null;
+  } catch {
+    return null;
+  }
+}
 
-const STATE_SEGMENTS = MARKET_STATE_SPELLINGS.map(slugify);
+const SLUG_TAIL = /^(.+)-ga-\d{5}(?:-\d{4})?-[0-9a-z]{7}$/;
 
 /**
- * The area guide for a listing we can't show, if we publish one for its town. With its row
- * (a removed or sold listing), its own city and county decide (`guideForLocation`).
- * Without one, the town is read from the slug (`listingSlug`:
- * `{address}-{city}-{state}-{zip}-{hash}`): only the segment right before the state and
- * ZIP, and only when it's a town a guide matches on its city.
+ * The guide for a missing listing's town, by exact slug only: a Hartwell
+ * listing gets "hartwell", never "lake-hartwell". From the row when there is
+ * one (Georgia only), else from the slug's `{address}-{city}-ga-{zip}-{hash}`
+ * shape, trying the shortest city ending first so a street name can't win.
  */
-export function guideForListingSlug(
+export function guideSlugForMissingListing(
   slug: string,
-  row?: { city: string; state: string; county: string | null } | null,
-): Area | undefined {
-  if (row)
-    return isMarketState(row.state) ? guideForLocation(null, row.city, row.county) : undefined;
-  const place = /^(.+)-[0-9a-z]{7}$/.exec(slug)?.[1]?.replace(/-\d{5}(?:-\d{4})?$/, "");
-  if (!place) return undefined;
-  for (const state of STATE_SEGMENTS) {
-    for (const city of GUIDE_CITY_SEGMENTS) {
-      const tail = `${city}-${state}`;
-      if (place === tail || place.endsWith(`-${tail}`)) {
-        return guideForLocation(null, city.replace(/-/g, " "));
-      }
-    }
+  row?: { city: string; state: string } | null,
+): string | undefined {
+  if (row) return isMarketState(row.state) ? guideBySlug(slugify(row.city))?.slug : undefined;
+  const m = SLUG_TAIL.exec(slug);
+  if (!m) return undefined;
+  const words = m[1].split("-");
+  for (let k = 1; k <= Math.min(4, words.length); k++) {
+    const guide = guideBySlug(words.slice(-k).join("-"));
+    if (guide) return guide.slug;
   }
   return undefined;
+}
+
+/** The area guide with exactly this slug. The not-found page trusts the header only through this. */
+export function guideBySlug(slug: string | null | undefined): Area | undefined {
+  return slug ? areas.find((a) => a.slug === slug) : undefined;
 }

@@ -465,19 +465,6 @@ export async function getPlacesIndex(): Promise<PlacesIndexCounty[]> {
 }
 
 /**
- * The town of a listing row by slug, shown or not, for its 404 page's area-guide link
- * (src/app/homes/[slug]/not-found.tsx). Location columns only.
- */
-export const getListingPlaceBySlug = cache(async (slug: string) => {
-  const [row] = await db
-    .select({ city: listings.city, state: listings.state, county: listings.county })
-    .from(listings)
-    .where(eq(listings.slug, slug.slice(0, 200)))
-    .limit(1);
-  return row ?? null;
-});
-
-/**
  * The listing a problem report is about (/listing-corrections?listing=<slug>):
  * just enough to name it. Null for unknown slugs and for feed listings the
  * rules keep off the site (the report form still works without it).
