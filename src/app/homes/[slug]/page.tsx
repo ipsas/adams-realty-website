@@ -81,6 +81,7 @@ import {
   listingTitle,
 } from "@/lib/listings/listing-seo";
 import { listingOfficeLabel } from "@/lib/listings/office-label";
+import { displayParcel } from "@/lib/listings/parcel";
 import { getListingBySlug, getSimilarListings, type ListingDetail } from "@/lib/listings/queries";
 import { normalizeTaxYear } from "@/lib/listings/tax-year";
 import { formatLastUpdated, mlsDisclaimer, sourceDisclaimer } from "@/lib/mls-copyright";
@@ -129,6 +130,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
     listAgentMlsId: agent?.mlsAgentId,
   });
   const taxYear = normalizeTaxYear(l.taxYear);
+  const parcel = displayParcel(l);
   const disclaimer = sourceDisclaimer(source);
   // IDX: a page with Georgia MLS listings (this one or a similar home) shows its disclaimer.
   const footerDisclaimer =
@@ -431,6 +433,7 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                   ) : null}
                   <Fact icon={<Clock />} label="Listed" value={formatDate(l.listDate)} />
                   {l.mlsNumber && <Fact icon={<Hash />} label="MLS #" value={l.mlsNumber} />}
+                  {parcel && <Fact icon={<Hash />} label="Parcel #" value={parcel} />}
                 </dl>
               </Section>
 

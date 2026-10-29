@@ -45,6 +45,7 @@ export type ResoOpenHouse = {
 
 export type ResoProperty = Record<string, unknown> & {
   ListingKey?: string;
+  ParcelNumber?: string | null;
   Media?: ResoMedia[];
   OpenHouse?: ResoOpenHouse[];
 };
@@ -531,6 +532,8 @@ export function mapResoProperty(p: ResoProperty): MapResult {
     seniorCommunity: bool(p.SeniorCommunityYN),
     lotSizeDimensions: lotDimensions && !isNullLike(lotDimensions) ? lotDimensions : null,
     zoning: str(p.Zoning),
+    // As the feed sends it, surrounding whitespace aside.
+    parcelNumber: str(p.ParcelNumber),
 
     associationYN: bool(p.AssociationYN) ?? (hoaFee !== null && hoaFee > 0 ? true : null),
     hoaFee: bool(p.AssociationYN) === false ? null : hoaFee,

@@ -307,6 +307,24 @@ describe("saveListing", () => {
     });
   });
 
+  it.each([
+    ["  046 023A ", "046 023A"],
+    ["", null],
+    ["   ", null],
+  ])("stores a parcel number of %j as %j", async (parcelNumber, stored) => {
+    queueUpdate();
+    const res = await saveListing({ ok: false }, form({ parcelNumber }));
+    expect(res.ok).toBe(true);
+    expect(h.state.upserts[0].parcelNumber).toBe(stored);
+  });
+
+  it("rejects a parcel number over 64 characters, pointing at the field", async () => {
+    const res = await saveListing({ ok: false }, form({ parcelNumber: "1".repeat(65) }));
+    expect(res.ok).toBe(false);
+    expect(res.errors?.parcelNumber).toBeDefined();
+    expect(h.state.upserts).toEqual([]);
+  });
+
   it("returns the save stamp so the form can remount", async () => {
     queueUpdate();
     const res = await saveListing({ ok: false }, form());

@@ -245,6 +245,8 @@ export const listings = pgTable(
     seniorCommunity: boolean("senior_community"),
     lotSizeDimensions: text("lot_size_dimensions"),
     zoning: text("zoning"),
+    /** County tax parcel number (RESO `ParcelNumber`). */
+    parcelNumber: text("parcel_number"),
 
     /** RESO AssociationYN: false is "no HOA", null is unknown. */
     associationYN: boolean("association_yn"),

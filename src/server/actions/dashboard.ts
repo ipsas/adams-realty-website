@@ -223,6 +223,7 @@ const listingSchema = z.object({
     .regex(/^\d{5}$/, "Enter a 5-digit ZIP"),
   county: text(100),
   neighborhood: text(100),
+  parcelNumber: text(64),
   latitude: num(-90, 90),
   longitude: num(-180, 180),
   bedrooms: int(0, 50),
@@ -379,6 +380,7 @@ export async function saveListing(
     seniorCommunity: existing?.seniorCommunity ?? null,
     lotSizeDimensions: existing?.lotSizeDimensions ?? null,
     zoning: existing?.zoning ?? null,
+    parcelNumber: d.parcelNumber,
     // Follows the fee alone (the editor has no HOA checkbox): see editorAssociationYN.
     associationYN: editorAssociationYN(d.hoaFee),
     hoaFee: d.hoaFee ?? null,

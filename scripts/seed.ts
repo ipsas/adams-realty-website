@@ -559,6 +559,12 @@ function generateListing(i: number, opts: GenerateOptions): Generated {
     hoaFrequency: hoa ? "monthly" : null,
     taxAnnualAmount: taxes,
     taxYear: taxes ? NOW.getUTCFullYear() - 1 : null,
+    // A tax parcel number on every third listing, so pages show it with and without
+    // (from the index, not the random stream, so the rest of the seed is unchanged).
+    parcelNumber:
+      i % 3 === 0
+        ? `${String(10 + (i % 90)).padStart(3, "0")} ${String(i % 1000).padStart(3, "0")}`
+        : null,
     addressLine1: `${streetNumber} ${street}`,
     unitNumber: unit,
     city,
