@@ -51,12 +51,9 @@ import { SaveSearchButton, useSaveSearch, type SaveSearchState } from "./save-se
 import { buildSearchHref, currentView, useSearchNav } from "./use-search-nav";
 
 /**
- * Cards whose photo is in the server HTML (the first rows; site review #10): the first is
- * preloaded at high priority (the LCP), the rest use native lazy loading so they don't
- * compete with it. Later cards wait for CARD_PHOTOS_NEAR_PX.
+ * How close (px) a card after the first must come to the screen before its photo loads. Only
+ * the first card's photo is in the server HTML (preloaded, the LCP), so nothing competes with it.
  */
-const EAGER_CARDS = 4;
-/** How close (px) a later card must come to the screen before its photo loads. */
 const CARD_PHOTOS_NEAR_PX = 400;
 
 /** What a search with no results offers (computed on the server; site review #5). */
@@ -320,12 +317,11 @@ export function SearchView({
                   <ListingCard
                     key={l.id}
                     listing={l}
-                    // Only the first card's photo is the page's LCP: preloaded, high priority.
-                    // The rest of the first rows lazy-load natively, so they don't compete with it.
+                    // Only the first card's photo is in the server HTML: the page's LCP, preloaded.
                     priority={i === 0 ? "preload" : false}
-                    // Below the first rows, a photo waits until its card is near the screen:
-                    // on a slow signal the browser's own lazy loading reaches ~2,500 px ahead.
-                    photoNearPx={i < EAGER_CARDS ? undefined : CARD_PHOTOS_NEAR_PX}
+                    // The rest are added as they near the screen (after hydration), so nothing
+                    // competes with the LCP image.
+                    photoNearPx={i === 0 ? undefined : CARD_PHOTOS_NEAR_PX}
                     highlighted={highlighted === l.id}
                     onHover={setHighlighted}
                     sizes="(min-width: 1536px) 22vw, (min-width: 1024px) 26vw, (min-width: 640px) 45vw, 92vw"
