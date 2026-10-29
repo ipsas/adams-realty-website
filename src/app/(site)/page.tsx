@@ -198,8 +198,8 @@ export default async function HomePage() {
               }
             />
             <div className="grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
-              {featured.map((l, i) => (
-                <ListingCard key={l.id} listing={l} priority={i < 4} />
+              {featured.map((l) => (
+                <ListingCard key={l.id} listing={l} photoNearPx={HOME_CARD_PHOTOS_NEAR_PX} />
               ))}
             </div>
           </Container>
@@ -391,7 +391,7 @@ export default async function HomePage() {
             />
             <div className="grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
               {newest.map((l) => (
-                <ListingCard key={l.id} listing={l} />
+                <ListingCard key={l.id} listing={l} photoNearPx={HOME_CARD_PHOTOS_NEAR_PX} />
               ))}
             </div>
           </Container>
@@ -400,3 +400,9 @@ export default async function HomePage() {
     </>
   );
 }
+
+/**
+ * Both listing grids sit below the hero, so their photos wait until a card is this close to the
+ * screen instead of competing with the hero for the first paint.
+ */
+const HOME_CARD_PHOTOS_NEAR_PX = 400;
