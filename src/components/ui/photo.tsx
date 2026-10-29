@@ -8,9 +8,17 @@
 
 import { House } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { preload } from "react-dom";
 import { PHONE_MEDIA } from "@/config/images";
 import { cn } from "@/lib/cn";
 import { photoSources } from "@/lib/photos";
+
+/**
+ * How soon a photo loads. `true`: now, ahead of other images. "eager": now, at normal priority
+ * (above the fold, but not the page's largest image). "preload": like `true`, and also named
+ * in the document head so the browser starts it before it reaches the <img> (the page's LCP).
+ */
+export type PhotoPriority = boolean | "eager" | "preload";
 
 export function Photo({
   src,
@@ -25,8 +33,8 @@ export function Photo({
   alt: string;
   sizes?: string;
   className?: string;
-  /** Above the fold: load now, ahead of other images. Everything else loads near the viewport. */
-  priority?: boolean;
+  /** Above the fold (see PhotoPriority). Everything else loads near the viewport. */
+  priority?: PhotoPriority;
   fallbackClassName?: string;
   /**
    * Hold the photo back until its box is within this many px of the screen (an empty frame
@@ -70,6 +78,26 @@ export function Photo({
   if (!shown) return <div ref={frame} aria-hidden className={cn("bg-sunken", className)} />;
 
   const sources = photoSources(src, sizes);
+  const high = priority === true || priority === "preload";
+  if (priority === "preload") {
+    // Phones take the <source>'s set, so only they preload it; elsewhere the <img> starts it.
+    if (sources.phoneSrcSet) {
+      preload(sources.src, {
+        as: "image",
+        imageSrcSet: sources.phoneSrcSet,
+        imageSizes: sizes,
+        media: PHONE_MEDIA,
+        fetchPriority: "high",
+      });
+    } else {
+      preload(sources.src, {
+        as: "image",
+        imageSrcSet: sources.srcSet,
+        imageSizes: sources.srcSet ? sizes : undefined,
+        fetchPriority: "high",
+      });
+    }
+  }
   return (
     // `contents`: the <picture> adds no box, so the <img> sizes and positions as before.
     <picture className="contents">
@@ -83,7 +111,7 @@ export function Photo({
         sizes={sources.srcSet ? sizes : undefined}
         alt={alt}
         loading={priority ? "eager" : "lazy"}
-        fetchPriority={priority ? "high" : undefined}
+        fetchPriority={high ? "high" : undefined}
         decoding="async"
         onError={() => setFailed(true)}
         className={cn("object-cover", className)}

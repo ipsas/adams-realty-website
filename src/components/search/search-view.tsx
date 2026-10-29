@@ -9,6 +9,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type MouseEvent,
   type RefObject,
   type UIEvent,
@@ -67,11 +68,38 @@ export type EmptyHelp = {
   elsewhere?: { mode: SearchMode; count: number }[];
 };
 
+const MapPlaceholder = () => <div className="size-full animate-pulse bg-sunken" />;
+
 // MapLibre touches `window` at import time, so the map only renders on the client.
 const SearchMap = dynamic(() => import("./search-map"), {
   ssr: false,
-  loading: () => <div className="size-full animate-pulse bg-sunken" />,
+  loading: MapPlaceholder,
 });
+
+/** Tailwind's `lg`: the map shows beside the list. */
+const LG_MEDIA = "(min-width: 1024px)";
+
+function subscribeLg(onChange: () => void) {
+  const mq = window.matchMedia(LG_MEDIA);
+  mq.addEventListener("change", onChange);
+  return () => mq.removeEventListener("change", onChange);
+}
+
+/**
+ * Whether to mount the map (and so fetch MapLibre): once it can be seen, at lg and up or when a
+ * phone first opens the map view. A phone that stays on the list never downloads it. Once
+ * mounted it stays, so switching back and forth keeps the map where it was.
+ */
+function useMapMounted(mobileView: "list" | "map"): boolean {
+  const lg = useSyncExternalStore(
+    subscribeLg,
+    () => window.matchMedia(LG_MEDIA).matches,
+    () => false,
+  );
+  const [mounted, setMounted] = useState(false);
+  if (!mounted && (lg || mobileView === "map")) setMounted(true);
+  return mounted || lg || mobileView === "map";
+}
 
 export function SearchView({
   criteria,
@@ -135,6 +163,7 @@ export function SearchView({
   const here = query ? `/homes?${query}` : "/homes";
 
   const restore = usePlaceRestoration({ here, listRef, mobileView, setView });
+  const mapMounted = useMapMounted(mobileView);
 
   // A tap on a card (or its heart) or on the map's preview remembers the card and the list's
   // place, and marks the hand-off so the listing's "Back to results" acts like Back.
@@ -287,7 +316,8 @@ export function SearchView({
                   <ListingCard
                     key={l.id}
                     listing={l}
-                    priority={i < EAGER_CARDS}
+                    // Only the first card's photo is the page's LCP: preloaded, high priority.
+                    priority={i === 0 ? "preload" : i < EAGER_CARDS && "eager"}
                     // Below the first rows, a photo waits until its card is near the screen:
                     // on a slow signal the browser's own lazy loading reaches ~2,500 px ahead.
                     photoNearPx={i < EAGER_CARDS ? undefined : CARD_PHOTOS_NEAR_PX}
@@ -328,25 +358,29 @@ export function SearchView({
           )}
         >
           <div className="relative min-h-0 flex-1">
-            <SearchMap
-              pins={pins}
-              bounds={criteria.bounds}
-              placeBounds={emptyHelp?.placeBounds ?? undefined}
-              fitKey={fitKey}
-              highlightedId={highlighted}
-              onHover={setHighlighted}
-              onUserMove={(bounds) => {
-                if (!searchAsMove) return;
-                // The town (or the counties) gives way to the map: every home in view, with a
-                // way back.
-                if (criteria.q || criteria.counties) {
-                  update(
-                    { bounds, q: undefined, counties: undefined },
-                    { from: place ?? criteria.q },
-                  );
-                } else update({ bounds });
-              }}
-            />
+            {mapMounted ? (
+              <SearchMap
+                pins={pins}
+                bounds={criteria.bounds}
+                placeBounds={emptyHelp?.placeBounds ?? undefined}
+                fitKey={fitKey}
+                highlightedId={highlighted}
+                onHover={setHighlighted}
+                onUserMove={(bounds) => {
+                  if (!searchAsMove) return;
+                  // The town (or the counties) gives way to the map: every home in view, with a
+                  // way back.
+                  if (criteria.q || criteria.counties) {
+                    update(
+                      { bounds, q: undefined, counties: undefined },
+                      { from: place ?? criteria.q },
+                    );
+                  } else update({ bounds });
+                }}
+              />
+            ) : (
+              <MapPlaceholder />
+            )}
             <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
               {/* data-map-overlay: the map pans an open popup out from under it (search-map). */}
               <div

@@ -1,4 +1,3 @@
-import { z } from "zod";
 import { GEORGIA_COUNTIES } from "@/config/georgia-counties";
 import { countyDisplay, normalizeCounty } from "@/lib/areas/county-name";
 import {
@@ -193,34 +192,36 @@ function getAll(raw: RawParams, key: string): string[] {
 const INT_TEXT = /^\d+$/;
 const DECIMAL_TEXT = /^\d+(?:\.\d+)?$/;
 
-const intish = (min: number, max: number) =>
-  z
-    .string()
-    .trim()
-    .regex(INT_TEXT)
-    .transform(Number)
-    .pipe(z.number().int().min(min).max(max))
-    .optional()
-    .catch(undefined);
+/** A whole number in [min, max] written as INT_TEXT (surrounding space allowed), else undefined. */
+const intish = (min: number, max: number) => ({
+  parse: (value: string | undefined) => inRange(value, INT_TEXT, min, max),
+});
 
-const numish = (min: number, max: number) =>
-  z
-    .string()
-    .trim()
-    .regex(DECIMAL_TEXT)
-    .transform(Number)
-    .pipe(z.number().min(min).max(max))
-    .optional()
-    .catch(undefined);
+/** Like `intish`, with one optional decimal point (DECIMAL_TEXT). */
+const numish = (min: number, max: number) => ({
+  parse: (value: string | undefined) => inRange(value, DECIMAL_TEXT, min, max),
+});
+
+function inRange(value: string | undefined, text: RegExp, min: number, max: number) {
+  const s = value?.trim();
+  if (s === undefined || !text.test(s)) return undefined;
+  const n = Number(s);
+  return Number.isFinite(n) && n >= min && n <= max ? n : undefined;
+}
 
 /** A bounds coordinate: like DECIMAL_TEXT, with an optional minus sign. */
 const COORDINATE_TEXT = /^-?\d+(?:\.\d+)?$/;
 
-const flag = z
-  .enum(["1", "true"])
-  .transform(() => true as const)
-  .optional()
-  .catch(undefined);
+/** "1" or "true" (exactly) is on; anything else is no flag. */
+const flag = {
+  parse: (value: string | undefined) =>
+    value === "1" || value === "true" ? (true as const) : undefined,
+};
+
+/** `value` if it is one of `allowed`, else undefined. */
+function oneOf<T extends string>(allowed: readonly T[], value: string | undefined): T | undefined {
+  return (allowed as readonly (string | undefined)[]).includes(value) ? (value as T) : undefined;
+}
 
 function parseList<T extends string>(
   value: string | undefined,
@@ -302,14 +303,8 @@ export const allowsPriceReduced = (mode: SearchMode | undefined) => (mode ?? "bu
 
 export function parseSearchParams(raw: RawParams): SearchCriteria {
   const c: SearchCriteria = {
-    mode: z
-      .enum(SEARCH_MODES)
-      .catch("buy")
-      .parse(get(raw, "mode") ?? "buy"),
-    sort: z
-      .enum(SORTS)
-      .catch("recommended")
-      .parse(get(raw, "sort") ?? "recommended"),
+    mode: oneOf(SEARCH_MODES, get(raw, "mode")) ?? "buy",
+    sort: oneOf(SORTS, get(raw, "sort")) ?? "recommended",
     page: intish(1, 500).parse(get(raw, "page")) ?? 1,
   };
 
@@ -340,8 +335,8 @@ export function parseSearchParams(raw: RawParams): SearchCriteria {
   assign("minYear", intish(1700, 2100).parse(get(raw, "minYear")));
   assign("maxYear", intish(1700, 2100).parse(get(raw, "maxYear")));
   assign("maxHoa", intish(0, 100_000).parse(get(raw, "maxHoa")));
-  assign("hoa", z.enum(HOA_FILTERS).optional().catch(undefined).parse(get(raw, "hoa")));
-  assign("age55", z.enum(AGE55_FILTERS).optional().catch(undefined).parse(get(raw, "age55")));
+  assign("hoa", oneOf(HOA_FILTERS, get(raw, "hoa")));
+  assign("age55", oneOf(AGE55_FILTERS, get(raw, "age55")));
   if (allowsPriceReduced(c.mode)) assign("priceReduced", flag.parse(get(raw, "priceReduced")));
   assign("maxDaysOnMarket", intish(1, 3650).parse(get(raw, "maxDaysOnMarket")));
   assign("soldWithinDays", intish(1, 3650).parse(get(raw, "soldWithinDays")));

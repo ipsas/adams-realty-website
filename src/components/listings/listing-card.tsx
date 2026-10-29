@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRef, useState, type ReactNode } from "react";
 import { MlsCredit } from "@/components/content/mls-attribution";
 import { LogoMark } from "@/components/layout/logo";
-import { Photo } from "@/components/ui/photo";
+import { Photo, type PhotoPriority } from "@/components/ui/photo";
 import { cn } from "@/lib/cn";
 import {
   formatBaths,
@@ -39,7 +39,7 @@ export function ListingCard({
   listing: ListingCardData;
   highlighted?: boolean;
   onHover?: (id: string | null) => void;
-  priority?: boolean;
+  priority?: PhotoPriority;
   sizes?: string;
   /** Hold the first photo back until the card is this close to the screen (`Photo nearPx`). */
   photoNearPx?: number;
@@ -260,7 +260,7 @@ function PhotoCarousel({
   photos: string[];
   alt: string;
   sizes: string;
-  priority: boolean;
+  priority: PhotoPriority;
   nearPx?: number;
 }) {
   const track = useRef<HTMLDivElement>(null);
@@ -316,7 +316,7 @@ function PhotoCarousel({
               src={src}
               alt={i === 0 ? alt : `${alt} — photo ${i + 1}`}
               sizes={sizes}
-              priority={priority && i === 0}
+              priority={i === 0 ? priority : false}
               nearPx={i === 0 ? nearPx : undefined}
               className="size-full shrink-0 snap-center"
             />
