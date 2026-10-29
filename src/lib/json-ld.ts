@@ -5,7 +5,7 @@
  * properties are left out, never set to `undefined`.
  * The broker is the one employee, referenced by her agent page's Person @id; the other agents
  * link back via their own Person's worksFor. The homepage also emits a WebSite node whose publisher
- * is the business @id.
+ * is the firm's @id (`/#organization`).
  * Left out (no provided facts, or no data on every page): geo, sameAs, priceRange, ratings/reviews.
  */
 import { telHref } from "@/components/content/contact";
@@ -94,6 +94,7 @@ export type WebSiteJsonLd = {
   "@type": "WebSite";
   "@id": string;
   name: string;
+  alternateName: string;
   url: string;
   publisher: { "@id": string };
 };
@@ -165,7 +166,7 @@ export function parseOfficeHours(hours: string | null): OpeningHours | null {
 }
 
 export function organizationId(baseUrl: string): string {
-  return `${trimSlash(baseUrl)}/#business`;
+  return `${trimSlash(baseUrl)}/#organization`;
 }
 
 export function websiteId(baseUrl: string): string {
@@ -187,7 +188,7 @@ export function organizationJsonLd(
     "@type": "RealEstateAgent",
     "@id": organizationId(baseUrl),
     name: settings.name,
-    alternateName: ["Adams Realty, Inc."],
+    alternateName: [settings.legalName],
     legalName: settings.legalName,
     url: `${trimSlash(baseUrl)}/`,
     // src/app/icon.svg, served at /icon.svg.
@@ -257,13 +258,14 @@ export function agentJsonLd(
 
 export function websiteJsonLd(
   baseUrl: string,
-  settings: Pick<FirmSettings, "legalName"> = site,
+  settings: Pick<FirmSettings, "name" | "legalName"> = site,
 ): WebSiteJsonLd {
   return {
     "@context": "https://schema.org",
     "@type": "WebSite",
     "@id": websiteId(baseUrl),
-    name: settings.legalName,
+    name: settings.name,
+    alternateName: settings.legalName,
     url: `${trimSlash(baseUrl)}/`,
     publisher: { "@id": organizationId(baseUrl) },
   };
