@@ -1,12 +1,16 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import { LinkButton } from "@/components/ui/button";
 
+export const NOT_FOUND_TITLE = "Page not found | Adams Realty";
+
 export const metadata: Metadata = {
-  title: { absolute: "Page not found | Adams Realty" },
+  title: { absolute: NOT_FOUND_TITLE },
   robots: { index: false },
 };
 
-export default function NotFound() {
+/** Also the body of /homes/[slug]'s 404, which adds a link after the buttons (`children`). */
+export default function NotFound({ children }: { children?: ReactNode }) {
   return (
     <main className="flex flex-1 flex-col items-center justify-center px-4 py-24 text-center">
       <p className="text-sm font-semibold tracking-widest text-brass-500 uppercase">404</p>
@@ -21,6 +25,7 @@ export default function NotFound() {
           Home
         </LinkButton>
       </div>
+      {children}
     </main>
   );
 }

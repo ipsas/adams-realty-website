@@ -438,9 +438,9 @@ export async function getPlacesIndex(): Promise<PlacesIndexCounty[]> {
   // the outer group/order by see one column, not separately bound parameters.
   const forSale = db
     .select({
-      county: sql<string | null>`(case when ${inMarketState()} then ${listings.county} else null end)`.as(
-        "county",
-      ),
+      county: sql<
+        string | null
+      >`(case when ${inMarketState()} then ${listings.county} else null end)`.as("county"),
       city: listings.city,
     })
     .from(listings)
@@ -463,6 +463,19 @@ export async function getPlacesIndex(): Promise<PlacesIndexCounty[]> {
   }
   return out;
 }
+
+/**
+ * The town of a listing row by slug, shown or not, for its 404 page's area-guide link
+ * (src/app/homes/[slug]/not-found.tsx). Location columns only.
+ */
+export const getListingPlaceBySlug = cache(async (slug: string) => {
+  const [row] = await db
+    .select({ city: listings.city, state: listings.state, county: listings.county })
+    .from(listings)
+    .where(eq(listings.slug, slug.slice(0, 200)))
+    .limit(1);
+  return row ?? null;
+});
 
 /**
  * The listing a problem report is about (/listing-corrections?listing=<slug>):
