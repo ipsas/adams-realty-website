@@ -56,6 +56,10 @@ const nextConfig: NextConfig = {
   experimental: {
     // Enables `forbidden()` for role-gated pages (renders app/forbidden.tsx with a 403).
     authInterrupts: true,
+    // Inline the site CSS (Tailwind + next/font, ~20 KB gzipped) as <style> in the HTML instead of
+    // render-blocking <link>s. Re-measured on / (local next start, Lighthouse mobile, 5 runs):
+    // devtools-throttled LCP 2162 -> 1376 ms; simulated LCP/score unchanged within noise.
+    inlineCss: true,
   },
   async headers() {
     return [
