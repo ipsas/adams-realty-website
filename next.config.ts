@@ -56,6 +56,9 @@ const nextConfig: NextConfig = {
   experimental: {
     // Enables `forbidden()` for role-gated pages (renders app/forbidden.tsx with a 403).
     authInterrupts: true,
+    // The site's CSS (Tailwind, ~20 KB) arrives in <style> with the HTML instead of as
+    // render-blocking <link>s, so a first visit's hero paints without another round trip.
+    inlineCss: true,
   },
   async headers() {
     return [
