@@ -10,7 +10,7 @@ import { LinkButton } from "@/components/ui/button";
 import { Photo } from "@/components/ui/photo";
 import { Container, SectionHeading } from "@/components/ui/section";
 import { HOME_TOWN_GUIDE_SLUGS, areaHref, areas as areaList, townGuide } from "@/config/areas";
-import { HOME_DESCRIPTION, HOME_EYEBROW, HOME_TITLE } from "@/config/brand-copy";
+import { HOME_DESCRIPTION, HOME_EYEBROW_PARTS, HOME_TITLE } from "@/config/brand-copy";
 import { site } from "@/config/site";
 import { getAgents } from "@/lib/agents/queries";
 import { formatNumber, formatPriceShort } from "@/lib/format";
@@ -89,7 +89,11 @@ export default async function HomePage() {
         <Container className="pt-36 pb-10 sm:pb-14">
           <p className="mb-5 flex items-center gap-2 text-xs font-semibold tracking-[0.22em] text-white/75 uppercase">
             <span className="h-px w-8 bg-brass-400" />
-            {HOME_EYEBROW}
+            <span data-home-eyebrow>
+              <span className="block whitespace-nowrap min-[24rem]:inline">{HOME_EYEBROW_PARTS[0]}</span>
+              <span className="hidden min-[24rem]:inline">{" · "}</span>
+              <span className="block whitespace-nowrap min-[24rem]:inline">{HOME_EYEBROW_PARTS[1]}</span>
+            </span>
           </p>
           <h1 className="max-w-3xl font-display-tight text-5xl leading-[1.02] font-normal text-white sm:text-7xl">
             Homes worth

@@ -7,6 +7,7 @@ import {
   CONTACT_TITLE,
   HOME_DESCRIPTION,
   HOME_EYEBROW,
+  HOME_EYEBROW_PARTS,
   HOME_TITLE,
 } from "./brand-copy";
 import { site } from "./site";
@@ -62,6 +63,11 @@ describe("BR-B1 brand copy", () => {
     expect(CONTACT_DESCRIPTION).toHaveLength(150);
   });
 
+  it("builds the eyebrow from its two halves", () => {
+    expect(HOME_EYEBROW_PARTS).toEqual(["Adams Realty, Inc.", "Royston, GA"]);
+    expect(HOME_EYEBROW).toBe(HOME_EYEBROW_PARTS.join(" · "));
+  });
+
   it("is the home page's title and description", async () => {
     const { metadata } = await import("@/app/(site)/page");
     expect(metadata.title).toEqual({
@@ -84,7 +90,10 @@ describe("BR-B1 brand copy", () => {
 
   it("is the home page hero's eyebrow", () => {
     const source = readFileSync(HOME_PAGE, "utf8");
-    expect(source).toContain("{HOME_EYEBROW}");
+    expect(source).toContain("{HOME_EYEBROW_PARTS[0]}");
+    expect(source).toContain('{" · "}');
+    expect(source).toContain("{HOME_EYEBROW_PARTS[1]}");
+    expect(source).toContain("hidden min-[24rem]:inline");
     expect(source).not.toContain("Straight from {site.mls.name}");
   });
 });

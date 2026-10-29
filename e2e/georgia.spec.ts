@@ -51,6 +51,32 @@ test.describe("listing coverage copy says Georgia", () => {
     expect(meta).not.toMatch(/monthly cost/i);
   });
 
+  test("the home page eyebrow breaks cleanly on a narrow phone", async ({ page }) => {
+    for (const width of [320, 360, 1280]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/");
+      const eyebrow = page.locator("[data-home-eyebrow]");
+      expect(await eyebrow.textContent()).toBe("Adams Realty, Inc. · Royston, GA");
+      const lines = (await eyebrow.innerText())
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+      for (const line of lines) {
+        expect(line.startsWith("·"), `${width}px: "${line}"`).toBe(false);
+        expect(line.endsWith("·"), `${width}px: "${line}"`).toBe(false);
+      }
+      if (width < 1280) {
+        expect(lines.map((line) => line.toLowerCase())).toEqual([
+          "adams realty, inc.",
+          "royston, ga",
+        ]);
+      } else {
+        expect(lines, `${width}px`).toHaveLength(1);
+        expect(lines[0].toUpperCase()).toBe("ADAMS REALTY, INC. · ROYSTON, GA");
+      }
+    }
+  });
+
   test("the firm's own statements stay Northeast Georgia", async ({ page }) => {
     await page.goto("/about");
     await expect(page.locator("main")).toContainText("Northeast Georgia");
