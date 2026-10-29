@@ -89,17 +89,17 @@ describe("listingTitle", () => {
   });
 
   describe("a rental", () => {
-    const rental: ListingSeoInput = { ...home, listPrice: 1800, transactionType: "rent" };
+    const rental: ListingSeoInput = { ...home, listPrice: 3100, transactionType: "rent" };
 
-    it("prices it per month, for rent", () => {
-      expect(listingTitle(rental)).toBe(
-        "12 Oak St, Royston, GA 30662 – For rent $1,800/mo | Adams Realty",
-      );
+    it("prices it per month, for rent, after a bar", () => {
+      const t = listingTitle(rental);
+      expect(t).toBe("12 Oak St, Royston, GA 30662 | For rent $3,100/mo | Adams Realty");
+      expect(t.length).toBeLessThanOrEqual(LISTING_TITLE_MAX);
     });
 
     it("drops the brand first when too long", () => {
       const t = listingTitle({ ...rental, addressLine1: "123 Main Street" });
-      expect(t).toBe("123 Main Street, Royston, GA 30662 – For rent $1,800/mo");
+      expect(t).toBe("123 Main Street, Royston, GA 30662 | For rent $3,100/mo");
       expect(t.length).toBeLessThanOrEqual(LISTING_TITLE_MAX);
     });
 
@@ -110,7 +110,7 @@ describe("listingTitle", () => {
         city: "Loganville",
         postalCode: "30052",
       });
-      expect(t).toBe("1161 Rose Terrace Circle, Loganville, GA – For rent $1,800/mo");
+      expect(t).toBe("1161 Rose Terrace Circle, Loganville, GA | For rent $3,100/mo");
       expect(t.length).toBeLessThanOrEqual(LISTING_TITLE_MAX);
     });
 
@@ -220,6 +220,46 @@ describe("listingDescription", () => {
         livingAreaSqft: null,
       }),
     ).toBe("Land in Royston, GA, listed at $250,000.");
+  });
+
+  it("leaves a sale description as it was", () => {
+    expect(listingDescription({ ...home, transactionType: "sale" })).toBe(
+      "3 bed, 2.5 bath single-family home in Royston, GA – 1,850 sq ft, listed at $250,000.",
+    );
+    const remarks = "Charming brick ranch on a quiet street with a big fenced yard and a new roof.";
+    expect(listingDescription({ ...home, transactionType: null, description: remarks })).toBe(
+      remarks,
+    );
+  });
+
+  describe("a rental", () => {
+    const rental: ListingSeoInput = {
+      ...home,
+      city: "Duluth",
+      postalCode: "30096",
+      listPrice: 3100,
+      bathrooms: 2,
+      transactionType: "rent",
+    };
+
+    it("starts with the monthly rent, then the remarks, cut at a word to 160", () => {
+      const remarks =
+        "Bright two-story home on a quiet cul-de-sac with an open kitchen, hardwood floors, " +
+        "a fenced backyard, a two-car garage and easy access to shopping, parks and schools.";
+      const d = listingDescription({ ...rental, description: remarks });
+      expect(d.startsWith("For rent $3,100/mo. Bright two-story home")).toBe(true);
+      expect(d.length).toBeLessThanOrEqual(160);
+      expect(`For rent $3,100/mo. ${remarks}`.startsWith(d.replace(/…$/, ""))).toBe(true);
+    });
+
+    it("builds one from the facts, without the listed-at price", () => {
+      expect(listingDescription(rental)).toBe(
+        "For rent $3,100/mo. 3 bed, 2 bath single-family home in Duluth, GA – 1,850 sq ft.",
+      );
+      expect(
+        listingDescription({ ...rental, bedrooms: null, bathrooms: null, livingAreaSqft: null }),
+      ).toBe("For rent $3,100/mo. Single-family home in Duluth, GA.");
+    });
   });
 });
 

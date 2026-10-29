@@ -46,23 +46,22 @@ export const LISTING_TITLE_MAX = 65;
 export const MIN_REMARKS_LENGTH = 70;
 
 /**
- * "123 Main St, Royston, GA 30662 – $250,000 | Adams Realty" (a rental: "– For rent
- * $1,800/mo"). Over 65 characters it drops the brand, then the ZIP; still over, it is kept
- * whole rather than cut mid-word.
+ * "123 Main St, Royston, GA 30662 – $250,000 | Adams Realty" (a rental: "… 30662 | For rent
+ * $1,800/mo | Adams Realty"). Over 65 characters it drops the brand, then the ZIP; still
+ * over, it is kept whole rather than cut mid-word.
  * A hidden address reads as the page heading does ("Address withheld by seller").
  */
 export function listingTitle(l: ListingSeoInput): string {
   const place = `${formatStreet(l)}, ${l.city}, ${normalizeState(l.state)}`;
   const zip = l.postalCode?.trim();
-  const price =
-    l.transactionType === "rent"
-      ? `For rent ${formatMonthly(l.listPrice)}`
-      : formatPrice(l.listPrice);
+  const rent = l.transactionType === "rent";
+  const price = rent ? `For rent ${formatMonthly(l.listPrice)}` : formatPrice(l.listPrice);
+  const sep = rent ? " | " : " – ";
   const brand = ` | ${site.name}`;
   const candidates = [
-    `${place}${zip ? ` ${zip}` : ""} – ${price}${brand}`,
-    `${place}${zip ? ` ${zip}` : ""} – ${price}`,
-    `${place} – ${price}`,
+    `${place}${zip ? ` ${zip}` : ""}${sep}${price}${brand}`,
+    `${place}${zip ? ` ${zip}` : ""}${sep}${price}`,
+    `${place}${sep}${price}`,
   ];
   return candidates.find((t) => t.length <= LISTING_TITLE_MAX) ?? candidates[2];
 }
@@ -71,19 +70,24 @@ export function listingTitle(l: ListingSeoInput): string {
  * The MLS remarks (access codes redacted) when they say enough; otherwise
  * "3 bed, 2 bath single-family home in Royston, GA – 1,850 sq ft, listed at $250,000.",
  * leaving out only the facts the listing lacks.
+ * A rental's starts "For rent $3,100/mo. ", then the remarks (the whole cut to 160
+ * characters) or the facts without the "listed at" clause: "For rent $3,100/mo. 3 bed,
+ * 2 bath single-family home in Duluth, GA – 1,850 sq ft."
  */
 export function listingDescription(l: ListingSeoInput): string {
+  const rent = l.transactionType === "rent";
+  const prefix = rent ? `For rent ${formatMonthly(l.listPrice)}. ` : "";
   const remarks = l.description ? redactAccessCodes(l.description).trim() : "";
-  if (remarks.length >= MIN_REMARKS_LENGTH) return listingMetaDescription(remarks);
+  if (remarks.length >= MIN_REMARKS_LENGTH) return listingMetaDescription(`${prefix}${remarks}`);
   const type = (PROPERTY_TYPE_LABELS[l.propertyType] ?? PROPERTY_TYPE_LABELS.other).toLowerCase();
   const text = [
     l.bedrooms ? `${l.bedrooms} bed, ` : "",
     l.bathrooms ? `${formatBaths(l.bathrooms)} bath ` : "",
     `${type} in ${l.city}, ${normalizeState(l.state)}`,
     l.livingAreaSqft ? ` – ${formatNumber(l.livingAreaSqft)} sq ft` : "",
-    `, listed at ${formatPrice(l.listPrice)}.`,
+    rent ? "." : `, listed at ${formatPrice(l.listPrice)}.`,
   ].join("");
-  return text.charAt(0).toUpperCase() + text.slice(1);
+  return prefix + text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 export type ListingJsonLdInput = Omit<ListingSeoInput, "postalCode"> & {
