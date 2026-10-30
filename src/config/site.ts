@@ -1,3 +1,5 @@
+import { BRAND_LEGAL_NAME } from "./brand";
+
 /**
  * Brand and market settings. Everything company-specific that isn't data
  * lives here, so rebranding or moving markets is a one-file change.
@@ -11,7 +13,7 @@
  */
 export const site = {
   name: "Adams Realty",
-  legalName: "Adams Realty, Inc.",
+  legalName: BRAND_LEGAL_NAME,
   tagline: "Homes worth coming home to.",
   description:
     "Homes, land, farms and lake property around Gainesville, straight from Georgia MLS, with the true cost of owning each home and no ads.",

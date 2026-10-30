@@ -41,7 +41,7 @@ test.describe("listing coverage copy says Georgia", () => {
     page,
   }) => {
     await page.goto("/");
-    await expect(page.getByText("Straight from Georgia MLS", { exact: true })).toBeVisible();
+    await expect(page.getByText("Adams Realty, Inc. · Royston, GA", { exact: true })).toBeVisible();
     await expect(page.locator("main")).toContainText(
       "Homes, land, farms and lake property around Gainesville, updated directly from Georgia MLS.",
     );
@@ -49,6 +49,38 @@ test.describe("listing coverage copy says Georgia", () => {
     expect(text).not.toMatch(/monthly cost/);
     const meta = await page.locator('meta[name="description"]').getAttribute("content");
     expect(meta).not.toMatch(/monthly cost/i);
+  });
+
+  test("the home page eyebrow breaks cleanly on a narrow phone", async ({ page }) => {
+    for (const width of [320, 360, 375, 390, 414, 1280]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/");
+      const p = page.locator("p:has([data-home-eyebrow])");
+      expect(await p.textContent()).toBe("Adams Realty, Inc. · Royston, GA");
+      await expect(p.locator("[data-home-eyebrow-stacked]")).toHaveAttribute("aria-hidden", "true");
+      const m = await p.evaluate((el) => {
+        const text = el.querySelector<HTMLElement>("[data-home-eyebrow]")!;
+        const stackedEl = el.querySelector<HTMLElement>("[data-home-eyebrow-stacked]")!;
+        return {
+          stacked: getComputedStyle(stackedEl).display !== "none",
+          before: getComputedStyle(stackedEl, "::before").content,
+          after: getComputedStyle(stackedEl, "::after").content,
+          textHeight: text.getBoundingClientRect().height,
+          stackedHeight: stackedEl.getBoundingClientRect().height,
+          lineHeight: parseFloat(getComputedStyle(el).lineHeight),
+        };
+      });
+      if (width <= 375) {
+        expect(m.stacked, `${width}px`).toBe(true);
+        expect(m.before).toBe('"Adams Realty, Inc."');
+        expect(m.after).toBe('"Royston, GA"');
+        expect(m.stackedHeight, `${width}px`).toBe(2 * m.lineHeight);
+        expect(m.textHeight, `${width}px`).toBeLessThanOrEqual(1);
+      } else {
+        expect(m.stacked, `${width}px`).toBe(false);
+        expect(m.textHeight, `${width}px`).toBe(m.lineHeight);
+      }
+    }
   });
 
   test("the firm's own statements stay Northeast Georgia", async ({ page }) => {

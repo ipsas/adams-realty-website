@@ -10,6 +10,12 @@ import { LinkButton } from "@/components/ui/button";
 import { Photo } from "@/components/ui/photo";
 import { Container, SectionHeading } from "@/components/ui/section";
 import { HOME_TOWN_GUIDE_SLUGS, areaHref, areas as areaList, townGuide } from "@/config/areas";
+import {
+  HOME_DESCRIPTION,
+  HOME_EYEBROW,
+  HOME_EYEBROW_PARTS,
+  HOME_TITLE,
+} from "@/config/brand-copy";
 import { site } from "@/config/site";
 import { getAgents } from "@/lib/agents/queries";
 import { formatNumber, formatPriceShort } from "@/lib/format";
@@ -23,8 +29,12 @@ import { FEATURED_MIN, getNewestListings } from "@/lib/listings/queries";
 import { searchHref } from "@/lib/search/params";
 import heroDusk from "@/../public/images/hero-dusk.jpg";
 
-// Title and description come from the root layout's defaults.
-export const metadata: Metadata = { alternates: { canonical: "/" } };
+// Brand title and description (BR-B1); `absolute` skips the root layout's title template.
+export const metadata: Metadata = {
+  title: { absolute: HOME_TITLE },
+  description: HOME_DESCRIPTION,
+  alternates: { canonical: "/" },
+};
 
 /** Town chips under the hero search: fixed area guides, skipping any slug missing from the config. */
 const POPULAR_AREAS = HOME_TOWN_GUIDE_SLUGS.flatMap((slug) =>
@@ -83,9 +93,20 @@ export default async function HomePage() {
         />
         <div className="absolute inset-0 -z-10 bg-black/20 xl:hidden" aria-hidden="true" />
         <Container className="pt-36 pb-10 sm:pb-14">
-          <p className="mb-5 flex items-center gap-2 text-xs font-semibold tracking-[0.22em] text-white/75 uppercase">
+          {/* One text node, so the line shapes as before; too narrow for one line, it turns sr-only and an
+              aria-hidden span draws the two halves on two lines from generated content. */}
+          <p className="mb-5 flex items-center gap-2 text-xs font-semibold tracking-[0.22em] text-white/75 uppercase @container">
             <span className="h-px w-8 bg-brass-400" />
-            Straight from {site.mls.name}
+            <span data-home-eyebrow className="@max-[29.75em]:sr-only @min-[29.75em]:whitespace-nowrap">
+              {HOME_EYEBROW}
+            </span>
+            <span
+              aria-hidden="true"
+              data-home-eyebrow-stacked
+              data-line1={HOME_EYEBROW_PARTS[0]}
+              data-line2={HOME_EYEBROW_PARTS[1]}
+              className="before:block before:content-[attr(data-line1)] after:block after:content-[attr(data-line2)] @min-[29.75em]:hidden"
+            />
           </p>
           <h1 className="max-w-3xl font-display-tight text-5xl leading-[1.02] font-normal text-white sm:text-7xl">
             Homes worth
