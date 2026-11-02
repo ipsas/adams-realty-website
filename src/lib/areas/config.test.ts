@@ -61,6 +61,19 @@ describe("area config", () => {
       ).toBe(true);
   });
 
+  it("gives only Toccoa and Royston the approved firm intro", () => {
+    expect(findArea("toccoa")?.firmIntro).toBe(
+      "Adams Realty, Inc. works with buyers and sellers in Toccoa from our office at 69 Mill Street in Royston.",
+    );
+    expect(findArea("royston")?.firmIntro).toBe(
+      "Adams Realty, Inc. is based right here in Royston, with our office at 69 Mill Street.",
+    );
+    expect(areas.filter((a) => a.firmIntro !== undefined).map((a) => a.slug)).toEqual([
+      "royston",
+      "toccoa",
+    ]);
+  });
+
   it("never lets two areas claim the same name, alias or city", () => {
     const seen = new Map<string, string>();
     for (const a of areas) {

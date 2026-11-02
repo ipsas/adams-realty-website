@@ -14,6 +14,7 @@ import { Photo } from "@/components/ui/photo";
 import { Container, SectionHeading } from "@/components/ui/section";
 import { areaHref, areaRegions, areas, countyLabel, type Area } from "@/config/areas";
 import { site } from "@/config/site";
+import { NEARBY_GUIDES_HEADING, nearbyAreas } from "@/lib/areas/nearby";
 import {
   getAreaAgents,
   getAreaFeaturedListing,
@@ -80,6 +81,8 @@ export default async function AreaGuidePage(props: PageProps<"/areas/[slug]">) {
     : areaRegions.flatMap((r) =>
         areas.filter((a) => a.region === r.id && a.slug !== area.slug).slice(0, 3),
       );
+  // The nearest guides in any region, so links cross county lines.
+  const nearby = nearbyAreas(area, areas, related.map((a) => a.slug));
 
   return (
     <>
@@ -121,7 +124,7 @@ export default async function AreaGuidePage(props: PageProps<"/areas/[slug]">) {
                 </span>
               </p>
               <p className="mt-6 max-w-xl text-lg leading-relaxed text-ink-soft">
-                {area.description}
+                {area.firmIntro ? `${area.firmIntro} ${area.description}` : area.description}
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <LinkButton href={mapHref} size="lg" className="w-full sm:w-auto">
@@ -326,34 +329,58 @@ export default async function AreaGuidePage(props: PageProps<"/areas/[slug]">) {
       {/* More guides + notes */}
       <Container className="py-16">
         <div className="grid grid-cols-1 gap-10 border-t border-line pt-10 lg:grid-cols-2 lg:gap-16">
-          <nav aria-labelledby="more-guides-heading">
-            <h2
-              id="more-guides-heading"
-              className="text-xs font-semibold tracking-widest text-muted uppercase"
-            >
-              {siblings.length ? `More in ${regionLabel(area.region)}` : "More area guides"}
-            </h2>
-            <ul className="mt-4 flex flex-wrap gap-2">
-              {related.map((a) => (
-                <li key={a.slug}>
+          <div>
+            <nav aria-labelledby="more-guides-heading">
+              <h2
+                id="more-guides-heading"
+                className="text-xs font-semibold tracking-widest text-muted uppercase"
+              >
+                {siblings.length ? `More in ${regionLabel(area.region)}` : "More area guides"}
+              </h2>
+              <ul className="mt-4 flex flex-wrap gap-2">
+                {related.map((a) => (
+                  <li key={a.slug}>
+                    <Link
+                      href={areaHref(a)}
+                      className="flex h-10 items-center rounded-full border border-line bg-surface px-4 text-sm text-ink-soft transition-colors hover:border-line-strong hover:text-ink"
+                    >
+                      {a.name}
+                    </Link>
+                  </li>
+                ))}
+                <li>
                   <Link
-                    href={areaHref(a)}
-                    className="flex h-10 items-center rounded-full border border-line bg-surface px-4 text-sm text-ink-soft transition-colors hover:border-line-strong hover:text-ink"
+                    href="/areas"
+                    className="flex h-10 items-center gap-1 rounded-full px-3 text-sm font-medium text-brand-700 hover:underline"
                   >
-                    {a.name}
+                    All guides <ArrowRight className="size-4" />
                   </Link>
                 </li>
-              ))}
-              <li>
-                <Link
-                  href="/areas"
-                  className="flex h-10 items-center gap-1 rounded-full px-3 text-sm font-medium text-brand-700 hover:underline"
+              </ul>
+            </nav>
+            {nearby.length > 0 && (
+              <nav aria-labelledby="nearby-guides-heading" className="mt-8">
+                <h2
+                  id="nearby-guides-heading"
+                  className="text-xs font-semibold tracking-widest text-muted uppercase"
                 >
-                  All guides <ArrowRight className="size-4" />
-                </Link>
-              </li>
-            </ul>
-          </nav>
+                  {NEARBY_GUIDES_HEADING}
+                </h2>
+                <ul className="mt-4 flex flex-wrap gap-2">
+                  {nearby.map((a) => (
+                    <li key={a.slug}>
+                      <Link
+                        href={areaHref(a)}
+                        className="flex h-10 items-center rounded-full border border-line bg-surface px-4 text-sm text-ink-soft transition-colors hover:border-line-strong hover:text-ink"
+                      >
+                        {a.name}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            )}
+          </div>
           <div className="space-y-2 text-xs leading-relaxed text-muted">
             <p>
               Market figures are calculated when this page loads, from listings on this site that
