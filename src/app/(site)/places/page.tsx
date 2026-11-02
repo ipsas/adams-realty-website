@@ -7,12 +7,14 @@ import { site } from "@/config/site";
 import { formatNumber } from "@/lib/format";
 import { getCachedPlacesIndex } from "@/lib/listings/cached";
 import { letterAnchors, NO_HOMES_FOR_SALE, placesIndexView } from "@/lib/listings/places-index";
+import { pageOpenGraph } from "@/lib/og";
 import { searchHref } from "@/lib/search/params";
 
 export const metadata: Metadata = {
   title: `Towns and cities in ${site.coverage.name}`,
   description: `Every town and city in ${site.coverage.name} with homes for sale on ${site.name}, grouped by county, with listings from ${site.mls.name}.`,
   alternates: { canonical: "/places" },
+  openGraph: pageOpenGraph("/places"),
 };
 
 /**

@@ -15,7 +15,7 @@ import { marketToday } from "@/lib/areas/stats";
 import { getSession } from "@/lib/auth/session";
 import { env } from "@/lib/env";
 import { getSavedListingIds } from "@/lib/listings/queries";
-import { OG_DEFAULT_IMAGE } from "@/lib/og";
+import { OG_BASE } from "@/lib/og";
 import { previewPassword } from "@/lib/preview-gate";
 import { THEME_COLORS, THEME_SCRIPT } from "@/lib/theme-script";
 import "./globals.css";
@@ -36,13 +36,9 @@ export const metadata: Metadata = {
   },
   description: site.description,
   applicationName: site.name,
-  // A page that sets its own openGraph replaces all of this (Next merges segments shallowly).
-  openGraph: {
-    type: "website",
-    siteName: site.name,
-    locale: "en_US",
-    images: [OG_DEFAULT_IMAGE],
-  },
+  // A page that sets its own openGraph replaces all of this (Next merges segments shallowly);
+  // pageOpenGraph(url) repeats it with og:url.
+  openGraph: OG_BASE,
   // No images: Next copies openGraph.images, so pages with their own photo keep it here too.
   twitter: { card: "summary_large_image" },
   appleWebApp: { capable: true, title: site.name, statusBarStyle: "default" },

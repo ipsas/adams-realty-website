@@ -18,6 +18,7 @@ import { LinkButton } from "@/components/ui/button";
 import { Container, SectionHeading } from "@/components/ui/section";
 import { serviceCounties, site } from "@/config/site";
 import { getAgents } from "@/lib/agents/queries";
+import { pageOpenGraph } from "@/lib/og";
 
 /*
  * Only statements that are true by construction belong on this page: what the
@@ -30,6 +31,7 @@ export const metadata: Metadata = {
   title: `About us: real estate around ${site.market.focus.city}`,
   description: `${site.legalName} is a licensed brokerage${site.brokerLicense ? ` (GREC firm license ${site.brokerLicense})` : ""} serving the ${site.market.focus.city} area. No ads, and we never sell your details.`,
   alternates: { canonical: "/about" },
+  openGraph: pageOpenGraph("/about"),
 };
 
 const COMMITMENTS = [

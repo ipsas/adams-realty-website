@@ -41,7 +41,10 @@ export async function generateMetadata(props: PageProps<"/agents/[slug]">): Prom
       bioExcerpt(bio) ??
       `${name}, ${title ?? "agent"} at ${site.legalName} in ${site.address.city}, Georgia.`,
     alternates: { canonical: `/agents/${slug}` },
-    openGraph: { images: data.agent.photoUrl ? [{ url: data.agent.photoUrl }] : [OG_DEFAULT_IMAGE] },
+    openGraph: {
+      url: `/agents/${slug}`,
+      images: data.agent.photoUrl ? [{ url: data.agent.photoUrl }] : [OG_DEFAULT_IMAGE],
+    },
   };
 }
 

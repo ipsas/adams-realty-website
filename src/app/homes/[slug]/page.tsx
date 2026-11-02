@@ -97,13 +97,15 @@ export async function generateMetadata(props: PageProps<"/homes/[slug]">): Promi
   const l = data.listing;
   const title = listingTitle(l);
   const description = listingDescription(l);
+  const url = `/homes/${l.slug}`;
   return {
     title: { absolute: title },
     description,
-    alternates: { canonical: `/homes/${l.slug}` },
+    alternates: { canonical: url },
     openGraph: {
       title,
       description,
+      url,
       images: l.primaryPhotoUrl ? [{ url: l.primaryPhotoUrl }] : [OG_DEFAULT_IMAGE],
     },
     // Off-market, sold and out-of-area listings stay reachable but aren't indexed

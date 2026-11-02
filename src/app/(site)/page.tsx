@@ -26,6 +26,7 @@ import {
 } from "@/lib/listings/cached";
 import { NO_HOMES_FOR_SALE } from "@/lib/listings/places-index";
 import { FEATURED_MIN, getNewestListings } from "@/lib/listings/queries";
+import { pageOpenGraph } from "@/lib/og";
 import { searchHref } from "@/lib/search/params";
 import heroDusk from "@/../public/images/hero-dusk.jpg";
 
@@ -34,6 +35,7 @@ export const metadata: Metadata = {
   title: { absolute: HOME_TITLE },
   description: HOME_DESCRIPTION,
   alternates: { canonical: "/" },
+  openGraph: pageOpenGraph("/"),
 };
 
 /** Town chips under the hero search: fixed area guides, skipping any slug missing from the config. */

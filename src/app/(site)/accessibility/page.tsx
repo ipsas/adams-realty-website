@@ -5,6 +5,7 @@ import { ContactMethods } from "@/components/content/contact-methods";
 import { LegalLayout, LegalSection, type TocItem } from "@/components/content/legal";
 import { PageIntro } from "@/components/content/page-intro";
 import { site } from "@/config/site";
+import { pageOpenGraph } from "@/lib/og";
 
 /*
  * Keep "How we build for accessibility" limited to things the code really
@@ -19,6 +20,7 @@ export const metadata: Metadata = {
   title: "Accessibility",
   description: `${site.name} is committed to an accessible website for everyone. Our WCAG 2.2 AA goal, known limitations, and how to get help or report a problem.`,
   alternates: { canonical: "/accessibility" },
+  openGraph: pageOpenGraph("/accessibility"),
 };
 
 const TOC: TocItem[] = [

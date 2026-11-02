@@ -19,6 +19,7 @@ import { ContactMethods } from "@/components/content/contact-methods";
 import { KeyPoints, LegalLayout, LegalSection, type TocItem } from "@/components/content/legal";
 import { PageIntro } from "@/components/content/page-intro";
 import { site } from "@/config/site";
+import { pageOpenGraph } from "@/lib/og";
 
 /** Change whenever the terms change. */
 const LAST_UPDATED = "2026-10-07";
@@ -27,6 +28,7 @@ export const metadata: Metadata = {
   title: "Terms of use",
   description: `The terms for using the ${site.name} website, including how listing (IDX) information and payment estimates may be used.`,
   alternates: { canonical: "/terms" },
+  openGraph: pageOpenGraph("/terms"),
 };
 
 const TOC: TocItem[] = [

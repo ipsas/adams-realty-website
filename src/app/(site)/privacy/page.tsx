@@ -38,6 +38,7 @@ import { ContactMethods } from "@/components/content/contact-methods";
 import { KeyPoints, LegalLayout, LegalSection, type TocItem } from "@/components/content/legal";
 import { PageIntro } from "@/components/content/page-intro";
 import { site } from "@/config/site";
+import { pageOpenGraph } from "@/lib/og";
 
 /** Change whenever the policy text changes. */
 const LAST_UPDATED = "2026-09-28";
@@ -46,6 +47,7 @@ export const metadata: Metadata = {
   title: "Privacy policy",
   description: `How ${site.name} collects, uses and protects your information. We never sell your personal information, and there are no ads or tracking cookies on this site.`,
   alternates: { canonical: "/privacy" },
+  openGraph: pageOpenGraph("/privacy"),
 };
 
 const TOC: TocItem[] = [

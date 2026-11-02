@@ -10,11 +10,13 @@ import { site } from "@/config/site";
 import { getSession } from "@/lib/auth/session";
 import { formatFullAddress } from "@/lib/format";
 import { getListingForReport } from "@/lib/listings/queries";
+import { pageOpenGraph } from "@/lib/og";
 
 export const metadata: Metadata = {
   title: "Report a listing problem",
   description: `How Georgia MLS, listing agents and visitors report a listing with wrong information on ${site.name}. We correct or remove it within one business day.`,
   alternates: { canonical: "/listing-corrections" },
+  openGraph: pageOpenGraph("/listing-corrections"),
 };
 
 /**

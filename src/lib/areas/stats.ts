@@ -242,6 +242,34 @@ export function areaGrid<T extends { id: string }>(
 
 export type AreaSummary = { area: Area; stats: AreaStats };
 
+/** A sitemap lastmod: a YYYY-MM-DD copy date, or a listing-data timestamp. */
+export type Lastmod = string | Date;
+
+/** As a time: a YYYY-MM-DD string is that day's UTC midnight; an invalid date is NaN. */
+const lastmodTime = (value: Lastmod) => new Date(value).getTime();
+
+/**
+ * The latest of some lastmods, compared as dates (not as strings), keeping the
+ * winner's own form; undefined if there are none. A tie keeps the first one.
+ */
+export function latestLastmod(values: readonly Lastmod[]): Lastmod | undefined {
+  let latest: Lastmod | undefined;
+  for (const v of values) {
+    if (Number.isNaN(lastmodTime(v))) continue;
+    if (latest === undefined || lastmodTime(v) > lastmodTime(latest)) latest = v;
+  }
+  return latest;
+}
+
+/**
+ * A guide's sitemap lastmod: the later of when its copy last changed
+ * (Area.updated) and when a listing in it last did (stats.lastUpdated).
+ */
+export function guideLastmod({ area, stats }: AreaSummary): Lastmod {
+  const listings = stats.lastUpdated ? [stats.lastUpdated] : [];
+  return latestLastmod([area.updated, ...listings]) ?? area.updated;
+}
+
 export const AREA_SORTS = ["region", "homes", "price-high", "price-low", "name"] as const;
 export type AreaSort = (typeof AREA_SORTS)[number];
 

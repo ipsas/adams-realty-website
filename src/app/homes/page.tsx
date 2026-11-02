@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { getSession } from "@/lib/auth/session";
 import { mlsDisclaimer } from "@/lib/mls-copyright";
 import { gamlsLastSyncedAt } from "@/lib/mls/last-updated";
+import { pageOpenGraph } from "@/lib/og";
 import { bedroomOnMainDataUpdating } from "@/lib/search/bedroom-on-main-updating";
 import { lakeName, searchHeading } from "@/lib/search/heading";
 import {
@@ -60,6 +61,7 @@ export async function generateMetadata(props: PageProps<"/homes">): Promise<Meta
       ? `Search homes for sale around ${city} or anywhere in ${site.coverage.name}, from ${site.mls.name}, with the true cost of owning each home and no ads.`
       : `Browse ${title.charAt(0).toLowerCase()}${title.slice(1)} from ${site.mls.name}, with the true cost of owning each home and no ads.`,
     alternates: { canonical },
+    openGraph: pageOpenGraph(canonical),
     robots,
   };
 }

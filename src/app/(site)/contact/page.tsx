@@ -8,12 +8,14 @@ import { Container } from "@/components/ui/section";
 import { CONTACT_DESCRIPTION, CONTACT_TITLE } from "@/config/brand-copy";
 import { site } from "@/config/site";
 import { getSession } from "@/lib/auth/session";
+import { pageOpenGraph } from "@/lib/og";
 
 export const metadata: Metadata = {
   // `absolute` so the root layout's title template doesn't add a second brand suffix.
   title: { absolute: CONTACT_TITLE },
   description: CONTACT_DESCRIPTION,
   alternates: { canonical: "/contact" },
+  openGraph: pageOpenGraph("/contact"),
 };
 
 const SHORTCUTS = [

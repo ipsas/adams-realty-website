@@ -4,11 +4,13 @@ import { ValuationForm } from "@/components/sell/valuation-form";
 import { Photo } from "@/components/ui/photo";
 import { Container } from "@/components/ui/section";
 import { site } from "@/config/site";
+import { pageOpenGraph } from "@/lib/og";
 
 export const metadata: Metadata = {
   title: `Sell your home near ${site.market.focus.city}`,
   description: `Selling a home, land, farm or lake property around ${site.market.focus.city}? Start with a free, no-obligation valuation from a local ${site.name} agent.`,
   alternates: { canonical: "/sell" },
+  openGraph: pageOpenGraph("/sell"),
 };
 
 const IMAGE =

@@ -7,6 +7,8 @@ import {
   formatAsOf,
   formatRatio,
   groupByRegion,
+  guideLastmod,
+  latestLastmod,
   leadPhotoFallback,
   marketToday,
   metaDescription,
@@ -305,5 +307,46 @@ describe("areaGrid", () => {
     expect(ids(grid.homes)).toEqual(["h1", "h3"]);
     expect(grid.total).toBe(2);
     expect(areaGrid([], null, 8, 0)).toEqual({ homes: [], total: 0 });
+  });
+});
+
+describe("guideLastmod", () => {
+  const summary = (updated: string, lastUpdated: Date | null): AreaSummary => ({
+    area: { ...areas[0], updated },
+    stats: { ...emptyStats(), lastUpdated },
+  });
+
+  it("uses the listing data's timestamp when it is later than the copy date", () => {
+    const at = new Date("2026-11-01T14:05:00.000Z");
+    expect(guideLastmod(summary("2026-10-23", at))).toBe(at);
+  });
+
+  it("keeps the copy date when the listing data is older", () => {
+    const older = new Date("2026-10-01T09:00:00Z");
+    expect(guideLastmod(summary("2026-10-23", older))).toBe("2026-10-23");
+  });
+
+  it("keeps the copy date when there is no listing data", () => {
+    expect(guideLastmod(summary("2026-09-25", null))).toBe("2026-09-25");
+  });
+
+  it("compares as dates: a listing change later on the copy day wins", () => {
+    const at = new Date("2026-10-23T12:00:00Z");
+    expect(guideLastmod(summary("2026-10-23", at))).toBe(at);
+  });
+});
+
+describe("latestLastmod", () => {
+  it("picks the latest across copy dates and timestamps, in its own form", () => {
+    const at = new Date("2026-10-24T01:00:00Z");
+    expect(latestLastmod(["2026-09-25", at, "2026-10-23"])).toBe(at);
+    expect(latestLastmod(["2026-09-25", new Date("2026-10-01T00:00:00Z"), "2026-10-23"])).toBe(
+      "2026-10-23",
+    );
+  });
+
+  it("is undefined with nothing to compare and skips invalid dates", () => {
+    expect(latestLastmod([])).toBeUndefined();
+    expect(latestLastmod([new Date("nope"), "2026-09-25"])).toBe("2026-09-25");
   });
 });

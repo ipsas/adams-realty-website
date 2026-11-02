@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { AreaSummary } from "@/lib/areas/stats";
 
 // `next build` loads robots.ts and every sitemap module and calls
 // generateSitemaps. None of that may need a database: make any import of the
@@ -9,12 +10,18 @@ vi.mock("@/db", () => {
 vi.mock("pg", () => {
   throw new Error("the pg driver was imported");
 });
+// The cached queries need the database: /areas/sitemap.xml gets its summaries from here.
+const { getCachedAreaSummaries } = vi.hoisted(() => ({
+  getCachedAreaSummaries: vi.fn<() => Promise<AreaSummary[]>>(),
+}));
+vi.mock("@/lib/listings/cached", () => ({ getCachedAreaSummaries }));
 
 /** What notFound() throws: Next's route wrapper turns it into an HTTP 404. */
 const NOT_FOUND = { digest: "NEXT_HTTP_ERROR_FALLBACK;404" };
 
 // (This test lives outside src/app so Next never mistakes it for a route file.)
 const { areas: areaConfig } = await import("@/config/areas");
+const { emptyStats } = await import("@/lib/areas/stats");
 const robots = (await import("@/app/robots")).default;
 const homes = await import("@/app/homes/sitemap");
 const root = await import("@/app/sitemap");
@@ -44,24 +51,43 @@ describe("sitemaps and robots load without a database", () => {
   });
 });
 
-describe("/areas/sitemap.xml dates guides by their copy, not by listings", () => {
-  afterEach(() => vi.unstubAllEnvs());
+describe("/areas/sitemap.xml dates each guide by the later of its copy and its listings", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    getCachedAreaSummaries.mockReset();
+  });
   const base = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  const DAY = 24 * 60 * 60 * 1000;
 
-  it("uses each area's `updated` as lastmod, and the latest for /areas", async () => {
+  it("takes the later of copy and listing dates, and the latest guide for /areas", async () => {
     vi.stubEnv("DEMO_DATA_MODE", "off");
+    const [fresh, stale] = areaConfig;
+    const latestCopy = Math.max(...areaConfig.map((a) => Date.parse(a.updated)));
+    // Listings changed after every copy date in one area, and before its copy date in another.
+    const freshDate = new Date(latestCopy + DAY);
+    const staleDate = new Date(Date.parse(stale.updated) - 365 * DAY);
+    getCachedAreaSummaries.mockResolvedValue(
+      areaConfig.map((area) => ({
+        area,
+        stats: {
+          ...emptyStats(),
+          lastUpdated: area === fresh ? freshDate : area === stale ? staleDate : null,
+        },
+      })),
+    );
     const entries = await areas.default();
     const byPath = new Map(entries.map((e) => [new URL(e.url).pathname, e]));
-    const latest = [...areaConfig]
-      .map((a) => a.updated)
-      .sort()
-      .at(-1);
-    expect(byPath.get("/areas")).toMatchObject({ lastModified: latest });
     expect(entries).toHaveLength(areaConfig.length + 1);
+    expect(byPath.get("/areas")).toEqual({
+      url: `${base}/areas`,
+      lastModified: freshDate,
+      changeFrequency: "daily",
+      priority: 0.7,
+    });
     for (const a of areaConfig) {
       expect(byPath.get(`/areas/${a.slug}`), a.slug).toEqual({
         url: `${base}/areas/${a.slug}`,
-        lastModified: a.updated,
+        lastModified: a === fresh ? freshDate : a.updated,
         changeFrequency: "daily",
         priority: 0.7,
       });
@@ -106,6 +132,7 @@ describe("demo-data mode keeps crawlers off the sample data (src/lib/demo-mode.t
     // Each of these would query (and so throw here) if demo mode didn't stop it first.
     await expect(homes.default({ id: Promise.resolve("0") })).rejects.toMatchObject(NOT_FOUND);
     await expect(areas.default()).resolves.toEqual([]);
+    expect(getCachedAreaSummaries).not.toHaveBeenCalled();
     const paths = (await root.default()).map((e) => new URL(e.url).pathname);
     expect(paths).toContain("/");
     expect(paths).toContain("/contact");

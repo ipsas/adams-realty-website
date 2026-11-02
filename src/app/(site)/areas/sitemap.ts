@@ -1,30 +1,35 @@
 import type { MetadataRoute } from "next";
-import { areas } from "@/config/areas";
+import { guideLastmod, latestLastmod } from "@/lib/areas/stats";
 import { demoDataMode } from "@/lib/demo-mode";
 import { env } from "@/lib/env";
 
 // Served at /areas/sitemap.xml (robots.ts lists it). Rendered per request so
-// demo-data mode is read at run time; it never needs a database.
+// demo-data mode is read at run time; demo mode never touches the database.
 export const dynamic = "force-dynamic";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Demo data (src/lib/demo-mode.ts): the guides show sample listings and stats.
   if (demoDataMode()) return [];
+  // Imported here, not at the top: this module must load without a database.
+  const { getCachedAreaSummaries } = await import("@/lib/listings/cached");
   const base = env.NEXT_PUBLIC_SITE_URL;
-  // Each guide's lastmod is when its copy last changed (Area.updated), not
-  // when a listing in it did; the index changes when any guide does.
-  // YYYY-MM-DD strings compare in date order.
-  const latest = areas.reduce((max, a) => (a.updated > max ? a.updated : max), "");
+  // Each guide's lastmod is the later of its copy date (Area.updated) and the
+  // last change to a listing in it, as the page shows live listing data; the
+  // index changes when any guide does.
+  const guides = (await getCachedAreaSummaries()).map((summary) => ({
+    slug: summary.area.slug,
+    lastModified: guideLastmod(summary),
+  }));
   return [
     {
       url: `${base}/areas`,
-      lastModified: latest || undefined,
+      lastModified: latestLastmod(guides.map((g) => g.lastModified)),
       changeFrequency: "daily",
       priority: 0.7,
     },
-    ...areas.map((area) => ({
-      url: `${base}/areas/${area.slug}`,
-      lastModified: area.updated,
+    ...guides.map((g) => ({
+      url: `${base}/areas/${g.slug}`,
+      lastModified: g.lastModified,
       changeFrequency: "daily" as const,
       priority: 0.7,
     })),

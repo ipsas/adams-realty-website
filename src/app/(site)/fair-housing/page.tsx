@@ -8,6 +8,7 @@ import { PageIntro } from "@/components/content/page-intro";
 import { buttonClasses } from "@/components/ui/button";
 import { Container, SectionHeading } from "@/components/ui/section";
 import { site } from "@/config/site";
+import { pageOpenGraph } from "@/lib/og";
 
 /*
  * General information, not legal advice; have counsel review before launch.
@@ -21,6 +22,7 @@ export const metadata: Metadata = {
   title: "Fair housing",
   description: `${site.legalName} is committed to equal housing opportunity under the federal Fair Housing Act and the Georgia Fair Housing Act. Learn your rights and how to report discrimination.`,
   alternates: { canonical: "/fair-housing" },
+  openGraph: pageOpenGraph("/fair-housing"),
 };
 
 const HUD_COMPLAINT_URL = "https://www.hud.gov/fairhousing/fileacomplaint";

@@ -17,11 +17,13 @@ import {
 } from "@/lib/areas/stats";
 import { formatNumber } from "@/lib/format";
 import { getCachedAreaSummaries } from "@/lib/listings/cached";
+import { pageOpenGraph } from "@/lib/og";
 
 export const metadata: Metadata = {
   title: "Area guides",
   description: `Guides to ${areas.length} towns and lakes around Gainesville and Northeast Georgia: median prices, days on market, recent sales, and the parks and landmarks of each.`,
   alternates: { canonical: "/areas" },
+  openGraph: pageOpenGraph("/areas"),
 };
 
 export default async function AreasPage(props: PageProps<"/areas">) {

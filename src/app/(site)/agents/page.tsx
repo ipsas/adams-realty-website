@@ -8,11 +8,13 @@ import { site } from "@/config/site";
 import { getAgents } from "@/lib/agents/queries";
 import { demoDataMode } from "@/lib/demo-mode";
 import { AGENTS_PAGE_TITLE } from "@/lib/json-ld";
+import { pageOpenGraph } from "@/lib/og";
 
 export const metadata: Metadata = {
   title: AGENTS_PAGE_TITLE,
   description: `Meet the real estate agents at ${site.legalName}, serving buyers and sellers across ${site.market.region}.`,
   alternates: { canonical: "/agents" },
+  openGraph: pageOpenGraph("/agents"),
 };
 
 export default async function AgentsPage() {
