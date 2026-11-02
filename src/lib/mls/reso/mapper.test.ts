@@ -508,6 +508,7 @@ describe("Georgia MLS field rules", () => {
 
   describe("list date from DaysOnMarket", () => {
     const active = (over: ResoProperty = {}) => mapOk({ ...base, ...over }).listDate;
+    const at15 = "2026-10-15T14:00:00Z";
 
     it("dates an active listing DaysOnMarket days before its New York modification date", () => {
       expect(active({ ModificationTimestamp: "2026-10-15T14:00:00Z", DaysOnMarket: 3 })).toBe(
@@ -545,6 +546,52 @@ describe("Georgia MLS field rules", () => {
       }
       expect(active({ DaysOnMarket: undefined })).toBeUndefined();
       expect(active({ ModificationTimestamp: "garbage", DaysOnMarket: 3 })).toBeUndefined();
+    });
+
+    it("is undefined, never a far-past date or a throw, for an absurd DaysOnMarket (QA L1)", () => {
+      const at = "2026-10-15T14:00:00Z";
+      // The bound itself still derives: about a century back.
+      expect(listDateFromDaysOnMarket(at, 36500)).toBe("1926-11-09");
+      for (const dom of [36501, 1e6, 99999999, 1.1e8, 1e300, Number.POSITIVE_INFINITY]) {
+        expect(() => listDateFromDaysOnMarket(at, dom), String(dom)).not.toThrow();
+        expect(listDateFromDaysOnMarket(at, dom), String(dom)).toBeUndefined();
+      }
+    });
+
+    it("maps an active record with DaysOnMarket 1.1e8 without throwing, keeping the stored date", () => {
+      const r = mapResoProperty({ ...base, ModificationTimestamp: at15, DaysOnMarket: 1.1e8 });
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.listing.listDate).toBeUndefined();
+    });
+
+    it("is undefined (stored date kept) for pending and under contract, whatever DOM says (QA L3)", () => {
+      for (const s of ["Pending", "Active Under Contract"]) {
+        const l = mapOk({
+          ...base,
+          StandardStatus: s,
+          ModificationTimestamp: at15,
+          DaysOnMarket: 9,
+        });
+        expect(l.status, s).toBe(s === "Pending" ? "pending" : "active_under_contract");
+        expect(l.listDate, s).toBeUndefined();
+      }
+    });
+
+    // QA L4: current, intended-for-now behaviour, documented rather than changed.
+    it("current behaviour: a relist whose DOM was reset moves the list date forward to the relist", () => {
+      const first = active({ ModificationTimestamp: "2026-09-10T14:00:00Z", DaysOnMarket: 40 });
+      expect(first).toBe("2026-08-01");
+      // Withdrawn and relisted: a newer record with DOM back at 2 dates from the relist.
+      const relist = active({ ModificationTimestamp: "2026-10-15T14:00:00Z", DaysOnMarket: 2 });
+      expect(relist).toBe("2026-10-13");
+    });
+
+    it("current behaviour: a stale DOM anchors to its ModificationTimestamp, not to now", () => {
+      // A record last changed months ago: DOM 5 as of then, whatever today is.
+      expect(active({ ModificationTimestamp: "2026-03-01T15:00:00Z", DaysOnMarket: 5 })).toBe(
+        "2026-02-24",
+      );
+      expect(listDateFromDaysOnMarket("2025-12-31T15:00:00Z", 0)).toBe("2025-12-31");
     });
 
     it("is null for coming soon and kept (undefined) for other statuses, whatever DOM says", () => {

@@ -121,4 +121,35 @@ describe("marketDateDaysAgo", () => {
       "2025-10-27",
     );
   });
+
+  // QA L2: the cutoff "New this week" and the listed-within filter compare list dates to.
+  const ny = (iso: string, days = 7) => marketDateDaysAgo(days, new Date(iso), "America/New_York");
+
+  it("puts the 7-day cutoff 7 New York calendar days back, late evenings included", () => {
+    expect(ny("2026-10-20T16:00:00Z")).toBe("2026-10-13");
+    // 23:30 EDT Oct 20 is Oct 21 in UTC: still Oct 20 in New York.
+    expect(ny("2026-10-21T03:30:00Z")).toBe("2026-10-13");
+    // 00:30 EDT Oct 21: New York has turned over.
+    expect(ny("2026-10-21T04:30:00Z")).toBe("2026-10-14");
+  });
+
+  it("counts 7 calendar days across the Nov 1 fall back", () => {
+    // 23:30 EST Nov 2 (04:30 UTC Nov 3): Nov 2 minus 7 is Oct 26.
+    expect(ny("2026-11-03T04:30:00Z")).toBe("2026-10-26");
+    expect(ny("2026-11-03T04:30:00Z", 8)).toBe("2026-10-25");
+    // 00:30 EST Nov 3 (05:30 UTC): Oct 27.
+    expect(ny("2026-11-03T05:30:00Z")).toBe("2026-10-27");
+    // 23:30 EST Nov 7 (04:30 UTC Nov 8): Oct 31, the day before the change.
+    expect(ny("2026-11-08T04:30:00Z")).toBe("2026-10-31");
+  });
+
+  it("counts 7 calendar days across the Mar 8 spring forward", () => {
+    // 23:30 EDT Mar 11 (03:30 UTC Mar 12): Mar 4.
+    expect(ny("2026-03-12T03:30:00Z")).toBe("2026-03-04");
+    expect(ny("2026-03-12T03:30:00Z", 8)).toBe("2026-03-03");
+    // 00:30 EDT Mar 12 (04:30 UTC): Mar 5.
+    expect(ny("2026-03-12T04:30:00Z")).toBe("2026-03-05");
+    // 23:30 EST Mar 7 (04:30 UTC Mar 8), before the change: Feb 28.
+    expect(ny("2026-03-08T04:30:00Z")).toBe("2026-02-28");
+  });
 });

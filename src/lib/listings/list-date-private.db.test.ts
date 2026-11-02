@@ -1,4 +1,4 @@
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { GET as suggestRoute } from "@/app/api/locations/suggest/route";
@@ -241,6 +241,38 @@ describe("search payloads", () => {
     const area = await getAreaStats([royston]);
     expect(typeof area.get(royston.slug)!.listDateSample).toBe("number");
     expectNoListDate([...area], "getAreaStats");
+  });
+
+  // QA L2: `list_date >= since`, so 7 days on market is in the week, 8 days isn't.
+  it("the Days on market filter counts the 7-day listing at 7 and the 8-day one only at 8", async () => {
+    const found = async (qs: string) => (await searchListings(crit(qs))).items.map((i) => i.id);
+    const seven = await found("maxDaysOnMarket=7");
+    expect(seven).toContain(ids.get("seven"));
+    expect(seven).not.toContain(ids.get("eight"));
+    const eight = await found("maxDaysOnMarket=8");
+    expect(eight).toContain(ids.get("seven"));
+    expect(eight).toContain(ids.get("eight"));
+  });
+
+  it("New this week counts the 7-day listing and not the 8-day one", async () => {
+    const setListDate = (key: string, date: string) =>
+      db
+        .update(listings)
+        .set({ listDate: date })
+        .where(eq(listings.id, ids.get(key)!));
+    const base = (await getMarketStats()).newThisWeek;
+    try {
+      // Moving the 8-day listing to 7 days adds it; moving the 7-day one to 8 drops it.
+      await setListDate("eight", boundary.seven);
+      expect((await getMarketStats()).newThisWeek).toBe(base + 1);
+      await setListDate("eight", boundary.eight);
+      await setListDate("seven", boundary.eight);
+      expect((await getMarketStats()).newThisWeek).toBe(base - 1);
+    } finally {
+      await setListDate("seven", boundary.seven);
+      await setListDate("eight", boundary.eight);
+    }
+    expect((await getMarketStats()).newThisWeek).toBe(base);
   });
 
   it("alert emails select no list date", () => {

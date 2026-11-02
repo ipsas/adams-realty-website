@@ -474,9 +474,16 @@ export function listDateFromDaysOnMarket(
   const at = timestamp(s);
   const days = num(daysOnMarket);
   if (!at || days === null || !Number.isSafeInteger(days) || days < 0) return undefined;
+  // A larger DOM is feed garbage, and far enough out the date math throws.
+  if (days > MAX_DAYS_ON_MARKET) return undefined;
   // Calendar math on the local date, so a DST change can't shift the day.
-  return marketDateDaysAgo(days, at);
+  const date = marketDateDaysAgo(days, at);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number(date.slice(0, 4)) < 1900) return undefined;
+  return date;
 }
+
+/** About a century: no real listing has been on the market longer. */
+const MAX_DAYS_ON_MARKET = 36_500;
 
 /**
  * Only an active listing's DaysOnMarket dates it: coming soon isn't on the market

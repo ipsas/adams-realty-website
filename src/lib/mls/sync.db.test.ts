@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import { db } from "@/db";
 import { agents, dataSources, listings, syncRuns } from "@/db/schema";
 import { closeDb, createSource, listing, resetDb } from "@/test/db/helpers";
+import { mapResoProperty, type ResoProperty } from "./reso/mapper";
 import { STALE_RUN_MS } from "./sync-engine";
 import { createSyncStore, STALE_RUN_ERROR } from "./sync-store";
 import { FEED_GRACE_MS, SyncFailedError, syncAllSources, syncSource } from "./sync";
@@ -229,6 +230,51 @@ describe("syncSource against Postgres", () => {
       error: "RESO request failed (503)",
     });
     expect((await sourceRow()).syncCursorKey).toBe("K000002");
+  });
+
+  it("keeps a derived list date when a newer record of the listing comes in pending (QA L3)", async () => {
+    // Real RESO records through the mapper: the list date comes from DaysOnMarket.
+    const reso = (over: ResoProperty): ResoProperty => ({
+      ListingKey: "K000001",
+      ListingId: "10000001",
+      PropertyType: "Residential",
+      PropertySubType: "Single Family Residence",
+      ListPrice: 300_000,
+      StreetNumber: "101",
+      StreetName: "Main",
+      StreetSuffix: "St",
+      City: "Testville",
+      StateOrProvince: "GA",
+      PostalCode: "30662",
+      ...over,
+    });
+    const records = [
+      mapResoProperty(
+        reso({
+          StandardStatus: "Active",
+          DaysOnMarket: 5,
+          ModificationTimestamp: "2026-10-15T14:00:00Z",
+        }),
+      ),
+    ];
+    const { provider } = feed(records);
+    await syncSource(source.id, { provider });
+    expect(await row("K000001")).toMatchObject({ status: "active", listDate: "2026-10-10" });
+
+    // Under contract later: a different DOM, a newer timestamp, and no list date from it.
+    const pending = mapResoProperty(
+      reso({
+        StandardStatus: "Pending",
+        DaysOnMarket: 20,
+        ModificationTimestamp: "2026-10-25T14:00:00Z",
+      }),
+    );
+    expect(pending.ok).toBe(true);
+    expect(pending.ok && pending.listing.listDate).toBeUndefined();
+    records[0] = pending;
+    const result = await syncSource(source.id, { provider });
+    expect(result).toMatchObject({ upserted: 1 });
+    expect(await row("K000001")).toMatchObject({ status: "pending", listDate: "2026-10-10" });
   });
 
   it("records a sync skipped because another run is still going", async () => {

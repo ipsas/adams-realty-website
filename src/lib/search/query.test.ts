@@ -72,6 +72,36 @@ describe("buildWhere", () => {
     expect(dialect.sqlToQuery(after).params).toEqual(["2026-10-20"]);
   });
 
+  // QA L2: `list_date >= since`, so listed exactly 7 days ago counts, 8 days ago doesn't.
+  const sinceFor = (days: number, iso: string) =>
+    dialect.sqlToQuery(listedWithin(days, new Date(iso))).params[0] as string;
+  const counted = (listDate: string, iso: string, days = 7) => listDate >= sinceFor(days, iso);
+
+  it("counts a listing 7 days old in the 7-day window and not one 8 days old", () => {
+    // Noon EDT Oct 20.
+    expect(sinceFor(7, "2026-10-20T16:00:00Z")).toBe("2026-10-13");
+    expect(counted("2026-10-13", "2026-10-20T16:00:00Z")).toBe(true);
+    expect(counted("2026-10-12", "2026-10-20T16:00:00Z")).toBe(false);
+    // The 8-day window takes it.
+    expect(counted("2026-10-12", "2026-10-20T16:00:00Z", 8)).toBe(true);
+  });
+
+  it("keeps the 7/8-day boundary across the Nov 1 fall back", () => {
+    // 23:30 EST Nov 2 (04:30 UTC Nov 3).
+    const late = "2026-11-03T04:30:00Z";
+    expect(sinceFor(7, late)).toBe("2026-10-26");
+    expect(counted("2026-10-26", late)).toBe(true);
+    expect(counted("2026-10-25", late)).toBe(false);
+  });
+
+  it("keeps the 7/8-day boundary across the Mar 8 spring forward", () => {
+    // 23:30 EDT Mar 11 (03:30 UTC Mar 12).
+    const late = "2026-03-12T03:30:00Z";
+    expect(sinceFor(7, late)).toBe("2026-03-04");
+    expect(counted("2026-03-04", late)).toBe(true);
+    expect(counted("2026-03-03", late)).toBe(false);
+  });
+
   it("matches ZIP codes exactly", () => {
     const { sql, params } = render({ q: "30662" });
     expect(sql).toContain(`"listings"."postal_code" = $`);
