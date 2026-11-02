@@ -527,6 +527,12 @@ describe("Georgia MLS field rules", () => {
       expect(listDateFromDaysOnMarket("2026-03-09T12:00:00Z", 2)).toBe("2026-03-07");
       // Fall back on Nov 1: 03:30 UTC Nov 2 is Nov 1 in New York.
       expect(listDateFromDaysOnMarket("2026-11-02T03:30:00Z", 1)).toBe("2026-10-31");
+      // 04:30 UTC Mar 8 is 23:30 EST Mar 7, just before the change.
+      expect(listDateFromDaysOnMarket("2026-03-08T04:30:00Z", 0)).toBe("2026-03-07");
+      // 04:30 UTC Nov 1 is 00:30 EDT Nov 1, just before the change; 7 days back is Oct 25.
+      expect(listDateFromDaysOnMarket("2026-11-01T04:30:00Z", 7)).toBe("2026-10-25");
+      // An offset timestamp is read as the instant it names.
+      expect(listDateFromDaysOnMarket("2026-11-03T23:30:00-05:00", 2)).toBe("2026-11-01");
     });
 
     it("is undefined without a usable DaysOnMarket or timestamp", () => {
@@ -547,6 +553,12 @@ describe("Georgia MLS field rules", () => {
       for (const s of ["Pending", "Active Under Contract", "Closed"]) {
         expect(active({ ...dom, StandardStatus: s }), s).toBeUndefined();
       }
+    });
+
+    it("ignores OriginalEntryTimestamp even if a feed sends it", () => {
+      const dom = { ModificationTimestamp: "2026-10-15T14:00:00Z", DaysOnMarket: 3 };
+      expect(active({ ...dom, OriginalEntryTimestamp: "2026-01-05T15:00:00Z" })).toBe("2026-10-12");
+      expect(active({ OriginalEntryTimestamp: "2026-01-05T15:00:00Z" })).toBeUndefined();
     });
 
     it("ignores ListingContractDate and OnMarketDate", () => {

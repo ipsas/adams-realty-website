@@ -74,6 +74,17 @@ describe("Bridge fixtures through the mapper", () => {
     expect(l.listDate).toBe("2026-10-01");
   });
 
+  it("dates active listings without OriginalEntryTimestamp, which the feed never sends", () => {
+    for (const r of records) expect(r, r.ListingKey).not.toHaveProperty("OriginalEntryTimestamp");
+    const active = [...mapped].filter(([, r]) => r.ok && r.listing.status === "active");
+    expect(active.length).toBeGreaterThan(0);
+    for (const [key, r] of active) {
+      if (r.ok) {
+        expect(r.listing.listDate, key).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      }
+    }
+  });
+
   it("a commercial lease quoted per year becomes a monthly rent", () => {
     expect(listing("GA-0003-COMM")).toMatchObject({ transactionType: "rent", listPrice: 2000 });
   });
