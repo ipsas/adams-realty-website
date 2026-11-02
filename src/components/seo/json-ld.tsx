@@ -2,6 +2,7 @@ import { env } from "@/lib/env";
 import {
   type AgentProfile,
   agentJsonLd,
+  agentsCollectionJsonLd,
   organizationJsonLd,
   serializeJsonLd,
   websiteJsonLd,
@@ -29,4 +30,9 @@ export function WebSiteJsonLd() {
 /** An agent as a schema.org Person working for the firm (agent profile page). */
 export function AgentJsonLd({ agent }: { agent: AgentProfile }) {
   return <JsonLd data={agentJsonLd(agent, env.NEXT_PUBLIC_SITE_URL)} />;
+}
+
+/** The agents index as a schema.org CollectionPage listing the agents' Person @ids (/agents). */
+export function AgentsCollectionJsonLd({ agents }: { agents: readonly { slug: string }[] }) {
+  return <JsonLd data={agentsCollectionJsonLd(agents, env.NEXT_PUBLIC_SITE_URL)} />;
 }

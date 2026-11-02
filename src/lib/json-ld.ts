@@ -99,6 +99,35 @@ export type WebSiteJsonLd = {
   publisher: { "@id": string };
 };
 
+/** The /agents page title, shared by its metadata and its CollectionPage name. */
+export const AGENTS_PAGE_TITLE = "Our agents";
+
+export type ListItemRef = { "@type": "ListItem"; position: number; item: { "@id": string } };
+
+export type BreadcrumbItem = { "@type": "ListItem"; position: number; name: string; item: string };
+
+export type AgentsCollectionJsonLd = {
+  "@context": "https://schema.org";
+  "@graph": [
+    {
+      "@type": "CollectionPage";
+      "@id": string;
+      url: string;
+      name: string;
+      about: { "@id": string };
+      publisher: { "@id": string };
+      isPartOf: { "@id": string };
+      breadcrumb: { "@id": string };
+      mainEntity: {
+        "@type": "ItemList";
+        numberOfItems: number;
+        itemListElement: ListItemRef[];
+      };
+    },
+    { "@type": "BreadcrumbList"; "@id": string; itemListElement: BreadcrumbItem[] },
+  ];
+};
+
 /** JSON for a `<script type="application/ld+json">`; escaping "<" keeps any text from closing the tag. */
 export function serializeJsonLd(data: unknown): string {
   return JSON.stringify(data).replace(/</g, "\\u003c");
@@ -268,5 +297,51 @@ export function websiteJsonLd(
     alternateName: settings.legalName,
     url: `${trimSlash(baseUrl)}/`,
     publisher: { "@id": organizationId(baseUrl) },
+  };
+}
+
+/**
+ * The /agents index as a CollectionPage whose ItemList references each agent's Person @id (in
+ * display order), plus its breadcrumbs. The Person and firm nodes live on their own pages; this
+ * graph only points at their @ids.
+ */
+export function agentsCollectionJsonLd(
+  agents: readonly { slug: string }[],
+  baseUrl: string,
+  settings: Pick<FirmSettings, "name"> = site,
+): AgentsCollectionJsonLd {
+  const base = trimSlash(baseUrl);
+  const url = `${base}/agents`;
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "CollectionPage",
+        "@id": `${url}#webpage`,
+        url,
+        name: AGENTS_PAGE_TITLE,
+        about: { "@id": organizationId(baseUrl) },
+        publisher: { "@id": organizationId(baseUrl) },
+        isPartOf: { "@id": websiteId(baseUrl) },
+        breadcrumb: { "@id": `${url}#breadcrumb` },
+        mainEntity: {
+          "@type": "ItemList",
+          numberOfItems: agents.length,
+          itemListElement: agents.map((a, i) => ({
+            "@type": "ListItem",
+            position: i + 1,
+            item: { "@id": agentId(baseUrl, a.slug) },
+          })),
+        },
+      },
+      {
+        "@type": "BreadcrumbList",
+        "@id": `${url}#breadcrumb`,
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: settings.name, item: base },
+          { "@type": "ListItem", position: 2, name: AGENTS_PAGE_TITLE, item: url },
+        ],
+      },
+    ],
   };
 }

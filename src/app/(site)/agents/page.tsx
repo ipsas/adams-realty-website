@@ -1,14 +1,16 @@
 import { Languages, MapPin } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { AgentsCollectionJsonLd } from "@/components/seo/json-ld";
 import { Avatar } from "@/components/ui/avatar";
 import { Container } from "@/components/ui/section";
 import { site } from "@/config/site";
 import { getAgents } from "@/lib/agents/queries";
 import { demoDataMode } from "@/lib/demo-mode";
+import { AGENTS_PAGE_TITLE } from "@/lib/json-ld";
 
 export const metadata: Metadata = {
-  title: "Our agents",
+  title: AGENTS_PAGE_TITLE,
   description: `Meet the real estate agents at ${site.legalName}, serving buyers and sellers across ${site.market.region}.`,
   alternates: { canonical: "/agents" },
 };
@@ -19,6 +21,7 @@ export default async function AgentsPage() {
   const showCounts = !demoDataMode();
   return (
     <Container className="py-14">
+      <AgentsCollectionJsonLd agents={agents} />
       <div className="max-w-2xl">
         <p className="mb-2 text-xs font-semibold tracking-[0.18em] text-brass-500 uppercase">
           Our team

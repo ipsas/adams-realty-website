@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { site } from "@/config/site";
 import {
+  AGENTS_PAGE_TITLE,
   type AgentProfile,
   agentId,
   agentJsonLd,
+  agentsCollectionJsonLd,
   organizationId,
   organizationJsonLd,
   parseOfficeHours,
@@ -262,6 +264,89 @@ describe("business and WebSite nodes (BR-A1)", () => {
     expect(organizationJsonLd(slashed)["@id"]).toBe("https://adamsrealtyga.com/#organization");
     expect(websiteId(slashed)).toBe("https://adamsrealtyga.com/#website");
     expect(websiteJsonLd(slashed)).toEqual(website);
+  });
+});
+
+describe("agentsCollectionJsonLd", () => {
+  const agents = [{ slug: "andrea-anderegg" }, { slug: "emily-cooper" }, { slug: "erika-lane" }];
+  const json = agentsCollectionJsonLd(agents, base);
+  const [page, crumbs] = json["@graph"];
+
+  it("emits one graph with the CollectionPage and its breadcrumbs", () => {
+    expect(json["@context"]).toBe("https://schema.org");
+    expect(json["@graph"].map((n) => n["@type"])).toEqual(["CollectionPage", "BreadcrumbList"]);
+  });
+
+  it("gives the page its @ids and points at the firm and website", () => {
+    expect(page["@id"]).toBe(`${base}/agents#webpage`);
+    expect(page.url).toBe(`${base}/agents`);
+    expect(page.name).toBe(AGENTS_PAGE_TITLE);
+    expect(page.name).toBe("Our agents");
+    expect(page.about).toEqual({ "@id": organizationId(base) });
+    expect(page.publisher).toEqual({ "@id": `${base}/#organization` });
+    expect(page.isPartOf).toEqual({ "@id": websiteId(base) });
+    expect(page.breadcrumb).toEqual({ "@id": `${base}/agents#breadcrumb` });
+    expect(page.breadcrumb["@id"]).toBe(crumbs["@id"]);
+  });
+
+  it("lists the agents' Person @ids in display order", () => {
+    expect(page.mainEntity["@type"]).toBe("ItemList");
+    expect(page.mainEntity.numberOfItems).toBe(3);
+    const ref = (slug: string) => ({ "@id": `${base}/agents/${slug}#person` });
+    expect(page.mainEntity.itemListElement).toEqual([
+      { "@type": "ListItem", position: 1, item: ref("andrea-anderegg") },
+      { "@type": "ListItem", position: 2, item: ref("emily-cooper") },
+      { "@type": "ListItem", position: 3, item: { "@id": agentId(base, "erika-lane") } },
+    ]);
+  });
+
+  it("references the same @id as the agent page's Person node", () => {
+    const person = agentJsonLd(
+      {
+        slug: "emily-cooper",
+        name: "Emily Cooper",
+        title: null,
+        phone: null,
+        email: "e@x.com",
+        photoUrl: null,
+      },
+      base,
+    );
+    expect(page.mainEntity.itemListElement[1].item["@id"]).toBe(person["@id"]);
+  });
+
+  it("has a two-step breadcrumb from the home page", () => {
+    expect(crumbs).toEqual({
+      "@type": "BreadcrumbList",
+      "@id": `${base}/agents#breadcrumb`,
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: site.name, item: base },
+        { "@type": "ListItem", position: 2, name: "Our agents", item: `${base}/agents` },
+      ],
+    });
+  });
+
+  it("only references Person and firm nodes, with no sameAs and no duplicate @ids", () => {
+    const out = serializeJsonLd(json);
+    expect(out).not.toContain("sameAs");
+    expect(out).not.toContain('"Person"');
+    expect(out).not.toContain("RealEstateAgent");
+    const ids = json["@graph"].map((n) => n["@id"]);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(JSON.parse(out)).toEqual(json);
+  });
+
+  it("handles an empty agent list", () => {
+    const empty = agentsCollectionJsonLd([], base)["@graph"][0];
+    expect(empty.mainEntity).toEqual({
+      "@type": "ItemList",
+      numberOfItems: 0,
+      itemListElement: [],
+    });
+  });
+
+  it("gives the same output for a trailing-slash base", () => {
+    expect(agentsCollectionJsonLd(agents, `${base}/`)).toEqual(json);
   });
 });
 
