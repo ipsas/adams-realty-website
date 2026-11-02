@@ -124,7 +124,7 @@ export default async function AreaGuidePage(props: PageProps<"/areas/[slug]">) {
                 </span>
               </p>
               <p className="mt-6 max-w-xl text-lg leading-relaxed text-ink-soft">
-                {area.description}
+                {area.firmIntro ? `${area.firmIntro} ${area.description}` : area.description}
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <LinkButton href={mapHref} size="lg" className="w-full sm:w-auto">

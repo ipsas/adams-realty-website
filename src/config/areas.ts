@@ -28,6 +28,8 @@ export type Area = {
   region: AreaRegion;
   /** 2–3 factual sentences about the place. */
   description: string;
+  /** Approved sentence about the firm's office, shown first in the guide page intro only; not in the Place JSON-LD or the /areas cards. */
+  firmIntro?: string;
   highlights: string[];
   /** Practical, buyer-relevant context portals leave out (permits, taxes, rules). */
   goodToKnow?: string;
@@ -294,11 +296,13 @@ export const areas: Area[] = [
   // ── Franklin County ────────────────────────────────────────────────────────
   {
     slug: "royston",
-    updated: "2026-10-23",
+    updated: "2026-11-02",
     name: "Royston",
     city: "Royston",
     counties: ["Franklin", "Hart", "Madison"],
     region: "franklin",
+    firmIntro:
+      "Adams Realty, Inc. is based right here in Royston, with our office at 69 Mill Street.",
     description:
       "Royston is a small city where Franklin, Hart and Madison counties meet, at the crossroads of U.S. 29 and GA 8. It was the hometown of baseball Hall of Famer Ty Cobb, and the Ty Cobb Museum on Cook Street tells his story.",
     highlights: [
@@ -417,11 +421,13 @@ export const areas: Area[] = [
   // ── Stephens County ────────────────────────────────────────────────────────
   {
     slug: "toccoa",
-    updated: "2026-10-23",
+    updated: "2026-11-02",
     name: "Toccoa",
     city: "Toccoa",
     counties: ["Stephens"],
     region: "stephens",
+    firmIntro:
+      "Adams Realty, Inc. works with buyers and sellers in Toccoa from our office at 69 Mill Street in Royston.",
     description:
       "Toccoa is the Stephens County seat, in the foothills of the Blue Ridge. Toccoa Falls, a 186-foot waterfall on the campus of the University of Toccoa Falls, is one of the tallest free-falling waterfalls east of the Mississippi. During World War II, paratroopers trained at Camp Toccoa at the foot of Currahee Mountain.",
     highlights: [
