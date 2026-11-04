@@ -197,10 +197,10 @@ export function LocationSearch({
                 id={`${listId}-${i}`}
                 role="option"
                 aria-selected={i === active}
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  choose(s);
-                }}
+                // Keep focus on the input, but select on click: closing the list on
+                // pointerdown let the same tap's click land on whatever was underneath.
+                onPointerDown={(e) => e.preventDefault()}
+                onClick={() => choose(s)}
                 onMouseEnter={() => setActive(i)}
                 className={cn(
                   "flex cursor-pointer items-center gap-3 px-4 py-2.5 text-left",
