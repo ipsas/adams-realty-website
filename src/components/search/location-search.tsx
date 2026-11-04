@@ -199,7 +199,9 @@ export function LocationSearch({
                 aria-selected={i === active}
                 // Keep focus on the input, but select on click: closing the list on
                 // pointerdown let the same tap's click land on whatever was underneath.
-                onPointerDown={(e) => e.preventDefault()}
+                // Prevent mousedown, not pointerdown: on iOS Safari a prevented touch
+                // pointerdown cancels the click.
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => choose(s)}
                 onMouseEnter={() => setActive(i)}
                 className={cn(
