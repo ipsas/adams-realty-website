@@ -162,6 +162,12 @@ export async function SiteFooter({ disclaimer }: { disclaimer?: string | null })
               © {new Date().getFullYear()} {site.legalName}
             </span>
           </div>
+          <p>
+            Site by{" "}
+            <a href="https://ipsumhq.com/" className="underline underline-offset-2 hover:text-ink">
+              Ipsum Labs
+            </a>
+          </p>
         </div>
       </div>
     </footer>
