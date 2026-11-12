@@ -719,7 +719,13 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
           />
         )}
       </main>
-      <SiteFooter disclaimer={footerDisclaimer} />
+      {l.removedAt ? (
+        <SiteFooter disclaimer={footerDisclaimer} />
+      ) : (
+        <div className="pb-[calc(69px+var(--sai-bottom))] lg:pb-0">
+          <SiteFooter disclaimer={footerDisclaimer} />
+        </div>
+      )}
     </>
   );
 }
