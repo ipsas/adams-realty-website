@@ -27,6 +27,7 @@ import { ContactForm } from "@/components/listings/contact-form";
 import { CountView } from "@/components/listings/count-view";
 import { ListingCard } from "@/components/listings/listing-card";
 import { ListingCtaBar } from "@/components/listings/listing-cta-bar";
+import { OfficePhoneLink, SecondaryPhones } from "@/components/listings/listing-office-contact";
 import { LocationMapLazy } from "@/components/listings/location-map-lazy";
 import { PaymentCalculator } from "@/components/listings/payment-calculator";
 import { PhotoGallery } from "@/components/listings/photo-gallery";
@@ -63,6 +64,7 @@ import {
   statusLabel,
 } from "@/lib/format";
 import { listingContact } from "@/lib/listings/attribution-contact";
+import { firmListingPhones } from "@/lib/listings/firm-phones";
 import { hoaFact, listingDetailGroups } from "@/lib/listings/detail-fields";
 import { redactAccessCodes, withoutExcludedFields } from "@/lib/listings/excluded-fields";
 import {
@@ -182,6 +184,8 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
   const canEdit = can.editListing(actor, { sourceKind: source.kind, listAgentId: l.listAgentId });
   // IDX: the listing firm, named prominently (gamls2 sends no office name: listingOfficeLabel).
   const office = listingOfficeLabel(l, site);
+  // Georgia law: on the firm's own listings, its office phone is the primary number.
+  const firm = office ? firmListingPhones(l, attributionPhone) : null;
   const hoa = hoaFact(l);
   const details = listingDetailGroups(l);
 
@@ -319,8 +323,15 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
               {office && (
                 <p className="mt-1 text-sm text-ink-soft" data-testid="listing-office">
                   Listing by <span className="font-medium text-ink">{office}</span>
+                  {firm && (
+                    <>
+                      {" · "}
+                      <OfficePhoneLink phone={firm.office} />
+                    </>
+                  )}
                 </p>
               )}
+              {firm && <SecondaryPhones phones={firm.secondary} className="mt-0.5" />}
 
               {/* No empty cell may show the strip's line color: a home's four facts are two
                   by two on phones, a row from sm up; bare land's two (one with no price per
@@ -577,7 +588,19 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                   {l.listAgentName && <InfoRow label="Listing agent" value={l.listAgentName} />}
                   <InfoRow label="Listing ID" value={l.mlsNumber ?? l.listingKey} />
                   <InfoRow label="Status" value={statusLabel(l.status, l.transactionType)} />
-                  {attributionPhone && <InfoRow label="Contact phone" value={attributionPhone} />}
+                  {firm ? (
+                    <InfoRow
+                      label="Contact phone"
+                      value={
+                        <>
+                          <OfficePhoneLink phone={firm.office} />
+                          <SecondaryPhones phones={firm.secondary} className="font-normal" />
+                        </>
+                      }
+                    />
+                  ) : (
+                    attributionPhone && <InfoRow label="Contact phone" value={attributionPhone} />
+                  )}
                   {attributionEmail && <InfoRow label="Contact email" value={attributionEmail} />}
                   {/* No buyer-broker compensation (Georgia MLS R&R Art. V): getListingBySlug
                       doesn't select it. */}
@@ -605,6 +628,18 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
             {/* Contact sidebar */}
             <aside id="contact" className="scroll-mt-20 lg:sticky lg:top-24 lg:self-start">
               <div className="rounded-3xl border border-line bg-surface p-6 shadow-card">
+                {firm && (
+                  <div className="mb-5" data-testid="contact-office">
+                    <p className="text-sm text-ink-soft">
+                      Listing by <span className="font-medium text-ink">{office}</span>
+                    </p>
+                    <OfficePhoneLink
+                      phone={firm.office}
+                      className="flex min-h-11 items-center text-sm pointer-fine:mt-0.5 pointer-fine:min-h-0"
+                    />
+                    <SecondaryPhones phones={firm.secondary} />
+                  </div>
+                )}
                 {agent ? (
                   <div className="mb-5 flex items-center gap-4">
                     <Avatar

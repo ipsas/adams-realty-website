@@ -9,12 +9,14 @@ import { MlsCredit } from "@/components/content/mls-attribution";
 import { MarketSnapshot } from "@/components/areas/market-snapshot";
 import { RecentSales } from "@/components/areas/recent-sales";
 import { ListingCard } from "@/components/listings/listing-card";
+import { OfficePhoneLink, SecondaryPhones } from "@/components/listings/listing-office-contact";
 import { LinkButton } from "@/components/ui/button";
 import { Photo } from "@/components/ui/photo";
 import { Container, SectionHeading } from "@/components/ui/section";
 import { areaHref, areaRegions, areas, countyLabel, type Area } from "@/config/areas";
 import { site } from "@/config/site";
 import { NEARBY_GUIDES_HEADING, nearbyAreas } from "@/lib/areas/nearby";
+import { cn } from "@/lib/cn";
 import {
   getAreaAgents,
   getAreaFeaturedListing,
@@ -35,6 +37,7 @@ import { env } from "@/lib/env";
 import { formatPrice, formatStreet } from "@/lib/format";
 import { getCachedAreaGuide } from "@/lib/listings/cached";
 import type { CardRow } from "@/lib/listings/card";
+import { firmListingPhones } from "@/lib/listings/firm-phones";
 import { listingOfficeLabel } from "@/lib/listings/office-label";
 import { OG_DEFAULT_IMAGE } from "@/lib/og";
 import { searchHref } from "@/lib/search/params";
@@ -82,7 +85,11 @@ export default async function AreaGuidePage(props: PageProps<"/areas/[slug]">) {
         areas.filter((a) => a.region === r.id && a.slug !== area.slug).slice(0, 3),
       );
   // The nearest guides in any region, so links cross county lines.
-  const nearby = nearbyAreas(area, areas, related.map((a) => a.slug));
+  const nearby = nearbyAreas(
+    area,
+    areas,
+    related.map((a) => a.slug),
+  );
 
   return (
     <>
@@ -420,44 +427,75 @@ function FeaturedHome({
 }) {
   const fallback = listing ? null : leadPhotoFallback(forSale, salesShown);
   const office = listing && listingOfficeLabel(listing, site);
-  return (
-    <Link
-      href={
-        listing
-          ? `/homes/${listing.slug}`
-          : fallback?.target === "sales"
-            ? "#recently-sold"
-            : mapHref
-      }
-      className="group relative isolate block aspect-[4/3] overflow-hidden rounded-[1.75rem] bg-brand-800 shadow-lift"
-    >
-      <Photo
-        src={listing?.primaryPhotoUrl}
-        alt={listing ? `${formatStreet(listing)}, a home for sale in ${area.name}` : ""}
-        priority
-        sizes="(min-width: 1024px) 45vw, 100vw"
-        className="absolute inset-0 -z-10 size-full transition-transform duration-700 ease-out group-hover:scale-[1.03]"
-        fallbackClassName="from-brand-600 via-brand-700 to-brand-900 text-brand-500"
-      />
-      {listing ? (
-        <div className="absolute inset-x-3 bottom-3 flex items-center justify-between gap-4 rounded-2xl bg-surface/95 py-3 pr-4 pl-4 shadow-pop backdrop-blur sm:inset-x-4 sm:bottom-4">
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold tracking-wide text-brass-700 uppercase">
-              {listing.isFeatured ? "Featured home" : "For sale"} in {area.name}
-            </p>
-            <p className="truncate text-sm font-medium text-ink">{formatStreet(listing)}</p>
-            {office && <p className="text-sm break-words text-ink-soft">Listing by {office}</p>}
-            {listing.fromFeed && <MlsCredit className="mt-0.5 text-xs text-muted" />}
-          </div>
-          <p className="shrink-0 text-lg font-semibold text-ink tabular">
-            {formatPrice(listing.listPrice)}
-          </p>
-        </div>
-      ) : (
-        <div className="absolute inset-x-3 bottom-3 rounded-2xl bg-surface/95 px-4 py-3 text-sm text-ink-soft shadow-pop sm:inset-x-4 sm:bottom-4">
-          {fallback?.text}
-        </div>
+  // Georgia law: the firm's own listing shows its office phone, a link. Its box then sits over
+  // the Link instead of inside it (no nested <a>), letting other taps through to the Link.
+  const firm = listing && office ? firmListingPhones(listing) : null;
+  const card = listing && (
+    <div
+      className={cn(
+        "absolute inset-x-3 bottom-3 flex items-center justify-between gap-4 rounded-2xl bg-surface/95 py-3 pr-4 pl-4 shadow-pop backdrop-blur sm:inset-x-4 sm:bottom-4",
+        firm && "pointer-events-none",
       )}
-    </Link>
+    >
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold tracking-wide text-brass-700 uppercase">
+          {listing.isFeatured ? "Featured home" : "For sale"} in {area.name}
+        </p>
+        <p className="truncate text-sm font-medium text-ink">{formatStreet(listing)}</p>
+        {office && (
+          <p className="text-sm break-words text-ink-soft">
+            Listing by {office}
+            {firm && (
+              <>
+                {" · "}
+                <OfficePhoneLink phone={firm.office} className="pointer-events-auto" />
+              </>
+            )}
+          </p>
+        )}
+        {firm && <SecondaryPhones phones={firm.secondary} className="pointer-events-auto w-fit" />}
+        {listing.fromFeed && <MlsCredit className="mt-0.5 text-xs text-muted" />}
+      </div>
+      <p className="shrink-0 text-lg font-semibold text-ink tabular">
+        {formatPrice(listing.listPrice)}
+      </p>
+    </div>
+  );
+  return (
+    <div className="relative">
+      <Link
+        href={
+          listing
+            ? `/homes/${listing.slug}`
+            : fallback?.target === "sales"
+              ? "#recently-sold"
+              : mapHref
+        }
+        // Its own name when the box is outside it.
+        aria-label={
+          firm && listing
+            ? `${formatStreet(listing)}, ${formatPrice(listing.listPrice)}`
+            : undefined
+        }
+        className="group relative isolate block aspect-[4/3] overflow-hidden rounded-[1.75rem] bg-brand-800 shadow-lift"
+      >
+        <Photo
+          src={listing?.primaryPhotoUrl}
+          alt={listing ? `${formatStreet(listing)}, a home for sale in ${area.name}` : ""}
+          priority
+          sizes="(min-width: 1024px) 45vw, 100vw"
+          className="absolute inset-0 -z-10 size-full transition-transform duration-700 ease-out group-hover:scale-[1.03]"
+          fallbackClassName="from-brand-600 via-brand-700 to-brand-900 text-brand-500"
+        />
+        {listing ? (
+          !firm && card
+        ) : (
+          <div className="absolute inset-x-3 bottom-3 rounded-2xl bg-surface/95 px-4 py-3 text-sm text-ink-soft shadow-pop sm:inset-x-4 sm:bottom-4">
+            {fallback?.text}
+          </div>
+        )}
+      </Link>
+      {firm && card}
+    </div>
   );
 }

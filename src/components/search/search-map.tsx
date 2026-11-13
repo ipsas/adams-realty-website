@@ -36,6 +36,7 @@ import { useMapTheme } from "@/components/theme/use-theme";
 import { readResolvedTheme } from "@/lib/theme";
 import { formatBaths, formatNumber, formatPrice, formatPriceShort } from "@/lib/format";
 import { listingContact } from "@/lib/listings/attribution-contact";
+import { firmListingPhones, type PhoneLink } from "@/lib/listings/firm-phones";
 import { landSummary } from "@/lib/listings/land";
 import { mlsCopyrightShort } from "@/lib/mls-copyright";
 import { photoUrl } from "@/lib/photos";
@@ -346,9 +347,12 @@ const SMALL_SCREEN = "(max-width: 1023.98px)";
  * `small`: marks the photo and wraps price, facts and address so fitSmallPopup can compact them.
  */
 function popupNode(p: MapPin, year: number, small = false): HTMLElement {
+  // The firm line and MLS credit follow the link, not inside it: the firm's phones are links.
+  const root = document.createElement("div");
+  root.className = "w-60 text-ink";
   const a = document.createElement("a");
   a.href = `/homes/${p.slug}`;
-  a.className = "block w-60 text-ink no-underline";
+  a.className = "block text-ink no-underline";
   if (p.photo) {
     const img = document.createElement("img");
     // 240 px wide at 2×; MLS photos come resized (src/lib/photos.ts).
@@ -360,7 +364,9 @@ function popupNode(p: MapPin, year: number, small = false): HTMLElement {
     a.append(img);
   }
   const body = document.createElement("div");
-  body.className = "p-3";
+  body.className = p.office || p.fromFeed ? "px-3 pt-3" : "p-3";
+  const tail = document.createElement("div");
+  tail.className = "px-3 pb-3";
   const price = document.createElement("p");
   price.className = "text-base font-semibold";
   price.textContent = formatPrice(p.price);
@@ -383,10 +389,28 @@ function popupNode(p: MapPin, year: number, small = false): HTMLElement {
     office.dataset.testid = "pin-office";
     // Again at render, so a pin cached before the formatting still shows xxx-xxx-xxxx.
     const contact = listingContact({ ...p, isCompanyListing: p.company });
-    office.textContent = [`Listing by ${p.office}`, contact.phone, contact.email]
-      .filter(Boolean)
-      .join(" · ");
-    body.append(office);
+    // Georgia law: on the firm's own listings, its office phone is the primary number.
+    const firm = firmListingPhones(
+      { isCompanyListing: p.company, fromFeed: p.fromFeed },
+      contact.phone,
+    );
+    if (firm) {
+      const call = telLink(firm.office, "font-medium whitespace-nowrap text-brand-700");
+      office.append(`Listing by ${p.office} · `, call);
+      if (contact.email) office.append(` · ${contact.email}`);
+      const more = document.createElement("p");
+      more.className = "text-xs text-muted mt-0.5";
+      firm.secondary.forEach((phone, i) => {
+        if (i > 0) more.append(" · ");
+        more.append(telLink(phone, "whitespace-nowrap"));
+      });
+      tail.append(office, more);
+    } else {
+      office.textContent = [`Listing by ${p.office}`, contact.phone, contact.email]
+        .filter(Boolean)
+        .join(" · ");
+      tail.append(office);
+    }
   }
   if (p.fromFeed) {
     // IDX: Georgia MLS's name, logo and copyright, as on the cards (MlsCredit).
@@ -406,10 +430,21 @@ function popupNode(p: MapPin, year: number, small = false): HTMLElement {
       credit.append(img);
     }
     credit.append(mlsCopyrightShort(year));
-    body.append(credit);
+    tail.append(credit);
   }
   a.append(body);
-  return a;
+  root.append(a);
+  if (tail.childElementCount) root.append(tail);
+  return root;
+}
+
+/** A tap-to-call link for the popup (textContent only: never innerHTML). */
+function telLink(phone: PhoneLink, className: string): HTMLAnchorElement {
+  const link = document.createElement("a");
+  link.href = phone.href;
+  link.className = `${className} hover:underline`;
+  link.textContent = phone.text;
+  return link;
 }
 
 /** Distance between a pin and its popup, in px. */

@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { MlsCredit } from "@/components/content/mls-attribution";
+import { OfficePhoneLink, SecondaryPhones } from "@/components/listings/listing-office-contact";
 import { Photo } from "@/components/ui/photo";
 import { site } from "@/config/site";
+import { cn } from "@/lib/cn";
 import {
   formatBaths,
   formatDate,
@@ -11,6 +13,7 @@ import {
   formatStreet,
 } from "@/lib/format";
 import { formatRatio } from "@/lib/areas/stats";
+import { firmListingPhones } from "@/lib/listings/firm-phones";
 import { landSummary } from "@/lib/listings/land";
 import type { CardRow } from "@/lib/listings/card";
 import { listingOfficeLabel } from "@/lib/listings/office-label";
@@ -26,11 +29,16 @@ export function RecentSales({ sales }: { sales: CardRow[] }) {
       {sales.map((s) => {
         const ratio = s.closePrice && s.listPrice ? s.closePrice / s.listPrice : null;
         const office = listingOfficeLabel(s, site);
+        // Georgia law: the firm's own sales show its office phone, a link, so below the row's Link.
+        const firm = office ? firmListingPhones(s) : null;
         return (
           <li key={s.id}>
             <Link
               href={`/homes/${s.slug}`}
-              className="flex items-center gap-4 p-3 transition-colors hover:bg-sunken/60 sm:p-4"
+              className={cn(
+                "flex items-center gap-4 p-3 transition-colors hover:bg-sunken/60 sm:p-4",
+                firm && "pb-0 sm:pb-0",
+              )}
             >
               <Photo
                 src={s.primaryPhotoUrl}
@@ -45,8 +53,10 @@ export function RecentSales({ sales }: { sales: CardRow[] }) {
                 <p className="mt-0.5 text-xs text-muted sm:hidden">
                   Sold {formatDate(s.closeDate)}
                 </p>
-                {office && <p className="mt-0.5 break-words text-ink-soft">Listing by {office}</p>}
-                {s.fromFeed && <MlsCredit className="mt-0.5 text-xs text-muted" />}
+                {office && !firm && (
+                  <p className="mt-0.5 break-words text-ink-soft">Listing by {office}</p>
+                )}
+                {s.fromFeed && !firm && <MlsCredit className="mt-0.5 text-xs text-muted" />}
               </div>
               <div className="shrink-0 text-right">
                 <p className="font-semibold text-ink tabular">{formatPrice(s.closePrice)}</p>
@@ -56,6 +66,16 @@ export function RecentSales({ sales }: { sales: CardRow[] }) {
                 </p>
               </div>
             </Link>
+            {firm && (
+              // Lined up with the row's text column (padding + photo + gap).
+              <div className="pt-0.5 pr-3 pb-3 pl-[5.75rem] sm:pr-4 sm:pb-4 sm:pl-[7rem]">
+                <p className="break-words text-ink-soft">
+                  Listing by {office} · <OfficePhoneLink phone={firm.office} />
+                </p>
+                <SecondaryPhones phones={firm.secondary} className="mt-0.5" />
+                {s.fromFeed && <MlsCredit className="mt-0.5 text-xs text-muted" />}
+              </div>
+            )}
           </li>
         );
       })}

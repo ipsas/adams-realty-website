@@ -49,9 +49,10 @@ export const site = {
   },
   /**
    * The firm's broker. Their agent profile (bio, photo, contact) lives in the database;
-   * `slug` is its page, /agents/andrea-anderegg.
+   * `slug` is its page, /agents/andrea-anderegg. `cell` (the broker's cell, as on
+   * `dmca.phone`) shows, smaller, after the office phone on the firm's own listings.
    */
-  broker: { name: "Andrea Anderegg", slug: "andrea-anderegg" },
+  broker: { name: "Andrea Anderegg", slug: "andrea-anderegg", cell: "(850) 572-3287" },
   /**
    * The MLS the firm belongs to. Its IDX feed supplies the other brokerages'
    * listings, and `officeId` marks the firm's own listings in that feed.

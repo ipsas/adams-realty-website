@@ -22,9 +22,11 @@ import {
 import { site } from "@/config/site";
 import { listingContact } from "@/lib/listings/attribution-contact";
 import type { ListingCardData } from "@/lib/listings/card";
+import { firmListingPhones } from "@/lib/listings/firm-phones";
 import { landSummary } from "@/lib/listings/land";
 import { listingOfficeLabel } from "@/lib/listings/office-label";
 import { canShowDetails, primaryPhotoOnly } from "@/lib/listings/visibility";
+import { OfficePhoneLink, SecondaryPhones } from "./listing-office-contact";
 import { useMarketToday } from "./market-today";
 import { SaveButton } from "./save-button";
 
@@ -53,6 +55,8 @@ export function ListingCard({
   const office = listingOfficeLabel(l, site);
   // Again at render, so a card cached before the formatting still shows xxx-xxx-xxxx.
   const contact = listingContact(l);
+  // Georgia law: on the firm's own listings, its office phone is the primary number.
+  const firm = firmListingPhones(l, contact.phone);
   const price = sold && l.closePrice ? l.closePrice : l.listPrice;
   const rent = l.transactionType === "rent";
   // Bare land: "Land · 12.5 acres · $8,400/acre" instead of "— bd · — ba" (site review #8).
@@ -136,17 +140,28 @@ export function ListingCard({
           <p className="mt-0.5 truncate text-sm text-muted" data-testid="card-address">
             {formatStreet(l)}, {formatCityLine(l)}
           </p>
-          {office && (
-            <p
-              className="mt-0.5 text-sm [overflow-wrap:anywhere] break-words text-ink-soft"
-              data-testid="card-office"
-            >
-              {[`Listing by ${office}`, contact.phone, contact.email].filter(Boolean).join(" · ")}
-            </p>
-          )}
-          {l.fromFeed && !unavailable && <MlsCredit className="mt-1 text-xs text-muted" />}
         </div>
       </Link>
+      {/* Outside the Link: the firm's phones are links themselves (no nested <a>). */}
+      <div className="px-0.5">
+        {office && (
+          <p
+            className="mt-0.5 text-sm [overflow-wrap:anywhere] break-words text-ink-soft"
+            data-testid="card-office"
+          >
+            {firm ? (
+              <>
+                Listing by {office} · <OfficePhoneLink phone={firm.office} />
+                {contact.email && ` · ${contact.email}`}
+              </>
+            ) : (
+              [`Listing by ${office}`, contact.phone, contact.email].filter(Boolean).join(" · ")
+            )}
+          </p>
+        )}
+        {office && firm && <SecondaryPhones phones={firm.secondary} className="mt-0.5" />}
+        {l.fromFeed && !unavailable && <MlsCredit className="mt-1 text-xs text-muted" />}
+      </div>
       {!unavailable && (
         <div className="absolute top-2.5 right-2.5">
           <SaveButton listingId={l.id} />
