@@ -186,6 +186,11 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
   const office = listingOfficeLabel(l, site);
   // Georgia law: on the firm's own listings, its office phone is the primary number.
   const firm = office ? firmListingPhones(l, attributionPhone) : null;
+  // The sidebar's agent block already shows the broker's cell when it's the agent's phone.
+  const cellHref = telHref(site.broker.cell);
+  const agentIsCell = !!agent?.phone && telHref(agent.phone) === cellHref;
+  const sidebarSecondary =
+    firm?.secondary.filter((p) => !(agentIsCell && p.href === cellHref)) ?? [];
   const hoa = hoaFact(l);
   const details = listingDetailGroups(l);
 
@@ -584,22 +589,29 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                   Listing information
                 </h2>
                 <dl className="mt-3 grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">
-                  <InfoRow label="Listing office" value={office ?? "Not provided"} />
+                  <InfoRow
+                    label="Listing office"
+                    value={
+                      firm ? (
+                        <>
+                          {office} ·{" "}
+                          <OfficePhoneLink
+                            phone={firm.office}
+                            className="inline-flex min-h-6 items-center"
+                          />
+                          <SecondaryPhones phones={firm.secondary} className="font-normal" />
+                        </>
+                      ) : (
+                        (office ?? "Not provided")
+                      )
+                    }
+                  />
                   {l.listAgentName && <InfoRow label="Listing agent" value={l.listAgentName} />}
                   <InfoRow label="Listing ID" value={l.mlsNumber ?? l.listingKey} />
                   <InfoRow label="Status" value={statusLabel(l.status, l.transactionType)} />
-                  {firm ? (
-                    <InfoRow
-                      label="Contact phone"
-                      value={
-                        <>
-                          <OfficePhoneLink phone={firm.office} />
-                          <SecondaryPhones phones={firm.secondary} className="font-normal" />
-                        </>
-                      }
-                    />
-                  ) : (
-                    attributionPhone && <InfoRow label="Contact phone" value={attributionPhone} />
+                  {/* The firm's own listings show their phones under Listing office. */}
+                  {!firm && attributionPhone && (
+                    <InfoRow label="Contact phone" value={attributionPhone} />
                   )}
                   {attributionEmail && <InfoRow label="Contact email" value={attributionEmail} />}
                   {/* No buyer-broker compensation (Georgia MLS R&R Art. V): getListingBySlug
@@ -635,9 +647,9 @@ export default async function ListingPage(props: PageProps<"/homes/[slug]">) {
                     </p>
                     <OfficePhoneLink
                       phone={firm.office}
-                      className="flex min-h-11 items-center text-sm pointer-fine:mt-0.5 pointer-fine:min-h-0"
+                      className="flex min-h-11 items-center text-sm pointer-fine:mt-0.5 pointer-fine:min-h-6"
                     />
-                    <SecondaryPhones phones={firm.secondary} />
+                    {sidebarSecondary.length > 0 && <SecondaryPhones phones={sidebarSecondary} />}
                   </div>
                 )}
                 {agent ? (

@@ -395,14 +395,15 @@ function popupNode(p: MapPin, year: number, small = false): HTMLElement {
       contact.phone,
     );
     if (firm) {
-      const call = telLink(firm.office, "font-medium whitespace-nowrap text-brand-700");
+      const call = telLink(firm.office, "text-sm font-semibold whitespace-nowrap text-brand-700");
       office.append(`Listing by ${p.office} · `, call);
       if (contact.email) office.append(` · ${contact.email}`);
       const more = document.createElement("p");
       more.className = "text-xs text-muted mt-0.5";
       firm.secondary.forEach((phone, i) => {
         if (i > 0) more.append(" · ");
-        more.append(telLink(phone, "whitespace-nowrap"));
+        // WCAG 2.2 target size: a 24px-tall hit area, the text stays small.
+        more.append(telLink(phone, "inline-flex min-h-6 items-center whitespace-nowrap"));
       });
       tail.append(office, more);
     } else {

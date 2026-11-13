@@ -29,7 +29,11 @@ export function SecondaryPhones({
       {phones.map((p, i) => (
         <span key={p.href}>
           {i > 0 && " · "}
-          <a href={p.href} className="whitespace-nowrap hover:underline">
+          {/* WCAG 2.2 target size: a 24px-tall hit area, the text stays small. */}
+          <a
+            href={p.href}
+            className="inline-flex min-h-6 items-center whitespace-nowrap hover:underline"
+          >
             {p.text}
           </a>
         </span>
