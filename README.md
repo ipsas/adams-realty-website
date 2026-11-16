@@ -82,6 +82,9 @@ page's. It only reads, inside a read-only transaction, takes `DATABASE_URL` from
 environment only, and exits 1 when anything is wrong. Until the mapper-5 resync has run
 in production, it reports every Georgia MLS fee row as having no frequency. The sync also warns
 (one line per page, counts only) when a mapped fee differs from its raw MLS record.
+`npm run test:fees` runs the HOA fee tests (fixture, frequency table and sync check, no
+database); it runs first in every Vercel build, before migrations and `next build`, and a
+failure fails the build.
 
 ## Before launch: things only Adams Realty can provide
 

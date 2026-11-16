@@ -3,7 +3,11 @@
  * agents and logins in an empty database, then build Next.js. Runs
  * automatically on Vercel because package.json defines "vercel-build".
  *
- * Database guard (first, before any write): buildDbVerdict reads the
+ * HOA fee guard (first, in every build, before migrations and `next build`):
+ * `npm run test:fees` runs the fee tests; a failure fails the build before any
+ * migration, purge, seed or sync runs.
+ *
+ * Database guard (next, before any write): buildDbVerdict reads the
  * connection's Neon ids. A production build writes only to the production
  * branch, a preview build only to the preview branch (buildDbDecision in
  * src/lib/mls/preview-purge.mjs). A production build on any other database, or
@@ -54,6 +58,12 @@ import {
 } from "./preview-purge.mjs";
 
 const run = (cmd) => execSync(cmd, { stdio: "inherit" });
+
+// HOA fee guard: the fixture test of every fixture record against its raw MLS
+// data, the frequency table tests and the sync check's tests. A failure stops
+// the build before any migration, purge, seed or sync, so a fee can't ship
+// showing a period the MLS didn't give.
+run("npm run test:fees");
 
 if (!process.env.DATABASE_URL) {
   console.warn(
