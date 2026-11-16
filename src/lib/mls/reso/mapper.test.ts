@@ -196,6 +196,21 @@ describe("mapResoProperty", () => {
     expect(mapOk({ ...base, AssociationYN: false, AssociationFee: 300 }).hoaFee).toBeNull();
   });
 
+  it("maps every HOA fee period from the MLS and never defaults one to monthly", () => {
+    const freq = (p: ResoProperty) => mapOk({ ...base, AssociationFee: 300, ...p }).hoaFrequency;
+    expect(freq({ AssociationFeeFrequency: "Bi-Monthly" })).toBe("bi_monthly");
+    expect(freq({ AssociationFeeFrequency: "Semi-Annually" })).toBe("semi_annually");
+    expect(freq({ AssociationFeeFrequency: "Every Blue Moon" })).toBeNull();
+    // No frequency: unknown, except on a Georgia MLS record, whose AssociationFee is annual.
+    expect(freq({})).toBeNull();
+    expect(freq({ AssociationFeeFrequency: " " })).toBeNull();
+    expect(freq({ GAMLS2_Latitude: 34.1 })).toBe("annually");
+    expect(freq({ GAMLS2_Latitude: 34.1, AssociationFeeFrequency: "Monthly" })).toBe("monthly");
+    // No fee, no period.
+    expect(mapOk({ ...base, GAMLS2_Latitude: 34.1 }).hoaFrequency).toBeNull();
+    expect(mapOk({ ...base, AssociationFee: 0, GAMLS2_Latitude: 34.1 }).hoaFrequency).toBeNull();
+  });
+
   it("keeps AssociationYN apart from an unknown HOA", () => {
     expect(mapOk({ ...base, AssociationYN: true })).toMatchObject({
       associationYN: true,

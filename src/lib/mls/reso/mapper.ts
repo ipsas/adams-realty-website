@@ -1,5 +1,6 @@
 import { isNullLike } from "@/lib/format";
 import { EXCLUDED_FIELDS, withoutExcludedFields } from "@/lib/listings/excluded-fields";
+import { parseFeeFrequency, type HoaFrequency } from "@/lib/listings/hoa-fee";
 import { normalizeTaxYear } from "@/lib/listings/tax-year";
 import { normalizeState } from "@/lib/market-state";
 import type { MapResult, NormalizedListing, NormalizedMedia, NormalizedOpenHouse } from "../types";
@@ -11,8 +12,9 @@ import type { MapResult, NormalizedListing, NormalizedMedia, NormalizedOpenHouse
  * 2: GAMLS2_Latitude/Longitude and Coordinates, placeholder subdivisions, 2-digit tax years.
  * 3: AssociationYN, detail columns (fireplaces, parking, 55+, assessed value, zoning…), more feature lists.
  * 4: MainLevelBedrooms and primary bedroom on main.
+ * 5: HOA fee frequency (GAMLS AssociationFee is annual; full RESO FeeFrequency lookup).
  */
-export const RESO_MAPPER_VERSION = 4;
+export const RESO_MAPPER_VERSION = 5;
 
 /**
  * Maps a RESO Data Dictionary 2.x `Property` record (as returned by any
@@ -238,12 +240,23 @@ export function formatStreet(p: ResoProperty): string | null {
   return unparsed ? unparsed.split(",")[0].trim() : null;
 }
 
-function hoaFrequency(v: unknown): NormalizedListing["hoaFrequency"] {
-  const s = str(v)?.toLowerCase() ?? "";
-  if (s.startsWith("month")) return "monthly";
-  if (s.startsWith("quarter")) return "quarterly";
-  if (s.startsWith("annual") || s.startsWith("year")) return "annually";
-  return null;
+/** A Georgia MLS record: Bridge namespaces the dataset's own fields `GAMLS2_…`. */
+export function isGamlsRecord(p: ResoProperty): boolean {
+  return Object.keys(p).some((k) => k.startsWith("GAMLS2_"));
+}
+
+/**
+ * The period of `hoaFee`, straight from the MLS, never defaulted to monthly: the
+ * record's AssociationFeeFrequency when it sends one (an unrecognized value is null);
+ * without one, a Georgia MLS record's fee is annual, since GAMLS metadata defines
+ * AssociationFee with LongName "Annual Association Fee" and the gamls2 feed sends no
+ * frequency field; otherwise unknown (null). Null when there is no fee.
+ */
+function feeFrequency(p: ResoProperty, hoaFee: number | null): HoaFrequency | null {
+  if (hoaFee === null || hoaFee <= 0) return null;
+  const raw = str(p.AssociationFeeFrequency);
+  if (raw) return parseFeeFrequency(raw);
+  return isGamlsRecord(p) ? "annually" : null;
 }
 
 function mapMedia(media: ResoMedia[] | undefined): NormalizedMedia[] {
@@ -498,6 +511,7 @@ export function mapResoProperty(p: ResoProperty): MapResult {
   const subdivision = str(p.SubdivisionName);
   const lotDimensions = str(p.LotSizeDimensions);
   const hoaFee = int(p.AssociationFee);
+  const listedHoaFee = bool(p.AssociationYN) === false ? null : hoaFee;
   const assessedValue = int(p.TaxAssessedValue);
 
   const listing: NormalizedListing = {
@@ -533,8 +547,8 @@ export function mapResoProperty(p: ResoProperty): MapResult {
     zoning: str(p.Zoning),
 
     associationYN: bool(p.AssociationYN) ?? (hoaFee !== null && hoaFee > 0 ? true : null),
-    hoaFee: bool(p.AssociationYN) === false ? null : hoaFee,
-    hoaFrequency: hoaFrequency(p.AssociationFeeFrequency),
+    hoaFee: listedHoaFee,
+    hoaFrequency: feeFrequency(p, listedHoaFee),
     taxAnnualAmount: int(p.TaxAnnualAmount),
     taxYear: taxYear(p.TaxYear),
     taxAssessedValue: assessedValue !== null && assessedValue > 0 ? assessedValue : null,

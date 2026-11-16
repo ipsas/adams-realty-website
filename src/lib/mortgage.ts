@@ -1,4 +1,5 @@
 import { site } from "@/config/site";
+import { monthlyHoaEquivalent } from "@/lib/listings/hoa-fee";
 
 /** Monthly principal & interest for a fixed-rate loan. */
 export function monthlyPrincipalAndInterest(
@@ -104,14 +105,15 @@ export function listingMonthlyCost(a: {
   });
 }
 
+/**
+ * The HOA fee's share of a monthly cost estimate (monthlyHoaEquivalent). A fee with an
+ * unknown, one-time or seasonal period is left out of the estimate (0) rather than guessed.
+ */
 export function monthlyHoaAmount(
   fee: number | null | undefined,
   frequency: string | null | undefined,
 ): number {
-  if (!fee) return 0;
-  if (frequency === "quarterly") return fee / 3;
-  if (frequency === "annually") return fee / 12;
-  return fee;
+  return monthlyHoaEquivalent(fee, frequency) ?? 0;
 }
 
 /** The subset of `site.finance` the cost model needs. */

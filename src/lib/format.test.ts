@@ -252,6 +252,10 @@ describe("mortgage", () => {
     expect(monthlyHoaAmount(300, "quarterly")).toBe(100);
     expect(monthlyHoaAmount(1200, "annually")).toBe(100);
     expect(monthlyHoaAmount(null, "monthly")).toBe(0);
+    // An unknown, one-time or seasonal period is left out, not guessed as monthly.
+    expect(monthlyHoaAmount(500, null)).toBe(0);
+    expect(monthlyHoaAmount(500, "one_time")).toBe(0);
+    expect(monthlyHoaAmount(500, "seasonal")).toBe(0);
   });
 });
 

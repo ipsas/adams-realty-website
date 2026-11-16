@@ -150,7 +150,8 @@ describe("listingDetailGroups", () => {
   });
 
   it("formats the HOA fee by frequency", () => {
-    expect(rows({ hoaFee: 50 })["HOA fee"]).toBe("$50/month");
+    // No period from the MLS: the fee alone, never a guessed "/month".
+    expect(rows({ hoaFee: 50 })["HOA fee"]).toBe("$50");
     expect(rows({ hoaFee: 50, hoaFrequency: "monthly" })["HOA fee"]).toBe("$50/month");
     expect(rows({ hoaFee: 150, hoaFrequency: "quarterly" })["HOA fee"]).toBe("$150/quarter");
     expect(rows({ hoaFee: 1200, hoaFrequency: "annually" })["HOA fee"]).toBe("$1,200/year");
@@ -232,7 +233,7 @@ describe("listingDetailGroups", () => {
 
 describe("hoaFact", () => {
   it("shows the fee when there is one", () => {
-    expect(hoaFact({ associationYN: null, hoaFee: 50, hoaFrequency: null })).toBe("$50/mo");
+    expect(hoaFact({ associationYN: null, hoaFee: 50, hoaFrequency: null })).toBe("$50");
     expect(hoaFact({ associationYN: true, hoaFee: 150, hoaFrequency: "quarterly" })).toBe(
       "$150/qtr",
     );

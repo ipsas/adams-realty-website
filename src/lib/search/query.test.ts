@@ -136,6 +136,18 @@ describe("buildWhere", () => {
     expect(sql).toContain(`exists (select 1 from "open_houses"`);
     expect(sql).toContain(`"listings"."hoa_fee" is null`);
   });
+
+  it("compares max HOA by monthly equivalent, keeping fees of unknown period", () => {
+    const { sql, params } = render({ maxHoa: "200" });
+    expect(sql).toContain(
+      `(case "listings"."hoa_frequency" when 'monthly' then "listings"."hoa_fee" * 1 / 1.0`,
+    );
+    expect(sql).toContain(`when 'annually' then "listings"."hoa_fee" * 1 / 12.0`);
+    expect(sql).toContain(`when 'weekly' then "listings"."hoa_fee" * 52 / 12.0`);
+    expect(sql).toContain(`else null end) is null`);
+    expect(sql).not.toContain(`else "listings"."hoa_fee"`);
+    expect(params).toContain(200);
+  });
 });
 
 describe("acreage, HOA, keyword, price-reduced, 55+ and fireplace filters", () => {

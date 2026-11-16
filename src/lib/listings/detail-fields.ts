@@ -8,6 +8,7 @@ import type { ListingFeatures } from "@/db/schema";
 import { formatPrice, isNullLike } from "@/lib/format";
 import { MAX_PLAUSIBLE_LOT_SQFT } from "@/lib/search/query";
 import { isExcludedField, withoutExcludedFields } from "./excluded-fields";
+import { formatHoaFee, type HoaFrequency } from "./hoa-fee";
 import { formatAcres } from "./land";
 import { normalizeTaxYear } from "./tax-year";
 
@@ -26,7 +27,7 @@ export type DetailListing = {
   neighborhood: string | null;
   associationYN: boolean | null;
   hoaFee: number | null;
-  hoaFrequency: "monthly" | "quarterly" | "annually" | null;
+  hoaFrequency: HoaFrequency | null;
   seniorCommunity: boolean | null;
   taxAnnualAmount: number | null;
   taxYear: number | null;
@@ -35,9 +36,6 @@ export type DetailListing = {
 };
 
 type HoaLike = Pick<DetailListing, "associationYN" | "hoaFee" | "hoaFrequency">;
-
-const FREQUENCY = { monthly: "month", quarterly: "quarter", annually: "year" } as const;
-const FREQUENCY_SHORT = { monthly: "mo", quarterly: "qtr", annually: "yr" } as const;
 
 /**
  * Whether a listing has an HOA, the one rule for the page and the HOA search filter
@@ -66,7 +64,7 @@ export function editorAssociationYN(hoaFee: number | null | undefined): boolean 
  */
 export function hoaFact(l: HoaLike): string | null {
   if (l.hoaFee && l.hoaFee > 0) {
-    return `${formatPrice(l.hoaFee)}/${FREQUENCY_SHORT[l.hoaFrequency ?? "monthly"]}`;
+    return formatHoaFee(l.hoaFee, l.hoaFrequency, "short");
   }
   const status = hoaStatus(l);
   return status === null ? null : status ? "Yes" : "None";
@@ -184,9 +182,7 @@ export function listingDetailGroups(l: DetailListing): DetailGroup[] {
         ["HOA", hoaYesNo(l)],
         [
           "HOA fee",
-          l.hoaFee && l.hoaFee > 0
-            ? `${formatPrice(l.hoaFee)}/${FREQUENCY[l.hoaFrequency ?? "monthly"]}`
-            : null,
+          l.hoaFee && l.hoaFee > 0 ? formatHoaFee(l.hoaFee, l.hoaFrequency, "long") : null,
         ],
         ["Association fee includes", list(f.associationFeeIncludes)],
         ["Association amenities", list(f.associationAmenities)],

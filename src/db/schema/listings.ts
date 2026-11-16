@@ -27,6 +27,7 @@ import {
   syncStatus,
   transactionType,
 } from "./enums";
+import type { HoaFrequency } from "@/lib/listings/hoa-fee";
 import { agents } from "./people";
 
 const tsvector = customType<{ data: string }>({
@@ -249,7 +250,7 @@ export const listings = pgTable(
     /** RESO AssociationYN: false is "no HOA", null is unknown. */
     associationYN: boolean("association_yn"),
     hoaFee: integer("hoa_fee"),
-    hoaFrequency: text("hoa_frequency").$type<"monthly" | "quarterly" | "annually">(),
+    hoaFrequency: text("hoa_frequency").$type<HoaFrequency>(),
     taxAnnualAmount: integer("tax_annual_amount"),
     taxYear: smallint("tax_year"),
     /** RESO TaxAssessedValue: the public-record assessment as entered in the MLS, not an estimate. */

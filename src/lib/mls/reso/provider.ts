@@ -3,13 +3,26 @@ import { liveStatusFilter } from "../gamls";
 import type {
   FeedPosition,
   ListingProvider,
+  MapResult,
   MlsOffice,
   OwnClosedFeed,
   PurgeScope,
   UpdatesPage,
 } from "../types";
 import { ResoClient, type ResoClientConfig } from "./client";
+import { feeCheckWarning, feeDisplayMismatches } from "./fee-check";
 import { mapResoProperty, RESO_MAPPER_VERSION, type ResoProperty } from "./mapper";
+
+/**
+ * Maps a page of raw records, checking each HOA fee against its raw record
+ * (fee-check.ts): one warning line per page with counts only, when any differs.
+ */
+function mapPage(rows: ResoProperty[]): MapResult[] {
+  const mapped = rows.map(mapResoProperty);
+  const warning = feeCheckWarning(feeDisplayMismatches(rows, mapped));
+  if (warning) console.warn(warning);
+  return mapped;
+}
 
 const PAGE_SIZE = 200;
 const KEY_PAGE_SIZE = 1000;
@@ -124,7 +137,7 @@ export class ResoWebApiProvider implements ListingProvider {
         )) {
           const last = lastPosition(rows);
           yield {
-            items: rows.map(mapResoProperty),
+            items: mapPage(rows),
             last: last && { modifiedAt: new Date(last.timestamp), key: last.key },
           };
         }
@@ -165,7 +178,7 @@ export class ResoWebApiProvider implements ListingProvider {
       if (!rows.length) return;
       const last = lastPosition(rows);
       yield {
-        items: rows.map(mapResoProperty),
+        items: mapPage(rows),
         last: last && { modifiedAt: new Date(last.timestamp), key: last.key },
       };
       if (!last) {

@@ -62,6 +62,7 @@ email, office hours, GREC firm license, Georgia MLS office ID and DMCA designate
 | `npm run db:seed`       | Reset and seed demo data (refuses in production)      |
 | `npm run mls:sync`      | Sync MLS feeds now (see _Connecting your MLS_)        |
 | `npm run mls:add-gamls` | Add or activate the Georgia MLS (Bridge) feed         |
+| `npm run check:fees`    | Read-only check of stored HOA fees (below)            |
 
 `npm run test:e2e` also starts a fake MLS photo host on 127.0.0.1:4010
 (`e2e/fixtures/photo-host.mjs`, full-size 2.5 MB photos) for the photo tests. To measure
@@ -69,6 +70,18 @@ photo weight on a phone with a slow signal, start it, run a production build wit
 `E2E_PHOTO_HOST=http://127.0.0.1:4010 npx next start -p 3100`, then
 `npx tsx scripts/perf/photo-weight.ts --base http://localhost:3100` (it moves some
 listings' photos to the fake host in your local database and puts them back).
+
+### Checking HOA fees
+
+`DATABASE_URL=... npm run check:fees` checks every feed listing with an HOA fee: it
+counts them by stored frequency and reports (with up to 10 example slugs each) any
+frequency that isn't a RESO FeeFrequency key, any Georgia MLS fee with no stored
+frequency (the mapper stores the frequency a record sends, or annually, since Georgia MLS
+defines AssociationFee as the "Annual Association Fee"), and any row whose search (SQL) monthly equivalent differs from the listing
+page's. It only reads, inside a read-only transaction, takes `DATABASE_URL` from the
+environment only, and exits 1 when anything is wrong. Until the mapper-5 resync has run
+in production, it reports every Georgia MLS fee row as having no frequency. The sync also warns
+(one line per page, counts only) when a mapped fee differs from its raw MLS record.
 
 ## Before launch: things only Adams Realty can provide
 
