@@ -86,12 +86,18 @@ an error (one line per page, counts only) when a mapped fee differs from its raw
 
 Rows the resync can't reach (soft-removed ones, which aren't in the feed, or ones its walk
 missed) are fixed by `DATABASE_URL=... npm run backfill:hoa-frequency`: run it first as is (a
-dry run that only counts the Georgia MLS rows with a fee and no period), then with
-`-- --apply --expect=<the dry run's count>`, which sets only `hoa_frequency = 'annually'` and
-rolls back unless exactly that many rows change; `npm run check:fees` should then exit 0, and a
-second run matches nothing. Each incremental sync that catches up also re-fetches by key up to
-200 live Georgia MLS rows with a fee and no period and rewrites them, logging an `[mls] ALERT`
-when the feed doesn't return some of them.
+dry run that only counts the Georgia MLS feed rows, removed ones included, with a fee and no
+period), then with `-- --apply --expect=<the dry run's count>`, which sets only
+`hoa_frequency = 'annually'` and rolls back unless exactly that many rows change;
+`npm run check:fees` should then exit 0, and a second run matches nothing. The backfill,
+`check:fees` and the sync's audit share one scope (`feeAuditScope` in
+`src/lib/listings/fee-backfill.ts`: `from_feed = true and hoa_fee > 0`), so their counts agree;
+dashboard-entered fees are out of it on purpose ("every Georgia MLS fee is annual" holds for
+the feed's data only). Each incremental sync that catches up also re-fetches by key up to 200
+live Georgia MLS rows with a fee and no period and rewrites them, logging an `[mls] ALERT` when
+the feed doesn't return some of them. The passes rotate through the stale keys (a key cursor,
+`feeHealAfter` in the source's `data_sources.config`), wrapping to the first key after the
+last, so keys the feed never returns don't hold back the rest.
 
 The sync audits the stored fees after every run (except a full one) with one query, by
 `check:fees`' rules, and sums each page's raw-vs-mapped check. Any problem makes the run

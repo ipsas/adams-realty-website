@@ -2,7 +2,7 @@ import { and, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { agents, dataSources, listings, syncQuarantine, syncRuns } from "@/db/schema";
 import { AUDIT_EXAMPLES, auditFeeAggregate, emptyFeeAudit } from "@/lib/listings/fee-audit";
-import { staleFeeWhere } from "@/lib/listings/fee-backfill";
+import { feeAuditScope, staleFeeWhere } from "@/lib/listings/fee-backfill";
 import { monthlyHoaSql } from "@/lib/listings/hoa-fee";
 import { listingLabel, upsertListings, type PersistSource } from "@/lib/listings/persist";
 import { GAMLS_SLUG } from "./gamls";
@@ -161,16 +161,51 @@ export function createSyncStore(source: SourceRow): PostgresSyncStore {
         .where(eq(dataSources.id, source.id));
     },
 
-    async staleFeeKeys(limit) {
+    async staleFeeKeys(limit, after) {
       // Elsewhere a null period legitimately means "unknown".
       if (source.slug !== GAMLS_SLUG) return [];
       const rows = await db
         .select({ key: listings.listingKey })
         .from(listings)
-        .where(staleFeeWhere(source.id))
+        .where(
+          after == null
+            ? staleFeeWhere(source.id)
+            : and(staleFeeWhere(source.id), gt(listings.listingKey, after)),
+        )
         .orderBy(listings.listingKey)
         .limit(limit);
       return rows.map((r) => r.key);
+    },
+
+    async staleAmong(keys) {
+      if (source.slug !== GAMLS_SLUG || !keys.length) return [];
+      const rows = await db
+        .select({ key: listings.listingKey })
+        .from(listings)
+        .where(and(staleFeeWhere(source.id), inArray(listings.listingKey, keys)))
+        .orderBy(listings.listingKey);
+      return rows.map((r) => r.key);
+    },
+
+    async feeHealCursor() {
+      const [row] = await db
+        .select({ config: dataSources.config })
+        .from(dataSources)
+        .where(eq(dataSources.id, source.id));
+      return row?.config.feeHealAfter ?? null;
+    },
+
+    async recordFeeHealCursor(after) {
+      // Merged into the jsonb, so the rest of the config is left as it is.
+      await db
+        .update(dataSources)
+        .set({
+          config:
+            after === null
+              ? sql`${dataSources.config} - 'feeHealAfter'`
+              : sql`${dataSources.config} || jsonb_build_object('feeHealAfter', ${after}::text)`,
+        })
+        .where(eq(dataSources.id, source.id));
     },
 
     async auditFees() {
@@ -192,13 +227,7 @@ export function createSyncStore(source: SourceRow): PostgresSyncStore {
           >`(array_agg(coalesce(${listings.mlsNumber}, ${listings.id}::text) order by ${listings.mlsNumber}) filter (where ${listings.hoaFrequency} is distinct from ${GAMLS_FEE_FREQUENCY}))[1:${sql.raw(String(AUDIT_EXAMPLES))}]`,
         })
         .from(listings)
-        .where(
-          and(
-            eq(listings.sourceId, source.id),
-            eq(listings.fromFeed, true),
-            gt(listings.hoaFee, 0),
-          ),
-        )
+        .where(feeAuditScope([source.id]))
         .groupBy(listings.hoaFrequency);
       return auditFeeAggregate(
         groups.map((g) => ({ ...g, examples: g.examples ?? [] })),

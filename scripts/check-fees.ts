@@ -1,5 +1,6 @@
 /**
- * Read-only check of the stored HOA fees of every feed listing with a fee:
+ * Read-only check of the stored HOA fees of every feed listing with a fee (`feeAuditScope`
+ * in src/lib/listings/fee-backfill.ts, shared with the sync audit and the backfill):
  *
  *   DATABASE_URL=... npm run check:fees
  *
@@ -12,11 +13,12 @@
  * (the page's). Only SELECTs, inside a read-only transaction that is rolled back.
  * DATABASE_URL comes from the environment only.
  */
-import { and, eq, gt } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 import { dataSources, listings } from "@/db/schema";
 import { classifyFeeRow, FEE_PROBLEMS } from "@/lib/listings/fee-audit";
+import { feeAuditScope } from "@/lib/listings/fee-backfill";
 import { HOA_FREQUENCIES, monthlyHoaSql } from "@/lib/listings/hoa-fee";
 
 const EXAMPLES = 10;
@@ -44,7 +46,7 @@ async function main(): Promise<number> {
       })
       .from(listings)
       .innerJoin(dataSources, eq(dataSources.id, listings.sourceId))
-      .where(and(eq(listings.fromFeed, true), gt(listings.hoaFee, 0)));
+      .where(feeAuditScope());
     await client.query("rollback");
 
     const byFrequency: Record<string, number> = {};

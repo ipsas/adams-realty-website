@@ -52,9 +52,18 @@ export class FakeStore implements SyncStore {
   ownSyncedAt: Date | null = null;
   writes: Write[] = [];
   finished: RunOutcome[] = [];
+  /** The `limit` and `after` of each staleFeeKeys call. */
   staleCalls: number[] = [];
-  /** What staleFeeKeys returns, call by call (the last answer repeats). */
-  staleAnswers: string[][] = [[]];
+  staleAfters: Array<string | null> = [];
+  /** The stored stale keys (fee, no period), as staleFeeKeys sees them. */
+  stale: string[] = [];
+  /** writePage gives the rows it writes a period (takes them out of `stale`). */
+  healOnWrite = true;
+  /** The keys of each staleAmong call. */
+  amongCalls: string[][] = [];
+  /** The heal cursor (`feeHealAfter`), and every value recorded. */
+  feeCursor: string | null = null;
+  cursorRecords: Array<string | null> = [];
   audit: () => Promise<FeeAudit> = async () => emptyFeeAudit();
   auditCalls = 0;
 
@@ -84,10 +93,24 @@ export class FakeStore implements SyncStore {
   async recordOwnClosedSynced(at: Date) {
     this.ownSyncedAt = at;
   }
-  async staleFeeKeys(limit: number) {
+  async staleFeeKeys(limit: number, after?: string | null) {
     this.staleCalls.push(limit);
-    const i = Math.min(this.staleCalls.length - 1, this.staleAnswers.length - 1);
-    return this.staleAnswers[i];
+    this.staleAfters.push(after ?? null);
+    return [...this.stale]
+      .sort()
+      .filter((k) => after == null || k > after)
+      .slice(0, limit);
+  }
+  async staleAmong(keys: string[]) {
+    this.amongCalls.push(keys);
+    return [...this.stale].sort().filter((k) => keys.includes(k));
+  }
+  async feeHealCursor() {
+    return this.feeCursor;
+  }
+  async recordFeeHealCursor(after: string | null) {
+    this.feeCursor = after;
+    this.cursorRecords.push(after);
   }
   async auditFees() {
     this.auditCalls++;
@@ -100,6 +123,7 @@ export class FakeStore implements SyncStore {
   ): Promise<PageOutcome> {
     const keys = page.flatMap((item) => (item.ok ? [item.listing.listingKey] : []));
     this.writes.push({ keys, cursor, skipUnchanged });
+    if (this.healOnWrite) this.stale = this.stale.filter((k) => !keys.includes(k));
     if (cursor) this.cursor = cursor;
     return {
       upserted: keys.length,

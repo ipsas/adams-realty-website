@@ -130,6 +130,12 @@ export type DataSourceConfig = {
   mapperVersion?: number;
   /** Written by the sync: a rewrite for this mapper version stopped partway; the next run resumes it. */
   remappingTo?: number;
+  /**
+   * Written by the sync: the fee-period heal pass's key cursor (SyncStore.feeHealCursor).
+   * The next pass re-fetches the stale keys after this ListingKey, wrapping to the start
+   * once none are left; absent: start from the first key.
+   */
+  feeHealAfter?: string;
   /** Env var prefix holding credentials: `${prefix}_TOKEN` or `${prefix}_CLIENT_ID`/`_CLIENT_SECRET`. */
   credentialsEnvPrefix?: string;
   /** OAuth2 token URL when the feed uses client-credentials auth. */

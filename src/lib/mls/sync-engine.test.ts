@@ -176,6 +176,13 @@ class MemoryStore implements SyncStore {
   async staleFeeKeys() {
     return [];
   }
+  async staleAmong() {
+    return [];
+  }
+  async feeHealCursor() {
+    return null;
+  }
+  async recordFeeHealCursor() {}
   async auditFees() {
     return { total: 0, problems: {}, examples: [] };
   }

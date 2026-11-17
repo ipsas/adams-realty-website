@@ -3,22 +3,33 @@ import { listings } from "@/db/schema";
 import { GAMLS_FEE_FREQUENCY } from "@/lib/mls/reso/mapper";
 
 /**
- * The rule of `npm run backfill:hoa-frequency` (scripts/backfill-hoa-frequency.ts)
- * and of the sync's fee-period heal pass (SyncStore.staleFeeKeys): a Georgia MLS
- * listing with an HOA fee and no stored period. Every Georgia MLS fee is annual
- * (GAMLS_FEE_FREQUENCY), so a null period there is a row the mapper-5 resync didn't
- * reach. Pure (no database), so tests render it.
+ * The one population every HOA fee check and repair works on: feed listings
+ * (from_feed = true) with a fee above $0, of `sourceIds` when given (all sources
+ * otherwise), removed ones included. Used by `npm run check:fees`, the sync's fee
+ * audit (SyncStore.auditFees), the backfill (backfillWhere) and the heal pass
+ * (staleFeeWhere), so their counts agree. Dashboard-entered rows (from_feed false)
+ * are out on purpose: "every Georgia MLS fee is annual" is a property of the feed's
+ * data, not of a fee an agent typed in. Pure (no database), so tests render it.
  */
-const feeWithoutPeriod = () => and(gt(listings.hoaFee, 0), isNull(listings.hoaFrequency))!;
+export function feeAuditScope(sourceIds?: string[]): SQL {
+  if (sourceIds && !sourceIds.length) throw new Error("feeAuditScope: empty source id list");
+  return and(
+    ...(sourceIds ? [inArray(listings.sourceId, sourceIds)] : []),
+    eq(listings.fromFeed, true),
+    gt(listings.hoaFee, 0),
+  )!;
+}
 
 /**
- * The backfill's rows: every listing of the Georgia MLS sources with a fee and no
- * period, removed ones included on purpose (they're off the site, so harmless, and
- * check:fees counts them). Nothing about status or any other column.
+ * The backfill's rows (`npm run backfill:hoa-frequency`, scripts/backfill-hoa-frequency.ts):
+ * feeAuditScope of the Georgia MLS sources with no stored period. Every Georgia MLS fee
+ * is annual (GAMLS_FEE_FREQUENCY), so a null period there is a row the mapper-5 resync
+ * didn't reach. Removed feed rows are included on purpose (they're off the site, so
+ * harmless, and check:fees counts them). Nothing about status or any other column.
  */
 export function backfillWhere(gamlsSourceIds: string[]): SQL {
   if (!gamlsSourceIds.length) throw new Error("backfillWhere: no Georgia MLS source ids");
-  return and(inArray(listings.sourceId, gamlsSourceIds), feeWithoutPeriod())!;
+  return and(feeAuditScope(gamlsSourceIds), isNull(listings.hoaFrequency))!;
 }
 
 /** All the backfill sets: the period alone (not updated_at, removed_at or any other column). */
@@ -33,9 +44,10 @@ export function backfillUpdate(gamlsSourceIds: string[]): SQL {
 }
 
 /**
- * The heal pass's rows: this source's listings still on the site (removed_at null)
- * with a fee and no period. The store applies it to the Georgia MLS source only.
+ * The heal pass's rows (SyncStore.staleFeeKeys): feeAuditScope of this source, still
+ * on the site (removed_at null), with no period. The store applies it to the Georgia
+ * MLS source only.
  */
 export function staleFeeWhere(sourceId: string): SQL {
-  return and(eq(listings.sourceId, sourceId), isNull(listings.removedAt), feeWithoutPeriod())!;
+  return and(feeAuditScope([sourceId]), isNull(listings.removedAt), isNull(listings.hoaFrequency))!;
 }

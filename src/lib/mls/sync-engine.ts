@@ -203,12 +203,19 @@ export interface SyncStore {
   /** Records that the own-closed pass read all of the firm's closed sales at `at`. */
   recordOwnClosedSynced(at: Date): Promise<void>;
   /**
-   * Up to `limit` listing keys (in key order) of this source's listings on the
-   * site with an HOA fee and no fee period, for the heal pass (STALE_FEE_BATCH).
-   * Only for the Georgia MLS source, whose fees are all annual; [] for any
-   * other, where a null period legitimately means "unknown".
+   * Up to `limit` listing keys (in key order) of this source's feed listings on
+   * the site with an HOA fee and no fee period (staleFeeWhere), only keys after
+   * `after` when given, for the heal pass (STALE_FEE_BATCH). Only for the
+   * Georgia MLS source, whose fees are all annual; [] for any other, where a
+   * null period legitimately means "unknown".
    */
-  staleFeeKeys(limit: number): Promise<string[]>;
+  staleFeeKeys(limit: number, after?: string | null): Promise<string[]>;
+  /** Those of `keys` that staleFeeKeys would still return (same rule, same source). */
+  staleAmong(keys: string[]): Promise<string[]>;
+  /** The heal pass's key cursor (`DataSourceConfig.feeHealAfter`); null: from the first key. */
+  feeHealCursor(): Promise<string | null>;
+  /** Saves the heal pass's key cursor; null removes it (the next pass starts from the first key). */
+  recordFeeHealCursor(after: string | null): Promise<void>;
   /**
    * The HOA fee audit after a run (one aggregate query, like `npm run check:fees`
    * over this source's rows with a fee, removed ones included): problem counts by
@@ -387,7 +394,10 @@ export const OWN_CLOSED_INTERVAL_MS = 20 * 3_600_000;
  * The fee-period heal pass, after every incremental run that caught up: up to
  * this many stored listings with an HOA fee and no period (SyncStore.staleFeeKeys)
  * are re-fetched by key (ListingProvider.fetchByKeys) and rewritten, like the
- * own-closed pass (skipUnchanged false, saved cursor unchanged).
+ * own-closed pass (skipUnchanged false, saved cursor unchanged). The passes rotate
+ * through the stale keys (SyncStore.feeHealCursor): each starts after the last key
+ * of the previous full batch and wraps to the first key once none are left, so a
+ * key the feed never returns doesn't hold back the ones after it.
  */
 export const STALE_FEE_BATCH = 200;
 
@@ -580,8 +590,15 @@ export async function runSync(
      */
     const healFeePeriods = async () => {
       try {
-        const keys = await store.staleFeeKeys(STALE_FEE_BATCH);
-        if (!keys.length || !feed.fetchByKeys) return;
+        if (!feed.fetchByKeys) return;
+        const after = await store.feeHealCursor();
+        let keys = await store.staleFeeKeys(STALE_FEE_BATCH, after);
+        // Past the last stale key: wrap around to the first, once, in this run.
+        if (!keys.length && after !== null) keys = await store.staleFeeKeys(STALE_FEE_BATCH, null);
+        if (!keys.length) {
+          if (after !== null) await store.recordFeeHealCursor(null);
+          return;
+        }
         const returned = new Set<string>();
         for await (const page of feed.fetchByKeys(keys)) {
           countFetched(page.items, page.feeCheck);
@@ -591,8 +608,14 @@ export async function runSync(
           }
           countWritten(await store.writePage(page.items, storedCursor, { skipUnchanged: false }));
           await store.heartbeat(activeRunId, counts);
+          // The batch isn't finished: the cursor stays, so the next pass asks again.
           if (outOfTime()) return;
         }
+        // A full batch: the next pass continues after it. A short one reached the
+        // last stale key: the next pass starts from the first again.
+        await store.recordFeeHealCursor(
+          keys.length === STALE_FEE_BATCH ? keys[keys.length - 1] : null,
+        );
         // Counts only: no keys or addresses in the log.
         const notReturned = keys.filter((key) => !returned.has(key)).length;
         if (notReturned) {
@@ -602,9 +625,8 @@ export async function runSync(
           );
         }
         if (!returned.size) return;
-        const still = (await store.staleFeeKeys(STALE_FEE_BATCH)).filter((key) =>
-          returned.has(key),
-        ).length;
+        // Only this pass's re-fetched keys, wherever they are in key order.
+        const still = (await store.staleAmong([...returned])).length;
         if (still) {
           console.error(
             `[mls] ALERT ${store.slug}: ${still} stored listings with an HOA fee still have no ` +
@@ -612,7 +634,9 @@ export async function runSync(
           );
         }
       } catch (error) {
-        console.error(`[mls] fee period heal pass failed: ${describeError(error)}`);
+        console.error(
+          `[mls] ALERT ${store.slug}: fee period heal pass failed: ${describeError(error)}`,
+        );
       }
     };
 
