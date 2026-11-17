@@ -26,7 +26,7 @@ import {
   textArray,
 } from "@/lib/areas/match";
 import { ACCESS_CODE_PG, ACCESS_CODE_PG_REPLACEMENT } from "@/lib/listings/excluded-fields";
-import { monthlyHoaSql } from "@/lib/listings/hoa-fee";
+import { hoaFilterAmountSql } from "@/lib/listings/hoa-fee";
 import { publicConditions } from "@/lib/listings/visibility";
 import { inMarketState } from "@/lib/market-state";
 import { marketDateDaysAgo } from "@/lib/time";
@@ -252,12 +252,6 @@ export function schoolKeySql(level: SchoolLevel): SQL {
   return sql`lower(regexp_replace(btrim(${listings.schools}->>${sql.raw(`'${level}'`)}), '\\s+', ' ', 'g'))`;
 }
 
-/**
- * Monthly-equivalent HOA fee, so "max HOA $300/mo" compares like with like; NULL when
- * the period is unknown, one-time or seasonal (never guessed as monthly).
- */
-const monthlyHoa = monthlyHoaSql(listings.hoaFee, listings.hoaFrequency);
-
 export const SQFT_PER_ACRE = 43_560;
 /** 20,000 acres. Larger lot sizes are feed errors, so an acreage filter never matches them. */
 export const MAX_PLAUSIBLE_LOT_SQFT = 20_000 * SQFT_PER_ACRE;
@@ -314,9 +308,13 @@ export function buildConditions(
   if (c.minYear !== undefined) conds.push(gte(listings.yearBuilt, c.minYear));
   if (c.maxYear !== undefined) conds.push(lte(listings.yearBuilt, c.maxYear));
   if (c.maxHoa !== undefined)
-    // A fee with no monthly equivalent is kept, like an unknown fee.
+    // "Max HOA $300/mo" compares a fee's monthly equivalent, or its full amount when it has
+    // none (unknown period, one-time, seasonal: hoaFilterAmountSql). No fee at all passes.
     conds.push(
-      or(isNull(listings.hoaFee), sql`${monthlyHoa} is null`, sql`${monthlyHoa} <= ${c.maxHoa}`),
+      or(
+        isNull(listings.hoaFee),
+        sql`${hoaFilterAmountSql(listings.hoaFee, listings.hoaFrequency)} <= ${c.maxHoa}`,
+      ),
     );
   // The same rule as the listing page (hoaStatus in src/lib/listings/detail-fields.ts):
   // a true AssociationYN or a fee is "yes"; otherwise AssociationYN false or a $0 fee is "no".

@@ -75,12 +75,13 @@ listings' photos to the fake host in your local database and puts them back).
 
 `DATABASE_URL=... npm run check:fees` checks every feed listing with an HOA fee: it
 counts them by stored frequency and reports (with up to 10 example slugs each) any
-frequency that isn't a RESO FeeFrequency key, any Georgia MLS fee with no stored
-frequency (the mapper stores the frequency a record sends, or annually, since Georgia MLS
-defines AssociationFee as the "Annual Association Fee"), and any row whose search (SQL) monthly equivalent differs from the listing
+frequency that isn't a RESO FeeFrequency key, any Georgia MLS fee not stored as annually
+(e.g. null before the resync, or `monthly`: the feed sends no frequency and Georgia MLS
+defines AssociationFee as the "Annual Association Fee", so the mapper stores every one as
+annually), and any row whose search (SQL) monthly equivalent differs from the listing
 page's. It only reads, inside a read-only transaction, takes `DATABASE_URL` from the
 environment only, and exits 1 when anything is wrong. Until the mapper-5 resync has run
-in production, it reports every Georgia MLS fee row as having no frequency. The sync also warns
+in production, it reports every Georgia MLS fee row as not stored as annually. The sync also warns
 (one line per page, counts only) when a mapped fee differs from its raw MLS record.
 `npm run test:fees` runs the HOA fee tests (fixture, frequency table and sync check, no
 database); it runs first in every Vercel build, before migrations and `next build`, and a

@@ -3,25 +3,21 @@
  *
  *   DATABASE_URL=... npm run check:fees
  *
- * Reports the fees by stored frequency, and fails (exit 1) on any frequency that isn't a
- * RESO FeeFrequency key, any Georgia MLS fee with no stored frequency (the mapper resolves
- * every Georgia MLS fee to the frequency the record sends, or to annually since its
- * AssociationFee is the "Annual Association Fee", so a null one is a pre-mapper-5 row the
- * resync corrects), and any row whose SQL monthly equivalent (the search's) differs from
- * the JS one (the page's). Only SELECTs, inside a read-only transaction that is rolled
- * back. DATABASE_URL comes from the environment only.
+ * Reports the fees by stored frequency, and fails (exit 1) on any row with a problem
+ * (`classifyFeeRow` in src/lib/listings/fee-audit.ts): a frequency that isn't a RESO
+ * FeeFrequency key, a Georgia MLS fee not stored as annually (the gamls2 feed sends no
+ * frequency and its AssociationFee is the "Annual Association Fee", so the mapper resolves
+ * every one to annually; null is a pre-mapper-5 row the resync corrects, 'monthly' the
+ * original bug), or a SQL monthly equivalent (the search's) that differs from the JS one
+ * (the page's). Only SELECTs, inside a read-only transaction that is rolled back.
+ * DATABASE_URL comes from the environment only.
  */
 import { and, eq, gt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 import { dataSources, listings } from "@/db/schema";
-import {
-  HOA_FREQUENCIES,
-  isHoaFrequency,
-  monthlyHoaEquivalent,
-  monthlyHoaSql,
-} from "@/lib/listings/hoa-fee";
-import { GAMLS_SLUG } from "@/lib/mls/gamls";
+import { classifyFeeRow, FEE_PROBLEMS } from "@/lib/listings/fee-audit";
+import { HOA_FREQUENCIES, monthlyHoaSql } from "@/lib/listings/hoa-fee";
 
 const EXAMPLES = 10;
 
@@ -52,21 +48,13 @@ async function main(): Promise<number> {
     await client.query("rollback");
 
     const byFrequency: Record<string, number> = {};
-    const problems: Record<string, string[]> = {
-      "frequency not a RESO FeeFrequency key": [],
-      "Georgia MLS fee with no stored frequency": [],
-      "SQL monthly equivalent differs from JS": [],
-    };
-    const [unknownKey, gamlsNoFrequency, drift] = Object.values(problems);
+    const problems: Record<string, string[]> = Object.fromEntries(
+      FEE_PROBLEMS.map((label) => [label, []]),
+    );
     for (const r of rows) {
       const key = r.frequency ?? "(null)";
       byFrequency[key] = (byFrequency[key] ?? 0) + 1;
-      if (r.frequency !== null && !isHoaFrequency(r.frequency)) unknownKey.push(r.slug);
-      if (r.source === GAMLS_SLUG && r.frequency === null) gamlsNoFrequency.push(r.slug);
-      const js = monthlyHoaEquivalent(r.fee, r.frequency);
-      const sqlValue = r.sqlMonthly;
-      if ((js === null) !== (sqlValue === null) || Math.abs((js ?? 0) - (sqlValue ?? 0)) > 0.01)
-        drift.push(r.slug);
+      for (const label of classifyFeeRow(r)) problems[label].push(r.slug);
     }
 
     console.info(`Feed listings with an HOA fee: ${rows.length}`);

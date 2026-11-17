@@ -137,14 +137,15 @@ describe("buildWhere", () => {
     expect(sql).toContain(`"listings"."hoa_fee" is null`);
   });
 
-  it("compares max HOA by monthly equivalent, keeping fees of unknown period", () => {
+  it("compares max HOA by monthly equivalent, or the full fee when there is none", () => {
     const { sql, params } = render({ maxHoa: "200" });
     expect(sql).toContain(
-      `(case "listings"."hoa_frequency" when 'monthly' then "listings"."hoa_fee" * 1 / 1.0`,
+      `coalesce((case "listings"."hoa_frequency" when 'monthly' then "listings"."hoa_fee" * 1 / 1.0`,
     );
     expect(sql).toContain(`when 'annually' then "listings"."hoa_fee" * 1 / 12.0`);
     expect(sql).toContain(`when 'weekly' then "listings"."hoa_fee" * 52 / 12.0`);
-    expect(sql).toContain(`else null end) is null`);
+    expect(sql).toContain(`else null end), "listings"."hoa_fee") <=`);
+    expect(sql).not.toContain(`else null end) is null`);
     expect(sql).not.toContain(`else "listings"."hoa_fee"`);
     expect(params).toContain(200);
   });

@@ -111,3 +111,28 @@ export function monthlyHoaSql(fee: AnyColumn | SQL, frequency: AnyColumn | SQL):
   );
   return sql`(case ${frequency} ${sql.join(whens, sql` `)} else null end)`;
 }
+
+/**
+ * The amount the search's max-HOA filter compares (with `hoaFilterAmountSql`, its SQL
+ * twin): null when there is no fee. A fee with a known period is compared by its monthly
+ * equivalent from MONTHLY_FACTORS ($500/yr → 41.67 passes Max $50). A fee with no monthly
+ * equivalent (unknown period, one-time, seasonal, anything non-convertible) is compared at
+ * its full raw amount, so "No HOA fee" (maxHoa=0) never returns a listing with a fee above
+ * $0 and Max $50 never passes a $500 fee of unknown period.
+ */
+export function hoaFilterAmount(
+  fee: number | null,
+  frequency: string | null | undefined,
+): number | null {
+  if (fee === null) return null;
+  return monthlyHoaEquivalent(fee, frequency) ?? fee;
+}
+
+/**
+ * SQL form of `hoaFilterAmount`: `coalesce(<monthly equivalent>, <fee>)`, so a fee with no
+ * monthly equivalent is compared at its full raw amount, never let through as unknown.
+ * NULL only when the fee itself is NULL.
+ */
+export function hoaFilterAmountSql(fee: AnyColumn | SQL, frequency: AnyColumn | SQL): SQL {
+  return sql`coalesce(${monthlyHoaSql(fee, frequency)}, ${fee})`;
+}

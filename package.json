@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:fees": "vitest run --project unit src/lib/listings/hoa-fee.test.ts src/lib/listings/hoa-fee.fixture.test.ts src/lib/mls/reso/fee-check.test.ts",
+    "test:fees": "vitest run --project unit src/lib/listings/hoa-fee.test.ts src/lib/listings/hoa-fee.fixture.test.ts src/lib/mls/reso/fee-check.test.ts src/lib/search/max-hoa.fees.test.ts src/lib/listings/fee-audit.test.ts",
     "format": "prettier --write .",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
