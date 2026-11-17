@@ -1,5 +1,7 @@
 import { purgeCap, purgeScope, MAX_PURGE_FRACTION, PRUNE_REMOVED_AFTER_DAYS } from "./purge";
+import { describeFeeAudit, type FeeAudit } from "@/lib/listings/fee-audit";
 import { listingLabel } from "@/lib/listings/persist";
+import { addFeeCheck, emptyFeeCheck, type FeeCheck } from "./reso/fee-check";
 import type {
   FeedPosition,
   ListingProvider,
@@ -164,6 +166,8 @@ export type MapperVersions = { done: number | null; remappingTo: number | null }
 
 /** Everything the engine needs from storage, bound to one data source. */
 export interface SyncStore {
+  /** The source's slug, for log lines. */
+  readonly slug: string;
   /**
    * Marks this source's `running` runs with no heartbeat since `staleBefore`
    * as failed (their function was cut off), then starts a run, unless another
@@ -198,6 +202,20 @@ export interface SyncStore {
   ownClosedSyncedAt(): Promise<Date | null>;
   /** Records that the own-closed pass read all of the firm's closed sales at `at`. */
   recordOwnClosedSynced(at: Date): Promise<void>;
+  /**
+   * Up to `limit` listing keys (in key order) of this source's listings on the
+   * site with an HOA fee and no fee period, for the heal pass (STALE_FEE_BATCH).
+   * Only for the Georgia MLS source, whose fees are all annual; [] for any
+   * other, where a null period legitimately means "unknown".
+   */
+  staleFeeKeys(limit: number): Promise<string[]>;
+  /**
+   * The HOA fee audit after a run (one aggregate query, like `npm run check:fees`
+   * over this source's rows with a fee, removed ones included): problem counts by
+   * label and a few MLS numbers. Only for the Georgia MLS source; an empty audit
+   * for any other.
+   */
+  auditFees(): Promise<FeeAudit>;
   /**
    * Writes one page and saves `cursor`, atomically. With `skipUnchanged`, a
    * record whose ModificationTimestamp matches the stored row isn't rewritten.
@@ -307,7 +325,34 @@ export type SyncResult = SyncCounts & {
   staleRunsFailed: number;
   /** Whether any listing changed, so caches need refreshing. */
   changed: boolean;
+  /**
+   * Only when the run's HOA fee audit failed (its error then includes "HOA fee
+   * audit failed:", and the run is `partial` unless it is a purge, which keeps its
+   * status so the dashboard's last-purge date stays right): the stored rows' problems
+   * (SyncStore.auditFees) and the run's summed page fee checks (UpdatesPage.feeCheck).
+   */
+  feeAudit?: { stored: FeeAudit | null; pages: FeeCheck };
 };
+
+/** How a run's error note for a failed HOA fee audit starts. */
+export const FEE_AUDIT_PREFIX = "HOA fee audit failed:";
+
+/**
+ * The note for a failed HOA fee audit (FEE_AUDIT_PREFIX …), or null when it is clean:
+ * the stored rows' problems, then the pages' mismatches and unrecognized periods.
+ */
+export function feeAuditNote(stored: FeeAudit | null, pages: FeeCheck): string | null {
+  const parts: string[] = [];
+  const problems = stored && describeFeeAudit(stored);
+  if (problems) parts.push(problems);
+  if (pages.mismatched) parts.push(`fees mismatched the raw MLS data: ${pages.mismatched}`);
+  const unknown = Object.values(pages.unrecognizedFrequency).reduce((a, n) => a + n, 0);
+  if (unknown) parts.push(`unrecognized AssociationFeeFrequency: ${unknown}`);
+  if (!parts.length) return null;
+  const examples =
+    problems && stored.examples.length ? ` e.g. MLS# ${stored.examples.join(", ")}` : "";
+  return `${FEE_AUDIT_PREFIX} ${parts.join("; ")}${examples}`;
+}
 
 /** How much slower than the slowest page so far the next page may be (see runSync). */
 const PAGE_TIME_SLACK = 1.5;
@@ -337,6 +382,14 @@ export const UPDATE_LOOKBACK_MS = 30 * 60_000;
  * fails the run.
  */
 export const OWN_CLOSED_INTERVAL_MS = 20 * 3_600_000;
+
+/**
+ * The fee-period heal pass, after every incremental run that caught up: up to
+ * this many stored listings with an HOA fee and no period (SyncStore.staleFeeKeys)
+ * are re-fetched by key (ListingProvider.fetchByKeys) and rewritten, like the
+ * own-closed pass (skipUnchanged false, saved cursor unchanged).
+ */
+export const STALE_FEE_BATCH = 200;
 
 /**
  * A purge that finds another run of its source alive waits for it (skipping
@@ -474,7 +527,10 @@ export async function runSync(
       console.error(`[mls] sync alert email failed: ${describeError(e)}`);
     }
   };
-  const countFetched = (items: MapResult[]) => {
+  // The pages' HOA fee checks, summed over the run (UpdatesPage.feeCheck).
+  const pageFeeChecks = emptyFeeCheck();
+  const countFetched = (items: MapResult[], feeCheck?: FeeCheck) => {
+    if (feeCheck) addFeeCheck(pageFeeChecks, feeCheck);
     counts.fetched += items.length;
     for (const item of items) {
       if (!item.ok) result.skipped[item.reason] = (result.skipped[item.reason] ?? 0) + 1;
@@ -506,7 +562,7 @@ export async function runSync(
         }
         const { closedSince } = purgeScope(new Date(clock()));
         for await (const page of own.fetchUpdates(closedSince)) {
-          countFetched(page.items);
+          countFetched(page.items, page.feeCheck);
           countWritten(await store.writePage(page.items, storedCursor, { skipUnchanged: false }));
           await store.heartbeat(activeRunId, counts);
           if (outOfTime()) return;
@@ -514,6 +570,49 @@ export async function runSync(
         await store.recordOwnClosedSynced(new Date(clock()));
       } catch (error) {
         console.error(`[mls] own closed sales pass failed (still due): ${describeError(error)}`);
+      }
+    };
+
+    /**
+     * The fee-period heal pass (STALE_FEE_BATCH). The source's mapperVersion is
+     * marked done after one feed walk, with no per-row check, so a row the walk
+     * didn't rewrite would otherwise keep a missing period forever. Never throws.
+     */
+    const healFeePeriods = async () => {
+      try {
+        const keys = await store.staleFeeKeys(STALE_FEE_BATCH);
+        if (!keys.length || !feed.fetchByKeys) return;
+        const returned = new Set<string>();
+        for await (const page of feed.fetchByKeys(keys)) {
+          countFetched(page.items, page.feeCheck);
+          for (const item of page.items) {
+            const key = item.ok ? item.listing.listingKey : item.listingKey;
+            if (key) returned.add(key);
+          }
+          countWritten(await store.writePage(page.items, storedCursor, { skipUnchanged: false }));
+          await store.heartbeat(activeRunId, counts);
+          if (outOfTime()) return;
+        }
+        // Counts only: no keys or addresses in the log.
+        const notReturned = keys.filter((key) => !returned.has(key)).length;
+        if (notReturned) {
+          console.error(
+            `[mls] ALERT ${store.slug}: ${notReturned} stored listings with an HOA fee and no ` +
+              "period were not returned by the feed; run npm run backfill:hoa-frequency (dry run first)",
+          );
+        }
+        if (!returned.size) return;
+        const still = (await store.staleFeeKeys(STALE_FEE_BATCH)).filter((key) =>
+          returned.has(key),
+        ).length;
+        if (still) {
+          console.error(
+            `[mls] ALERT ${store.slug}: ${still} stored listings with an HOA fee still have no ` +
+              "period after a re-fetch",
+          );
+        }
+      } catch (error) {
+        console.error(`[mls] fee period heal pass failed: ${describeError(error)}`);
       }
     };
 
@@ -594,7 +693,7 @@ export async function runSync(
       // and retries quarantined ones (as does a remap).
       const skipUnchanged = mode !== "full" && !remap;
       for await (const page of feed.fetchUpdates(from)) {
-        countFetched(page.items);
+        countFetched(page.items, page.feeCheck);
         // Only once the page is written: a failed page's run records the cursor before it.
         const next = page.last ?? cursor;
         const quarantine =
@@ -667,12 +766,44 @@ export async function runSync(
       }
       // An empty feed read from the start has caught up too.
       if (remap && status === "succeeded") remapVersion = version;
-      // Only once the feed caught up in time; a full run always reads them.
-      if (ownClosed && status === "succeeded") await syncOwnClosed(ownClosed, mode !== "full");
+      // Only once the feed caught up in time; a full run always reads them, and
+      // so does a run that completed a remap, due or not: the firm's own sales
+      // aren't in the main feed, so only this pass rewrites them with the new mapper.
+      const remapDone = remap && status === "succeeded";
+      if (ownClosed && status === "succeeded") {
+        await syncOwnClosed(ownClosed, mode !== "full" && !remapDone);
+      }
+      // A full run rewrote every record already.
+      if (mode === "incremental" && status === "succeeded") await healFeePeriods();
     }
 
-    // A quarantine is reported (partial, with its note), though the run caught up.
-    const reported = status === "succeeded" && result.quarantined ? "partial" : status;
+    // The HOA fee audit, after every run but a full one (which rewrote every row):
+    // the stored rows (one query) and the run's pages. A failure is reported like a
+    // quarantine, in the run's status (a purge's only in its note and the ALERT line);
+    // an audit that can't run is noted, never thrown.
+    let feeNote: string | null = null;
+    let auditError: string | undefined;
+    if (mode !== "full") {
+      let stored: FeeAudit | null = null;
+      try {
+        stored = await store.auditFees();
+      } catch (error) {
+        auditError = `HOA fee audit could not run: ${describeError(error)}`;
+        console.error(`[mls] ${store.slug}: ${auditError}`);
+      }
+      feeNote = feeAuditNote(stored, pageFeeChecks);
+      if (feeNote) {
+        console.error(`[mls] ALERT ${store.slug}: ${feeNote}`);
+        result.feeAudit = { stored, pages: pageFeeChecks };
+      }
+    }
+
+    // A quarantine or a failed fee audit is reported (partial, with its note), though
+    // the run caught up. Not a purge's audit: the dashboard dates the last purge from
+    // its succeeded runs (getSources), so a purge keeps its status and only notes it.
+    const downgrade = result.quarantined || (feeNote && mode !== "purge");
+    const reported = status === "succeeded" && downgrade ? "partial" : status;
+    const note = [quarantineNote, feeNote, auditError].filter(Boolean).join("; ");
     await store.finishRun(runId, {
       status: reported,
       counts,
@@ -681,7 +812,7 @@ export async function runSync(
       // A purge reads no page: it neither counts towards nor ends a streak.
       pastStreak: mode !== "purge" && (passed || status === "succeeded"),
       mapperVersion: remapVersion,
-      error: quarantineNote,
+      error: note || undefined,
     });
     Object.assign(result, counts, {
       status: reported,

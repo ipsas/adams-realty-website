@@ -39,3 +39,63 @@ export function classifyFeeRow(r: FeeRow): FeeProblem[] {
     problems.push(SQL_JS_DRIFT);
   return problems;
 }
+
+/**
+ * One stored hoa_frequency of a source's fee rows (hoa_fee > 0), as the sync's audit
+ * query (SyncStore.auditFees) groups them.
+ */
+export type FeeGroup = {
+  frequency: string | null;
+  count: number;
+  /** One fee of the group (the query's min), to compare its SQL and JS monthly equivalents. */
+  sampleFee: number;
+  /** The search's (SQL) monthly equivalent of `sampleFee` at this frequency. */
+  sampleSqlMonthly: number | null;
+  /** Up to a few MLS numbers (or listing ids) of the group's rows not stored as annually. */
+  examples: string[];
+};
+
+/** What the sync's audit found: problem counts by label (classifyFeeRow's), only nonzero. */
+export type FeeAudit = {
+  /** Rows with a fee. */
+  total: number;
+  problems: Partial<Record<FeeProblem, number>>;
+  /** Up to AUDIT_EXAMPLES MLS numbers (or listing ids) of rows with a problem. */
+  examples: string[];
+};
+
+export const AUDIT_EXAMPLES = 5;
+
+export const emptyFeeAudit = (): FeeAudit => ({ total: 0, problems: {}, examples: [] });
+
+/**
+ * classifyFeeRow over a source's grouped fee rows: every row of a group shares its
+ * frequency (and has a fee above $0), so the group's labels are each of its rows';
+ * the SQL-vs-JS drift is judged on the group's sample fee. `gamls`: the source is the
+ * Georgia MLS one.
+ */
+export function auditFeeAggregate(groups: FeeGroup[], { gamls }: { gamls: boolean }): FeeAudit {
+  const audit = emptyFeeAudit();
+  for (const g of groups) {
+    audit.total += g.count;
+    const labels = classifyFeeRow({
+      slug: "",
+      fee: g.sampleFee,
+      frequency: g.frequency,
+      source: gamls ? GAMLS_SLUG : "",
+      sqlMonthly: g.sampleSqlMonthly,
+    });
+    for (const label of labels) audit.problems[label] = (audit.problems[label] ?? 0) + g.count;
+    if (labels.length) audit.examples.push(...g.examples);
+  }
+  audit.examples = audit.examples.slice(0, AUDIT_EXAMPLES);
+  return audit;
+}
+
+/** "<label>: <n>; …", in FEE_PROBLEMS order, or null when the audit found nothing. */
+export function describeFeeAudit(audit: FeeAudit): string | null {
+  const parts = FEE_PROBLEMS.flatMap((label) =>
+    audit.problems[label] ? [`${label}: ${audit.problems[label]}`] : [],
+  );
+  return parts.length ? parts.join("; ") : null;
+}

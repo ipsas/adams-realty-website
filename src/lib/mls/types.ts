@@ -1,4 +1,5 @@
 import type { listings } from "@/db/schema";
+import type { FeeCheck } from "./reso/fee-check";
 
 /**
  * The provider-neutral shape every listing feed is normalized into before it
@@ -91,6 +92,11 @@ export type UpdatesPage = {
   items: MapResult[];
   /** Null only when no record on the page had a timestamp and key. */
   last: { modifiedAt: Date; key: string } | null;
+  /**
+   * The page's HOA fee check against its raw records (reso/fee-check.ts), when the
+   * provider runs one; the sync sums them over a run and reports any mismatch.
+   */
+  feeCheck?: FeeCheck;
 };
 
 export interface ListingProvider {
@@ -114,6 +120,12 @@ export interface ListingProvider {
    * last page arrives: a partial key list is never used.
    */
   fetchActiveKeys(scope: PurgeScope): AsyncIterable<string[]>;
+  /**
+   * Optional: the feed's records with these ListingKeys (within the feed's own
+   * filter), mapped like fetchUpdates' pages; keys the feed doesn't return are
+   * left out. The sync's fee-period heal pass re-fetches stored rows with it.
+   */
+  fetchByKeys?(keys: string[]): AsyncIterable<UpdatesPage>;
   /**
    * The firm's own closed sales, for a live-only feed (whose saved filter keeps
    * closed records out): see OwnClosedFeed. Absent or null: none (not live-only,

@@ -75,3 +75,20 @@ export function feeCheckWarning(c: FeeCheck): string | null {
   const values = unknown.map(([v, n]) => `${JSON.stringify(v)}×${n}`).join(", ");
   return `HOA fee check: ${c.mismatched} of ${c.checked} fees mismatched the raw MLS data; unrecognized AssociationFeeFrequency: ${values || "none"}`;
 }
+
+/** A FeeCheck of nothing checked, to sum pages into (addFeeCheck). */
+export const emptyFeeCheck = (): FeeCheck => ({
+  checked: 0,
+  mismatched: 0,
+  unrecognizedFrequency: {},
+});
+
+/** Adds `page` into `total` (the sync sums its pages' checks over a run). */
+export function addFeeCheck(total: FeeCheck, page: FeeCheck): FeeCheck {
+  total.checked += page.checked;
+  total.mismatched += page.mismatched;
+  for (const [value, n] of Object.entries(page.unrecognizedFrequency)) {
+    total.unrecognizedFrequency[value] = (total.unrecognizedFrequency[value] ?? 0) + n;
+  }
+  return total;
+}

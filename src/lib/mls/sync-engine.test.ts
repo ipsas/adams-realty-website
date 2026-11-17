@@ -87,6 +87,7 @@ type Run = {
 };
 
 class MemoryStore implements SyncStore {
+  readonly slug = "test";
   listings = new Map<string, StoredListing>();
   cursor: SyncCursor | null = null;
   runs: Run[] = [];
@@ -171,6 +172,12 @@ class MemoryStore implements SyncStore {
   }
   async recordOwnClosedSynced(at: Date) {
     this.ownSyncedAt = at;
+  }
+  async staleFeeKeys() {
+    return [];
+  }
+  async auditFees() {
+    return { total: 0, problems: {}, examples: [] };
   }
 
   /** The cursor as passed to each writePage. */

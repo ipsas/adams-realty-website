@@ -81,8 +81,25 @@ defines AssociationFee as the "Annual Association Fee", so the mapper stores eve
 annually), and any row whose search (SQL) monthly equivalent differs from the listing
 page's. It only reads, inside a read-only transaction, takes `DATABASE_URL` from the
 environment only, and exits 1 when anything is wrong. Until the mapper-5 resync has run
-in production, it reports every Georgia MLS fee row as not stored as annually. The sync also warns
-(one line per page, counts only) when a mapped fee differs from its raw MLS record.
+in production, it reports every Georgia MLS fee row as not stored as annually. The sync also logs
+an error (one line per page, counts only) when a mapped fee differs from its raw MLS record.
+
+Rows the resync can't reach (soft-removed ones, which aren't in the feed, or ones its walk
+missed) are fixed by `DATABASE_URL=... npm run backfill:hoa-frequency`: run it first as is (a
+dry run that only counts the Georgia MLS rows with a fee and no period), then with
+`-- --apply --expect=<the dry run's count>`, which sets only `hoa_frequency = 'annually'` and
+rolls back unless exactly that many rows change; `npm run check:fees` should then exit 0, and a
+second run matches nothing. Each incremental sync that catches up also re-fetches by key up to
+200 live Georgia MLS rows with a fee and no period and rewrites them, logging an `[mls] ALERT`
+when the feed doesn't return some of them.
+
+The sync audits the stored fees after every run (except a full one) with one query, by
+`check:fees`' rules, and sums each page's raw-vs-mapped check. Any problem makes the run
+`partial` (a purge keeps its status, so /dashboard/sources still dates the last purge
+from it) with `HOA fee audit failed: ...` (counts and a few MLS numbers) in its message on
+/dashboard/sources (Sync runs) and in the `/api/cron/sync` response (`feeAudit`), and logs an
+`[mls] ALERT` error line.
+
 `npm run test:fees` runs the HOA fee tests (fixture, frequency table and sync check, no
 database); it runs first in every Vercel build, before migrations and `next build`, and a
 failure fails the build.

@@ -246,17 +246,23 @@ export function isGamlsRecord(p: ResoProperty): boolean {
 }
 
 /**
+ * The period of every Georgia MLS HOA fee: GAMLS metadata defines AssociationFee with
+ * LongName "Annual Association Fee" and the gamls2 feed sends no frequency field.
+ * Also what `npm run backfill:hoa-frequency` stores (src/lib/listings/fee-backfill.ts).
+ */
+export const GAMLS_FEE_FREQUENCY = "annually" as const satisfies HoaFrequency;
+
+/**
  * The period of `hoaFee`, straight from the MLS, never defaulted to monthly: the
  * record's AssociationFeeFrequency when it sends one (an unrecognized value is null);
- * without one, a Georgia MLS record's fee is annual, since GAMLS metadata defines
- * AssociationFee with LongName "Annual Association Fee" and the gamls2 feed sends no
- * frequency field; otherwise unknown (null). Null when there is no fee.
+ * without one, a Georgia MLS record's fee is annual (GAMLS_FEE_FREQUENCY); otherwise
+ * unknown (null). Null when there is no fee.
  */
 function feeFrequency(p: ResoProperty, hoaFee: number | null): HoaFrequency | null {
   if (hoaFee === null || hoaFee <= 0) return null;
   const raw = str(p.AssociationFeeFrequency);
   if (raw) return parseFeeFrequency(raw);
-  return isGamlsRecord(p) ? "annually" : null;
+  return isGamlsRecord(p) ? GAMLS_FEE_FREQUENCY : null;
 }
 
 function mapMedia(media: ResoMedia[] | undefined): NormalizedMedia[] {

@@ -1,7 +1,12 @@
-import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { agents, dataSources, listings, syncQuarantine, syncRuns } from "@/db/schema";
+import { AUDIT_EXAMPLES, auditFeeAggregate, emptyFeeAudit } from "@/lib/listings/fee-audit";
+import { staleFeeWhere } from "@/lib/listings/fee-backfill";
+import { monthlyHoaSql } from "@/lib/listings/hoa-fee";
 import { listingLabel, upsertListings, type PersistSource } from "@/lib/listings/persist";
+import { GAMLS_SLUG } from "./gamls";
+import { GAMLS_FEE_FREQUENCY } from "./reso/mapper";
 import { pruneRemovedWhere, purgeCountQuery, purgeWhere } from "./purge";
 import { describeQuarantine, quarantineLine, type SyncStore } from "./sync-engine";
 import type { NormalizedListing } from "./types";
@@ -30,6 +35,7 @@ export function createSyncStore(source: SourceRow): PostgresSyncStore {
   let changed = false;
 
   return {
+    slug: source.slug,
     changedListings: () => changed,
 
     async beginRun(mode, staleBefore) {
@@ -153,6 +159,51 @@ export function createSyncStore(source: SourceRow): PostgresSyncStore {
         .update(dataSources)
         .set({ ownClosedSyncedAt: at })
         .where(eq(dataSources.id, source.id));
+    },
+
+    async staleFeeKeys(limit) {
+      // Elsewhere a null period legitimately means "unknown".
+      if (source.slug !== GAMLS_SLUG) return [];
+      const rows = await db
+        .select({ key: listings.listingKey })
+        .from(listings)
+        .where(staleFeeWhere(source.id))
+        .orderBy(listings.listingKey)
+        .limit(limit);
+      return rows.map((r) => r.key);
+    },
+
+    async auditFees() {
+      // Elsewhere a null period legitimately means "unknown".
+      if (source.slug !== GAMLS_SLUG) return emptyFeeAudit();
+      // One aggregate query, by stored period, over check:fees' population (removed
+      // rows included): no addresses, names or contacts, only MLS numbers (or ids).
+      const sampleFee = () => sql`min(${listings.hoaFee})`;
+      const groups = await db
+        .select({
+          frequency: listings.hoaFrequency,
+          count: sql<number>`count(*)::int`,
+          sampleFee: sampleFee().mapWith(Number),
+          sampleSqlMonthly: monthlyHoaSql(sampleFee(), listings.hoaFrequency).mapWith(
+            (v: string | null) => (v === null ? null : Number(v)),
+          ),
+          examples: sql<
+            string[] | null
+          >`(array_agg(coalesce(${listings.mlsNumber}, ${listings.id}::text) order by ${listings.mlsNumber}) filter (where ${listings.hoaFrequency} is distinct from ${GAMLS_FEE_FREQUENCY}))[1:${sql.raw(String(AUDIT_EXAMPLES))}]`,
+        })
+        .from(listings)
+        .where(
+          and(
+            eq(listings.sourceId, source.id),
+            eq(listings.fromFeed, true),
+            gt(listings.hoaFee, 0),
+          ),
+        )
+        .groupBy(listings.hoaFrequency);
+      return auditFeeAggregate(
+        groups.map((g) => ({ ...g, examples: g.examples ?? [] })),
+        { gamls: true },
+      );
     },
 
     async writePage(page, cursor, { skipUnchanged, quarantine, maxQuarantined, escalate }) {

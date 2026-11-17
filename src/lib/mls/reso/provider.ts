@@ -10,18 +10,20 @@ import type {
   UpdatesPage,
 } from "../types";
 import { ResoClient, type ResoClientConfig } from "./client";
-import { feeCheckWarning, feeDisplayMismatches } from "./fee-check";
+import { feeCheckWarning, feeDisplayMismatches, type FeeCheck } from "./fee-check";
 import { mapResoProperty, RESO_MAPPER_VERSION, type ResoProperty } from "./mapper";
 
 /**
  * Maps a page of raw records, checking each HOA fee against its raw record
- * (fee-check.ts): one warning line per page with counts only, when any differs.
+ * (fee-check.ts): one error line per page with counts only, when any differs, and
+ * the check on the page, which the sync sums and reports in its run status.
  */
-function mapPage(rows: ResoProperty[]): MapResult[] {
-  const mapped = rows.map(mapResoProperty);
-  const warning = feeCheckWarning(feeDisplayMismatches(rows, mapped));
-  if (warning) console.warn(warning);
-  return mapped;
+function mapPage(rows: ResoProperty[]): { items: MapResult[]; feeCheck: FeeCheck } {
+  const items = rows.map(mapResoProperty);
+  const feeCheck = feeDisplayMismatches(rows, items);
+  const warning = feeCheckWarning(feeCheck);
+  if (warning) console.error(warning);
+  return { items, feeCheck };
 }
 
 const PAGE_SIZE = 200;
@@ -137,7 +139,7 @@ export class ResoWebApiProvider implements ListingProvider {
         )) {
           const last = lastPosition(rows);
           yield {
-            items: mapPage(rows),
+            ...mapPage(rows),
             last: last && { modifiedAt: new Date(last.timestamp), key: last.key },
           };
         }
@@ -178,7 +180,7 @@ export class ResoWebApiProvider implements ListingProvider {
       if (!rows.length) return;
       const last = lastPosition(rows);
       yield {
-        items: mapPage(rows),
+        ...mapPage(rows),
         last: last && { modifiedAt: new Date(last.timestamp), key: last.key },
       };
       if (!last) {
@@ -201,6 +203,29 @@ export class ResoWebApiProvider implements ListingProvider {
       (after) => this.filter(filter, after),
     );
     for await (const rows of pages) yield rows.map((row) => row.ListingKey).filter(Boolean);
+  }
+
+  /**
+   * The records with these keys, KEYS_PER_REQUEST per request, within the saved
+   * filter and with the same $expand as fetchUpdates, mapped (and fee-checked)
+   * by mapPage. Keys the feed doesn't return are left out.
+   */
+  async *fetchByKeys(keys: string[]): AsyncIterable<UpdatesPage> {
+    for (const batch of keyBatches(keys)) {
+      const query: Record<string, string> = {
+        $top: String(batch.length),
+        $orderby: "ListingKey asc",
+        $filter: this.filter(keysFilter(batch))!,
+      };
+      if (this.expand) query.$expand = this.expand;
+      const rows = await this.client.getPage<ResoProperty>(this.resource, query);
+      if (!rows.length) continue;
+      const last = lastPosition(rows);
+      yield {
+        ...mapPage(rows),
+        last: last && { modifiedAt: new Date(last.timestamp), key: last.key },
+      };
+    }
   }
 
   /**
@@ -275,6 +300,26 @@ type RawPosition = { timestamp: string; key: string | null };
 /** OData string literal: single quotes, doubled inside. */
 function odataString(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
+}
+
+/** Most ListingKeys in one fetchByKeys request (keeps the $filter, and the URL, short). */
+export const KEYS_PER_REQUEST = 50;
+
+/** `keys` without duplicates, in batches of at most `size`. Exported for tests. */
+export function keyBatches(keys: string[], size = KEYS_PER_REQUEST): string[][] {
+  const unique = [...new Set(keys)];
+  const batches: string[][] = [];
+  for (let i = 0; i < unique.length; i += size) batches.push(unique.slice(i, i + size));
+  return batches;
+}
+
+/**
+ * The records with any of `keys`: an `or` chain rather than `in`, as in
+ * purgeScopeFilter. Exported for tests.
+ */
+export function keysFilter(keys: string[]): string {
+  if (!keys.length) throw new Error("keysFilter: no keys");
+  return keys.map((key) => `ListingKey eq ${odataString(key)}`).join(" or ");
 }
 
 /**
